@@ -36,6 +36,9 @@ export interface Template {
   updated_at: string;
 }
 
+export type ExportFormat = "png" | "jpeg";
+export type ExportSize = "1080x1080" | "1080x1350" | "1080x1920";
+
 export interface Carousel {
   id: string;
   user_id: string;
@@ -46,6 +49,8 @@ export interface Carousel {
   status: string;
   caption_variants: Json;
   hashtags: string[];
+  export_format?: ExportFormat;
+  export_size?: ExportSize;
   created_at: string;
   updated_at: string;
 }
@@ -93,6 +98,7 @@ export interface SlidePreset {
   template_id: string | null;
   overlay: Json;
   show_counter: boolean;
+  show_watermark?: boolean | null;
   image_display?: Json | null;
   created_at: string;
 }

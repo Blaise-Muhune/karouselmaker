@@ -69,8 +69,9 @@ function getShapeCss(shape: string, radius: number): string {
 }
 
 /**
- * Build full HTML document for a single slide (1080x1080).
+ * Build full HTML document for a single slide (default 1080x1080).
  * Matches SlidePreview layout for screenshot parity.
+ * For portrait sizes (1080x1350, 1080x1920), the 1080x1080 content is top-aligned with extra space below.
  */
 export type HighlightStyle = "text" | "background";
 
@@ -91,6 +92,7 @@ export function renderSlideHtml(
   /** Second image for hook slide: circle with border (bottom-right). */
   secondaryBackgroundImageUrl?: string | null,
   showCounterOverride?: boolean,
+  showWatermarkOverride?: boolean,
   fontOverrides?: FontSizeOverrides | null,
   highlightStyles: HighlightStyleOverrides = {},
   /** When true, wrap background image in a bordered frame. */
@@ -113,8 +115,11 @@ export function renderSlideHtml(
     dividerStyle?: "gap" | "line" | "zigzag" | "diagonal" | "wave" | "dashed" | "scalloped";
     dividerColor?: string;
     dividerWidth?: number;
-  } | null
+  } | null,
+  /** Export dimensions. Default 1080x1080. */
+  dimensions?: { w: number; h: number }
 ): string {
+  const { w: dimW, h: dimH } = dimensions ?? { w: 1080, h: 1080 };
   const model = buildSlideRenderModel(
     templateConfig,
     slideData,
@@ -341,15 +346,24 @@ export function renderSlideHtml(
     ? `linear-gradient(${gradientDir}, transparent 0%, ${gradientRgba} 100%)`
     : "none";
 
+  const isPortrait = dimH > dimW;
+  const scaleToCover = isPortrait ? dimH / 1080 : dimW / 1080;
+  const scale = scaleToCover;
+  const scaledSize = 1080 * scale;
+  const slideTranslateX = (dimW - scaledSize) / 2;
+  const slideTranslateY = (dimH - scaledSize) / 2;
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=1080, height=1080">
+  <meta name="viewport" content="width=${dimW}, height=${dimH}">
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 1080px; height: 1080px; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
-    .slide { position: relative; width: 1080px; height: 1080px; background-color: ${escapeHtml(backgroundColor)}; }
+    * { margin: 0; padding: 0; box-sizing: border-box; border: none; }
+    html { margin: 0; padding: 0; overflow: hidden; background-color: ${escapeHtml(backgroundColor)}; }
+    body { margin: 0; padding: 0; width: ${dimW}px; height: ${dimH}px; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: ${escapeHtml(backgroundColor)}; }
+    .slide-wrap { position: absolute; left: 0; top: 0; width: ${dimW}px; height: ${dimH}px; overflow: hidden; }
+    .slide { position: absolute; width: 1080px; height: 1080px; left: ${slideTranslateX}px; top: ${slideTranslateY}px; transform: scale(${scale}); transform-origin: top left; background-color: ${escapeHtml(backgroundColor)}; }
     .slide-bg-image { position: absolute; inset: 0; ${bgImageStyle} }
     .slide-gradient { position: absolute; inset: 0; background: ${gradientStyle}; pointer-events: none; }
     .text-block { position: absolute; display: flex; flex-direction: column; justify-content: center; }
@@ -362,13 +376,15 @@ export function renderSlideHtml(
   </style>
 </head>
 <body>
+  <div class="slide-wrap">
   <div class="slide">
     ${multiUrls ? multiImagesHtml : `<div class="slide-bg-image" style="${bgFrameStyle}${bgImageStyle}"></div>`}
     <div class="slide-gradient"></div>
     ${hookCircleHtml}
     ${textBlocksHtml}
     ${showCounter ? `<div class="chrome-counter" style="color:${escapeHtml(textColor)}">${escapeHtml(model.chrome.counterText)}</div>` : ""}
-    ${model.chrome.watermark.enabled && model.chrome.watermark.text ? `<div class="chrome-watermark ${model.chrome.watermark.position === "top_left" ? "tl" : model.chrome.watermark.position === "top_right" ? "tr" : "bl"}" style="color:${escapeHtml(textColor)}">${escapeHtml(model.chrome.watermark.text)}</div>` : ""}
+    ${model.chrome.watermark.text && (showWatermarkOverride === undefined ? model.chrome.watermark.enabled : showWatermarkOverride) ? `<div class="chrome-watermark ${model.chrome.watermark.position === "top_left" ? "tl" : model.chrome.watermark.position === "top_right" ? "tr" : "bl"}" style="color:${escapeHtml(textColor)}">${escapeHtml(model.chrome.watermark.text)}</div>` : ""}
+  </div>
   </div>
 </body>
 </html>`;

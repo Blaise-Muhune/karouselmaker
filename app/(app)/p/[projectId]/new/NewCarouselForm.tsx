@@ -31,6 +31,7 @@ export function NewCarouselForm({ projectId }: { projectId: string }) {
   const [numberOfSlides, setNumberOfSlides] = useState<string>("");
   const [backgroundAssetIds, setBackgroundAssetIds] = useState<string[]>([]);
   const [useAiBackgrounds, setUseAiBackgrounds] = useState(false);
+  const [notes, setNotes] = useState("");
   const [backgroundPickerOpen, setBackgroundPickerOpen] = useState(false);
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -89,6 +90,17 @@ export function NewCarouselForm({ projectId }: { projectId: string }) {
             className="w-full"
           />
           <p className="text-muted-foreground text-xs">Leave empty for AI to choose (e.g. top 20 → 6 slides with ~4 items each).</p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="notes">Anything we should know before generating? (optional)</Label>
+          <Textarea
+            id="notes"
+            placeholder="e.g. Focus on beginners, avoid jargon, emphasize X, skip Y..."
+            className="min-h-20"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+          />
         </div>
 
         <div className="space-y-2">

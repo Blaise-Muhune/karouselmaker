@@ -11,6 +11,7 @@ import {
   updateExport,
   getExportStoragePaths,
 } from "@/lib/server/db";
+import { formatUnsplashAttributionLine } from "@/lib/server/unsplash";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { renderSlideHtml } from "@/lib/server/renderer/renderSlideHtml";
 import { getSignedDownloadUrl } from "@/lib/server/storage/signedUrl";
@@ -41,9 +42,18 @@ export async function POST(
     return NextResponse.json({ error: "Carousel not found" }, { status: 404 });
   }
 
+  const carouselExportFormat = (carousel as { export_format?: string }).export_format ?? "png";
+  const carouselExportSize = (carousel as { export_size?: string }).export_size ?? "1080x1080";
+  const format = carouselExportFormat === "jpeg" ? "jpeg" : "png";
+  const dimensions = carouselExportSize === "1080x1350"
+    ? { w: 1080, h: 1350 }
+    : carouselExportSize === "1080x1920"
+      ? { w: 1080, h: 1920 }
+      : { w: 1080, h: 1080 };
+
   let exportId: string;
   try {
-    const exportRow = await createExport(userId, carouselId, "png");
+    const exportRow = await createExport(userId, carouselId, format);
     exportId = exportRow.id;
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Failed to create export";
@@ -71,10 +81,14 @@ export async function POST(
       await browser.close();
       throw e;
     }
-    await page.setViewportSize({ width: 1080, height: 1080 });
+    await page.setViewportSize({ width: dimensions.w, height: dimensions.h });
 
     const zip = new JSZip();
     const pngBuffers: Buffer[] = [];
+    const unsplashAttributions = new Map<
+      string,
+      { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string }
+    >();
 
     try {
     for (let i = 0; i < slides.length; i++) {
@@ -88,7 +102,7 @@ export async function POST(
       if (!config.success) throw new Error(`Invalid template config for slide ${i + 1}`);
 
       const slideBg = slide.background as
-        | { style?: "solid" | "gradient"; color?: string; gradientOn?: boolean; mode?: string; storage_path?: string; image_url?: string; secondary_storage_path?: string; secondary_image_url?: string; images?: { image_url?: string; storage_path?: string }[]; image_display?: { position?: string; fit?: "cover" | "contain"; frame?: "none" | "thin" | "medium" | "thick"; frameRadius?: number; frameColor?: string; layout?: string; gap?: number }; overlay?: { gradient?: boolean; darken?: number; color?: string; textColor?: string; direction?: "top" | "bottom" | "left" | "right" } }
+        | { style?: "solid" | "gradient"; color?: string; gradientOn?: boolean; mode?: string; storage_path?: string; image_url?: string; image_source?: string; unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string }; secondary_storage_path?: string; secondary_image_url?: string; images?: { image_url?: string; storage_path?: string; source?: string; unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string } }[]; image_display?: { position?: string; fit?: "cover" | "contain"; frame?: "none" | "thin" | "medium" | "thick"; frameRadius?: number; frameColor?: string; layout?: string; gap?: number }; overlay?: { gradient?: boolean; darken?: number; color?: string; textColor?: string; direction?: "top" | "bottom" | "left" | "right" } }
         | null
         | undefined;
       const overlayFields = {
@@ -146,8 +160,10 @@ export async function POST(
       }
       const borderedFrame = !!(backgroundImageUrl || backgroundImageUrls?.length);
 
-      const slideMeta = slide.meta as { show_counter?: boolean; headline_font_size?: number; body_font_size?: number; headline_highlight_style?: "text" | "background"; body_highlight_style?: "text" | "background" } | null;
+      const slideMeta = slide.meta as { show_counter?: boolean; show_watermark?: boolean; headline_font_size?: number; body_font_size?: number; headline_highlight_style?: "text" | "background"; body_highlight_style?: "text" | "background" } | null;
       const showCounterOverride = slideMeta?.show_counter === true;
+      const defaultShowWatermark = slide.slide_index === 1 || slide.slide_index === 2 || slide.slide_index === slides.length;
+      const showWatermarkOverride = slideMeta?.show_watermark ?? defaultShowWatermark;
       const fontOverrides =
         slideMeta && (slideMeta.headline_font_size != null || slideMeta.body_font_size != null)
           ? { headline_font_size: slideMeta.headline_font_size, body_font_size: slideMeta.body_font_size }
@@ -172,10 +188,12 @@ export async function POST(
         backgroundImageUrls,
         secondaryBackgroundImageUrl,
         showCounterOverride,
+        showWatermarkOverride,
         fontOverrides,
         highlightStyles,
         borderedFrame,
-        (slideBg?.image_display as Parameters<typeof renderSlideHtml>[12]) ?? undefined
+        (slideBg?.image_display as Parameters<typeof renderSlideHtml>[13]) ?? undefined,
+        dimensions
       );
 
       await page.setContent(html, { waitUntil: "networkidle" });
@@ -193,7 +211,8 @@ export async function POST(
       await browser.close();
     }
 
-    const filename = (i: number) => `${String(i + 1).padStart(2, "0")}.png`;
+    const ext = format === "jpeg" ? "jpg" : "png";
+    const filename = (i: number) => `${String(i + 1).padStart(2, "0")}.${ext}`;
     pngBuffers.forEach((buf, i) => zip.file(filename(i), buf));
 
     const captionVariants = carousel.caption_variants as
@@ -208,6 +227,17 @@ export async function POST(
         : "";
     const captionText = [captionLine, hashtagLine].filter(Boolean).join("\n\n");
     if (captionText.trim()) zip.file("caption.txt", captionText.trim());
+
+    if (unsplashAttributions.size > 0) {
+      const creditsLines = [
+        "IMAGE CREDITS (Unsplash)",
+        "-----------------------",
+        "When publishing or distributing your carousel, you are responsible for providing proper attribution to photographers.",
+        "",
+        ...Array.from(unsplashAttributions.values()).map(formatUnsplashAttributionLine),
+      ];
+      zip.file("CREDITS.txt", creditsLines.join("\n"));
+    }
 
     const zipBuffer = await zip.generateAsync({ type: "nodebuffer" });
     const { error: zipUploadError } = await supabase.storage

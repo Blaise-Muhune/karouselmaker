@@ -21,11 +21,15 @@ export type ExportRowDisplay = {
 
 type EditorExportSectionProps = {
   carouselId: string;
+  exportFormat?: "png" | "jpeg";
+  exportSize?: "1080x1080" | "1080x1350" | "1080x1920";
   recentExports: ExportRowDisplay[];
 };
 
 export function EditorExportSection({
   carouselId,
+  exportFormat = "png",
+  exportSize = "1080x1080",
   recentExports,
 }: EditorExportSectionProps) {
   const router = useRouter();
@@ -72,7 +76,7 @@ export function EditorExportSection({
         <div>
           <CardTitle className="text-base">Export</CardTitle>
           <CardDescription>
-            Generate 1080×1080 PNGs and download as ZIP.
+            Generate {exportSize.replace("x", "×")} {exportFormat.toUpperCase()}s and download as ZIP.
           </CardDescription>
         </div>
         <div className="flex flex-wrap items-center gap-2">

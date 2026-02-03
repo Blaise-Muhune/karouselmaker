@@ -4,8 +4,8 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { useActionState } from "react";
-import { signIn } from "@/app/actions/auth";
-import { loginSchema, type LoginInput } from "@/lib/validations/auth";
+import { requestPasswordReset } from "@/app/actions/auth";
+import { forgotPasswordSchema, type ForgotPasswordInput } from "@/lib/validations/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -17,25 +17,25 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 
-export default function LoginPage() {
+export default function ForgotPasswordPage() {
   const [state, formAction] = useActionState(
     async (_: unknown, formData: FormData) => {
-      return signIn(formData);
+      return requestPasswordReset(formData);
     },
     null
   );
 
-  const form = useForm<LoginInput>({
-    resolver: zodResolver(loginSchema),
-    defaultValues: { email: "", password: "" },
+  const form = useForm<ForgotPasswordInput>({
+    resolver: zodResolver(forgotPasswordSchema),
+    defaultValues: { email: "" },
   });
 
   return (
     <div className="space-y-6">
       <div className="space-y-2 text-center">
-        <h1 className="text-2xl font-semibold">Log in</h1>
+        <h1 className="text-2xl font-semibold">Reset password</h1>
         <p className="text-muted-foreground text-sm">
-          Sign in to your Karouselmaker account.
+          Enter your email and we&apos;ll send you a link to reset your password.
         </p>
       </div>
       <Form {...form}>
@@ -43,6 +43,11 @@ export default function LoginPage() {
           {state?.error && (
             <p className="bg-destructive/10 text-destructive rounded-md px-3 py-2 text-sm">
               {state.error}
+            </p>
+          )}
+          {state?.success && (
+            <p className="bg-green-500/10 text-green-700 dark:text-green-400 rounded-md px-3 py-2 text-sm">
+              Check your email for a reset link. It may take a few minutes to arrive.
             </p>
           )}
           <FormField
@@ -58,36 +63,14 @@ export default function LoginPage() {
               </FormItem>
             )}
           />
-          <FormField
-            control={form.control}
-            name="password"
-            render={({ field }) => (
-              <FormItem>
-                <div className="flex items-center justify-between">
-                  <FormLabel>Password</FormLabel>
-                  <Link
-                    href="/forgot-password"
-                    className="text-muted-foreground text-sm underline-offset-4 hover:underline"
-                  >
-                    Forgot password?
-                  </Link>
-                </div>
-                <FormControl>
-                  <Input type="password" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
           <Button type="submit" className="w-full">
-            Log in
+            Send reset link
           </Button>
         </form>
       </Form>
       <p className="text-center text-muted-foreground text-sm">
-        No account?{" "}
-        <Link href="/signup" className="text-primary underline-offset-4 hover:underline">
-          Sign up
+        <Link href="/login" className="text-primary underline-offset-4 hover:underline">
+          Back to log in
         </Link>
       </p>
     </div>

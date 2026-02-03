@@ -71,6 +71,8 @@ export async function updateCarousel(
     status?: string;
     caption_variants?: Record<string, unknown>;
     hashtags?: string[];
+    export_format?: string;
+    export_size?: string;
   }
 ): Promise<Carousel> {
   const supabase = await createClient();

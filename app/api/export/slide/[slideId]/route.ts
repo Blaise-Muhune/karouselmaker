@@ -1,21 +1,36 @@
 import { NextResponse } from "next/server";
+import { chromium } from "playwright";
 import { createClient } from "@/lib/supabase/server";
-import { getSlide, getTemplate, getCarousel, getProject, listSlides } from "@/lib/server/db";
+import { getSlide, getTemplate, getCarousel, getProject, listSlides, listTemplatesForUser } from "@/lib/server/db";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { renderSlideHtml } from "@/lib/server/renderer/renderSlideHtml";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
 import type { BrandKit } from "@/lib/renderer/renderModel";
 
 const BUCKET = "carousel-assets";
-
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+type ExportFormat = "png" | "jpeg";
+type ExportSize = "1080x1080" | "1080x1350" | "1080x1920";
+
+const DIMENSIONS: Record<ExportSize, { w: number; h: number }> = {
+  "1080x1080": { w: 1080, h: 1080 },
+  "1080x1350": { w: 1080, h: 1350 },
+  "1080x1920": { w: 1080, h: 1920 },
+};
+
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ slideId: string }> }
 ) {
   const { slideId } = await context.params;
+  const { searchParams } = new URL(request.url);
+  const format = (searchParams.get("format") === "jpeg" ? "jpeg" : "png") as ExportFormat;
+  const size = (searchParams.get("size") === "1080x1350" || searchParams.get("size") === "1080x1920"
+    ? searchParams.get("size")
+    : "1080x1080") as ExportSize;
+
   const supabase = await createClient();
   const {
     data: { session },
@@ -30,9 +45,11 @@ export async function GET(
     return NextResponse.json({ error: "Slide not found" }, { status: 404 });
   }
 
-  const templateId = slide.template_id;
+  const templatesList = await listTemplatesForUser(userId, { includeSystem: true });
+  const defaultTemplateId = templatesList[0]?.id ?? null;
+  const templateId = slide.template_id ?? defaultTemplateId;
   if (!templateId) {
-    return NextResponse.json({ error: "Slide has no template" }, { status: 400 });
+    return NextResponse.json({ error: "Slide has no template and no templates available" }, { status: 400 });
   }
 
   const template = await getTemplate(userId, templateId);
@@ -60,14 +77,30 @@ export async function GET(
   const totalSlides = carouselSlides.length || 1;
 
   const slideBg = slide.background as
-    | { style?: "solid" | "gradient"; color?: string; gradientOn?: boolean; mode?: string; storage_path?: string; image_url?: string; secondary_storage_path?: string; secondary_image_url?: string; images?: { image_url?: string; storage_path?: string }[]; overlay?: { gradient?: boolean; darken?: number; color?: string; textColor?: string; direction?: "top" | "bottom" | "left" | "right" } }
+    | {
+        style?: "solid" | "gradient";
+        color?: string;
+        gradientOn?: boolean;
+        mode?: string;
+        storage_path?: string;
+        image_url?: string;
+        secondary_storage_path?: string;
+        secondary_image_url?: string;
+        images?: { image_url?: string; storage_path?: string }[];
+        image_display?: Record<string, unknown>;
+        overlay?: { gradient?: boolean; darken?: number; color?: string; textColor?: string; direction?: string };
+      }
     | null
     | undefined;
+
+  const dir = slideBg?.overlay?.direction;
+  const gradientDirection: "top" | "bottom" | "left" | "right" =
+    dir === "top" || dir === "bottom" || dir === "left" || dir === "right" ? dir : "bottom";
   const overlayFields = {
     gradientStrength: slideBg?.overlay?.darken ?? 0.5,
     gradientColor: slideBg?.overlay?.color ?? "#000000",
     textColor: slideBg?.overlay?.textColor ?? "#ffffff",
-    gradientDirection: slideBg?.overlay?.direction ?? "bottom",
+    gradientDirection,
   };
   const backgroundOverride = slideBg
     ? {
@@ -77,6 +110,7 @@ export async function GET(
         ...overlayFields,
       }
     : undefined;
+
   let backgroundImageUrl: string | null = null;
   let backgroundImageUrls: string[] | null = null;
   let secondaryBackgroundImageUrl: string | null = null;
@@ -118,19 +152,28 @@ export async function GET(
   }
   const borderedFrame = !!(backgroundImageUrl || backgroundImageUrls?.length);
 
-  const slideMeta = slide.meta as { show_counter?: boolean; show_watermark?: boolean; headline_font_size?: number; body_font_size?: number; headline_highlight_style?: "text" | "background"; body_highlight_style?: "text" | "background" } | null;
+  const slideMeta = slide.meta as {
+    show_counter?: boolean;
+    show_watermark?: boolean;
+    headline_font_size?: number;
+    body_font_size?: number;
+    headline_highlight_style?: "text" | "background";
+    body_highlight_style?: "text" | "background";
+  } | null;
   const showCounterOverride = slideMeta?.show_counter === true;
-  const defaultShowWatermark = slide.slide_index === 1 || slide.slide_index === 2 || slide.slide_index === totalSlides;
+  const defaultShowWatermark =
+    slide.slide_index === 1 || slide.slide_index === 2 || slide.slide_index === totalSlides;
   const showWatermarkOverride = slideMeta?.show_watermark ?? defaultShowWatermark;
   const fontOverrides =
     slideMeta && (slideMeta.headline_font_size != null || slideMeta.body_font_size != null)
       ? { headline_font_size: slideMeta.headline_font_size, body_font_size: slideMeta.body_font_size }
       : undefined;
   const highlightStyles = {
-    headline: slideMeta?.headline_highlight_style === "background" ? "background" as const : undefined,
-    body: slideMeta?.body_highlight_style === "background" ? "background" as const : undefined,
+    headline: slideMeta?.headline_highlight_style === "background" ? ("background" as const) : undefined,
+    body: slideMeta?.body_highlight_style === "background" ? ("background" as const) : undefined,
   };
 
+  const dimensions = DIMENSIONS[size];
   const html = renderSlideHtml(
     {
       headline: slide.headline,
@@ -149,13 +192,29 @@ export async function GET(
     showWatermarkOverride,
     fontOverrides,
     highlightStyles,
-    borderedFrame
+    borderedFrame,
+    (slideBg?.image_display as Parameters<typeof renderSlideHtml>[13]) ?? undefined,
+    dimensions
   );
 
-  return new NextResponse(html, {
-    status: 200,
-    headers: {
-      "Content-Type": "text/html; charset=utf-8",
-    },
-  });
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setViewportSize({ width: dimensions.w, height: dimensions.h });
+    await page.setContent(html, { waitUntil: "networkidle" });
+    const buffer = await page.screenshot({ type: format });
+    const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+    const contentType = format === "jpeg" ? "image/jpeg" : "image/png";
+    const ext = format === "jpeg" ? "jpg" : "png";
+    const filename = `slide-${slide.slide_index}.${ext}`;
+    return new NextResponse(new Uint8Array(buf), {
+      status: 200,
+      headers: {
+        "Content-Type": contentType,
+        "Content-Disposition": `attachment; filename="${filename}"`,
+      },
+    });
+  } finally {
+    await browser.close();
+  }
 }

@@ -16,7 +16,17 @@ import { SlideGrid, type TemplateWithConfig } from "@/components/carousels/Slide
 import { EditorCaptionSection } from "@/components/editor/EditorCaptionSection";
 import { EditorExportSection } from "@/components/editor/EditorExportSection";
 import type { BrandKit } from "@/lib/renderer/renderModel";
+import type { ExportFormat, ExportSize } from "@/lib/server/db/types";
 import { ArrowLeftIcon } from "lucide-react";
+
+function getExportFormat(c: { export_format?: unknown }): ExportFormat {
+  return c.export_format === "jpeg" || c.export_format === "png" ? (c.export_format as ExportFormat) : "png";
+}
+function getExportSize(c: { export_size?: unknown }): ExportSize {
+  return c.export_size === "1080x1080" || c.export_size === "1080x1350" || c.export_size === "1080x1920"
+    ? (c.export_size as ExportSize)
+    : "1080x1080";
+}
 
 export default async function CarouselEditorPage({
   params,
@@ -106,9 +116,23 @@ export default async function CarouselEditorPage({
           <span className="text-muted-foreground text-sm">{carousel.status}</span>
         </div>
 
+        <EditorExportSection
+          carouselId={carouselId}
+          exportFormat={getExportFormat(carousel)}
+          exportSize={getExportSize(carousel)}
+          recentExports={recentExports.map((ex) => ({
+            id: ex.id,
+            status: ex.status,
+            storage_path: ex.storage_path,
+            created_at: ex.created_at,
+          }))}
+        />
+
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Slide previews (1080×1080)</CardTitle>
+            <CardTitle className="text-base">
+              Slide previews ({getExportSize(carousel).replace("x", "×")})
+            </CardTitle>
             <CardDescription>
               Click a slide to edit. Drag the grip to reorder. Pick a template per slide.
             </CardDescription>
@@ -121,19 +145,10 @@ export default async function CarouselEditorPage({
               projectId={projectId}
               carouselId={carouselId}
               slideBackgroundImageUrls={slideBackgroundImageUrls}
+              exportSize={getExportSize(carousel)}
             />
           </CardContent>
         </Card>
-
-        <EditorExportSection
-          carouselId={carouselId}
-          recentExports={recentExports.map((ex) => ({
-            id: ex.id,
-            status: ex.status,
-            storage_path: ex.storage_path,
-            created_at: ex.created_at,
-          }))}
-        />
 
         <EditorCaptionSection
           carouselId={carouselId}

@@ -1,15 +1,31 @@
 /**
- * Unsplash API: search for a photo and return the first result's display URL.
+ * Unsplash API: search for a photo and return the first result with attribution.
  * Requires UNSPLASH_ACCESS_KEY. Returns null if key missing or no results.
+ * Compliant with Unsplash API Guidelines: attribution + download tracking.
  */
 
 const UNSPLASH_SEARCH = "https://api.unsplash.com/search/photos";
+const UTM_SOURCE = "karouselmaker";
+const UTM_MEDIUM = "referral";
 
 const DEBUG = process.env.IMAGE_SEARCH_DEBUG === "true" || process.env.IMAGE_SEARCH_DEBUG === "1";
 
+export type UnsplashAttribution = {
+  photographerName: string;
+  photographerUsername: string;
+  profileUrl: string;
+  unsplashUrl: string;
+};
+
+export type UnsplashPhotoResult = {
+  url: string;
+  downloadLocation?: string;
+  attribution?: UnsplashAttribution;
+};
+
 export async function searchUnsplashPhoto(
   query: string
-): Promise<{ url: string; downloadLocation?: string } | null> {
+): Promise<UnsplashPhotoResult | null> {
   const key = process.env.UNSPLASH_ACCESS_KEY;
   if (!key || !query.trim()) {
     if (DEBUG) console.log("[unsplash] skip: missing UNSPLASH_ACCESS_KEY or query");
@@ -37,6 +53,7 @@ export async function searchUnsplashPhoto(
     results?: Array<{
       urls?: { regular?: string; full?: string };
       links?: { download_location?: string };
+      user?: { name?: string; username?: string; links?: { html?: string } };
     }>;
     errors?: string[];
   };
@@ -53,8 +70,46 @@ export async function searchUnsplashPhoto(
     return null;
   }
 
+  const user = first?.user;
+  const profileHtml = user?.links?.html ?? (user?.username ? `https://unsplash.com/@${user.username}` : undefined);
+  const attribution: UnsplashAttribution | undefined =
+    user?.name && user?.username && profileHtml
+      ? {
+          photographerName: user.name,
+          photographerUsername: user.username,
+          profileUrl: `${profileHtml}?utm_source=${UTM_SOURCE}&utm_medium=${UTM_MEDIUM}`,
+          unsplashUrl: `https://unsplash.com/?utm_source=${UTM_SOURCE}&utm_medium=${UTM_MEDIUM}`,
+        }
+      : undefined;
+
   return {
     url: imageUrl,
     downloadLocation: first?.links?.download_location,
+    attribution,
   };
+}
+
+/**
+ * Trigger Unsplash download tracking. Call when user "uses" a photo (e.g. inserts into slide).
+ * Required by Unsplash API Guidelines. Fire asynchronously to avoid blocking.
+ * Must authorize with client_id (or bearer token) per Unsplash docs.
+ */
+export async function trackUnsplashDownload(downloadLocation: string): Promise<void> {
+  const key = process.env.UNSPLASH_ACCESS_KEY;
+  if (!key || !downloadLocation) return;
+
+  try {
+    const res = await fetch(downloadLocation, {
+      method: "GET",
+      headers: { Authorization: `Client-ID ${key}` },
+    });
+    if (!res.ok && DEBUG) console.log("[unsplash] trackDownload HTTP", res.status);
+  } catch (e) {
+    if (DEBUG) console.log("[unsplash] trackDownload error:", e);
+  }
+}
+
+/** Format attribution line for exports: "Photo by [Name] on Unsplash" */
+export function formatUnsplashAttributionLine(attribution: UnsplashAttribution): string {
+  return `Photo by ${attribution.photographerName} (https://unsplash.com/@${attribution.photographerUsername}?utm_source=${UTM_SOURCE}&utm_medium=${UTM_MEDIUM}) on Unsplash (https://unsplash.com/?utm_source=${UTM_SOURCE}&utm_medium=${UTM_MEDIUM})`;
 }

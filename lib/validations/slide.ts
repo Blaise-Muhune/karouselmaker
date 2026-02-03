@@ -70,18 +70,32 @@ export const slideBackgroundSchema = z.object({
   image_url: z.string().url().optional(),
   /** Source of AI-suggested single image: brave (primary) or unsplash (fallback). */
   image_source: z.enum(["brave", "unsplash", "google"]).optional(),
+  /** Unsplash attribution for single image (photographer name, username, profile URL). */
+  unsplash_attribution: z.object({
+    photographerName: z.string(),
+    photographerUsername: z.string(),
+    profileUrl: z.string(),
+    unsplashUrl: z.string(),
+  }).optional(),
   /** Hook only: second image (circle) from library. */
   secondary_asset_id: z.string().uuid().optional(),
   secondary_storage_path: z.string().optional(),
   /** Hook only: second image URL (pasted). */
   secondary_image_url: z.string().url().optional(),
-  /** Multiple images per slide (2–4). Each: { image_url, source? } or { asset_id, storage_path }. */
+  /** Multiple images per slide (2–4). Each: { image_url, source?, unsplash_attribution? } or { asset_id, storage_path }. */
   images: z.array(z.object({
     image_url: z.string().url().optional(),
     asset_id: z.string().uuid().optional(),
     storage_path: z.string().optional(),
     /** Source: brave (primary) or unsplash (fallback). */
     source: z.enum(["brave", "unsplash", "google"]).optional(),
+    /** Unsplash attribution when source is unsplash. */
+    unsplash_attribution: z.object({
+      photographerName: z.string(),
+      photographerUsername: z.string(),
+      profileUrl: z.string(),
+      unsplashUrl: z.string(),
+    }).optional(),
   })).max(4).optional(),
   fit: z.enum(["cover", "contain"]).optional(),
   /** Display options: position, frame, layout, gap. */
@@ -95,6 +109,8 @@ export type HighlightStyle = z.output<typeof highlightStyleSchema>;
 
 export const slideMetaSchema = z.object({
   show_counter: z.boolean().optional(),
+  /** Override watermark/logo visibility. First, second, last = on by default; middle = off. */
+  show_watermark: z.boolean().optional(),
   /** Override headline font size (px). 8–200. */
   headline_font_size: z.number().int().min(8).max(200).optional(),
   /** Override body font size (px). 8–200. */
@@ -107,7 +123,7 @@ export const slideMetaSchema = z.object({
 
 export const updateSlideInputSchema = z.object({
   slide_id: z.string().uuid(),
-  headline: z.string().min(1).max(500).optional(),
+  headline: z.string().max(500).optional(),
   body: z.string().max(2000).nullable().optional(),
   template_id: z.string().uuid().nullable().optional(),
   background: slideBackgroundSchema.optional(),

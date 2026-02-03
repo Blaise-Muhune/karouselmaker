@@ -50,9 +50,10 @@ export default async function EditSlidePage({
     storage_path?: string;
     image_url?: string;
     image_source?: "brave" | "unsplash" | "google";
+    unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string };
     secondary_storage_path?: string;
     secondary_image_url?: string;
-    images?: { image_url?: string; storage_path?: string; source?: "google" | "unsplash" }[];
+    images?: { image_url?: string; storage_path?: string; source?: "brave" | "google" | "unsplash"; unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string } }[];
   } | null;
   if (bg?.mode === "image") {
     if (bg.images?.length) {
@@ -102,16 +103,23 @@ export default async function EditSlidePage({
     }
   }
 
+  const carouselExportFormat = (carousel as { export_format?: string }).export_format;
+  const carouselExportSize = (carousel as { export_size?: string }).export_size;
+
   return (
-    <div className="p-4 md:p-6">
-      <div className="mx-auto max-w-4xl">
+    <div className="min-h-screen px-3 py-4 sm:px-6 sm:py-6 lg:px-8">
+      <div className="mx-auto max-w-5xl">
         <SlideEditForm
           slide={slide}
+          slides={slides}
           templates={templates}
           brandKit={brandKit}
           totalSlides={slides.length}
           backHref={backHref}
           editorPath={editorPath}
+          carouselId={carouselId}
+          initialExportFormat={carouselExportFormat === "png" || carouselExportFormat === "jpeg" ? carouselExportFormat : "png"}
+          initialExportSize={carouselExportSize === "1080x1080" || carouselExportSize === "1080x1350" || carouselExportSize === "1080x1920" ? carouselExportSize : "1080x1080"}
           initialBackgroundImageUrl={initialBackgroundImageUrl}
           initialBackgroundImageUrls={initialBackgroundImageUrls}
           initialImageSource={initialImageSource}

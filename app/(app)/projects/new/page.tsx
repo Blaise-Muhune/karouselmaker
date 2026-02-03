@@ -6,6 +6,7 @@ import { useTransition } from "react";
 import Link from "next/link";
 import { createProject } from "@/app/actions/projects/createProject";
 import { Button } from "@/components/ui/button";
+import { ColorPicker } from "@/components/ui/color-picker";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -28,6 +29,7 @@ import {
   projectFormSchema,
   type ProjectFormInput,
 } from "@/lib/validations/project";
+import { DO_PRESETS, DONT_PRESETS } from "@/lib/editor/voicePresets";
 import { ArrowLeftIcon } from "lucide-react";
 
 const TONE_OPTIONS = [
@@ -144,6 +146,9 @@ export default function NewProjectPage() {
             />
             <div className="space-y-2">
               <Label>Voice rules (optional)</Label>
+              <p className="text-muted-foreground text-xs">
+                Click a preset to add it. You can also type your own.
+              </p>
               <div className="grid gap-4 sm:grid-cols-2">
                 <FormField
                   control={form.control}
@@ -158,6 +163,22 @@ export default function NewProjectPage() {
                           {...field}
                         />
                       </FormControl>
+                      <div className="flex max-h-32 flex-wrap gap-1.5 overflow-y-auto rounded-md border border-dashed border-border/60 bg-muted/30 p-2">
+                        {DO_PRESETS.map((preset) => (
+                          <button
+                            key={preset}
+                            type="button"
+                            onClick={() => {
+                              const current = field.value ?? "";
+                              const sep = current.trim() ? "\n" : "";
+                              field.onChange(current + sep + preset);
+                            }}
+                            className="rounded-md border border-border/60 bg-background px-2 py-1 text-muted-foreground text-xs hover:bg-muted hover:text-foreground transition-colors"
+                          >
+                            + {preset}
+                          </button>
+                        ))}
+                      </div>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -175,6 +196,22 @@ export default function NewProjectPage() {
                           {...field}
                         />
                       </FormControl>
+                      <div className="flex max-h-32 flex-wrap gap-1.5 overflow-y-auto rounded-md border border-dashed border-border/60 bg-muted/30 p-2">
+                        {DONT_PRESETS.map((preset) => (
+                          <button
+                            key={preset}
+                            type="button"
+                            onClick={() => {
+                              const current = field.value ?? "";
+                              const sep = current.trim() ? "\n" : "";
+                              field.onChange(current + sep + preset);
+                            }}
+                            className="rounded-md border border-border/60 bg-background px-2 py-1 text-muted-foreground text-xs hover:bg-muted hover:text-foreground transition-colors"
+                          >
+                            + {preset}
+                          </button>
+                        ))}
+                      </div>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -189,9 +226,17 @@ export default function NewProjectPage() {
                   name="brand_kit.primary_color"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-muted-foreground text-xs">Primary color (hex)</FormLabel>
+                      <FormLabel className="text-muted-foreground text-xs">Primary color</FormLabel>
                       <FormControl>
-                        <Input placeholder="#000000" {...field} />
+                        <ColorPicker
+                          value={field.value ?? ""}
+                          onChange={field.onChange}
+                          placeholder="#000000"
+                          onExtractFromLogo={(primary, secondary) => {
+                            form.setValue("brand_kit.primary_color", primary);
+                            form.setValue("brand_kit.secondary_color", secondary);
+                          }}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -202,9 +247,17 @@ export default function NewProjectPage() {
                   name="brand_kit.secondary_color"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-muted-foreground text-xs">Secondary color (hex)</FormLabel>
+                      <FormLabel className="text-muted-foreground text-xs">Secondary color</FormLabel>
                       <FormControl>
-                        <Input placeholder="#666666" {...field} />
+                        <ColorPicker
+                          value={field.value ?? ""}
+                          onChange={field.onChange}
+                          placeholder="#666666"
+                          onExtractFromLogo={(primary, secondary) => {
+                            form.setValue("brand_kit.primary_color", primary);
+                            form.setValue("brand_kit.secondary_color", secondary);
+                          }}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

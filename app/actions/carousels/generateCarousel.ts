@@ -15,6 +15,7 @@ import {
   buildValidationRetryPrompt,
 } from "@/lib/server/ai/prompts";
 import { searchImage } from "@/lib/server/imageSearch";
+import { trackUnsplashDownload } from "@/lib/server/unsplash";
 import { generateCarouselInputSchema } from "@/lib/validations/carousel";
 
 const MAX_RETRIES = 2;
@@ -66,6 +67,7 @@ export async function generateCarousel(formData: FormData): Promise<
       }
     })(),
     use_ai_backgrounds: formData.get("use_ai_backgrounds") as string | null,
+    notes: (formData.get("notes") as string)?.trim() || undefined,
   };
 
   const parsed = generateCarouselInputSchema.safeParse(raw);
@@ -98,7 +100,7 @@ export async function generateCarousel(formData: FormData): Promise<
 
   const openai = new OpenAI({ apiKey });
 
-  const brandKit = project.brand_kit as { watermark_text?: string } | null;
+  const brandKit = project.brand_kit as { watermark_text?: string; primary_color?: string } | null;
   const creatorHandle = brandKit?.watermark_text?.trim() || undefined;
 
   const ctx = {
@@ -110,6 +112,7 @@ export async function generateCarousel(formData: FormData): Promise<
     input_value: data.input_value,
     use_ai_backgrounds: data.use_ai_backgrounds ?? false,
     creator_handle: creatorHandle,
+    notes: data.notes,
   } as const;
 
   let lastRaw = "";
@@ -228,19 +231,26 @@ export async function generateCarousel(formData: FormData): Promise<
       const aiSlide = aiSlideByIndex.get(slide.slide_index);
       const queries = aiSlide?.unsplash_queries?.filter((q) => q?.trim()) ?? (aiSlide?.unsplash_query?.trim() ? [aiSlide.unsplash_query.trim()] : []);
       if (queries.length === 0) continue;
-      const imageResults: { url: string; source: "brave" | "unsplash" }[] = [];
+      const imageResults: Awaited<ReturnType<typeof searchImage>>[] = [];
       for (const query of queries.slice(0, 4)) {
         const result = await searchImage(query);
         if (result) imageResults.push(result);
       }
       if (imageResults.length === 0) continue;
       const firstResult = imageResults[0];
+      // Trigger Unsplash download tracking when image is used (async, non-blocking)
+      for (const r of imageResults) {
+        if (r?.source === "unsplash" && r.unsplashDownloadLocation) {
+          trackUnsplashDownload(r.unsplashDownloadLocation).catch(() => {});
+        }
+      }
       if (imageResults.length === 1 && firstResult) {
         await updateSlide(user.id, slide.id, {
           background: {
             mode: "image",
             image_url: firstResult.url,
             image_source: firstResult.source,
+            unsplash_attribution: firstResult.unsplashAttribution,
             fit: "cover",
             overlay: defaultOverlay,
           },
@@ -249,7 +259,11 @@ export async function generateCarousel(formData: FormData): Promise<
         await updateSlide(user.id, slide.id, {
           background: {
             mode: "image",
-            images: imageResults.map((r) => ({ image_url: r.url, source: r.source })),
+            images: imageResults.map((r) => ({
+              image_url: r!.url,
+              source: r!.source,
+              unsplash_attribution: r!.unsplashAttribution,
+            })),
             overlay: defaultOverlay,
             image_display: {
               position: "center",
@@ -267,6 +281,17 @@ export async function generateCarousel(formData: FormData): Promise<
           },
         });
       }
+    }
+  }
+
+  // When neither library images nor AI backgrounds: apply solid color (project primary) to all slides
+  const hasAnyImages = (parsed.data.background_asset_ids?.length ?? 0) > 0 || parsed.data.use_ai_backgrounds;
+  if (!hasAnyImages && createdSlides.length > 0) {
+    const primaryColor = brandKit?.primary_color?.trim() || "#0a0a0a";
+    const solidBg = { style: "solid" as const, color: primaryColor, gradientOn: true };
+    for (const slide of createdSlides) {
+      if (slidesWithAsset.has(slide.id)) continue;
+      await updateSlide(user.id, slide.id, { background: solidBg });
     }
   }
 

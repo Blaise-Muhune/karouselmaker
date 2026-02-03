@@ -20,7 +20,23 @@ import type { Slide, Template } from "@/lib/server/db/types";
 import { GripVerticalIcon, Images, PencilIcon } from "lucide-react";
 
 const PREVIEW_SCALE = 0.25;
-const PREVIEW_SIZE = 1080 * PREVIEW_SCALE;
+
+function getPreviewDimensions(exportSize: string): { w: number; h: number; scale: number; translateX: number; translateY: number } {
+  const dims = exportSize === "1080x1350"
+    ? { w: 1080, h: 1350 }
+    : exportSize === "1080x1920"
+      ? { w: 1080, h: 1920 }
+      : { w: 1080, h: 1080 };
+  const containerW = dims.w * PREVIEW_SCALE;
+  const containerH = dims.h * PREVIEW_SCALE;
+  const isPortrait = dims.h > dims.w;
+  const scale = isPortrait ? Math.max(containerW / 1080, containerH / 1080) : PREVIEW_SCALE;
+  const scaledW = 1080 * scale;
+  const scaledH = 1080 * scale;
+  const translateX = (containerW - scaledW) / 2;
+  const translateY = (containerH - scaledH) / 2;
+  return { w: containerW, h: containerH, scale, translateX, translateY };
+}
 
 export type TemplateWithConfig = Template & { parsedConfig: TemplateConfig };
 
@@ -31,6 +47,7 @@ type SlideGridProps = {
   projectId: string;
   carouselId: string;
   slideBackgroundImageUrls?: Record<string, string | string[]>;
+  exportSize?: "1080x1080" | "1080x1350" | "1080x1920";
 };
 
 function getTemplateConfig(
@@ -113,7 +130,9 @@ export function SlideGrid({
   projectId,
   carouselId,
   slideBackgroundImageUrls = {},
+  exportSize = "1080x1080",
 }: SlideGridProps) {
+  const previewDims = getPreviewDimensions(exportSize);
   const [isPending, startTransition] = useTransition();
   const [slidesOrder, setSlidesOrder] = useState<Slide[]>(slides);
   const [draggedId, setDraggedId] = useState<string | null>(null);
@@ -206,14 +225,14 @@ export function SlideGrid({
                     href={`/p/${projectId}/c/${carouselId}/s/${slide.id}`}
                     className="overflow-hidden rounded-lg border border-border bg-muted/30 text-left transition-colors hover:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/50 block"
                     style={{
-                      width: PREVIEW_SIZE,
-                      height: PREVIEW_SIZE,
+                      width: previewDims.w,
+                      height: previewDims.h,
                     }}
                   >
                     {templateConfig ? (
                       <div
                         style={{
-                          transform: `scale(${PREVIEW_SCALE})`,
+                          transform: `translate(${previewDims.translateX}px, ${previewDims.translateY}px) scale(${previewDims.scale})`,
                           transformOrigin: "top left",
                           width: 1080,
                           height: 1080,
@@ -240,7 +259,7 @@ export function SlideGrid({
                     ) : (
                       <div
                         className="flex h-full items-center justify-center text-muted-foreground text-sm"
-                        style={{ width: PREVIEW_SIZE, height: PREVIEW_SIZE }}
+                        style={{ width: previewDims.w, height: previewDims.h }}
                       >
                         No template
                       </div>

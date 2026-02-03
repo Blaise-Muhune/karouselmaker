@@ -13,6 +13,7 @@ export async function saveSlidePreset(payload: {
   template_id: string | null;
   overlay: Record<string, unknown>;
   show_counter: boolean;
+  show_watermark?: boolean;
   image_display?: Record<string, unknown> | null;
 }): Promise<SaveSlidePresetResult> {
   const { user } = await getUser();
@@ -27,6 +28,7 @@ export async function saveSlidePreset(payload: {
       template_id: payload.template_id,
       overlay: payload.overlay as Json,
       show_counter: payload.show_counter,
+      show_watermark: payload.show_watermark,
       image_display: payload.image_display ? (payload.image_display as Json) : null,
     });
     return { ok: true, id: preset.id };

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { SlidePreview, type SlideBackgroundOverride } from "@/components/renderer/SlidePreview";
@@ -24,7 +24,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { updateSlide } from "@/app/actions/slides/updateSlide";
-import { applyToAllSlides, applyOverlayToAllSlides, applyImageDisplayToAllSlides } from "@/app/actions/slides/applyToAllSlides";
+import { updateExportSettings } from "@/app/actions/carousels/updateExportFormat";
+import { applyToAllSlides, applyOverlayToAllSlides, applyImageDisplayToAllSlides, applyImageCountToAllSlides, applyFontSizeToAllSlides, clearTextFromSlides, type ApplyScope } from "@/app/actions/slides/applyToAllSlides";
 import { shortenToFit } from "@/app/actions/slides/shortenToFit";
 import { rewriteHook } from "@/app/actions/slides/rewriteHook";
 import { saveSlidePreset } from "@/app/actions/presets/saveSlidePreset";
@@ -35,19 +36,24 @@ import {
   ArrowLeftIcon,
   Bookmark,
   CheckIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
   CopyIcon,
+  DownloadIcon,
   HashIcon,
   ImageIcon,
   ImageOffIcon,
   InfoIcon,
   LayoutTemplateIcon,
   Loader2Icon,
+  MonitorIcon,
   PaletteIcon,
   ScissorsIcon,
   SparklesIcon,
   Trash2,
   Type,
   UploadIcon,
+  XIcon,
 } from "lucide-react";
 import { OVERLAY_PRESETS, PRESET_CUSTOM_ID, type OverlayPreset } from "@/lib/editor/overlayPresets";
 import { HIGHLIGHT_COLORS } from "@/lib/editor/inlineFormat";
@@ -96,9 +102,32 @@ export type SlideBackgroundState = SlideBackgroundOverride & {
   };
 };
 
-const PREVIEW_PX = 540;
-const PREVIEW_SCALE = PREVIEW_PX / 1080;
-const PREVIEW_SIZE = PREVIEW_PX;
+/** Max preview size (longest side) so it always fits on screen. Keeps mobile and desktop usable. */
+const PREVIEW_MAX = 380;
+
+/** Preview dimensions and scale. Always cover - image/content fills the frame. */
+function getPreviewDimensions(size: "1080x1080" | "1080x1350" | "1080x1920"): { w: number; h: number; scale: number; offsetX: number; offsetY: number } {
+  const exportW = 1080;
+  const exportH = size === "1080x1080" ? 1080 : size === "1080x1350" ? 1350 : 1920;
+  const aspect = exportW / exportH;
+  let w: number;
+  let h: number;
+  if (aspect >= 1) {
+    w = PREVIEW_MAX;
+    h = Math.round(PREVIEW_MAX / aspect);
+  } else {
+    h = PREVIEW_MAX;
+    w = Math.round(PREVIEW_MAX * aspect);
+  }
+  const scale = Math.max(w / 1080, h / 1080);
+  return {
+    w,
+    h,
+    scale,
+    offsetX: (w - 1080 * scale) / 2,
+    offsetY: (h - 1080 * scale) / 2,
+  };
+}
 
 const SECTION_INFO: Record<string, { title: string; body: string }> = {
   content: {
@@ -115,23 +144,38 @@ const SECTION_INFO: Record<string, { title: string; body: string }> = {
   },
   presets: {
     title: "Presets",
-    body: "Presets save the current template, gradient overlay, and position-number setting so you can reuse them. Choose Apply preset… to load a saved preset on this slide. All slides applies that preset to every slide in this carousel. Save stores the current template, overlay, and position-number setting as a new preset (you’ll name it in the dialog).",
+    body: "Presets save the current template, gradient overlay (color, opacity, direction), position-number, logo visibility, and image display settings so you can reuse them. Choose a preset to load it on this slide. Apply to all applies that preset to every slide in this carousel. Save stores the current settings as a new preset (you’ll name it in the dialog).",
   },
   preview: {
     title: "Preview",
-    body: "This shows how the slide will look when exported. It updates as you change content, template, background, and display options. On desktop it stays in view when you scroll; on mobile it appears above the form.",
+    body: "This shows how the slide will look when exported. Choose the export format (PNG or JPEG) and size (square, 4:5, or 9:16). Changes apply to all slides in this carousel. On desktop the preview stays in view when you scroll; on mobile it appears above the form.",
   },
 };
 
 export type TemplateWithConfig = Template & { parsedConfig: TemplateConfig };
 
+export type ExportFormat = "png" | "jpeg";
+export type ExportSize = "1080x1080" | "1080x1350" | "1080x1920";
+
+const EXPORT_SIZE_LABELS: Record<ExportSize, string> = {
+  "1080x1080": "1080×1080 (square)",
+  "1080x1350": "1080×1350 (4:5)",
+  "1080x1920": "1080×1920 (9:16)",
+};
+
 type SlideEditFormProps = {
   slide: Slide;
+  /** Ordered slides for prev/next navigation. */
+  slides?: Slide[];
   templates: TemplateWithConfig[];
   brandKit: BrandKit;
   totalSlides: number;
   backHref: string;
   editorPath: string;
+  carouselId: string;
+  /** Export format and size (apply to all slides). */
+  initialExportFormat?: ExportFormat | null;
+  initialExportSize?: ExportSize | null;
   initialBackgroundImageUrl?: string | null;
   /** Multiple images (2–4) for content slides: grid layout. */
   initialBackgroundImageUrls?: string[] | null;
@@ -157,11 +201,15 @@ function getTemplateConfig(
 
 export function SlideEditForm({
   slide,
+  slides: slidesList = [],
   templates,
   brandKit,
   totalSlides,
   backHref,
   editorPath,
+  carouselId,
+  initialExportFormat = "png",
+  initialExportSize = "1080x1080",
   initialBackgroundImageUrl,
   initialBackgroundImageUrls,
   initialImageSource,
@@ -177,11 +225,17 @@ export function SlideEditForm({
     const bg = slide.background as SlideBackgroundState | null;
     if (bg && (bg.mode === "image" || bg.style || bg.color != null)) {
       const base = { ...bg, style: bg.style ?? "solid", color: bg.color ?? brandKit.primary_color ?? "#0a0a0a", gradientOn: bg.gradientOn ?? true };
-      if (bg.overlay) base.overlay = { ...bg.overlay, darken: bg.overlay.darken ?? 0.5, color: bg.overlay.color ?? "#000000", textColor: bg.overlay.textColor ?? "#ffffff" };
+      if (bg.overlay) {
+        const defaultOverlayColor = brandKit.primary_color?.trim() || "#000000";
+        const defaultTextColor = brandKit.secondary_color?.trim() || "#ffffff";
+        base.overlay = { ...bg.overlay, darken: bg.overlay.darken ?? 0.5, color: bg.overlay.color ?? defaultOverlayColor, textColor: bg.overlay.textColor ?? defaultTextColor };
+      }
       if (bg.image_display) base.image_display = { ...bg.image_display };
       return base;
     }
-    return { style: "solid", color: brandKit.primary_color ?? "#0a0a0a", gradientOn: true, overlay: { gradient: true, darken: 0.5, color: "#000000", textColor: "#ffffff" } };
+    const defaultOverlayColor = brandKit.primary_color?.trim() || "#000000";
+    const defaultTextColor = brandKit.secondary_color?.trim() || "#ffffff";
+    return { style: "solid", color: brandKit.primary_color ?? "#0a0a0a", gradientOn: true, overlay: { gradient: true, darken: 0.5, color: defaultOverlayColor, textColor: defaultTextColor } };
   });
   const [imageDisplay, setImageDisplay] = useState<ImageDisplayState>(() => {
     const bg = slide.background as { image_display?: ImageDisplayState; images?: unknown[] } | null;
@@ -191,33 +245,57 @@ export function SlideEditForm({
     else if (ds === "double" || ds === "triple") d.dividerStyle = "scalloped";
     const hasMultiImages = (bg?.images?.length ?? 0) >= 2 || (initialBackgroundImageUrls?.length ?? 0) >= 2;
     if (Object.keys(d).length === 0 && hasMultiImages) {
-      return { position: "center", fit: "cover", frame: "none", frameRadius: 0, frameColor: "#ffffff", frameShape: "squircle", layout: "auto", gap: 8, dividerStyle: "wave", dividerColor: "#ffffff", dividerWidth: 8 };
+      const fc = brandKit.primary_color?.trim() || "#ffffff";
+      const dc = brandKit.secondary_color?.trim() || "#ffffff";
+      return { position: "center", fit: "cover", frame: "none", frameRadius: 16, frameColor: fc, frameShape: "squircle", layout: "auto", gap: 8, dividerStyle: "wave", dividerColor: dc, dividerWidth: 8 };
+    }
+    if (Object.keys(d).length === 0) {
+      const fc = brandKit.primary_color?.trim() || "#ffffff";
+      return { position: "center", fit: "cover", frame: "none", frameRadius: 16, frameColor: fc, frameShape: "squircle" };
     }
     return d;
   });
   const [backgroundImageUrlForPreview, setBackgroundImageUrlForPreview] = useState<string | null>(() => initialBackgroundImageUrl ?? null);
   const [secondaryBackgroundImageUrlForPreview, setSecondaryBackgroundImageUrlForPreview] = useState<string | null>(() => initialSecondaryBackgroundImageUrl ?? null);
-  const [imageUrls, setImageUrls] = useState<{ url: string; source?: "brave" | "unsplash" | "google" }[]>(() => {
-    const bg = slide.background as { asset_id?: string; image_url?: string; images?: { image_url?: string; source?: "brave" | "google" | "unsplash" }[] } | null;
+  type ImageUrlItem = { url: string; source?: "brave" | "unsplash" | "google"; unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string } };
+  const [imageUrls, setImageUrls] = useState<ImageUrlItem[]>(() => {
+    const bg = slide.background as { asset_id?: string; image_url?: string; image_source?: string; unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string }; images?: { image_url?: string; source?: "brave" | "google" | "unsplash"; unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string } }[] } | null;
     if (bg?.asset_id) return [{ url: "", source: undefined }];
     if (initialBackgroundImageUrls?.length) {
-      return initialBackgroundImageUrls.map((url, i) => ({
-        url,
-        source: initialImageSources?.[i],
-      }));
+      return initialBackgroundImageUrls.map((url, i): ImageUrlItem => {
+        const src = initialImageSources?.[i];
+        const source = src === "brave" || src === "unsplash" || src === "google" ? src : undefined;
+        return { url, source, unsplash_attribution: bg?.images?.[i]?.unsplash_attribution };
+      });
     }
     if (initialBackgroundImageUrl) {
-      return [{ url: initialBackgroundImageUrl, source: initialImageSource ?? undefined }];
+      const src = initialImageSource ?? undefined;
+      const source = src === "brave" || src === "unsplash" || src === "google" ? src : undefined;
+      return [{ url: initialBackgroundImageUrl, source, unsplash_attribution: bg?.unsplash_attribution }];
     }
     if (bg?.images?.length) {
-      return bg.images.map((img) => ({ url: img.image_url ?? "", source: img.source }));
+      return bg.images.map((img) => ({
+        url: img.image_url ?? "",
+        source: (img.source === "brave" || img.source === "unsplash" || img.source === "google" ? img.source : undefined) as ImageUrlItem["source"],
+        unsplash_attribution: img.unsplash_attribution,
+      }));
     }
-    if (bg?.image_url) return [{ url: bg.image_url, source: undefined }];
+    if (bg?.image_url) {
+      const src = bg.image_source;
+      const source = src === "brave" || src === "unsplash" || src === "google" ? src : undefined;
+      return [{ url: bg.image_url, source, unsplash_attribution: bg.unsplash_attribution }];
+    }
     return [{ url: "", source: undefined }];
   });
   const [showCounter, setShowCounter] = useState<boolean>(() => {
     const m = slide.meta as { show_counter?: boolean } | null;
     return m?.show_counter ?? false;
+  });
+  const defaultShowWatermark = slide.slide_index === 1 || slide.slide_index === 2 || slide.slide_index === totalSlides; // first, second, last = on; middle = off
+  const [showWatermark, setShowWatermark] = useState<boolean>(() => {
+    const m = slide.meta as { show_watermark?: boolean } | null;
+    if (m != null && typeof m.show_watermark === "boolean") return m.show_watermark;
+    return defaultShowWatermark;
   });
   const [headlineFontSize, setHeadlineFontSize] = useState<number | undefined>(() => {
     const m = slide.meta as { headline_font_size?: number } | null;
@@ -246,7 +324,10 @@ export function SlideEditForm({
   const [applyingOverlay, setApplyingOverlay] = useState(false);
   const [applyingDisplay, setApplyingDisplay] = useState(false);
   const [applyingImageDisplay, setApplyingImageDisplay] = useState(false);
+  const [applyingImageCount, setApplyingImageCount] = useState(false);
   const [applyingBackground, setApplyingBackground] = useState(false);
+  const [applyingFontSize, setApplyingFontSize] = useState(false);
+  const [applyingClear, setApplyingClear] = useState(false);
   const [hookVariants, setHookVariants] = useState<string[]>([]);
   const [savePresetOpen, setSavePresetOpen] = useState(false);
   const [presetName, setPresetName] = useState("");
@@ -254,10 +335,32 @@ export function SlideEditForm({
   const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
   const [applyingPresetToAll, setApplyingPresetToAll] = useState(false);
   const [infoSection, setInfoSection] = useState<string | null>(null);
+  const [includeFirstSlide, setIncludeFirstSlide] = useState(false);
+  const [includeLastSlide, setIncludeLastSlide] = useState(false);
+  const [exportFormat, setExportFormat] = useState<ExportFormat>(() =>
+    (initialExportFormat === "png" || initialExportFormat === "jpeg" ? initialExportFormat : "png") as ExportFormat
+  );
+  const [exportSize, setExportSize] = useState<ExportSize>(() =>
+    (initialExportSize && ["1080x1080", "1080x1350", "1080x1920"].includes(initialExportSize) ? initialExportSize : "1080x1080") as ExportSize
+  );
+  const [updatingExportSettings, setUpdatingExportSettings] = useState(false);
+  const [mobileBannerDismissed, setMobileBannerDismissed] = useState(false);
+  const [mobilePreviewOpen, setMobilePreviewOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 1023px)");
+    const handler = () => setIsMobile(mq.matches);
+    handler();
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
 
   const templateConfig = getTemplateConfig(templateId, templates);
   const isHook = slide.slide_type === "hook";
   const defaultHeadlineSize = templateConfig?.textZones?.find((z) => z.id === "headline")?.fontSize ?? 72;
+  const applyScope: ApplyScope = { includeFirstSlide, includeLastSlide };
   const defaultBodySize = templateConfig?.textZones?.find((z) => z.id === "body")?.fontSize ?? 48;
 
   const validImageCount = imageUrls.filter((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim())).length;
@@ -334,7 +437,7 @@ export function SlideEditForm({
     return Object.keys(payload).length > 0 ? payload : undefined;
   };
 
-  const handleSave = async () => {
+  const performSave = async (navigateBack = false) => {
     setSaving(true);
     const overlayPayload = background.overlay ?? { gradient: true, darken: 0.5, color: "#000000", textColor: "#ffffff" };
     const validUrls = imageUrls.filter((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim()));
@@ -357,6 +460,7 @@ export function SlideEditForm({
         meta: {
           ...(typeof slide.meta === "object" && slide.meta !== null ? (slide.meta as Record<string, unknown>) : {}),
           show_counter: showCounter,
+          show_watermark: showWatermark,
           ...(headlineFontSize != null && { headline_font_size: headlineFontSize }),
           ...(bodyFontSize != null && { body_font_size: bodyFontSize }),
           headline_highlight_style: headlineHighlightStyle,
@@ -366,8 +470,49 @@ export function SlideEditForm({
       editorPath
     );
     setSaving(false);
-    if (result.ok) {
+    if (result.ok && navigateBack) {
       router.push(backHref);
+    }
+    return result;
+  };
+
+  const handleSave = () => performSave(true);
+
+  const handleDownloadSlide = async () => {
+    setDownloading(true);
+    try {
+      const saveResult = await performSave(false);
+      if (!saveResult.ok) return;
+      const url = `/api/export/slide/${slide.id}?format=${exportFormat}&size=${exportSize}`;
+      const res = await fetch(url);
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = `slide-${slide.slide_index}.${exportFormat === "jpeg" ? "jpg" : "png"}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(objectUrl);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const currentSlideIndex = slidesList.findIndex((s) => s.id === slide.id);
+  const prevSlide = currentSlideIndex > 0 ? slidesList[currentSlideIndex - 1] : null;
+  const nextSlide = currentSlideIndex >= 0 && currentSlideIndex < slidesList.length - 1 ? slidesList[currentSlideIndex + 1] ?? null : null;
+  const projectId = backHref.split("/")[2];
+  const prevHref = prevSlide ? `/p/${projectId}/c/${carouselId}/s/${prevSlide.id}` : null;
+  const nextHref = nextSlide ? `/p/${projectId}/c/${carouselId}/s/${nextSlide.id}` : null;
+
+  const handlePrevNext = async (direction: "prev" | "next") => {
+    const targetHref = direction === "prev" ? prevHref : nextHref;
+    if (!targetHref) return;
+    const result = await performSave(false);
+    if (result.ok) {
+      router.push(targetHref);
     }
   };
 
@@ -396,9 +541,9 @@ export function SlideEditForm({
     const validUrls = imageUrls.filter((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim()));
     return background.mode === "image" || validUrls.length > 0
       ? validUrls.length >= 2
-        ? { mode: "image", images: validUrls.map((i) => ({ image_url: i.url, source: i.source })), fit: background.fit ?? "cover", overlay: overlayPayload }
+        ? { mode: "image", images: validUrls.map((i) => ({ image_url: i.url, source: i.source, unsplash_attribution: i.unsplash_attribution })), fit: background.fit ?? "cover", overlay: overlayPayload }
         : validUrls.length === 1
-          ? { mode: "image", image_url: validUrls[0]!.url, image_source: validUrls[0]!.source, fit: background.fit ?? "cover", overlay: overlayPayload }
+          ? { mode: "image", image_url: validUrls[0]!.url, image_source: validUrls[0]!.source, unsplash_attribution: validUrls[0]!.unsplash_attribution, fit: background.fit ?? "cover", overlay: overlayPayload }
           : {
               mode: "image",
               asset_id: background.asset_id,
@@ -415,7 +560,7 @@ export function SlideEditForm({
 
   const handleApplyTemplateToAll = async () => {
     setApplyingTemplate(true);
-    const result = await applyToAllSlides(slide.carousel_id, { template_id: templateId }, editorPath);
+    const result = await applyToAllSlides(slide.carousel_id, { template_id: templateId }, editorPath, applyScope);
     setApplyingTemplate(false);
     if (result.ok) router.refresh();
   };
@@ -423,7 +568,7 @@ export function SlideEditForm({
   const handleApplyOverlayToAll = async () => {
     setApplyingOverlay(true);
     const overlayPayload = background.overlay ?? { gradient: true, darken: 0.5, color: "#000000", textColor: "#ffffff" };
-    const result = await applyOverlayToAllSlides(slide.carousel_id, overlayPayload, editorPath);
+    const result = await applyOverlayToAllSlides(slide.carousel_id, overlayPayload, editorPath, applyScope);
     setApplyingOverlay(false);
     if (result.ok) router.refresh();
   };
@@ -431,7 +576,7 @@ export function SlideEditForm({
   const handleApplyBackgroundToAll = async () => {
     setApplyingBackground(true);
     const bgPayload = buildBackgroundPayload();
-    const result = await applyToAllSlides(slide.carousel_id, { background: bgPayload }, editorPath);
+    const result = await applyToAllSlides(slide.carousel_id, { background: bgPayload }, editorPath, applyScope);
     setApplyingBackground(false);
     if (result.ok) router.refresh();
   };
@@ -452,16 +597,82 @@ export function SlideEditForm({
       dividerColor: imageDisplay.dividerColor ?? "#ffffff",
       dividerWidth: imageDisplay.dividerWidth ?? 4,
     };
-    const result = await applyImageDisplayToAllSlides(slide.carousel_id, fullPayload, editorPath);
+    const result = await applyImageDisplayToAllSlides(slide.carousel_id, fullPayload, editorPath, applyScope);
     setApplyingImageDisplay(false);
+    if (result.ok) router.refresh();
+  };
+
+  const handleExportFormatChange = async (value: ExportFormat) => {
+    setExportFormat(value);
+    setUpdatingExportSettings(true);
+    const result = await updateExportSettings({ carousel_id: carouselId, export_format: value }, editorPath);
+    setUpdatingExportSettings(false);
+    if (result.ok) router.refresh();
+  };
+
+  const handleExportSizeChange = async (value: ExportSize) => {
+    setExportSize(value);
+    setUpdatingExportSettings(true);
+    const result = await updateExportSettings({ carousel_id: carouselId, export_size: value }, editorPath);
+    setUpdatingExportSettings(false);
+    if (result.ok) router.refresh();
+  };
+
+  const handleApplyImageCountToAll = async () => {
+    if (validImageCount < 1) return;
+    setApplyingImageCount(true);
+    const result = await applyImageCountToAllSlides(slide.carousel_id, validImageCount, editorPath, applyScope);
+    setApplyingImageCount(false);
     if (result.ok) router.refresh();
   };
 
   const handlePositionNumberChange = async (checked: boolean) => {
     setShowCounter(checked);
     setApplyingDisplay(true);
-    const result = await applyToAllSlides(slide.carousel_id, { meta: { show_counter: checked } }, editorPath);
+    const result = await applyToAllSlides(slide.carousel_id, { meta: { show_counter: checked } }, editorPath, applyScope);
     setApplyingDisplay(false);
+    if (result.ok) router.refresh();
+  };
+
+  const handleApplyHeadlineFontSizeToAll = async () => {
+    setApplyingFontSize(true);
+    const meta = { headline_font_size: headlineFontSize ?? defaultHeadlineSize };
+    const result = await applyFontSizeToAllSlides(slide.carousel_id, meta, editorPath, applyScope);
+    setApplyingFontSize(false);
+    if (result.ok) router.refresh();
+  };
+
+  const handleApplyBodyFontSizeToAll = async () => {
+    setApplyingFontSize(true);
+    const meta = { body_font_size: bodyFontSize ?? defaultBodySize };
+    const result = await applyFontSizeToAllSlides(slide.carousel_id, meta, editorPath, applyScope);
+    setApplyingFontSize(false);
+    if (result.ok) router.refresh();
+  };
+
+  const handleClearHeadline = async () => {
+    setHeadline("");
+    const result = await updateSlide({ slide_id: slide.id, headline: "" }, editorPath);
+    if (result.ok) router.refresh();
+  };
+
+  const handleClearBody = async () => {
+    setBody("");
+    const result = await updateSlide({ slide_id: slide.id, body: null }, editorPath);
+    if (result.ok) router.refresh();
+  };
+
+  const handleApplyClearHeadlineToAll = async () => {
+    setApplyingClear(true);
+    const result = await clearTextFromSlides(slide.carousel_id, slide.id, "headline", editorPath, applyScope);
+    setApplyingClear(false);
+    if (result.ok) router.refresh();
+  };
+
+  const handleApplyClearBodyToAll = async () => {
+    setApplyingClear(true);
+    const result = await clearTextFromSlides(slide.carousel_id, slide.id, "body", editorPath, applyScope);
+    setApplyingClear(false);
     if (result.ok) router.refresh();
   };
 
@@ -470,9 +681,16 @@ export function SlideEditForm({
   const applyPresetToForm = useCallback(
     (preset: SlidePreset) => {
       setTemplateId(preset.template_id ?? null);
-      const ov = preset.overlay as { gradient?: boolean; darken?: number; color?: string; textColor?: string } | null;
-      setBackground((b) => ({ ...b, overlay: ov ?? { gradient: true, darken: 0.5, color: "#000000", textColor: "#ffffff" } }));
+      const ov = preset.overlay as { gradient?: boolean; darken?: number; color?: string; textColor?: string; direction?: "top" | "bottom" | "left" | "right" } | null;
+      setBackground((b) => ({ ...b, overlay: ov ?? { gradient: true, darken: 0.5, color: "#000000", textColor: "#ffffff", direction: "bottom" } }));
       setShowCounter(preset.show_counter);
+      if (typeof preset.show_watermark === "boolean") {
+        setShowWatermark(preset.show_watermark);
+      }
+      const imgDisp = preset.image_display as ImageDisplayState | null | undefined;
+      if (imgDisp && typeof imgDisp === "object" && Object.keys(imgDisp).length > 0) {
+        setImageDisplay((d) => ({ ...d, ...imgDisp }));
+      }
     },
     []
   );
@@ -481,12 +699,14 @@ export function SlideEditForm({
     const preset = selectedPresetId ? presets.find((p) => p.id === selectedPresetId) : null;
     if (!preset) return;
     setApplyingPresetToAll(true);
-    const ov = preset.overlay as { gradient?: boolean; darken?: number; color?: string; textColor?: string };
-    await applyToAllSlides(slide.carousel_id, { template_id: preset.template_id, meta: { show_counter: preset.show_counter } }, editorPath);
-    await applyOverlayToAllSlides(slide.carousel_id, ov ?? { gradient: true, darken: 0.5, color: "#000000", textColor: "#ffffff" }, editorPath);
+    const ov = preset.overlay as { gradient?: boolean; darken?: number; color?: string; textColor?: string; direction?: "top" | "bottom" | "left" | "right" };
+    const meta: Record<string, unknown> = { show_counter: preset.show_counter };
+    if (typeof preset.show_watermark === "boolean") meta.show_watermark = preset.show_watermark;
+    await applyToAllSlides(slide.carousel_id, { template_id: preset.template_id, meta }, editorPath, applyScope);
+    await applyOverlayToAllSlides(slide.carousel_id, ov ?? { gradient: true, darken: 0.5, color: "#000000", textColor: "#ffffff", direction: "bottom" }, editorPath, applyScope);
     const imgDisp = preset.image_display as Record<string, unknown> | null | undefined;
     if (imgDisp && typeof imgDisp === "object" && Object.keys(imgDisp).length > 0) {
-      await applyImageDisplayToAllSlides(slide.carousel_id, imgDisp, editorPath);
+      await applyImageDisplayToAllSlides(slide.carousel_id, imgDisp, editorPath, applyScope);
     }
     setApplyingPresetToAll(false);
     router.refresh();
@@ -496,13 +716,14 @@ export function SlideEditForm({
     const name = presetName.trim();
     if (!name) return;
     setSavingPreset(true);
-    const overlayPayload = background.overlay ?? { gradient: true, darken: 0.5, color: "#000000", textColor: "#ffffff" };
+    const overlayPayload = background.overlay ?? { gradient: true, darken: 0.5, color: "#000000", textColor: "#ffffff", direction: "bottom" };
     const imageDisplayPayload = buildImageDisplayPayload();
     const result = await saveSlidePreset({
       name,
       template_id: templateId,
       overlay: overlayPayload,
       show_counter: showCounter,
+      show_watermark: showWatermark,
       image_display: imageDisplayPayload ?? null,
     });
     setSavingPreset(false);
@@ -575,7 +796,11 @@ export function SlideEditForm({
         : null;
   const previewBackgroundImageUrls =
     validImageUrls.length >= 2 ? validImageUrls.map((i) => i.url) : undefined;
-  const overlayDefaults = { gradientStrength: 0.5, gradientColor: "#000000", textColor: "#ffffff" };
+  const overlayDefaults = {
+    gradientStrength: 0.5,
+    gradientColor: brandKit.primary_color?.trim() || "#000000",
+    textColor: brandKit.secondary_color?.trim() || "#ffffff",
+  };
   const previewBackgroundOverride: SlideBackgroundOverride = isImageMode
     ? {
         gradientOn: background.overlay?.gradient ?? true,
@@ -716,18 +941,210 @@ export function SlideEditForm({
     </div>
   );
 
+  const previewContent = (
+    <div className="flex flex-col items-start rounded-xl border border-border/60 bg-card p-5 sm:p-6 shadow-sm">
+      <div className="flex items-center justify-between gap-2 mb-4 w-full">
+        <div className="flex items-center gap-2">
+          <h2 className="text-base font-semibold text-foreground">Preview</h2>
+          <button type="button" onClick={() => setInfoSection("preview")} className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors" aria-label="Help">
+            <InfoIcon className="size-4" />
+          </button>
+        </div>
+        {isMobile && (
+          <Button variant="ghost" size="icon" className="shrink-0 rounded-full h-8 w-8" onClick={() => setMobilePreviewOpen(false)} aria-label="Close preview">
+            <XIcon className="size-4" />
+          </Button>
+        )}
+      </div>
+      <p className="text-muted-foreground text-xs mb-3">
+        Export format and size apply to all slides in this carousel.
+      </p>
+      <div className="flex flex-wrap gap-3 mb-4 w-full">
+        <div className="flex-1 min-w-[120px]">
+          <Label className="text-xs text-muted-foreground mb-1.5 block">Format</Label>
+          <Select
+            value={exportFormat}
+            onValueChange={(v) => handleExportFormatChange(v as ExportFormat)}
+            disabled={updatingExportSettings}
+          >
+            <SelectTrigger className="h-9 rounded-lg text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="png">PNG</SelectItem>
+              <SelectItem value="jpeg">JPEG</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex-1 min-w-[140px]">
+          <Label className="text-xs text-muted-foreground mb-1.5 block">Size</Label>
+          <Select
+            value={exportSize}
+            onValueChange={(v) => handleExportSizeChange(v as ExportSize)}
+            disabled={updatingExportSettings}
+          >
+            <SelectTrigger className="h-9 rounded-lg text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="1080x1080">{EXPORT_SIZE_LABELS["1080x1080"]}</SelectItem>
+              <SelectItem value="1080x1350">{EXPORT_SIZE_LABELS["1080x1350"]}</SelectItem>
+              <SelectItem value="1080x1920">{EXPORT_SIZE_LABELS["1080x1920"]}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      <div
+        className="rounded-lg border border-border/80 shrink-0 max-w-full mx-auto"
+        style={{
+          width: getPreviewDimensions(exportSize).w,
+          height: getPreviewDimensions(exportSize).h,
+          overflow: "hidden",
+          position: "relative",
+          backgroundColor: isImageMode && background.overlay?.gradient !== false
+            ? (background.overlay?.color ?? "#000000")
+            : (background.color ?? brandKit.primary_color ?? "#0a0a0a"),
+        }}
+      >
+        {templateConfig ? (
+          <div
+            style={{
+              position: "absolute",
+              left: getPreviewDimensions(exportSize).offsetX,
+              top: getPreviewDimensions(exportSize).offsetY,
+              width: 1080,
+              height: 1080,
+              transform: `scale(${getPreviewDimensions(exportSize).scale})`,
+              transformOrigin: "top left",
+            }}
+          >
+            <SlidePreview
+              slide={{
+                headline,
+                body: body.trim() || null,
+                slide_index: slide.slide_index,
+                slide_type: slide.slide_type,
+              }}
+              templateConfig={templateConfig}
+              brandKit={brandKit}
+              totalSlides={totalSlides}
+              backgroundImageUrl={previewBackgroundImageUrl}
+              backgroundImageUrls={previewBackgroundImageUrls}
+              secondaryBackgroundImageUrl={secondaryBackgroundImageUrlForPreview ?? initialSecondaryBackgroundImageUrl}
+              backgroundOverride={previewBackgroundOverride}
+              showCounterOverride={showCounter}
+              showWatermarkOverride={showWatermark}
+              fontOverrides={
+                headlineFontSize != null || bodyFontSize != null
+                  ? { headline_font_size: headlineFontSize, body_font_size: bodyFontSize }
+                  : undefined
+              }
+              headlineHighlightStyle={headlineHighlightStyle}
+              bodyHighlightStyle={bodyHighlightStyle}
+              borderedFrame={!!(previewBackgroundImageUrl || previewBackgroundImageUrls?.length)}
+              imageDisplay={isImageMode ? effectiveImageDisplay : undefined}
+            />
+          </div>
+        ) : (
+          <div
+            className="flex h-full items-center justify-center text-muted-foreground text-sm"
+            style={{ width: getPreviewDimensions(exportSize).w, height: getPreviewDimensions(exportSize).h, overflow: "hidden" }}
+          >
+            No template
+          </div>
+        )}
+      </div>
+      {/* Preview controls: download, prev/next, save */}
+      <div className="flex flex-col gap-3 mt-4 w-full">
+        <div className="flex items-center justify-between gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-1 justify-center gap-2"
+            onClick={handleDownloadSlide}
+            disabled={downloading}
+            title={`Download slide as ${exportFormat.toUpperCase()} (${exportSize})`}
+          >
+            {downloading ? <Loader2Icon className="size-4 animate-spin" /> : <DownloadIcon className="size-4" />}
+            Download
+          </Button>
+          <Button
+            variant="default"
+            size="sm"
+            className="flex-1 justify-center gap-2"
+            onClick={() => performSave(false)}
+            disabled={saving}
+            title="Save slide changes"
+          >
+            {saving ? <Loader2Icon className="size-4 animate-spin" /> : <CheckIcon className="size-4" />}
+            Save
+          </Button>
+        </div>
+        {totalSlides > 1 && (
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1"
+              disabled={!prevHref}
+              onClick={() => handlePrevNext("prev")}
+              title="Previous slide (saves first)"
+            >
+              <ChevronLeftIcon className="size-4" />
+              Prev
+            </Button>
+            <span className="text-muted-foreground text-xs shrink-0 px-2">
+              {slide.slide_index} / {totalSlides}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1"
+              disabled={!nextHref}
+              onClick={() => handlePrevNext("next")}
+              title="Next slide (saves first)"
+            >
+              Next
+              <ChevronRightIcon className="size-4" />
+            </Button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <>
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <Button variant="ghost" size="icon-sm" asChild>
-          <Link href={backHref}>
-            <ArrowLeftIcon className="size-4" />
-            <span className="sr-only">Back</span>
+    <div className="space-y-8">
+      {isMobile && !mobileBannerDismissed && (
+        <div className="flex items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3">
+          <MonitorIcon className="size-5 shrink-0 text-amber-600 dark:text-amber-500" />
+          <p className="text-sm text-amber-800 dark:text-amber-200 flex-1">
+            For the best experience, we recommend using a computer to edit slides.
+          </p>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="shrink-0 h-8 w-8 rounded-full text-amber-600 hover:bg-amber-500/20 dark:text-amber-400"
+            onClick={() => setMobileBannerDismissed(true)}
+            aria-label="Dismiss"
+          >
+            <XIcon className="size-4" />
+          </Button>
+        </div>
+      )}
+      <header className="flex flex-wrap items-center gap-4">
+        <Button variant="ghost" size="icon" className="shrink-0 rounded-full" asChild>
+          <Link href={backHref} className="flex items-center justify-center">
+            <ArrowLeftIcon className="size-5" />
+            <span className="sr-only">Back to carousel</span>
           </Link>
         </Button>
-        <h1 className="text-xl font-semibold tracking-tight">Edit slide {slide.slide_index}</h1>
-      </div>
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Edit slide {slide.slide_index}</h1>
+          <p className="text-muted-foreground mt-0.5 text-sm">Slide {slide.slide_index} of {totalSlides}</p>
+        </div>
+      </header>
 
       <Dialog open={savePresetOpen} onOpenChange={setSavePresetOpen}>
         <DialogContent showCloseButton>
@@ -771,97 +1188,176 @@ export function SlideEditForm({
         </DialogContent>
       </Dialog>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* Form column: on mobile appears below preview (order-2); on lg, left (order-1) */}
-        <div className="flex flex-col gap-4 order-2 lg:order-1">
-          <section className="rounded-xl border border-border/60 bg-card p-4 shadow-sm" aria-label="Content">
-            <div className="flex items-center gap-2 mb-3">
-              <Type className="size-4 text-muted-foreground" />
-              <span className="text-sm font-medium text-foreground">Content</span>
-              <button type="button" onClick={() => setInfoSection("content")} className="rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Help">
-                <InfoIcon className="size-4" />
-              </button>
+      <div className="relative flex gap-0 lg:grid lg:grid-cols-2 lg:gap-12">
+        {/* Form column: full width on mobile, left column on lg */}
+        <div className="flex flex-col gap-6 flex-1 min-w-0 lg:order-1">
+          <section className="rounded-xl border border-border/60 bg-card p-5 sm:p-6 shadow-sm" aria-label="Content">
+            <div className="flex items-center justify-between gap-2 mb-4">
+              <div className="flex items-center gap-2">
+                <Type className="size-4 text-muted-foreground" />
+                <h2 className="text-base font-semibold text-foreground">Content</h2>
+                <button type="button" onClick={() => setInfoSection("content")} className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors" aria-label="Help">
+                  <InfoIcon className="size-4" />
+                </button>
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="headline" className="text-sm font-medium text-foreground flex items-center gap-1.5">
-                <Type className="size-3.5 text-muted-foreground" /> Headline
-              </Label>
+            {totalSlides >= 2 && (
+              <div className="flex flex-wrap items-center gap-4 mb-5 pb-4 border-b border-border/60 rounded-lg bg-muted/30 px-3 py-2.5">
+                <span className="text-muted-foreground text-xs font-medium uppercase tracking-wider">Apply to all scope</span>
+                <div className="flex flex-wrap items-center gap-4">
+                  <label className="flex cursor-pointer items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={includeFirstSlide}
+                      onChange={(e) => setIncludeFirstSlide(e.target.checked)}
+                      className="rounded border-input accent-primary"
+                    />
+                    Include first slide
+                  </label>
+                  <label className="flex cursor-pointer items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={includeLastSlide}
+                      onChange={(e) => setIncludeLastSlide(e.target.checked)}
+                      className="rounded border-input accent-primary"
+                    />
+                    Include last slide
+                  </label>
+                </div>
+              </div>
+            )}
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Label htmlFor="headline" className="text-sm font-medium text-foreground">
+                  Headline
+                </Label>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-foreground" onClick={handleClearHeadline} title="Clear headline text">
+                    <Trash2 className="size-3.5 mr-1" />
+                    Clear
+                  </Button>
+                  {totalSlides > 1 && (
+                    <>
+                      <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-foreground" onClick={handleApplyHeadlineFontSizeToAll} disabled={applyingFontSize} title="Apply headline font size to all slides">
+                        {applyingFontSize ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
+                        Apply size to all
+                      </Button>
+                      <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-foreground" onClick={handleApplyClearHeadlineToAll} disabled={applyingClear} title="Clear headline text on all other slides">
+                        {applyingClear ? <Loader2Icon className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+                        Apply clear to all
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
             <Textarea
               ref={headlineRef}
               id="headline"
               value={headline}
               onChange={(e) => setHeadline(e.target.value)}
-              placeholder="Headline"
-              className="min-h-[88px] resize-none rounded-lg border-input/80 text-base field-sizing-content"
+              placeholder="Enter your headline..."
+              className="min-h-[96px] resize-none rounded-lg border-input/80 text-base field-sizing-content px-3 py-2.5"
               rows={2}
             />
-            <div className="flex flex-wrap items-center gap-1.5 pt-1">
+            <div className="space-y-1.5">
+              <span className="text-muted-foreground text-xs font-medium">Highlight colors</span>
+              <div className="flex flex-wrap items-center gap-1.5">
               {Object.keys(HIGHLIGHT_COLORS).slice(0, 6).map((preset) => (
                 <button key={preset} type="button" onClick={() => insertHighlight(preset, "headline")} className="rounded px-1.5 py-0.5 text-xs font-medium capitalize hover:bg-muted" style={{ color: HIGHLIGHT_COLORS[preset] as string }} title={`{{${preset}}}`}>
                   {preset}
                 </button>
               ))}
               <button type="button" onClick={() => insertCloseHighlight("headline")} className="text-muted-foreground rounded px-1.5 py-0.5 text-xs hover:bg-muted" title="{{/}}">{"{{/}}"}</button>
+              </div>
             </div>
-            <div className="flex items-center gap-2 pt-1">
+            <div className="space-y-2 pt-1">
+              <span className="text-muted-foreground text-xs font-medium">Font size</span>
+              <div className="flex flex-wrap items-center gap-2">
               <input
                 type="range"
                 min={24}
                 max={160}
                 value={headlineFontSize ?? defaultHeadlineSize}
                 onChange={(e) => setHeadlineFontSize(Number(e.target.value))}
-                className="h-2 flex-1 cursor-pointer appearance-none rounded-full bg-muted accent-primary"
+                className="h-2 flex-1 min-w-0 cursor-pointer appearance-none rounded-full bg-muted accent-primary"
               />
               <span className="text-muted-foreground min-w-8 text-xs tabular-nums">{headlineFontSize ?? defaultHeadlineSize}px</span>
-              <Button type="button" variant={headlineHighlightStyle === "background" ? "secondary" : "ghost"} size="sm" className="h-7 text-xs" onClick={() => setHeadlineHighlightStyle((s) => (s === "text" ? "background" : "text"))} title={headlineHighlightStyle === "text" ? "Bg highlight" : "Text color"}>
+              <Button type="button" variant={headlineHighlightStyle === "background" ? "secondary" : "ghost"} size="sm" className="h-8 text-xs" onClick={() => setHeadlineHighlightStyle((s) => (s === "text" ? "background" : "text"))} title={headlineHighlightStyle === "text" ? "Bg highlight" : "Text color"}>
                 {headlineHighlightStyle === "text" ? "Text" : "Bg"}
               </Button>
+              </div>
             </div>
             </div>
-            <div className="border-t border-border/60 pt-4 mt-4 space-y-2">
-              <Label htmlFor="body" className="text-sm font-medium text-foreground">Body</Label>
+            <div className="border-t border-border/60 pt-6 mt-6 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Label htmlFor="body" className="text-sm font-medium text-foreground">Body</Label>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-foreground" onClick={handleClearBody} title="Clear body text">
+                    <Trash2 className="size-3.5 mr-1" />
+                    Clear
+                  </Button>
+                  {totalSlides > 1 && (
+                    <>
+                      <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-foreground" onClick={handleApplyBodyFontSizeToAll} disabled={applyingFontSize} title="Apply body font size to all slides">
+                        {applyingFontSize ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
+                        Apply size to all
+                      </Button>
+                      <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-foreground" onClick={handleApplyClearBodyToAll} disabled={applyingClear} title="Clear body text on all other slides">
+                        {applyingClear ? <Loader2Icon className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+                        Apply clear to all
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
             <Textarea
               ref={bodyRef}
               id="body"
               value={body}
               onChange={(e) => setBody(e.target.value)}
-              placeholder="Body"
-              className="min-h-[72px] resize-none rounded-lg border-input/80 text-base field-sizing-content"
+              placeholder="Optional body text..."
+              className="min-h-[80px] resize-none rounded-lg border-input/80 text-base field-sizing-content px-3 py-2.5"
               rows={2}
             />
-            <div className="flex flex-wrap items-center gap-1.5 pt-1">
+            <div className="space-y-1.5">
+              <span className="text-muted-foreground text-xs font-medium">Highlight colors</span>
+              <div className="flex flex-wrap items-center gap-1.5">
               {Object.keys(HIGHLIGHT_COLORS).slice(0, 6).map((preset) => (
                 <button key={preset} type="button" onClick={() => insertHighlight(preset, "body")} className="rounded px-1.5 py-0.5 text-xs font-medium capitalize hover:bg-muted" style={{ color: HIGHLIGHT_COLORS[preset] as string }} title={`{{${preset}}}`}>
                   {preset}
                 </button>
               ))}
               <button type="button" onClick={() => insertCloseHighlight("body")} className="text-muted-foreground rounded px-1.5 py-0.5 text-xs hover:bg-muted" title="{{/}}">{"{{/}}"}</button>
+              </div>
             </div>
-            <div className="flex items-center gap-2 pt-1">
+            <div className="space-y-2 pt-1">
+              <span className="text-muted-foreground text-xs font-medium">Font size</span>
+              <div className="flex flex-wrap items-center gap-2">
               <input
                 type="range"
                 min={18}
                 max={120}
                 value={bodyFontSize ?? defaultBodySize}
                 onChange={(e) => setBodyFontSize(Number(e.target.value))}
-                className="h-2 flex-1 cursor-pointer appearance-none rounded-full bg-muted accent-primary"
+                className="h-2 flex-1 min-w-0 cursor-pointer appearance-none rounded-full bg-muted accent-primary"
               />
               <span className="text-muted-foreground min-w-8 text-xs tabular-nums">{bodyFontSize ?? defaultBodySize}px</span>
-              <Button type="button" variant={bodyHighlightStyle === "background" ? "secondary" : "ghost"} size="sm" className="h-7 text-xs" onClick={() => setBodyHighlightStyle((s) => (s === "text" ? "background" : "text"))} title={bodyHighlightStyle === "text" ? "Bg highlight" : "Text color"}>
+              <Button type="button" variant={bodyHighlightStyle === "background" ? "secondary" : "ghost"} size="sm" className="h-8 text-xs" onClick={() => setBodyHighlightStyle((s) => (s === "text" ? "background" : "text"))} title={bodyHighlightStyle === "text" ? "Bg highlight" : "Text color"}>
                 {bodyHighlightStyle === "text" ? "Text" : "Bg"}
               </Button>
+              </div>
             </div>
             </div>
           </section>
           <section className="rounded-lg border border-border/50 bg-card/50 p-3 space-y-3" aria-label="Layout">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 mb-4">
               <LayoutTemplateIcon className="size-4 text-muted-foreground" aria-hidden />
-              <span className="text-sm font-medium text-foreground">Layout</span>
-              <button type="button" onClick={() => setInfoSection("layout")} className="rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Help">
+              <h2 className="text-base font-semibold text-foreground">Layout</h2>
+              <button type="button" onClick={() => setInfoSection("layout")} className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors" aria-label="Help">
                 <InfoIcon className="size-4" />
               </button>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-4">
               <Select value={templateId ?? ""} onValueChange={(v) => setTemplateId(v || null)}>
                 <SelectTrigger className="h-10 w-full rounded-lg border-input/80 bg-background text-sm">
                   <SelectValue placeholder="Template" />
@@ -879,6 +1375,12 @@ export function SlideEditForm({
                 {applyingDisplay ? <Loader2Icon className="size-4 animate-spin text-muted-foreground" /> : <HashIcon className="size-4 text-muted-foreground" />}
                 <span className="text-sm">Slide #</span>
               </label>
+              {brandKit.watermark_text && (
+                <label className="flex cursor-pointer items-center gap-2 py-2 text-sm hover:bg-muted/50 rounded-lg" title="Show logo/watermark on this slide. First, second, last = on by default; middle = off.">
+                  <input type="checkbox" checked={showWatermark} onChange={(e) => setShowWatermark(e.target.checked)} className="rounded border-input accent-primary" />
+                  <span className="text-sm">Logo</span>
+                </label>
+              )}
               {totalSlides > 1 && (
                 <Button type="button" variant="ghost" size="sm" className="text-muted-foreground" onClick={handleApplyTemplateToAll} disabled={applyingTemplate} title="Apply template to all">
                   {applyingTemplate ? <Loader2Icon className="size-4 animate-spin" /> : <CopyIcon className="size-4" />}
@@ -887,9 +1389,15 @@ export function SlideEditForm({
               )}
             </div>
           </section>
-          <section className="rounded-lg border border-border/50 bg-card/50 p-3 space-y-3" aria-label="Background">
-            <div className="flex items-center justify-between gap-2">
-              <Label className="text-sm font-medium text-foreground">Background</Label>
+          <section className="rounded-xl border border-border/60 bg-card p-5 sm:p-6 shadow-sm" aria-label="Background">
+            <div className="flex items-center justify-between gap-2 mb-4">
+              <div className="flex items-center gap-2">
+                <PaletteIcon className="size-4 text-muted-foreground" />
+                <h2 className="text-base font-semibold text-foreground">Background</h2>
+                <button type="button" onClick={() => setInfoSection("background")} className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors" aria-label="Help">
+                  <InfoIcon className="size-4" />
+                </button>
+              </div>
               <div className="flex items-center gap-1">
                 {!isImageMode && totalSlides > 1 && (
                   <Button
@@ -990,6 +1498,18 @@ export function SlideEditForm({
                     <a href="/assets" target="_blank" rel="noopener noreferrer">
                       <UploadIcon className="size-4" /> Upload
                     </a>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="rounded-lg h-9 text-muted-foreground hover:text-foreground text-xs"
+                    onClick={handleApplyImageCountToAll}
+                    disabled={applyingImageCount || validImageCount < 1 || totalSlides < 2}
+                    title={totalSlides < 2 ? "Need 2+ slides" : `Apply ${validImageCount} image${validImageCount === 1 ? "" : "s"} to all (reduces slides with more)`}
+                  >
+                    {applyingImageCount ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
+                    Apply {validImageCount} to all
                   </Button>
                 </div>
                 <div className="space-y-3 rounded-lg border border-border/40 bg-muted/20 p-3">
@@ -1369,11 +1889,11 @@ export function SlideEditForm({
             )}
             {overlaySection}
           </section>
-          <section className="rounded-lg border border-border/40 bg-muted/20 p-3" aria-label="Presets">
-            <div className="flex items-center gap-2 mb-2">
+          <section className="rounded-xl border border-border/60 bg-card p-5 sm:p-6 shadow-sm" aria-label="Presets">
+            <div className="flex items-center gap-2 mb-4">
               <Bookmark className="size-4 text-muted-foreground" />
-              <span className="text-muted-foreground text-xs font-medium">Presets</span>
-              <button type="button" onClick={() => setInfoSection("presets")} className="rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Help">
+              <h2 className="text-base font-semibold text-foreground">Presets</h2>
+              <button type="button" onClick={() => setInfoSection("presets")} className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors" aria-label="Help">
                 <InfoIcon className="size-4" />
               </button>
             </div>
@@ -1412,58 +1932,43 @@ export function SlideEditForm({
           <AssetPickerModal open={pickerOpen} onOpenChange={setPickerOpen} onPick={handlePickImage} />
         </div>
 
-        {/* Preview: on mobile first (order-1), on lg right column + sticky so it stays in view when scrolling */}
-        <div className="flex flex-col items-start order-1 lg:order-2 lg:sticky lg:top-4 lg:self-start lg:pt-1">
-          <div className="flex items-center gap-2 mb-2">
-            <Label className="text-sm text-muted-foreground flex items-center gap-2">
-              <LayoutTemplateIcon className="size-4" aria-hidden /> Preview
-            </Label>
-            <button type="button" onClick={() => setInfoSection("preview")} className="rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Help">
-              <InfoIcon className="size-4" />
-            </button>
-          </div>
-          <div
-            className="rounded-lg border border-border bg-muted/30 shrink-0"
-            style={{ width: PREVIEW_SIZE, height: PREVIEW_SIZE, overflow: "hidden" }}
+        {/* Preview: desktop = right column sticky; mobile = slide-out panel from right */}
+        {/* Mobile: reveal tab on right edge (hidden when panel is open) */}
+        {isMobile && !mobilePreviewOpen && (
+          <button
+            type="button"
+            onClick={() => setMobilePreviewOpen(true)}
+            className="fixed right-0 top-1/2 -translate-y-1/2 z-40 flex items-center justify-center w-10 h-16 rounded-l-lg border border-r-0 border-border/80 bg-card shadow-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+            aria-label="Show preview"
           >
-            {templateConfig ? (
-              <div style={{ width: 1080, height: 1080, zoom: PREVIEW_SCALE }}>
-                <SlidePreview
-                  slide={{
-                    headline,
-                    body: body.trim() || null,
-                    slide_index: slide.slide_index,
-                    slide_type: slide.slide_type,
-                  }}
-                  templateConfig={templateConfig}
-                  brandKit={brandKit}
-                  totalSlides={totalSlides}
-                  backgroundImageUrl={previewBackgroundImageUrl}
-                  backgroundImageUrls={previewBackgroundImageUrls}
-                  secondaryBackgroundImageUrl={secondaryBackgroundImageUrlForPreview ?? initialSecondaryBackgroundImageUrl}
-                  backgroundOverride={previewBackgroundOverride}
-                  showCounterOverride={showCounter}
-                  fontOverrides={
-                    headlineFontSize != null || bodyFontSize != null
-                      ? { headline_font_size: headlineFontSize, body_font_size: bodyFontSize }
-                      : undefined
-                  }
-                  headlineHighlightStyle={headlineHighlightStyle}
-                  bodyHighlightStyle={bodyHighlightStyle}
-                  borderedFrame={!!(previewBackgroundImageUrl || previewBackgroundImageUrls?.length)}
-                  imageDisplay={isImageMode ? effectiveImageDisplay : undefined}
-                />
+            <ChevronLeftIcon className="size-5" aria-hidden />
+          </button>
+        )}
+
+        {/* Mobile: slide-out overlay panel */}
+        {isMobile && (
+          <>
+            <div
+              className={`fixed inset-0 z-50 bg-black/40 transition-opacity duration-200 ${mobilePreviewOpen ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+              onClick={() => setMobilePreviewOpen(false)}
+              aria-hidden="true"
+            />
+            <div
+              className={`fixed right-0 top-0 bottom-0 z-50 w-[min(100vw,580px)] bg-background shadow-xl transition-transform duration-200 ease-out overflow-y-auto ${mobilePreviewOpen ? "translate-x-0" : "translate-x-full"}`}
+            >
+              <div className="p-4 pb-8">
+                {previewContent}
               </div>
-            ) : (
-              <div
-                className="flex h-full items-center justify-center text-muted-foreground text-sm"
-                style={{ width: PREVIEW_SIZE, height: PREVIEW_SIZE }}
-              >
-                No template
-              </div>
-            )}
+            </div>
+          </>
+        )}
+
+        {/* Desktop: always-visible right column */}
+        {!isMobile && (
+          <div className="lg:order-2 lg:sticky lg:top-6 lg:self-start">
+            {previewContent}
           </div>
-        </div>
+        )}
       </div>
 
       {hookVariants.length > 0 && (
@@ -1490,12 +1995,12 @@ export function SlideEditForm({
         </div>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-4 border-t border-border/80 pt-4">
+      <div className="flex flex-wrap items-center justify-between gap-4 border-t border-border/60 pt-6 mt-8 pb-4">
         <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
             size="sm"
-            className="h-9 w-9 p-0"
+            className="h-10 w-10 sm:h-9 sm:w-9 p-0"
             title="Shorten to fit"
             onClick={handleShortenToFit}
             disabled={shortening || !templateId}
@@ -1508,7 +2013,7 @@ export function SlideEditForm({
             </Button>
           )}
         </div>
-        <Button onClick={handleSave} disabled={saving} title="Save slide">
+        <Button onClick={handleSave} disabled={saving} title="Save slide" className="h-10 sm:h-9 min-w-[88px]">
           {saving ? <Loader2Icon className="size-4 animate-spin" /> : <CheckIcon className="size-4" />}
           Save
         </Button>

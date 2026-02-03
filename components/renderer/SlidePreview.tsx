@@ -55,6 +55,8 @@ export type SlidePreviewProps = {
   backgroundOverride?: SlideBackgroundOverride | null;
   /** Override template: show slide position number (e.g. "3 / 10"). Undefined = use template default. */
   showCounterOverride?: boolean;
+  /** Override template: show/hide watermark. Undefined = use template default (model.chrome.watermark.enabled). */
+  showWatermarkOverride?: boolean;
   /** Override font sizes per zone (headline_font_size, body_font_size in px). */
   fontOverrides?: FontSizeOverrides | null;
   /** Headline {{color}} style: "text" or "background" (highlighter). */
@@ -123,16 +125,12 @@ function getDividerSegments(
 ): DividerSegment[] {
   const segs: DividerSegment[] = [];
   if (useSideBySide && count >= 2) {
-    const cols = count;
-    const rows = 1;
-    for (let i = 0; i < cols - 1; i++) {
+    for (let i = 0; i < count - 1; i++) {
       const x = pad + (i + 1) * itemW + (i + 0.5) * gap - dividerWidth / 2;
       segs.push({ x, y: pad, w: dividerWidth, h: innerH, vertical: true });
     }
   } else if (useStacked && count >= 2) {
-    const cols = 1;
-    const rows = count;
-    for (let j = 0; j < rows - 1; j++) {
+    for (let j = 0; j < count - 1; j++) {
       const y = pad + (j + 1) * itemH + (j + 0.5) * gap - dividerWidth / 2;
       segs.push({ x: pad, y, w: innerW, h: dividerWidth, vertical: false });
     }
@@ -175,6 +173,7 @@ export function SlidePreview({
   secondaryBackgroundImageUrl,
   backgroundOverride,
   showCounterOverride,
+  showWatermarkOverride,
   fontOverrides,
   headlineHighlightStyle = "text",
   bodyHighlightStyle = "text",
@@ -617,7 +616,7 @@ export function SlidePreview({
       )}
 
       {/* Chrome: watermark */}
-      {model.chrome.watermark.enabled && model.chrome.watermark.text && (
+      {model.chrome.watermark.text && (showWatermarkOverride === undefined ? model.chrome.watermark.enabled : showWatermarkOverride) && (
         <div
           className="absolute"
           style={{

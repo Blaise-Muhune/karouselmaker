@@ -10,6 +10,8 @@ type PromptContext = {
   use_ai_backgrounds?: boolean;
   /** Creator's @handle for CTA slide (e.g. @username). Used in last slide follow call-to-action. */
   creator_handle?: string;
+  /** Optional notes/context for the AI (e.g. "focus on beginners", "avoid jargon"). */
+  notes?: string;
 };
 
 export function buildCarouselPrompts(ctx: PromptContext): {
@@ -37,10 +39,14 @@ Rules:
 ${ctx.do_rules ? `Do: ${ctx.do_rules}` : ""}
 ${ctx.dont_rules ? `Don't: ${ctx.dont_rules}` : ""}
 
-${ctx.use_ai_backgrounds ? `- For EVERY slide add unsplash_queries (array). PREFER 1 IMAGE when it can capture the slide. When 1 image for multiple people/entities: use a SHARED CONTEXT where they actually overlapped—a "sure bet" that such a photo exists. E.g. "Neymar and Messi at Barcelona" (teammates), "Riggs and Murtaugh Lethal Weapon" (same movie), "Steve Jobs and Wozniak Apple" (co-founders). For rivalries: use the rivalry name or match (e.g. "El Clasico Real Madrid Barcelona"). Never combine entities that never shared a real context. 2 images only when separate visuals are needed. HOOK and CTA slides: be SPECIFIC, not generic. E.g. "football rivalry" is ambiguous (American football vs soccer)—use "soccer rivalry" or "football soccer rivalry" when the topic is soccer. Disambiguate any term that could mean different things (basketball, cricket, etc.). Add "4k" or "high quality" to avoid clipart.` : ""}
+${ctx.use_ai_backgrounds ? `- For EVERY slide add unsplash_queries (array). DEFAULT: 1 IMAGE per slide. Use unsplash_queries with ONE string only unless the slide truly needs 2.
+  • 1 IMAGE: almost always. One query string, e.g. unsplash_queries: ["nature landscape peaceful"] or ["Lionel Messi 4k"].
+  • 2 IMAGES: only when the slide explicitly compares or contrasts two distinct things—e.g. "Player A vs Player B", "before vs after", "option 1 vs option 2". Then use 2 queries: ["Player A 4k", "Player B 4k"]. Do NOT use 2 images for single-concept slides.
+  • GENERIC slides (quotes, verses, motivation): one nature/landscape query—e.g. "peaceful nature landscape", "mountain sunrise", "calm ocean".
+  • SPECIFIC slides (celebrities, sports): one concrete query—e.g. "Lionel Messi 4k". For shared context (teammates, same movie): one query like "Neymar and Messi Barcelona". Add "4k" or "high quality" for specific queries.` : ""}
 
 Output format (JSON only). Bold = **word** (exactly two asterisks, never ***). Color = {{yellow}}word{{/}}. Example: {"slide_index":1,"slide_type":"hook","headline":"**One** habit that {{lime}}changes{{/}} everything","body":"Focus on **one** thing first. {{amber}}Simple.{{/}}"}
-{"title":"string","slides":[{"slide_index":1,"slide_type":"hook|point|context|cta|generic","headline":"string with **bold** or {{color}}highlight{{/}}","body":"string with formatting or omit"${ctx.use_ai_backgrounds ? ',"unsplash_queries":["phrase1","phrase2"]' : ""}}],"caption_variants":{"short":"string","medium":"string","spicy":"string"},"hashtags":["string"]}`;
+{"title":"string","slides":[{"slide_index":1,"slide_type":"hook|point|context|cta|generic","headline":"string with **bold** or {{color}}highlight{{/}}","body":"string with formatting or omit"${ctx.use_ai_backgrounds ? ',"unsplash_queries":["phrase"]' : ""}}],"caption_variants":{"short":"string","medium":"string","spicy":"string"},"hashtags":["string"]}`;
 
   const urlNote =
     ctx.input_type === "url"
@@ -55,14 +61,18 @@ Output format (JSON only). Bold = **word** (exactly two asterisks, never ***). C
     ? `\nCreator handle for CTA slide (use exactly in last slide headline; make the CTA clickbait and topic-relevant, not just "follow for more"): ${ctx.creator_handle.trim()}`
     : "";
 
+  const notesSection = ctx.notes?.trim()
+    ? `\nAdditional context / things to know before generating: ${ctx.notes.trim()}`
+    : "";
+
   const user = `${slideCountInstruction}
 Input type: ${ctx.input_type}.
 Input value:
 ${ctx.input_value}
-${urlNote}${creatorHandleNote}
+${urlNote}${creatorHandleNote}${notesSection}
 
 Required: In every slide, put at least one word in **bold** or in a color like {{yellow}}word{{/}} (or lime, orange, cyan, pink, etc.) in the headline and/or body. Every headline and body must contain at least one **bold** or {{color}}highlight{{/}}. Example headline: "**One** habit that {{lime}}changes{{/}} everything". Example body: "Focus on **one** thing first. {{amber}}Simple.{{/}}"
-${ctx.use_ai_backgrounds ? "CRITICAL: PREFER 1 IMAGE. HOOK and CTA slides: use a CONCRETE NAMED subject—famous player, stadium, landmark, or venue from the topic. E.g. football → 'Lionel Messi 4k' or 'Camp Nou Barcelona' or 'Wembley Stadium'—never 'football rivalry'. Pick something specific that guarantees the right image. Every slide must have unsplash_queries. Add '4k' or 'high quality'." : ""}
+${ctx.use_ai_backgrounds ? "CRITICAL: 1 IMAGE per slide unless comparing 2 things (e.g. vs, before/after). unsplash_queries: one string for most slides. Two strings ONLY when slide explicitly contrasts two subjects. For GENERIC: 'peaceful nature landscape', 'mountain sunrise'. For SPECIFIC: 'Lionel Messi 4k'. Add '4k' for specific queries." : ""}
 
 Respond with valid JSON only.`;
 
