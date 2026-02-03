@@ -1,0 +1,61 @@
+"use server";
+
+import { createClient } from "@/lib/supabase/server";
+import type { Template, TemplateInsert } from "./types";
+
+export async function listTemplatesForUser(
+  userId: string,
+  options: { includeSystem?: boolean } = {}
+): Promise<Template[]> {
+  const supabase = await createClient();
+  let q = supabase.from("templates").select("*").order("name", { ascending: true });
+
+  if (options.includeSystem) {
+    q = q.or(`user_id.eq.${userId},user_id.is.null`);
+  } else {
+    q = q.eq("user_id", userId);
+  }
+
+  const { data, error } = await q;
+  if (error) throw new Error(error.message);
+  const rows = (data ?? []) as Template[];
+  // Deduplicate by (user_id, name) — seed migration can run multiple times
+  const seen = new Set<string>();
+  return rows.filter((t) => {
+    const key = `${t.user_id ?? "null"}:${t.name}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+export async function getTemplate(
+  userId: string,
+  templateId: string
+): Promise<Template | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("templates")
+    .select("*")
+    .eq("id", templateId)
+    .or(`user_id.eq.${userId},user_id.is.null`)
+    .single();
+
+  if (error) {
+    if (error.code === "PGRST116") return null;
+    throw new Error(error.message);
+  }
+  return data as Template;
+}
+
+export async function createTemplate(
+  userId: string,
+  payload: TemplateInsert
+): Promise<Template> {
+  const supabase = await createClient();
+  const row = { ...payload, user_id: userId };
+  const { data, error } = await supabase.from("templates").insert(row).select().single();
+
+  if (error) throw new Error(error.message);
+  return data as Template;
+}

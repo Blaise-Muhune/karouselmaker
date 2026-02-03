@@ -1,0 +1,65 @@
+"use server";
+
+import { createClient } from "@/lib/supabase/server";
+import type { Project, ProjectInsert, ProjectUpdate } from "./types";
+
+export async function listProjects(userId: string): Promise<Project[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("projects")
+    .select("*")
+    .eq("user_id", userId)
+    .order("updated_at", { ascending: false });
+
+  if (error) throw new Error(error.message);
+  return (data ?? []) as Project[];
+}
+
+export async function getProject(
+  userId: string,
+  projectId: string
+): Promise<Project | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("projects")
+    .select("*")
+    .eq("id", projectId)
+    .eq("user_id", userId)
+    .single();
+
+  if (error) {
+    if (error.code === "PGRST116") return null;
+    throw new Error(error.message);
+  }
+  return data as Project;
+}
+
+export async function createProject(
+  userId: string,
+  payload: ProjectInsert
+): Promise<Project> {
+  const supabase = await createClient();
+  const row = { ...payload, user_id: userId };
+  const { data, error } = await supabase.from("projects").insert(row).select().single();
+
+  if (error) throw new Error(error.message);
+  return data as Project;
+}
+
+export async function updateProject(
+  userId: string,
+  projectId: string,
+  payload: ProjectUpdate
+): Promise<Project> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("projects")
+    .update({ ...payload, updated_at: new Date().toISOString() })
+    .eq("id", projectId)
+    .eq("user_id", userId)
+    .select()
+    .single();
+
+  if (error) throw new Error(error.message);
+  return data as Project;
+}

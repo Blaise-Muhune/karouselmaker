@@ -1,0 +1,58 @@
+---
+description: Carousel Creator SaaS rules
+alwaysApply: true
+---
+
+# Product
+AI-powered carousel generator organized by Projects.
+
+Users:
+Project → Input → AI slides → Templates render → Export.
+
+# Stack
+- Next.js App Router
+- TypeScript
+- Tailwind CSS
+- shadcn/ui
+- Supabase (Auth + DB + Storage)
+- pnpm
+
+Do not change stack.
+
+# Architecture
+Backend logic must be reusable by future mobile apps.
+
+Rules:
+- Business logic must live server-side.
+- Avoid UI-only logic.
+- Data access via server helpers.
+- Prepare for API exposure later.
+
+# Templates
+Templates are stored in database, not code.
+
+Template defines:
+- layout type
+- text zones
+- overlays
+- safe areas
+- fonts
+- default styles
+
+AI never designs templates.
+
+# AI output
+AI generates structured slide JSON.
+Slides validated before saving.
+
+# UI principles
+- Creator-first workflow
+- Fast generation
+- Minimal clicks
+- Editor must be quick, not complex
+
+# Coding rules
+- Strict TypeScript
+- No unnecessary dependencies
+- Reusable components
+- Incremental changes only

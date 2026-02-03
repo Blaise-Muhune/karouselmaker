@@ -1,0 +1,118 @@
+import { z } from "zod";
+
+export const gradientDirectionSchema = z.enum(["top", "bottom", "left", "right"]);
+export type GradientDirection = z.output<typeof gradientDirectionSchema>;
+
+export const slideBackgroundOverlaySchema = z.object({
+  gradient: z.boolean().optional(),
+  darken: z.number().min(0).max(1).optional(),
+  blur: z.number().min(0).max(1).optional(),
+  /** Gradient overlay color (hex). Default black when not set. */
+  color: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
+  /** Text color override (hex) when using image + overlay. */
+  textColor: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
+  /** Where the dark part of the gradient sits: top, bottom, left, right. */
+  direction: gradientDirectionSchema.optional(),
+});
+
+export const imagePositionSchema = z.enum([
+  "center", "top", "bottom", "left", "right",
+  "top-left", "top-right", "bottom-left", "bottom-right",
+]);
+export const imageFrameSchema = z.enum(["none", "thin", "medium", "thick", "chunky", "heavy"]);
+export const imageFrameShapeSchema = z.enum(["squircle", "circle", "diamond", "hexagon", "pill"]);
+export const imageLayoutSchema = z.enum(["auto", "side-by-side", "stacked", "grid", "overlay-circles"]);
+export const imageDividerSchema = z.enum(["gap", "line", "zigzag", "diagonal", "wave", "dashed", "scalloped"]);
+
+export const imageDisplaySchema = z.object({
+  /** Where the image is anchored (background-position). */
+  position: imagePositionSchema.optional(),
+  /** cover = fill, contain = fit inside. */
+  fit: z.enum(["cover", "contain"]).optional(),
+  /** Frame around image(s): none, thin (2px), medium (5px), thick (10px), chunky (16px), heavy (20px). */
+  frame: imageFrameSchema.optional(),
+  /** Shape of frame: squircle (rounded rect), circle, diamond, hexagon, pill. */
+  frameShape: imageFrameShapeSchema.optional(),
+  /** Border radius in px. 0–48. */
+  frameRadius: z.number().min(0).max(48).optional(),
+  /** Frame/border color (hex). */
+  frameColor: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
+  /** Multi-image only: side-by-side, stacked, or grid. */
+  layout: imageLayoutSchema.optional(),
+  /** Multi-image only: gap between images in px. 8–48. */
+  gap: z.number().min(8).max(48).optional(),
+  /** Multi-image only: how images are separated – gap, line, zigzag (jagged), diagonal (vs-style). */
+  dividerStyle: imageDividerSchema.optional(),
+  /** Color of divider line (for line/zigzag/diagonal). */
+  dividerColor: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
+  /** Width of divider line in px (2–32). */
+  dividerWidth: z.number().min(2).max(32).optional(),
+  /** Overlay-circles layout only: circle size in px (120–400). */
+  overlayCircleSize: z.number().min(120).max(400).optional(),
+  /** Overlay-circles layout only: border width in px (4–24). */
+  overlayCircleBorderWidth: z.number().min(4).max(24).optional(),
+  /** Overlay-circles layout only: border color (hex). */
+  overlayCircleBorderColor: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
+  /** Overlay-circles layout only: X position 0–100 (0=right, 100=left). */
+  overlayCircleX: z.number().min(0).max(100).optional(),
+  /** Overlay-circles layout only: Y position 0–100 (0=bottom, 100=top). */
+  overlayCircleY: z.number().min(0).max(100).optional(),
+}).optional();
+
+export const slideBackgroundSchema = z.object({
+  style: z.enum(["solid", "gradient"]).optional(),
+  color: z.string().optional(),
+  gradientOn: z.boolean().optional(),
+  mode: z.enum(["image"]).optional(),
+  asset_id: z.string().uuid().optional(),
+  storage_path: z.string().optional(),
+  /** User-pasted image URL (alternative to asset). */
+  image_url: z.string().url().optional(),
+  /** Source of AI-suggested single image: brave (primary) or unsplash (fallback). */
+  image_source: z.enum(["brave", "unsplash", "google"]).optional(),
+  /** Hook only: second image (circle) from library. */
+  secondary_asset_id: z.string().uuid().optional(),
+  secondary_storage_path: z.string().optional(),
+  /** Hook only: second image URL (pasted). */
+  secondary_image_url: z.string().url().optional(),
+  /** Multiple images per slide (2–4). Each: { image_url, source? } or { asset_id, storage_path }. */
+  images: z.array(z.object({
+    image_url: z.string().url().optional(),
+    asset_id: z.string().uuid().optional(),
+    storage_path: z.string().optional(),
+    /** Source: brave (primary) or unsplash (fallback). */
+    source: z.enum(["brave", "unsplash", "google"]).optional(),
+  })).max(4).optional(),
+  fit: z.enum(["cover", "contain"]).optional(),
+  /** Display options: position, frame, layout, gap. */
+  image_display: imageDisplaySchema.optional(),
+  overlay: slideBackgroundOverlaySchema.optional(),
+});
+
+/** How colored highlights render: "text" = colored text only, "background" = colored background + dark text. */
+export const highlightStyleSchema = z.enum(["text", "background"]);
+export type HighlightStyle = z.output<typeof highlightStyleSchema>;
+
+export const slideMetaSchema = z.object({
+  show_counter: z.boolean().optional(),
+  /** Override headline font size (px). 8–200. */
+  headline_font_size: z.number().int().min(8).max(200).optional(),
+  /** Override body font size (px). 8–200. */
+  body_font_size: z.number().int().min(8).max(200).optional(),
+  /** How headline {{color}} highlights render. */
+  headline_highlight_style: highlightStyleSchema.optional(),
+  /** How body {{color}} highlights render. */
+  body_highlight_style: highlightStyleSchema.optional(),
+});
+
+export const updateSlideInputSchema = z.object({
+  slide_id: z.string().uuid(),
+  headline: z.string().min(1).max(500).optional(),
+  body: z.string().max(2000).nullable().optional(),
+  template_id: z.string().uuid().nullable().optional(),
+  background: slideBackgroundSchema.optional(),
+  meta: slideMetaSchema.optional(),
+});
+
+export type SlideBackgroundInput = z.output<typeof slideBackgroundSchema>;
+export type UpdateSlideInput = z.output<typeof updateSlideInputSchema>;

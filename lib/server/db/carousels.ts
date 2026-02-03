@@ -1,0 +1,91 @@
+"use server";
+
+import { createClient } from "@/lib/supabase/server";
+import type { Carousel } from "./types";
+
+export async function createCarousel(
+  userId: string,
+  projectId: string,
+  inputType: string,
+  inputValue: string,
+  title: string
+): Promise<Carousel> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("carousels")
+    .insert({
+      user_id: userId,
+      project_id: projectId,
+      title,
+      input_type: inputType,
+      input_value: inputValue,
+      status: "draft",
+    })
+    .select()
+    .single();
+
+  if (error) throw new Error(error.message);
+  return data as Carousel;
+}
+
+export async function getCarousel(
+  userId: string,
+  carouselId: string
+): Promise<Carousel | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("carousels")
+    .select("*")
+    .eq("id", carouselId)
+    .eq("user_id", userId)
+    .single();
+
+  if (error) {
+    if (error.code === "PGRST116") return null;
+    throw new Error(error.message);
+  }
+  return data as Carousel;
+}
+
+export async function listCarousels(
+  userId: string,
+  projectId: string
+): Promise<Carousel[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("carousels")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("project_id", projectId)
+    .order("created_at", { ascending: false });
+
+  if (error) throw new Error(error.message);
+  return (data ?? []) as Carousel[];
+}
+
+export async function updateCarousel(
+  userId: string,
+  carouselId: string,
+  patch: {
+    title?: string;
+    status?: string;
+    caption_variants?: Record<string, unknown>;
+    hashtags?: string[];
+  }
+): Promise<Carousel> {
+  const supabase = await createClient();
+  const updates: Record<string, unknown> = {
+    ...patch,
+    updated_at: new Date().toISOString(),
+  };
+  const { data, error } = await supabase
+    .from("carousels")
+    .update(updates)
+    .eq("id", carouselId)
+    .eq("user_id", userId)
+    .select()
+    .single();
+
+  if (error) throw new Error(error.message);
+  return data as Carousel;
+}
