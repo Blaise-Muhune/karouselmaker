@@ -16,6 +16,11 @@ export const generateCarouselInputSchema = z.object({
     .string()
     .optional()
     .transform((v) => v === "true" || v === "1"),
+  /** When true, model can use web search for current info (URLs, recent topics). Uses Responses API with gpt-5-mini. */
+  use_web_search: z
+    .string()
+    .optional()
+    .transform((v) => v === "true" || v === "1"),
   /** Optional notes or context for the AI before generating (e.g. "focus on beginners", "avoid jargon"). */
   notes: z.string().max(2000).optional(),
 });

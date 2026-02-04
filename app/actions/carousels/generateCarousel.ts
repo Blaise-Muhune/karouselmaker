@@ -74,6 +74,7 @@ export async function generateCarousel(formData: FormData): Promise<
       }
     })(),
     use_ai_backgrounds: formData.get("use_ai_backgrounds") ?? undefined,
+    use_web_search: formData.get("use_web_search") ?? undefined,
     notes: ((formData.get("notes") as string | null) ?? "").trim() || undefined,
   };
 
@@ -129,6 +130,7 @@ export async function generateCarousel(formData: FormData): Promise<
     input_type: data.input_type as "topic" | "url" | "text",
     input_value: data.input_value,
     use_ai_backgrounds: data.use_ai_backgrounds ?? false,
+    use_web_search: data.use_web_search ?? false,
     creator_handle: creatorHandle,
     project_niche: project.niche?.trim() || undefined,
     notes: data.notes,
@@ -138,23 +140,40 @@ export async function generateCarousel(formData: FormData): Promise<
   let lastError = "";
   let validated: CarouselOutput | null = null;
 
+  const useWebSearch = data.use_web_search ?? false;
+
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     const prompts =
       attempt === 0
-        ? buildCarouselPrompts(ctx)
+        ? buildCarouselPrompts({ ...ctx, use_web_search: useWebSearch })
         : buildValidationRetryPrompt(lastRaw, lastError);
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: prompts.system },
-        { role: "user", content: prompts.user },
-      ],
-      response_format: { type: "json_object" },
-    });
+    let content: string;
 
-    const content = completion.choices[0]?.message?.content;
-    if (!content) {
+    if (useWebSearch && attempt === 0) {
+      // Responses API: gpt-5-mini + web_search. JSON mode not supported with web_search, so we omit it and rely on prompt.
+      const response = await openai.responses.create({
+        model: "gpt-5-mini",
+        instructions: prompts.system,
+        input: prompts.user,
+        tools: [{ type: "web_search" as const }],
+        tool_choice: "auto",
+      });
+      content = response.output_text ?? "";
+    } else {
+      // Chat Completions with JSON mode (no web search, or retries)
+      const completion = await openai.chat.completions.create({
+        model: "gpt-5-mini",
+        messages: [
+          { role: "system", content: prompts.system },
+          { role: "user", content: prompts.user },
+        ],
+        response_format: { type: "json_object" },
+      });
+      content = completion.choices[0]?.message?.content ?? "";
+    }
+
+    if (!content?.trim()) {
       return { error: "No response from AI" };
     }
 
@@ -185,7 +204,7 @@ export async function generateCarousel(formData: FormData): Promise<
       validated = {
         ...validated,
         slides: validated.slides.map((s) =>
-          s.slide_index === lastSlide.slide_index ? { ...s, headline: `**Follow** ${handle} for more` } : s
+          s.slide_index === lastSlide.slide_index ? { ...s, headline: `Follow ${handle} for more` } : s
         ),
       };
     }

@@ -16,7 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { BackgroundImagesPickerModal } from "@/components/carousels/BackgroundImagesPickerModal";
-import { ArrowLeftIcon, ImageIcon, Loader2Icon, SparklesIcon } from "lucide-react";
+import { ArrowLeftIcon, GlobeIcon, ImageIcon, Loader2Icon, SparklesIcon } from "lucide-react";
 
 const INPUT_TYPES = [
   { value: "topic", label: "Topic" },
@@ -40,6 +40,7 @@ export function NewCarouselForm({ projectId }: { projectId: string }) {
   const [numberOfSlides, setNumberOfSlides] = useState<string>("");
   const [backgroundAssetIds, setBackgroundAssetIds] = useState<string[]>([]);
   const [useAiBackgrounds, setUseAiBackgrounds] = useState(false);
+  const [useWebSearch, setUseWebSearch] = useState(false);
   const [notes, setNotes] = useState("");
   const [backgroundPickerOpen, setBackgroundPickerOpen] = useState(false);
   const [isPending, setIsPending] = useState(false);
@@ -79,6 +80,7 @@ export function NewCarouselForm({ projectId }: { projectId: string }) {
       }
       if (backgroundAssetIds.length) formData.set("background_asset_ids", JSON.stringify(backgroundAssetIds));
       if (useAiBackgrounds) formData.set("use_ai_backgrounds", "true");
+      if (useWebSearch) formData.set("use_web_search", "true");
       if (notes.trim()) formData.set("notes", notes.trim());
       const result = await generateCarousel(formData);
       if ("error" in result) {
@@ -211,7 +213,7 @@ export function NewCarouselForm({ projectId }: { projectId: string }) {
           <Label htmlFor="notes">Anything we should know before generating? (optional)</Label>
           <Textarea
             id="notes"
-            placeholder="e.g. Focus on beginners, avoid jargon, emphasize X, skip Y..."
+            placeholder="e.g. Use 2 images per slide, use images.nasa.gov, focus on beginners… (overrides other rules)"
             className="min-h-20"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
@@ -234,6 +236,16 @@ export function NewCarouselForm({ projectId }: { projectId: string }) {
             />
             <SparklesIcon className="size-4 text-muted-foreground" />
             <span>Let AI suggest background images (Unsplash)</span>
+          </label>
+          <label className="flex cursor-pointer items-center gap-3 rounded-lg py-2 text-sm hover:bg-muted/50">
+            <input
+              type="checkbox"
+              checked={useWebSearch}
+              onChange={(e) => setUseWebSearch(e.target.checked)}
+              className="rounded border-input accent-primary"
+            />
+            <GlobeIcon className="size-4 text-muted-foreground" />
+            <span>Use web search for current info (URLs, recent topics)</span>
           </label>
           <div className="flex flex-wrap items-center gap-2">
             <Button

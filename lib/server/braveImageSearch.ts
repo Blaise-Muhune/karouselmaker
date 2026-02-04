@@ -22,7 +22,7 @@ export async function searchBraveImage(
 
   // Append quality + orientation: professional photography, portrait/vertical for carousel
   const baseQuery = query.trim().slice(0, 55);
-  const hasQualityTerms = /4k|high res|resolution|professional|photography|portrait|vertical/i.test(baseQuery);
+  const hasQualityTerms = /high res|resolution|professional|photography|portrait|vertical/i.test(baseQuery);
   const enhancedQuery = hasQualityTerms
     ? baseQuery
     : `${baseQuery} high resolution`;
@@ -54,7 +54,7 @@ export async function searchBraveImage(
 
   const results = data.results ?? [];
   const skipPattern = /\.gif(\?|$)|giphy|tenor|clipart|\.svg(\?|$)/i;
-  const skipDomains = /pinterest|pinimg|tumblr|imgur|reddit|redd\.it|wikipedia|wikimedia|wallpapers|wallpaperaccess|alphacoders|quora|wallpapercave|blogspot|blogger|etsy|amazonaws|ebay|ebayimg|amazon\.com|knowyourmeme|deviantart|flickr/i;
+  const skipDomains = /pinimg|tumblr|imgur|reddit|redd\.it|wikipedia|wikimedia|wallpapers|wallpaperaccess|sftcdn|alphacoders|quora|wallpapercave|blogspot|blogger|etsy|amazonaws|ebay|ebayimg|amazon\.com|knowyourmeme|deviantart|flickr/i;
 
   for (const item of results) {
     const imageUrl = item.properties?.url ?? item.url ?? item.thumbnail?.src;

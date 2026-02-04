@@ -12,6 +12,8 @@ type PromptContext = {
   creator_handle?: string;
   /** Project niche (e.g. productivity, fitness, marketing). Used to make CTA relevant and conversion-focused. */
   project_niche?: string;
+  /** When true, model has web search—use it for URLs, recent info, time-sensitive topics. */
+  use_web_search?: boolean;
   /** Optional notes/context for the AI (e.g. "focus on beginners", "avoid jargon"). */
   notes?: string;
 };
@@ -25,19 +27,16 @@ Output STRICT JSON only. No markdown, no code fences, no explanation.
 
 Rules:
 - Short lines. No filler. No complex sentences.
-- Headlines: max 120 chars, punchy. Body: max 300 chars per slide, optional.
+- Headlines: max 120 chars, punchy. Body: default short (under 300 chars). Use up to 600 chars only when needed—e.g. quotes, full explanations, step-by-step, lists. Most slides stay brief.
 - Minimal punctuation.
 - slide_index starts at 1 and increments.
 - slide_type must be exactly one of: hook, point, context, cta, generic.
 - The FIRST slide must ALWAYS be slide_type "hook"—an intro that hooks visually and textually. Punchy headline, compelling image. Never skip the hook.
 - For list-style topics (top X, best X, ranking): hook first, then order content from least to best. E.g. "top 10 duos" → slide 1 = hook, slide 2 = #10, ..., last content = #1.
 - If the carousel has 6+ slides, the last slide must be slide_type "cta".
-- For the last slide (slide_type "cta"): the headline MUST be an innovative, high-converting follow call-to-action. Be creative—not generic "follow for more". Tie it to BOTH the carousel topic AND the project niche. Use urgency, exclusivity, or value. Examples: "You won't find us again—unless you **follow** @handle", "This is the last **productivity** tip you'll need → @handle", "We drop **fitness** breakdowns like this daily. @handle", "**Follow** @handle—we don't post this anywhere else", "Save this. Then **follow** @handle for more [topic]". Use creator_handle exactly if provided. Make it feel unique to the content and niche.
+- For the last slide (slide_type "cta"): the headline MUST be an innovative, high-converting follow call-to-action. Be creative—not generic "follow for more". Tie it to BOTH the carousel topic AND the project niche. Use urgency, exclusivity, or value. Examples: "You won't find us again—unless you follow @handle", "This is the last productivity tip you'll need → @handle", "We drop fitness breakdowns like this daily. @handle", "Follow @handle—we don't post this anywhere else", "Save this. Then follow @handle for more [topic]". Use creator_handle exactly if provided. Make it feel unique to the content and niche.
 - Tone for this project: ${ctx.tone_preset}.
-- FORMATTING (required): Every slide MUST include at least one formatted word so it stands out.
-  • Bold: use exactly ** (two asterisks), not ***. Wrap the word: **like this** → e.g. "**One** habit changes everything".
-  • Color highlight: wrap the word in {{color}}word{{/}} → e.g. {{yellow}}game-changer{{/}} or {{lime}}simple{{/}}. Presets: yellow, amber, orange, lime, green, cyan, sky, pink, rose, white.
-  Use bold and/or color in the headline and/or body. Prefer one strong word per line (e.g. **this** or {{yellow}}this{{/}}). Never leave headline or body without at least one formatted word per slide. Every headline and every body string must contain at least one **word** or {{color}}word{{/}}.
+- Do NOT use **bold** or {{color}} formatting. Output plain text only. The user will add formatting when editing.
 ${ctx.do_rules ? `Do: ${ctx.do_rules}` : ""}
 ${ctx.dont_rules ? `Don't: ${ctx.dont_rules}` : ""}
 
@@ -48,13 +47,17 @@ ${ctx.use_ai_backgrounds ? `- For EVERY slide add unsplash_queries (array). DEFA
   • SPECIFIC slides (celebrities, sports): one concrete query—e.g. "Lionel Messi 4k". For shared context (teammates, same movie): one query like "Neymar and Messi Barcelona". Add "4k" or "high quality" for specific queries.
   • CTA slides: use a topic-related image that fits the carousel's subject and project niche—e.g. "productivity workspace", "fitness motivation", "marketing strategy". Not generic landscape.` : ""}
 
-Output format (JSON only). Bold = **word** (exactly two asterisks, never ***). Color = {{yellow}}word{{/}}. Example: {"slide_index":1,"slide_type":"hook","headline":"**One** habit that {{lime}}changes{{/}} everything","body":"Focus on **one** thing first. {{amber}}Simple.{{/}}"}
-{"title":"string","slides":[{"slide_index":1,"slide_type":"hook|point|context|cta|generic","headline":"string with **bold** or {{color}}highlight{{/}}","body":"string with formatting or omit"${ctx.use_ai_backgrounds ? ',"unsplash_queries":["phrase"]' : ""}}],"caption_variants":{"short":"string","medium":"string","spicy":"string"},"hashtags":["string"]}`;
+Output format (JSON only). Plain text only—no ** or {{color}} formatting. Example: {"slide_index":1,"slide_type":"hook","headline":"One habit that changes everything","body":"Focus on one thing first. Simple."}
+{"title":"string","slides":[{"slide_index":1,"slide_type":"hook|point|context|cta|generic","headline":"string","body":"string or omit"${ctx.use_ai_backgrounds ? ',"unsplash_queries":["phrase"]' : ""}}],"caption_variants":{"short":"string","medium":"string","spicy":"string"},"hashtags":["string"]}`;
 
   const urlNote =
     ctx.input_type === "url"
-      ? " Note: URL fetching is not implemented yet. Treat the URL as topic text; do not hallucinate quotes or content from the page."
-      : "";
+      ? ctx.use_web_search
+        ? " Use web search to fetch and summarize the URL content. Create a carousel based on what you find."
+        : " Note: URL fetching is not implemented yet. Treat the URL as topic text; do not hallucinate quotes or content from the page."
+      : ctx.use_web_search
+        ? " You have web search. Use it for time-sensitive topics (e.g. 2025 releases, recent events) to ensure accurate, current info."
+        : "";
 
   const slideCountInstruction = ctx.number_of_slides != null
     ? `Generate a carousel with exactly ${ctx.number_of_slides} slides.`
@@ -69,7 +72,7 @@ Output format (JSON only). Bold = **word** (exactly two asterisks, never ***). C
     : "";
 
   const notesSection = ctx.notes?.trim()
-    ? `\nAdditional context / things to know before generating: ${ctx.notes.trim()}`
+    ? `\nOVERRIDE (priority over all rules above—follow these if they contradict anything): ${ctx.notes.trim()}`
     : "";
 
   const user = `${slideCountInstruction}
@@ -78,10 +81,9 @@ Input value:
 ${ctx.input_value}
 ${urlNote}${creatorHandleNote}${projectNicheNote}${notesSection}
 
-Required: In every slide, put at least one word in **bold** or in a color like {{yellow}}word{{/}} (or lime, orange, cyan, pink, etc.) in the headline and/or body. Every headline and body must contain at least one **bold** or {{color}}highlight{{/}}. Example headline: "**One** habit that {{lime}}changes{{/}} everything". Example body: "Focus on **one** thing first. {{amber}}Simple.{{/}}"
 ${ctx.use_ai_backgrounds ? "CRITICAL: 1 IMAGE per slide unless comparing 2 things (e.g. vs, before/after). unsplash_queries: one string for most slides. Two strings ONLY when slide explicitly contrasts two subjects. For GENERIC: 'peaceful nature landscape', 'mountain sunrise'. For SPECIFIC: 'Lionel Messi 4k'. Add '4k' for specific queries." : ""}
 
-Respond with valid JSON only.`;
+${ctx.use_web_search ? "CRITICAL: After any web search, your response must be ONLY the raw JSON object. No markdown, no code fences, no text before or after. Start with { and end with }." : "Respond with valid JSON only."}`;
 
   return { system, user };
 }
@@ -119,7 +121,7 @@ export function buildValidationRetryPrompt(
 ): { system: string; user: string } {
   const system = `You are a carousel script writer. You must output STRICT JSON that validates against this schema.
 Previous attempt had validation errors. Fix them and output valid JSON only. No markdown, no explanation.
-Keep **bold** and {{color}}word{{/}} formatting in headline and body (e.g. {{yellow}}, {{lime}}, {{orange}}).`;
+Use plain text only—no ** or {{color}} formatting.`;
 
   const user = `Your previous output:
 ${raw}
@@ -127,7 +129,7 @@ ${raw}
 Validation errors:
 ${errors}
 
-Respond with corrected JSON only. Preserve ** (two asterisks for bold, never ***) and {{ }} formatting in headline and body.`;
+Respond with corrected JSON only. Plain text in headline and body.`;
 
   return { system, user };
 }

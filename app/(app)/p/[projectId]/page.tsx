@@ -44,6 +44,40 @@ export default async function ProjectDashboardPage({
           </Button>
         </div>
 
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Carousels</CardTitle>
+            <CardDescription>
+              Generate carousels from a topic, URL, or pasted text.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Button asChild>
+              <Link href={`/p/${projectId}/new`}>
+                <PlusCircleIcon className="mr-2 size-4" />
+                New carousel
+              </Link>
+            </Button>
+            {recentCarousels.length > 0 && (
+              <ul className="space-y-2">
+                {recentCarousels.map((c) => (
+                  <li key={c.id}>
+                    <Link
+                      href={`/p/${projectId}/c/${c.id}`}
+                      className="hover:bg-accent/50 border-border flex items-center justify-between rounded-lg border p-3 transition-colors"
+                    >
+                      <span className="font-medium">{c.title}</span>
+                      <span className="text-muted-foreground text-sm">
+                        {c.status} · {new Date(c.created_at).toLocaleDateString()}
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+
         <div className="grid gap-4 md:grid-cols-2">
           <Card>
             <CardHeader>
@@ -98,40 +132,6 @@ export default async function ProjectDashboardPage({
             </CardHeader>
           </Card>
         )}
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Carousels</CardTitle>
-            <CardDescription>
-              Generate carousels from a topic, URL, or pasted text.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Button asChild>
-              <Link href={`/p/${projectId}/new`}>
-                <PlusCircleIcon className="mr-2 size-4" />
-                New carousel
-              </Link>
-            </Button>
-            {recentCarousels.length > 0 && (
-              <ul className="space-y-2">
-                {recentCarousels.map((c) => (
-                  <li key={c.id}>
-                    <Link
-                      href={`/p/${projectId}/c/${c.id}`}
-                      className="hover:bg-accent/50 border-border flex items-center justify-between rounded-lg border p-3 transition-colors"
-                    >
-                      <span className="font-medium">{c.title}</span>
-                      <span className="text-muted-foreground text-sm">
-                        {c.status} · {new Date(c.created_at).toLocaleDateString()}
-                      </span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
       </div>
     </div>
   );

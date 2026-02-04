@@ -6,7 +6,7 @@ export const aiSlideSchema = z.object({
   slide_index: z.number().int().min(1),
   slide_type: slideTypeEnum,
   headline: z.string().max(120),
-  body: z.string().max(300).optional().default(""),
+  body: z.string().max(600).optional().default(""),
   /** Optional Unsplash search query for AI-suggested background (legacy, single image). */
   unsplash_query: z.string().max(80).optional(),
   /** Optional array of Unsplash search phrases (one per image). E.g. ["Elon Musk portrait", "Jeff Bezos portrait"] for 2 images. Max 4 per slide. */
