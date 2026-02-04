@@ -10,6 +10,8 @@ type PromptContext = {
   use_ai_backgrounds?: boolean;
   /** Creator's @handle for CTA slide (e.g. @username). Used in last slide follow call-to-action. */
   creator_handle?: string;
+  /** Project niche (e.g. productivity, fitness, marketing). Used to make CTA relevant and conversion-focused. */
+  project_niche?: string;
   /** Optional notes/context for the AI (e.g. "focus on beginners", "avoid jargon"). */
   notes?: string;
 };
@@ -30,7 +32,7 @@ Rules:
 - The FIRST slide must ALWAYS be slide_type "hook"—an intro that hooks visually and textually. Punchy headline, compelling image. Never skip the hook.
 - For list-style topics (top X, best X, ranking): hook first, then order content from least to best. E.g. "top 10 duos" → slide 1 = hook, slide 2 = #10, ..., last content = #1.
 - If the carousel has 6+ slides, the last slide must be slide_type "cta".
-- For the last slide (slide_type "cta"): the headline MUST be a compelling, clickbait follow call-to-action using the creator's handle. Make it topic-relevant and engaging—don't just say "follow for more". Examples: "Follow @handle for more **productivity** tips", "Get the **full** guide → @handle", "**Follow** @handle for more like this". Use the provided creator_handle exactly. If creator_handle is provided, it must appear in the CTA headline.
+- For the last slide (slide_type "cta"): the headline MUST be an innovative, high-converting follow call-to-action. Be creative—not generic "follow for more". Tie it to BOTH the carousel topic AND the project niche. Use urgency, exclusivity, or value. Examples: "You won't find us again—unless you **follow** @handle", "This is the last **productivity** tip you'll need → @handle", "We drop **fitness** breakdowns like this daily. @handle", "**Follow** @handle—we don't post this anywhere else", "Save this. Then **follow** @handle for more [topic]". Use creator_handle exactly if provided. Make it feel unique to the content and niche.
 - Tone for this project: ${ctx.tone_preset}.
 - FORMATTING (required): Every slide MUST include at least one formatted word so it stands out.
   • Bold: use exactly ** (two asterisks), not ***. Wrap the word: **like this** → e.g. "**One** habit changes everything".
@@ -43,7 +45,8 @@ ${ctx.use_ai_backgrounds ? `- For EVERY slide add unsplash_queries (array). DEFA
   • 1 IMAGE: almost always. One query string, e.g. unsplash_queries: ["nature landscape peaceful"] or ["Lionel Messi 4k"].
   • 2 IMAGES: only when the slide explicitly compares or contrasts two distinct things—e.g. "Player A vs Player B", "before vs after", "option 1 vs option 2". Then use 2 queries: ["Player A 4k", "Player B 4k"]. Do NOT use 2 images for single-concept slides.
   • GENERIC slides (quotes, verses, motivation): one nature/landscape query—e.g. "peaceful nature landscape", "mountain sunrise", "calm ocean".
-  • SPECIFIC slides (celebrities, sports): one concrete query—e.g. "Lionel Messi 4k". For shared context (teammates, same movie): one query like "Neymar and Messi Barcelona". Add "4k" or "high quality" for specific queries.` : ""}
+  • SPECIFIC slides (celebrities, sports): one concrete query—e.g. "Lionel Messi 4k". For shared context (teammates, same movie): one query like "Neymar and Messi Barcelona". Add "4k" or "high quality" for specific queries.
+  • CTA slides: use a topic-related image that fits the carousel's subject and project niche—e.g. "productivity workspace", "fitness motivation", "marketing strategy". Not generic landscape.` : ""}
 
 Output format (JSON only). Bold = **word** (exactly two asterisks, never ***). Color = {{yellow}}word{{/}}. Example: {"slide_index":1,"slide_type":"hook","headline":"**One** habit that {{lime}}changes{{/}} everything","body":"Focus on **one** thing first. {{amber}}Simple.{{/}}"}
 {"title":"string","slides":[{"slide_index":1,"slide_type":"hook|point|context|cta|generic","headline":"string with **bold** or {{color}}highlight{{/}}","body":"string with formatting or omit"${ctx.use_ai_backgrounds ? ',"unsplash_queries":["phrase"]' : ""}}],"caption_variants":{"short":"string","medium":"string","spicy":"string"},"hashtags":["string"]}`;
@@ -58,7 +61,11 @@ Output format (JSON only). Bold = **word** (exactly two asterisks, never ***). C
     : `Generate a carousel. Decide the best number of slides based on the content. ALWAYS start with a hook slide (slide 1)—visually and textually engaging intro. For list-style topics (e.g. "top 20", "best X"): hook first, then distribute items from least to best—first content slide = lowest rank, last content slide = #1 (the top).`;
 
   const creatorHandleNote = ctx.creator_handle?.trim()
-    ? `\nCreator handle for CTA slide (use exactly in last slide headline; make the CTA clickbait and topic-relevant, not just "follow for more"): ${ctx.creator_handle.trim()}`
+    ? `\nCreator handle for CTA slide (use exactly in last slide headline; make the CTA innovative and conversion-focused): ${ctx.creator_handle.trim()}`
+    : "";
+
+  const projectNicheNote = ctx.project_niche?.trim()
+    ? `\nProject niche (weave into CTA—make the last slide feel specific to this niche): ${ctx.project_niche.trim()}`
     : "";
 
   const notesSection = ctx.notes?.trim()
@@ -69,7 +76,7 @@ Output format (JSON only). Bold = **word** (exactly two asterisks, never ***). C
 Input type: ${ctx.input_type}.
 Input value:
 ${ctx.input_value}
-${urlNote}${creatorHandleNote}${notesSection}
+${urlNote}${creatorHandleNote}${projectNicheNote}${notesSection}
 
 Required: In every slide, put at least one word in **bold** or in a color like {{yellow}}word{{/}} (or lime, orange, cyan, pink, etc.) in the headline and/or body. Every headline and body must contain at least one **bold** or {{color}}highlight{{/}}. Example headline: "**One** habit that {{lime}}changes{{/}} everything". Example body: "Focus on **one** thing first. {{amber}}Simple.{{/}}"
 ${ctx.use_ai_backgrounds ? "CRITICAL: 1 IMAGE per slide unless comparing 2 things (e.g. vs, before/after). unsplash_queries: one string for most slides. Two strings ONLY when slide explicitly contrasts two subjects. For GENERIC: 'peaceful nature landscape', 'mountain sunrise'. For SPECIFIC: 'Lionel Messi 4k'. Add '4k' for specific queries." : ""}

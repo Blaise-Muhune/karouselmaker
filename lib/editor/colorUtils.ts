@@ -23,3 +23,15 @@ export function hexToRgba(hex: string, opacity: number): string {
   const { r, g, b } = hexToRgb(hex);
   return `rgba(${r},${g},${b},${opacity})`;
 }
+
+/**
+ * Return white or dark text color for good contrast against the given background.
+ * Uses relative luminance: dark backgrounds → white text, light backgrounds → dark text.
+ */
+export function getContrastingTextColor(backgroundColor: string): string {
+  const hex = (backgroundColor || "#000000").replace(/^#/, "");
+  if (!/^([0-9A-Fa-f]{3}){1,2}$/.test(hex)) return "#ffffff";
+  const { r, g, b } = hexToRgb(backgroundColor);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.5 ? "#111111" : "#ffffff";
+}

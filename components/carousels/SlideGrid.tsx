@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/select";
 import { setSlideTemplate } from "@/app/actions/slides/setSlideTemplate";
 import { reorderSlides } from "@/app/actions/slides/reorderSlides";
+import { getContrastingTextColor } from "@/lib/editor/colorUtils";
 import type { BrandKit } from "@/lib/renderer/renderModel";
 import type { SlideBackgroundOverride } from "@/components/renderer/SlidePreview";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
@@ -70,10 +71,11 @@ function getBackgroundOverride(slide: Slide): SlideBackgroundOverride | null {
     overlay?: { gradient?: boolean; darken?: number; color?: string; textColor?: string; direction?: "top" | "bottom" | "left" | "right" };
   } | null;
   if (!bg) return null;
+  const gradientColor = bg.overlay?.color ?? "#000000";
   const overlayFields = {
     gradientStrength: bg.overlay?.darken ?? 0.5,
-    gradientColor: bg.overlay?.color ?? "#000000",
-    textColor: bg.overlay?.textColor ?? "#ffffff",
+    gradientColor,
+    textColor: getContrastingTextColor(gradientColor),
     gradientDirection: bg.overlay?.direction ?? "bottom",
   };
   if (bg.mode === "image")
@@ -91,6 +93,12 @@ function getShowCounterOverride(slide: Slide): boolean | undefined {
   const m = slide.meta as { show_counter?: boolean } | null;
   if (m == null || typeof m.show_counter !== "boolean") return undefined;
   return m.show_counter;
+}
+
+function getShowWatermarkOverride(slide: Slide, totalSlides: number): boolean | undefined {
+  const m = slide.meta as { show_watermark?: boolean } | null;
+  if (m != null && typeof m.show_watermark === "boolean") return m.show_watermark;
+  return slide.slide_index === 1 || slide.slide_index === totalSlides ? true : false;
 }
 
 function getFontOverrides(slide: Slide): { headline_font_size?: number; body_font_size?: number } | undefined {
@@ -252,6 +260,7 @@ export function SlideGrid({
                           backgroundImageUrls={Array.isArray(slideBackgroundImageUrls[slide.id]) ? slideBackgroundImageUrls[slide.id] as string[] : undefined}
                           backgroundOverride={backgroundOverride}
                           showCounterOverride={getShowCounterOverride(slide)}
+                          showWatermarkOverride={getShowWatermarkOverride(slide, slidesOrder.length)}
                           fontOverrides={getFontOverrides(slide)}
                           imageDisplay={getImageDisplay(slide)}
                         />

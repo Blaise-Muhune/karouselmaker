@@ -3,7 +3,7 @@
 import { applyTemplate } from "@/lib/renderer/applyTemplate";
 import type { BrandKit, SlideData } from "@/lib/renderer/renderModel";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
-import { hexToRgba } from "@/lib/editor/colorUtils";
+import { getContrastingTextColor, hexToRgba } from "@/lib/editor/colorUtils";
 import { parseInlineFormatting } from "@/lib/editor/inlineFormat";
 
 const CANVAS_SIZE = 1080;
@@ -215,7 +215,7 @@ export function SlidePreview({
     : 0;
   const gradientColorHex = backgroundOverride?.gradientColor ?? "#000000";
   const gradientRgba = hexToRgba(gradientColorHex, gradientOpacity);
-  const textColor = backgroundOverride?.textColor ?? "#ffffff";
+  const textColor = getContrastingTextColor(useGradient ? gradientColorHex : (backgroundColor ?? "#0a0a0a"));
 
   const showCounter = showCounterOverride ?? false;
 
@@ -615,8 +615,8 @@ export function SlidePreview({
         </div>
       )}
 
-      {/* Chrome: watermark */}
-      {model.chrome.watermark.text && (showWatermarkOverride === undefined ? model.chrome.watermark.enabled : showWatermarkOverride) && (
+      {/* Chrome: watermark (text or logo) */}
+      {((model.chrome.watermark.text || model.chrome.watermark.logoUrl) && (showWatermarkOverride === undefined ? model.chrome.watermark.enabled : showWatermarkOverride)) && (
         <div
           className="absolute"
           style={{
@@ -632,7 +632,16 @@ export function SlidePreview({
                 : { bottom: 80, left: 24 }),
           }}
         >
-          {model.chrome.watermark.text}
+          {model.chrome.watermark.logoUrl ? (
+            <img
+              src={model.chrome.watermark.logoUrl}
+              alt=""
+              className="max-h-12 w-auto object-contain"
+              style={{ maxWidth: 120 }}
+            />
+          ) : (
+            model.chrome.watermark.text
+          )}
         </div>
       )}
     </div>

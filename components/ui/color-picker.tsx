@@ -62,6 +62,8 @@ type ColorPickerProps = {
   className?: string;
   /** When set, show "Extract from logo" button. */
   onExtractFromLogo?: (primary: string, secondary: string) => void;
+  /** When set, upload logo file to storage and return path. Called before onExtractFromLogo. */
+  onLogoUpload?: (file: File) => Promise<string | null>;
 };
 
 export function ColorPicker({
@@ -70,22 +72,28 @@ export function ColorPicker({
   placeholder = "#000000",
   className,
   onExtractFromLogo,
+  onLogoUpload,
 }: ColorPickerProps) {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !onExtractFromLogo) return;
-    const url = URL.createObjectURL(file);
-    try {
-      const { primary, secondary } = await extractColorsFromImage(url);
-      onExtractFromLogo(primary, secondary);
-    } catch {
-      // ignore
-    } finally {
-      URL.revokeObjectURL(url);
-      e.target.value = "";
+    if (!file) return;
+    if (onLogoUpload) {
+      await onLogoUpload(file);
     }
+    if (onExtractFromLogo) {
+      const url = URL.createObjectURL(file);
+      try {
+        const { primary, secondary } = await extractColorsFromImage(url);
+        onExtractFromLogo(primary, secondary);
+      } catch {
+        // ignore
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    }
+    e.target.value = "";
   };
 
   const hexValue = value && /^#[0-9A-Fa-f]{6}$/.test(value) ? value : "#000000";
@@ -119,7 +127,7 @@ export function ColorPicker({
             size="sm"
             className="shrink-0"
             onClick={() => fileRef.current?.click()}
-            title="Upload logo to extract colors"
+            title={onLogoUpload ? "Upload logo (saved and used on slides)" : "Upload logo to extract colors"}
           >
             <ImageIcon className="size-4" />
           </Button>

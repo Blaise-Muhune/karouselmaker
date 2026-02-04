@@ -27,6 +27,7 @@ export const brandKitSchema = z.object({
   primary_color: hexColor,
   secondary_color: hexColor,
   watermark_text: z.string().optional().default(""),
+  logo_storage_path: z.string().optional().default(""),
 });
 
 export const projectFormSchema = z.object({
@@ -39,6 +40,7 @@ export const projectFormSchema = z.object({
     primary_color: "",
     secondary_color: "",
     watermark_text: "",
+    logo_storage_path: "",
   }),
 });
 
@@ -70,6 +72,7 @@ export function projectFormToDbPayload(
       primary_color: input.brand_kit.primary_color ?? "",
       secondary_color: input.brand_kit.secondary_color ?? "",
       watermark_text: input.brand_kit.watermark_text ?? "",
+      logo_storage_path: input.brand_kit.logo_storage_path ?? "",
     },
     sources: {},
   };

@@ -54,7 +54,7 @@ export async function searchBraveImage(
 
   const results = data.results ?? [];
   const skipPattern = /\.gif(\?|$)|giphy|tenor|clipart|\.svg(\?|$)/i;
-  const skipDomains = /pinterest|pinimg|tumblr|imgur|reddit|redd\.it|wikipedia|wikimedia|wallpapers|wallpaperaccess|alphacoders|quora|wallpapercave|blogspot|blogger|etsy|amazon\.com|knowyourmeme|deviantart|flickr/i;
+  const skipDomains = /pinterest|pinimg|tumblr|imgur|reddit|redd\.it|wikipedia|wikimedia|wallpapers|wallpaperaccess|alphacoders|quora|wallpapercave|blogspot|blogger|etsy|amazonaws|ebay|ebayimg|amazon\.com|knowyourmeme|deviantart|flickr/i;
 
   for (const item of results) {
     const imageUrl = item.properties?.url ?? item.url ?? item.thumbnail?.src;

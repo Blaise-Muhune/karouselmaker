@@ -51,6 +51,7 @@ export interface Carousel {
   hashtags: string[];
   export_format?: ExportFormat;
   export_size?: ExportSize;
+  is_favorite?: boolean;
   created_at: string;
   updated_at: string;
 }

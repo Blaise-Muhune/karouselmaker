@@ -24,6 +24,7 @@ export async function updateProject(projectId: string, formData: FormData) {
     primary_color: (formData.get("primary_color") as string) ?? "",
     secondary_color: (formData.get("secondary_color") as string) ?? "",
     watermark_text: (formData.get("watermark_text") as string) ?? "",
+    logo_storage_path: (formData.get("logo_storage_path") as string) ?? "",
   };
 
   const parsed = projectFormSchema.safeParse({
@@ -36,6 +37,7 @@ export async function updateProject(projectId: string, formData: FormData) {
       primary_color: raw.primary_color,
       secondary_color: raw.secondary_color,
       watermark_text: raw.watermark_text,
+      logo_storage_path: raw.logo_storage_path,
     },
   });
 

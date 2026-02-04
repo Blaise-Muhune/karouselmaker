@@ -5,6 +5,7 @@ import { getUser } from "@/lib/server/auth/getUser";
 import { createProject as dbCreateProject } from "@/lib/server/db";
 import type { ProjectInsert } from "@/lib/server/db/types";
 import { projectFormSchema, projectFormToDbPayload } from "@/lib/validations/project";
+import { uploadProjectLogo } from "./uploadProjectLogo";
 
 export async function createProject(formData: FormData) {
   const { user } = await getUser();
@@ -40,5 +41,13 @@ export async function createProject(formData: FormData) {
 
   const payload = projectFormToDbPayload(parsed.data);
   const project = await dbCreateProject(user.id, { ...payload, user_id: user.id } as ProjectInsert);
+
+  const logoFile = formData.get("logo") as File | null;
+  if (logoFile && logoFile instanceof File && logoFile.size > 0) {
+    const logoFd = new FormData();
+    logoFd.set("logo", logoFile);
+    await uploadProjectLogo(project.id, logoFd);
+  }
+
   redirect(`/p/${project.id}`);
 }

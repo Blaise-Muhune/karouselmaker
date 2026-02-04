@@ -12,6 +12,9 @@ export type BrandKit = {
   primary_color?: string;
   secondary_color?: string;
   watermark_text?: string;
+  /** Resolved signed URL when logo_storage_path exists. */
+  logo_url?: string;
+  logo_storage_path?: string;
 };
 
 export type TextBlock = {
@@ -38,6 +41,7 @@ export type SlideRenderModel = {
       enabled: boolean;
       position: "top_left" | "top_right" | "bottom_left";
       text: string;
+      logoUrl?: string;
     };
   };
 };
@@ -91,6 +95,7 @@ export function buildSlideRenderModel(
         enabled: templateConfig.chrome.watermark.enabled,
         position: templateConfig.chrome.watermark.position,
         text: brandKit.watermark_text ?? "",
+        logoUrl: brandKit.logo_url,
       },
     },
   };

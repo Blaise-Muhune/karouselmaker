@@ -3,7 +3,7 @@
 import OpenAI from "openai";
 import { getUser } from "@/lib/server/auth/getUser";
 import { getProject } from "@/lib/server/db/projects";
-import { createCarousel, updateCarousel } from "@/lib/server/db/carousels";
+import { createCarousel, getCarousel, updateCarousel } from "@/lib/server/db/carousels";
 import { replaceSlides, updateSlide } from "@/lib/server/db/slides";
 import { getAsset } from "@/lib/server/db/assets";
 import {
@@ -16,6 +16,7 @@ import {
 } from "@/lib/server/ai/prompts";
 import { searchImage } from "@/lib/server/imageSearch";
 import { trackUnsplashDownload } from "@/lib/server/unsplash";
+import { getContrastingTextColor } from "@/lib/editor/colorUtils";
 import { generateCarouselInputSchema } from "@/lib/validations/carousel";
 
 const MAX_RETRIES = 2;
@@ -52,10 +53,16 @@ export async function generateCarousel(formData: FormData): Promise<
   const { user } = await getUser();
 
   const raw = {
-    project_id: formData.get("project_id") as string,
-    input_type: formData.get("input_type") as string,
-    input_value: (formData.get("input_value") as string)?.trim(),
-    title: (formData.get("title") as string)?.trim() || undefined,
+    project_id: (formData.get("project_id") as string | null) ?? "",
+    input_type: (formData.get("input_type") as string | null) ?? "",
+    input_value: ((formData.get("input_value") as string | null) ?? "").trim(),
+    title: ((formData.get("title") as string | null) ?? "").trim() || undefined,
+    number_of_slides: (() => {
+      const v = formData.get("number_of_slides");
+      if (v == null || v === "") return undefined;
+      const n = Number(v);
+      return !isNaN(n) && n >= 1 && n <= 30 ? n : undefined;
+    })(),
     background_asset_ids: (() => {
       const rawIds = formData.get("background_asset_ids") as string | null;
       if (!rawIds) return undefined;
@@ -66,13 +73,16 @@ export async function generateCarousel(formData: FormData): Promise<
         return undefined;
       }
     })(),
-    use_ai_backgrounds: formData.get("use_ai_backgrounds") as string | null,
-    notes: (formData.get("notes") as string)?.trim() || undefined,
+    use_ai_backgrounds: formData.get("use_ai_backgrounds") ?? undefined,
+    notes: ((formData.get("notes") as string | null) ?? "").trim() || undefined,
   };
 
   const parsed = generateCarouselInputSchema.safeParse(raw);
   if (!parsed.success) {
-    const msg = parsed.error.flatten().formErrors.join("; ");
+    const flat = parsed.error.flatten();
+    const formMsgs = flat.formErrors.filter(Boolean);
+    const fieldMsgs = Object.values(flat.fieldErrors).flat().filter(Boolean) as string[];
+    const msg = [...formMsgs, ...fieldMsgs].join("; ") || parsed.error.message;
     return { error: msg };
   }
   const data = parsed.data;
@@ -87,20 +97,28 @@ export async function generateCarousel(formData: FormData): Promise<
   /** Use only carousel-level value. If omitted (user left field empty), AI decides. Do NOT fall back to project default. */
   const number_of_slides = data.number_of_slides ?? undefined;
 
-  const carousel = await createCarousel(
-    user.id,
-    data.project_id,
-    data.input_type,
-    data.input_value,
-    data.title ?? "Untitled"
-  );
+  let carousel;
+  if (data.carousel_id) {
+    carousel = await getCarousel(user.id, data.carousel_id);
+    if (!carousel || carousel.project_id !== data.project_id) {
+      return { error: "Carousel not found" };
+    }
+  } else {
+    carousel = await createCarousel(
+      user.id,
+      data.project_id,
+      data.input_type,
+      data.input_value,
+      data.title ?? "Untitled"
+    );
+  }
 
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return { error: "OPENAI_API_KEY is not configured" };
 
   const openai = new OpenAI({ apiKey });
 
-  const brandKit = project.brand_kit as { watermark_text?: string; primary_color?: string } | null;
+  const brandKit = project.brand_kit as { watermark_text?: string; primary_color?: string; secondary_color?: string } | null;
   const creatorHandle = brandKit?.watermark_text?.trim() || undefined;
 
   const ctx = {
@@ -112,6 +130,7 @@ export async function generateCarousel(formData: FormData): Promise<
     input_value: data.input_value,
     use_ai_backgrounds: data.use_ai_backgrounds ?? false,
     creator_handle: creatorHandle,
+    project_niche: project.niche?.trim() || undefined,
     notes: data.notes,
   } as const;
 
@@ -192,8 +211,10 @@ export async function generateCarousel(formData: FormData): Promise<
 
   const createdSlides = await replaceSlides(user.id, carousel.id, slideRows);
 
-  const defaultOverlay = { gradient: true, darken: 0.5, color: "#000000", textColor: "#ffffff" };
-  const slidesWithAsset = new Set<string>();
+  const overlayColor = brandKit?.primary_color?.trim() || "#000000";
+  const overlayTextColor = getContrastingTextColor(overlayColor);
+  const defaultOverlay = { gradient: true, darken: 0.5, color: overlayColor, textColor: overlayTextColor };
+  const slidesWithImage = new Set<string>();
 
   if (parsed.data.background_asset_ids?.length && createdSlides.length) {
     const assetIds = parsed.data.background_asset_ids;
@@ -208,7 +229,7 @@ export async function generateCarousel(formData: FormData): Promise<
         if (!slide) continue;
         const asset = assets[i % assets.length];
         if (!asset) continue;
-        slidesWithAsset.add(slide.id);
+        slidesWithImage.add(slide.id);
         await updateSlide(user.id, slide.id, {
           background: {
             mode: "image",
@@ -227,7 +248,7 @@ export async function generateCarousel(formData: FormData): Promise<
       validated.slides.map((s) => [s.slide_index, s])
     );
     for (const slide of createdSlides) {
-      if (slidesWithAsset.has(slide.id)) continue;
+      if (slidesWithImage.has(slide.id)) continue;
       const aiSlide = aiSlideByIndex.get(slide.slide_index);
       const queries = aiSlide?.unsplash_queries?.filter((q) => q?.trim()) ?? (aiSlide?.unsplash_query?.trim() ? [aiSlide.unsplash_query.trim()] : []);
       if (queries.length === 0) continue;
@@ -237,6 +258,7 @@ export async function generateCarousel(formData: FormData): Promise<
         if (result) imageResults.push(result);
       }
       if (imageResults.length === 0) continue;
+      slidesWithImage.add(slide.id);
       const firstResult = imageResults[0];
       // Trigger Unsplash download tracking when image is used (async, non-blocking)
       for (const r of imageResults) {
@@ -284,15 +306,12 @@ export async function generateCarousel(formData: FormData): Promise<
     }
   }
 
-  // When neither library images nor AI backgrounds: apply solid color (project primary) to all slides
-  const hasAnyImages = (parsed.data.background_asset_ids?.length ?? 0) > 0 || parsed.data.use_ai_backgrounds;
-  if (!hasAnyImages && createdSlides.length > 0) {
-    const primaryColor = brandKit?.primary_color?.trim() || "#0a0a0a";
-    const solidBg = { style: "solid" as const, color: primaryColor, gradientOn: true };
-    for (const slide of createdSlides) {
-      if (slidesWithAsset.has(slide.id)) continue;
-      await updateSlide(user.id, slide.id, { background: solidBg });
-    }
+  // Apply solid color (project primary) to any slide that has no background image
+  const primaryColor = brandKit?.primary_color?.trim() || "#0a0a0a";
+  const solidBg = { style: "solid" as const, color: primaryColor, gradientOn: true };
+  for (const slide of createdSlides) {
+    if (slidesWithImage.has(slide.id)) continue;
+    await updateSlide(user.id, slide.id, { background: solidBg });
   }
 
   return { carouselId: carousel.id };

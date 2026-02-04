@@ -29,6 +29,7 @@ import { applyToAllSlides, applyOverlayToAllSlides, applyImageDisplayToAllSlides
 import { shortenToFit } from "@/app/actions/slides/shortenToFit";
 import { rewriteHook } from "@/app/actions/slides/rewriteHook";
 import { saveSlidePreset } from "@/app/actions/presets/saveSlidePreset";
+import { getContrastingTextColor } from "@/lib/editor/colorUtils";
 import type { BrandKit } from "@/lib/renderer/renderModel";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import type { Slide, SlidePreset, Template } from "@/lib/server/db/types";
@@ -227,15 +228,14 @@ export function SlideEditForm({
       const base = { ...bg, style: bg.style ?? "solid", color: bg.color ?? brandKit.primary_color ?? "#0a0a0a", gradientOn: bg.gradientOn ?? true };
       if (bg.overlay) {
         const defaultOverlayColor = brandKit.primary_color?.trim() || "#000000";
-        const defaultTextColor = brandKit.secondary_color?.trim() || "#ffffff";
-        base.overlay = { ...bg.overlay, darken: bg.overlay.darken ?? 0.5, color: bg.overlay.color ?? defaultOverlayColor, textColor: bg.overlay.textColor ?? defaultTextColor };
+        const overlayColor = bg.overlay.color ?? defaultOverlayColor;
+        base.overlay = { ...bg.overlay, darken: bg.overlay.darken ?? 0.5, color: overlayColor, textColor: getContrastingTextColor(overlayColor) };
       }
       if (bg.image_display) base.image_display = { ...bg.image_display };
       return base;
     }
     const defaultOverlayColor = brandKit.primary_color?.trim() || "#000000";
-    const defaultTextColor = brandKit.secondary_color?.trim() || "#ffffff";
-    return { style: "solid", color: brandKit.primary_color ?? "#0a0a0a", gradientOn: true, overlay: { gradient: true, darken: 0.5, color: defaultOverlayColor, textColor: defaultTextColor } };
+    return { style: "solid", color: brandKit.primary_color ?? "#0a0a0a", gradientOn: true, overlay: { gradient: true, darken: 0.5, color: defaultOverlayColor, textColor: getContrastingTextColor(defaultOverlayColor) } };
   });
   const [imageDisplay, setImageDisplay] = useState<ImageDisplayState>(() => {
     const bg = slide.background as { image_display?: ImageDisplayState; images?: unknown[] } | null;
@@ -291,7 +291,7 @@ export function SlideEditForm({
     const m = slide.meta as { show_counter?: boolean } | null;
     return m?.show_counter ?? false;
   });
-  const defaultShowWatermark = slide.slide_index === 1 || slide.slide_index === 2 || slide.slide_index === totalSlides; // first, second, last = on; middle = off
+  const defaultShowWatermark = slide.slide_index === 1 || slide.slide_index === totalSlides; // first and last = on; middle = off
   const [showWatermark, setShowWatermark] = useState<boolean>(() => {
     const m = slide.meta as { show_watermark?: boolean } | null;
     if (m != null && typeof m.show_watermark === "boolean") return m.show_watermark;
@@ -682,7 +682,9 @@ export function SlideEditForm({
     (preset: SlidePreset) => {
       setTemplateId(preset.template_id ?? null);
       const ov = preset.overlay as { gradient?: boolean; darken?: number; color?: string; textColor?: string; direction?: "top" | "bottom" | "left" | "right" } | null;
-      setBackground((b) => ({ ...b, overlay: ov ?? { gradient: true, darken: 0.5, color: "#000000", textColor: "#ffffff", direction: "bottom" } }));
+      const color = ov?.color ?? "#000000";
+      const overlay = ov ? { ...ov, color, textColor: getContrastingTextColor(color) } : { gradient: true, darken: 0.5, color: "#000000", textColor: "#ffffff", direction: "bottom" as const };
+      setBackground((b) => ({ ...b, overlay }));
       setShowCounter(preset.show_counter);
       if (typeof preset.show_watermark === "boolean") {
         setShowWatermark(preset.show_watermark);
@@ -716,7 +718,8 @@ export function SlideEditForm({
     const name = presetName.trim();
     if (!name) return;
     setSavingPreset(true);
-    const overlayPayload = background.overlay ?? { gradient: true, darken: 0.5, color: "#000000", textColor: "#ffffff", direction: "bottom" };
+    const overlayColor = background.overlay?.color ?? "#000000";
+    const overlayPayload = background.overlay ? { ...background.overlay, color: overlayColor, textColor: getContrastingTextColor(overlayColor) } : { gradient: true, darken: 0.5, color: "#000000", textColor: "#ffffff", direction: "bottom" as const };
     const imageDisplayPayload = buildImageDisplayPayload();
     const result = await saveSlidePreset({
       name,
@@ -796,18 +799,19 @@ export function SlideEditForm({
         : null;
   const previewBackgroundImageUrls =
     validImageUrls.length >= 2 ? validImageUrls.map((i) => i.url) : undefined;
+  const overlayColor = background.overlay?.color ?? brandKit.primary_color?.trim() ?? "#000000";
   const overlayDefaults = {
     gradientStrength: 0.5,
-    gradientColor: brandKit.primary_color?.trim() || "#000000",
-    textColor: brandKit.secondary_color?.trim() || "#ffffff",
+    gradientColor: overlayColor,
+    textColor: getContrastingTextColor(overlayColor),
   };
   const previewBackgroundOverride: SlideBackgroundOverride = isImageMode
     ? {
         gradientOn: background.overlay?.gradient ?? true,
         color: background.color ?? brandKit.primary_color ?? "#0a0a0a",
         gradientStrength: background.overlay?.darken ?? overlayDefaults.gradientStrength,
-        gradientColor: background.overlay?.color ?? overlayDefaults.gradientColor,
-        textColor: background.overlay?.textColor ?? overlayDefaults.textColor,
+        gradientColor: overlayColor,
+        textColor: overlayDefaults.textColor,
         gradientDirection: background.overlay?.direction ?? "bottom",
       }
     : {
@@ -815,8 +819,8 @@ export function SlideEditForm({
         color: background.color,
         gradientOn: background.gradientOn,
         gradientStrength: background.overlay?.darken ?? overlayDefaults.gradientStrength,
-        gradientColor: background.overlay?.color ?? overlayDefaults.gradientColor,
-        textColor: background.overlay?.textColor ?? overlayDefaults.textColor,
+        gradientColor: overlayColor,
+        textColor: overlayDefaults.textColor,
         gradientDirection: background.overlay?.direction ?? "bottom",
       };
 
@@ -848,10 +852,10 @@ export function SlideEditForm({
           <Select
             value={background.overlay?.direction ?? "bottom"}
             onValueChange={(v: "top" | "bottom" | "left" | "right") =>
-              setBackground((b) => ({
-                ...b,
-                overlay: { ...b.overlay, gradient: true, direction: v, darken: b.overlay?.darken ?? 0.5, color: b.overlay?.color ?? "#000000", textColor: b.overlay?.textColor ?? "#ffffff" },
-              }))
+              setBackground((b) => {
+                const color = b.overlay?.color ?? "#000000";
+                return { ...b, overlay: { ...b.overlay, gradient: true, direction: v, darken: b.overlay?.darken ?? 0.5, color, textColor: getContrastingTextColor(color) } };
+              })
             }
           >
             <SelectTrigger className="h-10 w-[120px] rounded-lg border-input/80 bg-background">
@@ -892,12 +896,13 @@ export function SlideEditForm({
             <input
               type="color"
               value={background.overlay?.color ?? "#000000"}
-              onChange={(e) =>
+              onChange={(e) => {
+                const color = e.target.value;
                 setBackground((b) => ({
                   ...b,
-                  overlay: { ...b.overlay, gradient: true, color: e.target.value, textColor: b.overlay?.textColor ?? "#ffffff", darken: b.overlay?.darken ?? 0.5 },
-                }))
-              }
+                  overlay: { ...b.overlay, gradient: true, color, textColor: getContrastingTextColor(color), darken: b.overlay?.darken ?? 0.5 },
+                }));
+              }}
               className="h-10 w-12 cursor-pointer rounded-lg border border-input/80 bg-background"
             />
           </div>
@@ -910,10 +915,10 @@ export function SlideEditForm({
                 max={100}
                 value={Math.round((background.overlay?.darken ?? 0.5) * 100)}
                 onChange={(e) =>
-                  setBackground((b) => ({
-                    ...b,
-                    overlay: { ...b.overlay, gradient: true, darken: Number(e.target.value) / 100, color: b.overlay?.color ?? "#000000", textColor: b.overlay?.textColor ?? "#ffffff" },
-                  }))
+                  setBackground((b) => {
+                    const color = b.overlay?.color ?? "#000000";
+                    return { ...b, overlay: { ...b.overlay, gradient: true, darken: Number(e.target.value) / 100, color, textColor: getContrastingTextColor(color) } };
+                  })
                 }
                 className="h-2 w-24 cursor-pointer appearance-none rounded-full bg-muted accent-primary"
               />
@@ -926,14 +931,10 @@ export function SlideEditForm({
             <span className="text-muted-foreground text-xs font-medium">Text</span>
             <input
               type="color"
-              value={background.overlay?.textColor ?? "#ffffff"}
-              onChange={(e) =>
-                setBackground((b) => ({
-                  ...b,
-                  overlay: { ...b.overlay, gradient: true, textColor: e.target.value, color: b.overlay?.color ?? "#000000", darken: b.overlay?.darken ?? 0.5 },
-                }))
-              }
-              className="h-10 w-12 cursor-pointer rounded-lg border border-input/80 bg-background"
+              value={getContrastingTextColor(background.overlay?.color ?? "#000000")}
+              readOnly
+              className="h-10 w-12 cursor-not-allowed rounded-lg border border-input/80 bg-background opacity-70"
+              title="Text color is auto-set for contrast with overlay"
             />
           </div>
         </div>

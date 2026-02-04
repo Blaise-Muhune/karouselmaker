@@ -1,6 +1,6 @@
 import { buildSlideRenderModel, type BrandKit, type SlideData } from "@/lib/renderer/renderModel";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
-import { hexToRgba } from "@/lib/editor/colorUtils";
+import { getContrastingTextColor, hexToRgba } from "@/lib/editor/colorUtils";
 import { parseInlineFormatting } from "@/lib/editor/inlineFormat";
 
 /** Hook slide second image: circle with thick border (matches SlidePreview). */
@@ -144,7 +144,7 @@ export function renderSlideHtml(
   const gradientOpacity = useGradient ? gradientStrength : 0;
   const gradientColorHex = backgroundOverride?.gradientColor ?? "#000000";
   const gradientRgba = hexToRgba(gradientColorHex, gradientOpacity);
-  const textColor = backgroundOverride?.textColor ?? "#ffffff";
+  const textColor = getContrastingTextColor(useGradient ? gradientColorHex : (backgroundColor ?? "#0a0a0a"));
 
   const showCounter = showCounterOverride ?? false;
 
@@ -383,7 +383,7 @@ export function renderSlideHtml(
     ${hookCircleHtml}
     ${textBlocksHtml}
     ${showCounter ? `<div class="chrome-counter" style="color:${escapeHtml(textColor)}">${escapeHtml(model.chrome.counterText)}</div>` : ""}
-    ${model.chrome.watermark.text && (showWatermarkOverride === undefined ? model.chrome.watermark.enabled : showWatermarkOverride) ? `<div class="chrome-watermark ${model.chrome.watermark.position === "top_left" ? "tl" : model.chrome.watermark.position === "top_right" ? "tr" : "bl"}" style="color:${escapeHtml(textColor)}">${escapeHtml(model.chrome.watermark.text)}</div>` : ""}
+    ${(model.chrome.watermark.text || model.chrome.watermark.logoUrl) && (showWatermarkOverride === undefined ? model.chrome.watermark.enabled : showWatermarkOverride) ? `<div class="chrome-watermark ${model.chrome.watermark.position === "top_left" ? "tl" : model.chrome.watermark.position === "top_right" ? "tr" : "bl"}" style="color:${escapeHtml(textColor)}">${model.chrome.watermark.logoUrl ? `<img src="${escapeHtml(model.chrome.watermark.logoUrl)}" alt="" style="max-height:48px;max-width:120px;width:auto;height:auto;object-fit:contain" />` : escapeHtml(model.chrome.watermark.text)}</div>` : ""}
   </div>
   </div>
 </body>

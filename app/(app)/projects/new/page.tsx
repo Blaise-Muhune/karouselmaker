@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useTransition } from "react";
@@ -42,6 +43,7 @@ const TONE_OPTIONS = [
 
 export default function NewProjectPage() {
   const [isPending, startTransition] = useTransition();
+  const [logoFile, setLogoFile] = useState<File | null>(null);
 
   const form = useForm<ProjectFormInput>({
     resolver: zodResolver(projectFormSchema) as Resolver<ProjectFormInput>,
@@ -70,6 +72,9 @@ export default function NewProjectPage() {
     fd.set("primary_color", data.brand_kit.primary_color ?? "");
     fd.set("secondary_color", data.brand_kit.secondary_color ?? "");
     fd.set("watermark_text", data.brand_kit.watermark_text ?? "");
+    if (logoFile && logoFile instanceof File && logoFile.size > 0) {
+      fd.set("logo", logoFile);
+    }
     startTransition(() => {
       createProject(fd);
     });
@@ -236,6 +241,10 @@ export default function NewProjectPage() {
                             form.setValue("brand_kit.primary_color", primary);
                             form.setValue("brand_kit.secondary_color", secondary);
                           }}
+                          onLogoUpload={async (file) => {
+                            setLogoFile(file);
+                            return null;
+                          }}
                         />
                       </FormControl>
                       <FormMessage />
@@ -256,6 +265,10 @@ export default function NewProjectPage() {
                           onExtractFromLogo={(primary, secondary) => {
                             form.setValue("brand_kit.primary_color", primary);
                             form.setValue("brand_kit.secondary_color", secondary);
+                          }}
+                          onLogoUpload={async (file) => {
+                            setLogoFile(file);
+                            return null;
                           }}
                         />
                       </FormControl>

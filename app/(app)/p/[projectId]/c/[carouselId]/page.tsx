@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getUser } from "@/lib/server/auth/getUser";
 import { getCarousel, getProject, listSlides, listTemplatesForUser, listExportsByCarousel } from "@/lib/server/db";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
+import { resolveBrandKitLogo } from "@/lib/server/brandKit";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,6 +14,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { SlideGrid, type TemplateWithConfig } from "@/components/carousels/SlideGrid";
+import { CarouselMenuDropdown } from "@/components/carousels/CarouselMenuDropdown";
 import { EditorCaptionSection } from "@/components/editor/EditorCaptionSection";
 import { EditorExportSection } from "@/components/editor/EditorExportSection";
 import type { BrandKit } from "@/lib/renderer/renderModel";
@@ -53,7 +55,7 @@ export default async function CarouselEditorPage({
     })
     .filter((t): t is TemplateWithConfig => t != null);
 
-  const brandKit: BrandKit = (project.brand_kit as BrandKit) ?? {};
+  const brandKit: BrandKit = await resolveBrandKitLogo(project.brand_kit as Record<string, unknown> | null);
 
   const slideBackgroundImageUrls: Record<string, string | string[]> = {};
   await Promise.all(
@@ -104,7 +106,7 @@ export default async function CarouselEditorPage({
     <div className="p-4 md:p-6">
       <div className="mx-auto max-w-4xl space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
             <Button variant="ghost" size="icon-sm" asChild>
               <Link href={`/p/${projectId}`}>
                 <ArrowLeftIcon className="size-4" />
@@ -112,6 +114,11 @@ export default async function CarouselEditorPage({
               </Link>
             </Button>
             <h1 className="text-2xl font-semibold">{carousel.title}</h1>
+            <CarouselMenuDropdown
+              carouselId={carouselId}
+              projectId={projectId}
+              isFavorite={!!carousel.is_favorite}
+            />
           </div>
           <span className="text-muted-foreground text-sm">{carousel.status}</span>
         </div>

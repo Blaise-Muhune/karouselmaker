@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { getUser } from "@/lib/server/auth/getUser";
 import { getSlide, getCarousel, getProject, listSlides, listTemplatesForUser } from "@/lib/server/db";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
+import { resolveBrandKitLogo } from "@/lib/server/brandKit";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
 import { listSlidePresets } from "@/app/actions/presets/listSlidePresets";
 import { SlideEditForm, type TemplateWithConfig } from "@/components/editor/SlideEditForm";
@@ -36,7 +37,7 @@ export default async function EditSlidePage({
     })
     .filter((t): t is TemplateWithConfig => t != null);
 
-  const brandKit: BrandKit = (project.brand_kit as BrandKit) ?? {};
+  const brandKit: BrandKit = await resolveBrandKitLogo(project.brand_kit as Record<string, unknown> | null);
   const backHref = `/p/${projectId}/c/${carouselId}`;
   const editorPath = backHref;
 

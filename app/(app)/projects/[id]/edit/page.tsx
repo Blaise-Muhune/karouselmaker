@@ -18,6 +18,7 @@ export default async function EditProjectPage({
     primary_color?: string;
     secondary_color?: string;
     watermark_text?: string;
+    logo_storage_path?: string;
   } | undefined;
 
   const defaultValues = {
@@ -33,6 +34,7 @@ export default async function EditProjectPage({
       primary_color: brandKit?.primary_color ?? "",
       secondary_color: brandKit?.secondary_color ?? "",
       watermark_text: brandKit?.watermark_text ?? "",
+      logo_storage_path: brandKit?.logo_storage_path ?? "",
     },
   };
 

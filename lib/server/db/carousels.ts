@@ -63,6 +63,21 @@ export async function listCarousels(
   return (data ?? []) as Carousel[];
 }
 
+export async function deleteCarousel(
+  userId: string,
+  carouselId: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("carousels")
+    .delete()
+    .eq("id", carouselId)
+    .eq("user_id", userId);
+
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
 export async function updateCarousel(
   userId: string,
   carouselId: string,
@@ -73,6 +88,7 @@ export async function updateCarousel(
     hashtags?: string[];
     export_format?: string;
     export_size?: string;
+    is_favorite?: boolean;
   }
 ): Promise<Carousel> {
   const supabase = await createClient();

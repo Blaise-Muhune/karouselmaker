@@ -1,10 +1,13 @@
 "use client";
 
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useTransition } from "react";
 import Link from "next/link";
 import { updateProject } from "@/app/actions/projects/updateProject";
+import { uploadProjectLogo } from "@/app/actions/projects/uploadProjectLogo";
 import { Button } from "@/components/ui/button";
 import { ColorPicker } from "@/components/ui/color-picker";
 import { Input } from "@/components/ui/input";
@@ -47,6 +50,8 @@ export function ProjectEditForm({
   defaultValues: ProjectFormInput;
 }) {
   const [isPending, startTransition] = useTransition();
+  const [logoUploading, setLogoUploading] = useState(false);
+  const router = useRouter();
 
   const form = useForm<ProjectFormInput>({
     resolver: zodResolver(projectFormSchema) as Resolver<ProjectFormInput>,
@@ -64,6 +69,7 @@ export function ProjectEditForm({
     fd.set("primary_color", data.brand_kit.primary_color ?? "");
     fd.set("secondary_color", data.brand_kit.secondary_color ?? "");
     fd.set("watermark_text", data.brand_kit.watermark_text ?? "");
+    fd.set("logo_storage_path", data.brand_kit.logo_storage_path ?? "");
     startTransition(() => {
       updateProject(projectId, fd);
     });
@@ -231,15 +237,31 @@ export function ProjectEditForm({
                 <FormItem>
                   <FormLabel className="text-muted-foreground text-xs">Secondary color</FormLabel>
                   <FormControl>
-                    <ColorPicker
-                      value={field.value ?? ""}
-                      onChange={field.onChange}
-                      placeholder="#666666"
-                      onExtractFromLogo={(primary, secondary) => {
-                        form.setValue("brand_kit.primary_color", primary);
-                        form.setValue("brand_kit.secondary_color", secondary);
-                      }}
-                    />
+                        <ColorPicker
+                          value={field.value ?? ""}
+                          onChange={field.onChange}
+                          placeholder="#666666"
+                          onExtractFromLogo={(primary, secondary) => {
+                            form.setValue("brand_kit.primary_color", primary);
+                            form.setValue("brand_kit.secondary_color", secondary);
+                          }}
+                          onLogoUpload={async (file) => {
+                            setLogoUploading(true);
+                            try {
+                              const fd = new FormData();
+                              fd.set("logo", file);
+                              const result = await uploadProjectLogo(projectId, fd);
+                              if (result.ok) {
+                                form.setValue("brand_kit.logo_storage_path", result.storagePath);
+                                router.refresh();
+                                return result.storagePath;
+                              }
+                            } finally {
+                              setLogoUploading(false);
+                            }
+                            return null;
+                          }}
+                        />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
