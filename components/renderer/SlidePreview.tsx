@@ -5,6 +5,7 @@ import type { BrandKit, SlideData, TextZoneOverrides } from "@/lib/renderer/rend
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { getContrastingTextColor, hexToRgba } from "@/lib/editor/colorUtils";
 import { parseInlineFormatting } from "@/lib/editor/inlineFormat";
+import { Hand, ChevronsLeft, ChevronsRight, MoveHorizontal } from "lucide-react";
 
 const CANVAS_SIZE = 1080;
 
@@ -646,6 +647,101 @@ export function SlidePreview({
         </div>
       );
       })}
+
+      {/* Chrome: swipe hint (configurable type and position) */}
+      {model.chrome.showSwipe && (() => {
+        const pos = model.chrome.swipePosition ?? "bottom_center";
+        const posStyles: Record<string, Record<string, string | number>> = {
+          bottom_left: { bottom: 20, left: 24 },
+          bottom_center: { bottom: 20, left: "50%", transform: "translateX(-50%)" },
+          bottom_right: { bottom: 20, right: 24 },
+          top_left: { top: 24, left: 24 },
+          top_center: { top: 24, left: "50%", transform: "translateX(-50%)" },
+          top_right: { top: 24, right: 24 },
+          center_left: { top: "50%", left: 24, transform: "translateY(-50%)" },
+          center_right: { top: "50%", right: 24, transform: "translateY(-50%)" },
+        };
+        const baseStyle = {
+          ...posStyles[pos],
+          fontSize: 24,
+          fontWeight: 600,
+          letterSpacing: "0.1em",
+          color: textColor,
+          opacity: 0.9,
+          zIndex: 5,
+        } as React.CSSProperties;
+        const t = model.chrome.swipeType ?? "text";
+        const iconSize = 28;
+        const iconColor = textColor;
+        const FingerLeftSvg = () => (
+          <svg width={iconSize} height={iconSize} viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="shrink-0" style={{ transform: "scaleX(-1)" }}>
+            <path d="M5 12h14M5 12l4-4M5 12l4 4" />
+          </svg>
+        );
+        const FingerRightSvg = () => (
+          <svg width={iconSize} height={iconSize} viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+            <path d="M5 12h14M19 12l-4-4M19 12l-4 4" />
+          </svg>
+        );
+        const CircleArrowsSvg = () => (
+          <svg width={iconSize} height={iconSize} viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+            <circle cx="12" cy="12" r="9" />
+            <path d="m9 12-3-3 3-3" /><path d="M12 9H6" />
+            <path d="m15 12 3-3-3-3" /><path d="M12 15h6" />
+          </svg>
+        );
+        const LineDotsSvg = () => (
+          <svg width={iconSize * 1.5} height={iconSize} viewBox="0 0 36 24" fill="none" stroke={iconColor} strokeWidth={2} strokeLinecap="round" className="shrink-0">
+            <line x1="2" y1="12" x2="34" y2="12" />
+            <circle cx="8" cy="12" r="2" fill={iconColor} />
+            <circle cx="18" cy="12" r="2" fill={iconColor} opacity={0.5} />
+            <circle cx="28" cy="12" r="2" fill={iconColor} opacity={0.2} />
+          </svg>
+        );
+        const content =
+          t === "custom" && model.chrome.swipeIconUrl ? (
+            <img src={model.chrome.swipeIconUrl} alt="" className="h-8 w-auto max-w-[80px] object-contain shrink-0" style={{ opacity: 0.9 }} />
+          ) : t === "text" ? (
+            <span style={{ letterSpacing: 6, fontSize: 18 }}>• • •</span>
+          ) : t === "arrow-left" ? (
+            <span style={{ fontSize: 28 }}>←</span>
+          ) : t === "arrow-right" ? (
+            <span style={{ fontSize: 28 }}>→</span>
+          ) : t === "arrows" ? (
+            <>
+              <span style={{ fontSize: 24 }}>←</span>
+              <span style={{ fontSize: 24 }}>→</span>
+            </>
+          ) : t === "hand-left" ? (
+            <Hand size={iconSize} style={{ transform: "rotate(-90deg)", flexShrink: 0 }} strokeWidth={2.5} />
+          ) : t === "hand-right" ? (
+            <Hand size={iconSize} style={{ transform: "rotate(90deg)", flexShrink: 0 }} strokeWidth={2.5} />
+          ) : t === "chevrons" ? (
+            <>
+              <ChevronsLeft size={24} strokeWidth={2.5} className="shrink-0" />
+              <ChevronsRight size={24} strokeWidth={2.5} className="shrink-0" />
+            </>
+          ) : t === "dots" ? (
+            <span style={{ letterSpacing: 8, fontSize: 20 }}>• • •</span>
+          ) : t === "finger-swipe" ? (
+            <MoveHorizontal size={iconSize} strokeWidth={2.5} className="shrink-0" />
+          ) : t === "finger-left" ? (
+            <FingerLeftSvg />
+          ) : t === "finger-right" ? (
+            <FingerRightSvg />
+          ) : t === "circle-arrows" ? (
+            <CircleArrowsSvg />
+          ) : t === "line-dots" ? (
+            <LineDotsSvg />
+          ) : (
+            <span style={{ letterSpacing: 6, fontSize: 18 }}>• • •</span>
+          );
+        return (
+          <div className="absolute flex items-center justify-center gap-1 py-3" style={baseStyle}>
+            {content}
+          </div>
+        );
+      })()}
 
       {/* Chrome: counter (optional; user can hide via slide meta) */}
       {showCounter && (

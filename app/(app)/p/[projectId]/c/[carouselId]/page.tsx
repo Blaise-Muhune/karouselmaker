@@ -106,6 +106,30 @@ export default async function CarouselEditorPage({
   }) ?? {};
   const hashtags = Array.isArray(carousel.hashtags) ? carousel.hashtags : [];
 
+  // Collect Unsplash attributions from slides for credits section
+  const unsplashAttributionsMap = new Map<
+    string,
+    { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string }
+  >();
+  for (const slide of slides) {
+    const bg = slide.background as {
+      unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string };
+      images?: { unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string } }[];
+    } | null;
+    if (!bg) continue;
+    if (bg.unsplash_attribution) {
+      const key = bg.unsplash_attribution.photographerUsername;
+      if (!unsplashAttributionsMap.has(key)) unsplashAttributionsMap.set(key, bg.unsplash_attribution);
+    }
+    for (const img of bg.images ?? []) {
+      if (img.unsplash_attribution) {
+        const key = img.unsplash_attribution.photographerUsername;
+        if (!unsplashAttributionsMap.has(key)) unsplashAttributionsMap.set(key, img.unsplash_attribution);
+      }
+    }
+  }
+  const unsplashAttributions = Array.from(unsplashAttributionsMap.values());
+
   return (
     <div className="p-4 md:p-6">
       <div className="mx-auto max-w-4xl space-y-6">
@@ -171,6 +195,7 @@ export default async function CarouselEditorPage({
           carouselId={carouselId}
           captionVariants={captionVariants}
           hashtags={hashtags}
+          unsplashAttributions={unsplashAttributions}
           editorPath={`/p/${projectId}/c/${carouselId}`}
         />
       </div>

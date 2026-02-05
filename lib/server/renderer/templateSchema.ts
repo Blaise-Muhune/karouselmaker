@@ -60,8 +60,41 @@ const watermarkSchema = z.object({
   logoY: z.number().int().min(0).max(1080).optional(),
 });
 
+const swipeTypeEnum = z.enum([
+  "text",
+  "arrow-left",
+  "arrow-right",
+  "arrows",
+  "hand-left",
+  "hand-right",
+  "chevrons",
+  "dots",
+  "finger-swipe",
+  "finger-left",
+  "finger-right",
+  "circle-arrows",
+  "line-dots",
+  "custom",
+]);
+const swipePositionEnum = z.enum([
+  "bottom_left",
+  "bottom_center",
+  "bottom_right",
+  "top_left",
+  "top_center",
+  "top_right",
+  "center_left",
+  "center_right",
+]);
+
 const chromeSchema = z.object({
   showSwipe: z.boolean(),
+  /** Swipe hint style. Default "text". */
+  swipeType: swipeTypeEnum.optional(),
+  /** Custom SVG or PNG URL. Used when swipeType is "custom". */
+  swipeIconUrl: z.string().url().optional(),
+  /** Swipe hint position. Default "bottom_center". */
+  swipePosition: swipePositionEnum.optional(),
   showCounter: z.boolean(),
   counterStyle: z.string(),
   watermark: watermarkSchema,

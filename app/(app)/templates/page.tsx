@@ -11,8 +11,8 @@ import {
 } from "@/components/ui/card";
 import Link from "next/link";
 import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
-import { CreateTemplateDialog } from "@/components/templates/CreateTemplateDialog";
 import { DeleteTemplateButton } from "@/components/templates/DeleteTemplateButton";
+import { DuplicateTemplateButton } from "@/components/templates/DuplicateTemplateButton";
 import { Button } from "@/components/ui/button";
 import { LockIcon, PencilIcon, PlusIcon } from "lucide-react";
 
@@ -46,9 +46,91 @@ export default async function TemplatesPage() {
 
         <Card>
           <CardHeader>
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <CardTitle className="text-base">Your templates</CardTitle>
+                <CardDescription>
+                  {subscription.isPro
+                    ? `Custom templates (${userTemplateCount}/${templateLimit} used). Craft from scratch or duplicate and customize.`
+                    : `Custom templates are Pro-only. Free plan: ${templateLimit} custom templates.`}
+                </CardDescription>
+              </div>
+              {subscription.isPro && (
+                <div className="flex flex-wrap gap-2">
+                  {atTemplateLimit ? (
+                    <Button size="sm" disabled className="gap-1.5">
+                      <PlusIcon className="size-4" />
+                      Craft template
+                    </Button>
+                  ) : (
+                    <Button size="sm" asChild className="gap-1.5">
+                      <Link href="/templates/new">
+                        <PlusIcon className="size-4" />
+                        Craft template
+                      </Link>
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            {!subscription.isPro && (
+              <UpgradeBanner
+                message="Create custom templates with Pro. Free plan uses system templates only."
+                variant="inline"
+              />
+            )}
+            {userTemplates.length === 0 ? (
+              <p className="text-muted-foreground text-sm">
+                {subscription.isPro
+                  ? "No custom templates yet. Craft one from scratch."
+                  : "No custom templates on free plan. Upgrade to Pro to create your own layouts."}
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {userTemplates.map((t) => (
+                  <li
+                    key={t.id}
+                    className="border-border flex items-center gap-3 rounded-lg border p-3"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium">{t.name}</p>
+                      <p className="text-muted-foreground text-xs">
+                        {t.category} · {t.aspect_ratio}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <DuplicateTemplateButton
+                        templateId={t.id}
+                        templateName={t.name}
+                        category={t.category}
+                        isPro={subscription.isPro}
+                        atLimit={atTemplateLimit}
+                      />
+                      <Button variant="ghost" size="icon-xs" asChild>
+                        <Link href={`/templates/${t.id}/edit`} aria-label={`Edit ${t.name}`}>
+                          <PencilIcon className="size-3.5" />
+                        </Link>
+                      </Button>
+                      <DeleteTemplateButton
+                        templateId={t.id}
+                        templateName={t.name}
+                        isPro={subscription.isPro}
+                      />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
             <CardTitle className="text-base">System templates</CardTitle>
             <CardDescription>
-              Pre-defined layouts (hook, point, context, cta, generic). Used when no template is chosen per slide.
+              Pre-defined layouts (hook, point, context, cta, generic). Duplicate to create your own copy and customize.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -70,88 +152,15 @@ export default async function TemplatesPage() {
                         {t.category} · {t.aspect_ratio}
                       </p>
                     </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <CardTitle className="text-base">Your templates</CardTitle>
-                <CardDescription>
-                  {subscription.isPro
-                    ? `Custom templates (${userTemplateCount}/${templateLimit} used). Craft your own or quick-clone from system templates.`
-                    : `Custom templates are Pro-only. Free plan: ${templateLimit} custom templates.`}
-                </CardDescription>
-              </div>
-              {subscription.isPro && (
-                <div className="flex flex-wrap gap-2">
-                  {atTemplateLimit ? (
-                    <Button size="sm" disabled className="gap-1.5">
-                      <PlusIcon className="size-4" />
-                      Craft template
-                    </Button>
-                  ) : (
-                    <Button size="sm" asChild className="gap-1.5">
-                      <Link href="/templates/new">
-                        <PlusIcon className="size-4" />
-                        Craft template
-                      </Link>
-                    </Button>
-                  )}
-                  {systemTemplates.length > 0 && !atTemplateLimit && (
-                    <CreateTemplateDialog
-                      systemTemplates={systemTemplates}
-                      isPro={subscription.isPro}
-                      atLimit={atTemplateLimit}
-                    />
-                  )}
-                </div>
-              )}
-            </div>
-          </CardHeader>
-          <CardContent>
-            {!subscription.isPro && (
-              <UpgradeBanner
-                message="Create custom templates with Pro. Free plan uses system templates only."
-                variant="inline"
-              />
-            )}
-            {userTemplates.length === 0 ? (
-              <p className="text-muted-foreground text-sm">
-                {subscription.isPro
-                  ? "No custom templates yet. Craft one from scratch or quick-clone from a system template above."
-                  : "No custom templates on free plan. Upgrade to Pro to create your own layouts."}
-              </p>
-            ) : (
-              <ul className="space-y-2">
-                {userTemplates.map((t) => (
-                  <li
-                    key={t.id}
-                    className="border-border flex items-center gap-3 rounded-lg border p-3"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="font-medium">{t.name}</p>
-                      <p className="text-muted-foreground text-xs">
-                        {t.category} · {t.aspect_ratio}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Button variant="ghost" size="icon-xs" asChild>
-                        <Link href={`/templates/${t.id}/edit`} aria-label={`Edit ${t.name}`}>
-                          <PencilIcon className="size-3.5" />
-                        </Link>
-                      </Button>
-                      <DeleteTemplateButton
-                      templateId={t.id}
-                      templateName={t.name}
-                      isPro={subscription.isPro}
-                    />
-                    </div>
+                    {subscription.isPro && (
+                      <DuplicateTemplateButton
+                        templateId={t.id}
+                        templateName={t.name}
+                        category={t.category}
+                        isPro={subscription.isPro}
+                        atLimit={atTemplateLimit}
+                      />
+                    )}
                   </li>
                 ))}
               </ul>

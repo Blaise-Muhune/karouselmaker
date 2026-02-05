@@ -11,10 +11,18 @@ import {
 } from "@/components/ui/card";
 import { CaptionEditModal } from "@/components/editor/CaptionEditModal";
 
+type UnsplashAttribution = {
+  photographerName: string;
+  photographerUsername: string;
+  profileUrl: string;
+  unsplashUrl: string;
+};
+
 type EditorCaptionSectionProps = {
   carouselId: string;
   captionVariants: { short?: string; medium?: string; spicy?: string };
   hashtags: string[];
+  unsplashAttributions?: UnsplashAttribution[];
   editorPath: string;
 };
 
@@ -22,6 +30,7 @@ export function EditorCaptionSection({
   carouselId,
   captionVariants,
   hashtags,
+  unsplashAttributions = [],
   editorPath,
 }: EditorCaptionSectionProps) {
   const [editOpen, setEditOpen] = useState(false);
@@ -72,6 +81,35 @@ export function EditorCaptionSection({
               <p className="text-muted-foreground text-sm">No hashtags yet.</p>
             )}
           </div>
+          {unsplashAttributions.length > 0 && (
+            <div>
+              <p className="text-muted-foreground text-xs font-medium">Image credits (Unsplash)</p>
+              <ul className="text-sm space-y-1 mt-1">
+                {unsplashAttributions.map((a) => (
+                  <li key={a.photographerUsername}>
+                    Photo by{" "}
+                    <a
+                      href={`https://unsplash.com/@${a.photographerUsername}?utm_source=karouselmaker&utm_medium=referral`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline hover:text-foreground"
+                    >
+                      {a.photographerName}
+                    </a>{" "}
+                    on{" "}
+                    <a
+                      href="https://unsplash.com/?utm_source=karouselmaker&utm_medium=referral"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline hover:text-foreground"
+                    >
+                      Unsplash
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </CardContent>
       </Card>
 

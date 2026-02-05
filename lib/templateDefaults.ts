@@ -9,7 +9,14 @@ export const DEFAULT_TEMPLATE_CONFIG: TemplateConfig = {
     { id: "body", x: 80, y: 560, w: 920, h: 140, fontSize: 32, fontWeight: 600, lineHeight: 1.2, maxLines: 2, align: "center" },
   ],
   overlays: { gradient: { enabled: true, direction: "bottom", strength: 0.5, extent: 100, color: "#000000", solidSize: 0 }, vignette: { enabled: false, strength: 0.2 } },
-  chrome: { showSwipe: true, showCounter: true, counterStyle: "1/8", watermark: { enabled: true, position: "top_right" } },
+  chrome: {
+    showSwipe: true,
+    swipeType: "chevrons",
+    swipePosition: "bottom_center",
+    showCounter: true,
+    counterStyle: "1/8",
+    watermark: { enabled: true, position: "top_right" },
+  },
   backgroundRules: { allowImage: true, defaultStyle: "darken" },
 };
 

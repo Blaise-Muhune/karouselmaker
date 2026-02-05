@@ -858,7 +858,7 @@ export function SlideEditForm({
         textColor: overlayDefaults.textColor,
         gradientDirection: background.overlay?.direction ?? "bottom",
         gradientExtent: background.overlay?.extent ?? 100,
-        gradientSolidSize: background.overlay?.solidSize ?? 0,
+        gradientSolidSize: background.overlay?.solidSize ?? templateConfig?.overlays?.gradient?.solidSize ?? 0,
       }
     : {
         style: background.style,
@@ -869,7 +869,7 @@ export function SlideEditForm({
         textColor: overlayDefaults.textColor,
         gradientDirection: background.overlay?.direction ?? "bottom",
         gradientExtent: background.overlay?.extent ?? 100,
-        gradientSolidSize: background.overlay?.solidSize ?? 0,
+        gradientSolidSize: background.overlay?.solidSize ?? templateConfig?.overlays?.gradient?.solidSize ?? 0,
       };
 
   const overlaySection = (
@@ -1007,11 +1007,11 @@ export function SlideEditForm({
           </div>
           <div className="space-y-2">
             <div className="flex justify-between">
-              <Label className="text-xs">Solid part (0–100%)</Label>
-              <span className="text-muted-foreground text-xs">{background.overlay?.solidSize ?? 0}%</span>
+              <Label className="text-xs">Solid overlay (0–100%)</Label>
+              <span className="text-muted-foreground text-xs">{background.overlay?.solidSize ?? templateConfig?.overlays?.gradient?.solidSize ?? 0}%</span>
             </div>
             <Slider
-              value={[background.overlay?.solidSize ?? 0]}
+              value={[background.overlay?.solidSize ?? templateConfig?.overlays?.gradient?.solidSize ?? 0]}
               onValueChange={([v]) =>
                 setBackground((b) => ({
                   ...b,
@@ -1023,7 +1023,7 @@ export function SlideEditForm({
               step={5}
             />
             <p className="text-muted-foreground text-xs">
-              0% = full gradient. 100% = solid overlay. Extent 100 + Solid 100 = full solid color.
+              0% = full gradient fade. 100% = solid block. Extent 100 + Solid 100 = full solid color.
             </p>
           </div>
         </div>
@@ -1063,6 +1063,32 @@ export function SlideEditForm({
         Export size applies to all slides in this carousel.
       </p>
       <div className="flex flex-wrap gap-3 mb-4 w-full">
+        {totalSlides > 1 && (
+          <div className="flex-1 min-w-[100px]">
+            <Label className="text-xs text-muted-foreground mb-1.5 block">Slide</Label>
+            <Select
+              value={String(currentSlideIndex + 1)}
+              onValueChange={async (v) => {
+                const idx = parseInt(v, 10) - 1;
+                const target = slidesList[idx];
+                if (!target || target.id === slide.id) return;
+                const result = await performSave(false);
+                if (result.ok) router.push(`/p/${projectId}/c/${carouselId}/s/${target.id}`);
+              }}
+            >
+              <SelectTrigger className="h-9 rounded-lg text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {slidesList.map((s, i) => (
+                  <SelectItem key={s.id} value={String(i + 1)}>
+                    {i + 1} of {totalSlides}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
         <div className="flex-1 min-w-[120px]">
           <Label className="text-xs text-muted-foreground mb-1.5 block">Size</Label>
           <Select
@@ -1296,7 +1322,32 @@ export function SlideEditForm({
       <Dialog open={previewExpanded} onOpenChange={setPreviewExpanded}>
         <DialogContent className="max-w-[95vw] max-h-[95vh] w-auto p-4 sm:p-6" showCloseButton>
           <DialogHeader>
-            <DialogTitle>Live preview</DialogTitle>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <DialogTitle>Live preview</DialogTitle>
+              {totalSlides > 1 && (
+                <Select
+                  value={String(currentSlideIndex + 1)}
+                  onValueChange={async (v) => {
+                    const idx = parseInt(v, 10) - 1;
+                    const target = slidesList[idx];
+                    if (!target || target.id === slide.id) return;
+                    const result = await performSave(false);
+                    if (result.ok) router.push(`/p/${projectId}/c/${carouselId}/s/${target.id}`);
+                  }}
+                >
+                  <SelectTrigger className="h-9 w-[120px] rounded-lg text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {slidesList.map((s, i) => (
+                      <SelectItem key={s.id} value={String(i + 1)}>
+                        Slide {i + 1} of {totalSlides}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
           </DialogHeader>
           <div className="flex justify-center items-center min-h-[200px] bg-muted/30 rounded-lg p-4">
             {templateConfig ? (
@@ -1842,44 +1893,68 @@ export function SlideEditForm({
                 <div className="space-y-2">
                   <Label className="text-muted-foreground text-xs font-medium">Image URLs</Label>
                   {imageUrls.map((item, i) => (
-                    <div key={i} className="flex gap-2 items-start">
-                      <Input
-                        type="url"
-                        value={item.url}
-                        onChange={(e) => {
-                          const v = e.target.value.trim();
-                          setImageUrls((prev) => {
-                            const next = [...prev];
-                            next[i] = { ...next[i]!, url: v };
-                            return next;
-                          });
-                        }}
-                        placeholder="https://..."
-                        className="h-10 flex-1 rounded-lg border-input/80 bg-background text-sm"
-                      />
-                      {item.source && (
-                        <span
-                          className={`shrink-0 self-center inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                            item.source === "unsplash"
-                              ? "bg-amber-500/20 text-amber-700 dark:text-amber-400"
-                              : "bg-emerald-500/20 text-emerald-700 dark:text-emerald-400"
-                          }`}
+                    <div key={i} className="space-y-1">
+                      <div className="flex gap-2 items-start">
+                        <Input
+                          type="url"
+                          value={item.url}
+                          onChange={(e) => {
+                            const v = e.target.value.trim();
+                            setImageUrls((prev) => {
+                              const next = [...prev];
+                              next[i] = { ...next[i]!, url: v };
+                              return next;
+                            });
+                          }}
+                          placeholder="https://..."
+                          className="h-10 flex-1 rounded-lg border-input/80 bg-background text-sm"
+                        />
+                        {item.source && (
+                          <span
+                            className={`shrink-0 self-center inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                              item.source === "unsplash"
+                                ? "bg-amber-500/20 text-amber-700 dark:text-amber-400"
+                                : "bg-emerald-500/20 text-emerald-700 dark:text-emerald-400"
+                            }`}
+                          >
+                            {item.source === "unsplash" ? "Fallback" : "Brave"}
+                          </span>
+                        )}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          className="shrink-0 text-muted-foreground hover:text-destructive"
+                          onClick={() => {
+                            setImageUrls((prev) => (prev.length > 1 ? prev.filter((_, j) => j !== i) : [{ url: "", source: undefined }]));
+                          }}
+                          title="Remove"
                         >
-                          {item.source === "unsplash" ? "Fallback" : "Brave"}
-                        </span>
+                          <Trash2 className="size-4" />
+                        </Button>
+                      </div>
+                      {item.source === "unsplash" && item.unsplash_attribution && (
+                        <p className="text-muted-foreground text-xs pl-1">
+                          Photo by{" "}
+                          <a
+                            href={`https://unsplash.com/@${item.unsplash_attribution.photographerUsername}?utm_source=karouselmaker&utm_medium=referral`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="underline hover:text-foreground"
+                          >
+                            {item.unsplash_attribution.photographerName}
+                          </a>{" "}
+                          on{" "}
+                          <a
+                            href="https://unsplash.com/?utm_source=karouselmaker&utm_medium=referral"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="underline hover:text-foreground"
+                          >
+                            Unsplash
+                          </a>
+                        </p>
                       )}
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        className="shrink-0 text-muted-foreground hover:text-destructive"
-                        onClick={() => {
-                          setImageUrls((prev) => (prev.length > 1 ? prev.filter((_, j) => j !== i) : [{ url: "", source: undefined }]));
-                        }}
-                        title="Remove"
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
                     </div>
                   ))}
                   {imageUrls.length < 4 && (
@@ -2290,6 +2365,28 @@ export function SlideEditForm({
                     placeholder="https://..."
                     className="h-10 rounded-lg border-input/80 bg-background text-sm"
                   />
+                  {!isImageMode && imageUrls[0]?.source === "unsplash" && imageUrls[0]?.unsplash_attribution && (
+                    <p className="text-muted-foreground text-xs">
+                      Photo by{" "}
+                      <a
+                        href={`https://unsplash.com/@${imageUrls[0].unsplash_attribution.photographerUsername}?utm_source=karouselmaker&utm_medium=referral`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline hover:text-foreground"
+                      >
+                        {imageUrls[0].unsplash_attribution.photographerName}
+                      </a>{" "}
+                      on{" "}
+                      <a
+                        href="https://unsplash.com/?utm_source=karouselmaker&utm_medium=referral"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline hover:text-foreground"
+                      >
+                        Unsplash
+                      </a>
+                    </p>
+                  )}
                 </div>
               </div>
             )}

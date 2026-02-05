@@ -33,7 +33,6 @@ export async function createTemplateAction(
   if (payload.baseTemplateId) {
     const base = await getTemplate(user.id, payload.baseTemplateId);
     if (!base) return { ok: false, error: "Base template not found." };
-    if (base.user_id != null) return { ok: false, error: "Can only clone from system templates." };
     const parsed = templateConfigSchema.safeParse(base.config);
     if (!parsed.success) return { ok: false, error: "Invalid base template config." };
     config = parsed.data;

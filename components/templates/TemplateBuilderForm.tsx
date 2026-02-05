@@ -109,6 +109,8 @@ export function TemplateBuilderForm({
   const [previewImageUrl, setPreviewImageUrl] = useState("");
   const [previewBackgroundColor, setPreviewBackgroundColor] = useState("#0a0a0a");
   const [previewSize, setPreviewSize] = useState<PreviewSize>("1080x1080");
+  const [previewSlideIndex, setPreviewSlideIndex] = useState(1);
+  const [previewTotalSlides] = useState(10);
   const [previewExpanded, setPreviewExpanded] = useState(false);
 
   const updateConfig = useCallback((updates: Partial<TemplateConfig> | ((prev: TemplateConfig) => Partial<TemplateConfig>)) => {
@@ -677,7 +679,7 @@ export function TemplateBuilderForm({
                 </div>
                 <div className="space-y-2">
                   <div className="flex justify-between">
-                    <Label className="text-xs">Solid part (0–100%)</Label>
+                    <Label className="text-xs">Solid overlay (0–100%)</Label>
                     <span className="text-muted-foreground text-xs">{config.overlays.gradient.solidSize ?? 0}%</span>
                   </div>
                   <Slider
@@ -721,6 +723,101 @@ export function TemplateBuilderForm({
                 }
               />
             </div>
+            {config.chrome.showSwipe && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Swipe type</Label>
+                    <Select
+                      value={config.chrome.swipeType ?? "text"}
+                      onValueChange={(v) =>
+                        updateConfig((prev) => ({
+                          chrome: {
+                            ...prev.chrome,
+                            swipeType: v as "text" | "arrow-left" | "arrow-right" | "arrows" | "hand-left" | "hand-right" | "chevrons" | "dots" | "finger-swipe" | "finger-left" | "finger-right" | "circle-arrows" | "line-dots" | "custom",
+                          },
+                        }))
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="text">• • •</SelectItem>
+                        <SelectItem value="dots">• • • (large)</SelectItem>
+                        <SelectItem value="line-dots">Line + dots</SelectItem>
+                        <SelectItem value="arrow-left">←</SelectItem>
+                        <SelectItem value="arrow-right">→</SelectItem>
+                        <SelectItem value="arrows">← →</SelectItem>
+                        <SelectItem value="finger-left">← (bold)</SelectItem>
+                        <SelectItem value="finger-right">→ (bold)</SelectItem>
+                        <SelectItem value="chevrons">« »</SelectItem>
+                        <SelectItem value="hand-left">Hand ←</SelectItem>
+                        <SelectItem value="hand-right">Hand →</SelectItem>
+                        <SelectItem value="finger-swipe">↔</SelectItem>
+                        <SelectItem value="circle-arrows">○ arrows</SelectItem>
+                        <SelectItem value="custom">Custom (SVG/PNG URL)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Swipe position</Label>
+                  <Select
+                    value={config.chrome.swipePosition ?? "bottom_center"}
+                    onValueChange={(v) =>
+                      updateConfig((prev) => ({
+                        chrome: {
+                          ...prev.chrome,
+                          swipePosition: v as
+                            | "bottom_left"
+                            | "bottom_center"
+                            | "bottom_right"
+                            | "top_left"
+                            | "top_center"
+                            | "top_right"
+                            | "center_left"
+                            | "center_right",
+                        },
+                      }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="bottom_left">Bottom left</SelectItem>
+                      <SelectItem value="bottom_center">Bottom center</SelectItem>
+                      <SelectItem value="bottom_right">Bottom right</SelectItem>
+                      <SelectItem value="top_left">Top left</SelectItem>
+                      <SelectItem value="top_center">Top center</SelectItem>
+                      <SelectItem value="top_right">Top right</SelectItem>
+                      <SelectItem value="center_left">Center left</SelectItem>
+                      <SelectItem value="center_right">Center right</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  </div>
+                </div>
+                {(config.chrome.swipeType ?? "text") === "custom" && (
+                  <div className="space-y-1">
+                    <Label className="text-xs">Icon URL (SVG or PNG)</Label>
+                    <Input
+                      type="url"
+                      placeholder="https://example.com/swipe-icon.svg"
+                      value={config.chrome.swipeIconUrl ?? ""}
+                      onChange={(e) =>
+                        updateConfig((prev) => ({
+                          chrome: { ...prev.chrome, swipeIconUrl: e.target.value.trim() || undefined },
+                        }))
+                      }
+                      className="text-sm"
+                    />
+                    <p className="text-muted-foreground text-xs">
+                      Use a direct link to an SVG or PNG. For dark overlays, use a white/light icon.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
             <div className="flex items-center justify-between">
               <Label>Show counter</Label>
               <input
@@ -898,6 +995,24 @@ export function TemplateBuilderForm({
           </div>
           <div className="flex flex-wrap gap-2 mb-3">
             <div className="flex-1 min-w-[80px]">
+              <Label className="text-xs text-muted-foreground mb-1 block">Slide</Label>
+              <Select
+                value={String(previewSlideIndex)}
+                onValueChange={(v) => setPreviewSlideIndex(parseInt(v, 10))}
+              >
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: previewTotalSlides }, (_, i) => (
+                    <SelectItem key={i} value={String(i + 1)}>
+                      {i + 1} of {previewTotalSlides}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex-1 min-w-[80px]">
               <Label className="text-xs text-muted-foreground mb-1 block">Size</Label>
               <Select value={previewSize} onValueChange={(v) => setPreviewSize(v as PreviewSize)}>
                 <SelectTrigger className="h-8 text-xs">
@@ -935,7 +1050,7 @@ export function TemplateBuilderForm({
                   slide={{
                     headline: previewHeadline || "Your headline text",
                     body: config.textZones.some((z) => z.id === "body") ? (previewBody || "Body text goes here.") : null,
-                    slide_index: 1,
+                    slide_index: previewSlideIndex,
                     slide_type: "point",
                   }}
                   templateConfig={config}
@@ -944,9 +1059,10 @@ export function TemplateBuilderForm({
                     primary_color: previewBackgroundColor,
                     logo_url: config.chrome.watermark.enabled ? MOCK_LOGO_URL : undefined,
                   }}
-                  totalSlides={8}
+                  totalSlides={previewTotalSlides}
                   backgroundImageUrl={previewImageUrl.trim() || undefined}
                   backgroundOverride={{ color: previewBackgroundColor }}
+                  showMadeWithOverride={false}
                 />
               </div>
             </div>
@@ -958,7 +1074,24 @@ export function TemplateBuilderForm({
         <Dialog open={previewExpanded} onOpenChange={setPreviewExpanded}>
           <DialogContent className="max-w-[95vw] max-h-[95vh] w-auto p-4 sm:p-6" showCloseButton>
             <DialogHeader>
-              <DialogTitle>Live preview</DialogTitle>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <DialogTitle>Live preview</DialogTitle>
+                <Select
+                  value={String(previewSlideIndex)}
+                  onValueChange={(v) => setPreviewSlideIndex(parseInt(v, 10))}
+                >
+                  <SelectTrigger className="h-9 w-[120px] rounded-lg text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: previewTotalSlides }, (_, i) => (
+                      <SelectItem key={i} value={String(i + 1)}>
+                        Slide {i + 1} of {previewTotalSlides}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </DialogHeader>
             <div className="flex justify-center items-center min-h-[200px] bg-muted/30 rounded-lg p-4">
               {(() => {
@@ -984,7 +1117,7 @@ export function TemplateBuilderForm({
                         slide={{
                           headline: previewHeadline || "Your headline text",
                           body: config.textZones.some((z) => z.id === "body") ? (previewBody || "Body text goes here.") : null,
-                          slide_index: 1,
+                          slide_index: previewSlideIndex,
                           slide_type: "point",
                         }}
                         templateConfig={config}
@@ -993,9 +1126,10 @@ export function TemplateBuilderForm({
                           primary_color: previewBackgroundColor,
                           logo_url: config.chrome.watermark.enabled ? MOCK_LOGO_URL : undefined,
                         }}
-                        totalSlides={8}
+                        totalSlides={previewTotalSlides}
                         backgroundImageUrl={previewImageUrl.trim() || undefined}
                         backgroundOverride={{ color: previewBackgroundColor }}
+                        showMadeWithOverride={false}
                       />
                     </div>
                   </div>

@@ -41,6 +41,9 @@ export type SlideRenderModel = {
   textBlocks: TextBlock[];
   chrome: {
     showSwipe: boolean;
+    swipeType: "text" | "arrow-left" | "arrow-right" | "arrows" | "hand-left" | "hand-right" | "chevrons" | "dots" | "finger-swipe" | "finger-left" | "finger-right" | "circle-arrows" | "line-dots" | "custom";
+    swipeIconUrl?: string;
+    swipePosition: "bottom_left" | "bottom_center" | "bottom_right" | "top_left" | "top_center" | "top_right" | "center_left" | "center_right";
     showCounter: boolean;
     counterText: string;
     watermark: {
@@ -109,6 +112,9 @@ export function buildSlideRenderModel(
     textBlocks,
     chrome: {
       showSwipe: templateConfig.chrome.showSwipe,
+      swipeType: templateConfig.chrome.swipeType ?? "text",
+      swipeIconUrl: templateConfig.chrome.swipeIconUrl,
+      swipePosition: templateConfig.chrome.swipePosition ?? "bottom_center",
       showCounter: templateConfig.chrome.showCounter,
       counterText,
       watermark: {

@@ -178,6 +178,24 @@ export async function POST(
       }
       const borderedFrame = !!(backgroundImageUrl || backgroundImageUrls?.length);
 
+      // Collect Unsplash attributions for CREDITS.txt and caption
+      if (slideBg?.unsplash_attribution) {
+        const key = slideBg.unsplash_attribution.photographerUsername;
+        if (!unsplashAttributions.has(key)) {
+          unsplashAttributions.set(key, slideBg.unsplash_attribution);
+        }
+      }
+      if (slideBg?.images?.length) {
+        for (const img of slideBg.images) {
+          if (img.unsplash_attribution) {
+            const key = img.unsplash_attribution.photographerUsername;
+            if (!unsplashAttributions.has(key)) {
+              unsplashAttributions.set(key, img.unsplash_attribution);
+            }
+          }
+        }
+      }
+
       const slideMeta = slide.meta as {
         show_counter?: boolean;
         show_watermark?: boolean;
@@ -262,18 +280,26 @@ export async function POST(
       hashtags.length > 0
         ? hashtags.map((h) => (h.startsWith("#") ? h : `#${h}`)).join(" ")
         : "";
-    const captionText = [captionLine, hashtagLine].filter(Boolean).join("\n\n");
+    const creditsLines =
+      unsplashAttributions.size > 0
+        ? [
+            "Image credits (Unsplash):",
+            ...Array.from(unsplashAttributions.values()).map(formatUnsplashAttributionLine),
+          ]
+        : [];
+    const captionParts = [captionLine, hashtagLine, ...creditsLines].filter(Boolean);
+    const captionText = captionParts.join("\n\n");
     if (captionText.trim()) zip.file("caption.txt", captionText.trim());
 
     if (unsplashAttributions.size > 0) {
-      const creditsLines = [
+      const creditsFileLines = [
         "IMAGE CREDITS (Unsplash)",
         "-----------------------",
         "When publishing or distributing your carousel, you are responsible for providing proper attribution to photographers.",
         "",
         ...Array.from(unsplashAttributions.values()).map(formatUnsplashAttributionLine),
       ];
-      zip.file("CREDITS.txt", creditsLines.join("\n"));
+      zip.file("CREDITS.txt", creditsFileLines.join("\n"));
     }
 
     const zipBuffer = await zip.generateAsync({ type: "nodebuffer" });

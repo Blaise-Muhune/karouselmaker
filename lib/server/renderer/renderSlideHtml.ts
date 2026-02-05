@@ -393,7 +393,7 @@ export function renderSlideHtml(
     .slide-gradient { position: absolute; inset: 0; background: ${gradientStyle}; pointer-events: none; }
     .text-block { position: absolute; display: flex; flex-direction: column; justify-content: center; }
     .text-block span { display: block; }
-    .chrome-swipe { position: absolute; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; padding: 12px 0; opacity: 0.9; font-size: 24px; font-weight: 600; letter-spacing: 0.1em; z-index: 5; }
+    .chrome-swipe { position: absolute; display: flex; align-items: center; justify-content: center; padding: 12px 0; opacity: 0.9; font-size: 24px; font-weight: 600; letter-spacing: 0.1em; z-index: 5; }
     .chrome-counter { position: absolute; top: 20px; right: 20px; padding: 6px 12px; border-radius: 9999px; background: rgba(255,255,255,0.08); font-size: 20px; font-weight: 500; letter-spacing: 0.02em; opacity: 0.85; z-index: 5; }
     .chrome-watermark { position: absolute; opacity: 0.7; font-size: 20px; font-weight: 500; z-index: 5; }
     .chrome-watermark.tl { top: 24px; left: 24px; }
@@ -409,6 +409,47 @@ export function renderSlideHtml(
     <div class="slide-gradient"></div>
     ${hookCircleHtml}
     ${textBlocksHtml}
+    ${model.chrome.showSwipe ? (() => {
+      const t = model.chrome.swipeType ?? "text";
+      const pos = model.chrome.swipePosition ?? "bottom_center";
+      const posStyles: Record<string, string> = {
+        bottom_left: "bottom:20px;left:24px",
+        bottom_center: "bottom:20px;left:50%;transform:translateX(-50%)",
+        bottom_right: "bottom:20px;right:24px",
+        top_left: "top:24px;left:24px",
+        top_center: "top:24px;left:50%;transform:translateX(-50%)",
+        top_right: "top:24px;right:24px",
+        center_left: "top:50%;left:24px;transform:translateY(-50%)",
+        center_right: "top:50%;right:24px;transform:translateY(-50%)",
+      };
+      const posStyle = posStyles[pos] ?? posStyles.bottom_center;
+      const c = escapeHtml(textColor);
+      const handSvg = (rotate: number) => `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(${rotate}deg);flex-shrink:0"><path d="M18 11V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2"/><path d="M14 10V4a2 2 0 0 0-2-2 2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg>`;
+      const chevronsLeftSvg = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m11 17-5-5 5-5"/><path d="m18 17-5-5 5-5"/></svg>`;
+      const chevronsRightSvg = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 17 5-5-5-5"/><path d="m13 17 5-5-5-5"/></svg>`;
+      const moveHorizontalSvg = `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m18 8 4 4-4 4"/><path d="M2 12h20"/><path d="m6 8-4 4 4 4"/></svg>`;
+      const fingerLeftSvg = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transform:scaleX(-1)"><path d="M5 12h14M5 12l4-4M5 12l4 4"/></svg>`;
+      const fingerRightSvg = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M19 12l-4-4M19 12l-4 4"/></svg>`;
+      const circleArrowsSvg = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m9 12-3-3 3-3"/><path d="M12 9H6"/><path d="m15 12 3-3-3-3"/><path d="M12 15h6"/></svg>`;
+      const lineDotsSvg = `<svg width="42" height="28" viewBox="0 0 36 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round"><line x1="2" y1="12" x2="34" y2="12"/><circle cx="8" cy="12" r="2" fill="${c}"/><circle cx="18" cy="12" r="2" fill="${c}" opacity="0.5"/><circle cx="28" cy="12" r="2" fill="${c}" opacity="0.2"/></svg>`;
+      const customImg = model.chrome.swipeIconUrl ? `<img src="${escapeHtml(model.chrome.swipeIconUrl)}" alt="" style="height:32px;width:auto;max-width:80px;object-fit:contain;opacity:0.9"/>` : "";
+      const inner = t === "custom" && model.chrome.swipeIconUrl ? customImg :
+        t === "text" ? `<span style="letter-spacing:6px;font-size:18px">• • •</span>` :
+        t === "arrow-left" ? `←` :
+        t === "arrow-right" ? `→` :
+        t === "arrows" ? `<span style="font-size:24px">←</span><span style="font-size:24px">→</span>` :
+        t === "hand-left" ? handSvg(-90) :
+        t === "hand-right" ? handSvg(90) :
+        t === "chevrons" ? chevronsLeftSvg + chevronsRightSvg :
+        t === "dots" ? `<span style="letter-spacing:8px;font-size:20px">• • •</span>` :
+        t === "finger-swipe" ? moveHorizontalSvg :
+        t === "finger-left" ? fingerLeftSvg :
+        t === "finger-right" ? fingerRightSvg :
+        t === "circle-arrows" ? circleArrowsSvg :
+        t === "line-dots" ? lineDotsSvg :
+        `<span style="letter-spacing:6px;font-size:18px">• • •</span>`;
+      return `<div class="chrome-swipe" style="color:${c};${posStyle};display:flex;align-items:center;justify-content:center;gap:4px">${inner}</div>`;
+    })() : ""}
     ${showCounter ? `<div class="chrome-counter" style="color:${escapeHtml(textColor)}">${escapeHtml(model.chrome.counterText)}</div>` : ""}
     ${(model.chrome.watermark.text || model.chrome.watermark.logoUrl) && (showWatermarkOverride === undefined ? model.chrome.watermark.enabled : showWatermarkOverride) ? (() => {
       const wm = model.chrome.watermark as { logoX?: number; logoY?: number; position: string };
