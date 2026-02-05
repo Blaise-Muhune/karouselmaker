@@ -80,6 +80,27 @@ export async function updateExport(
   return data as ExportRow;
 }
 
+export async function countExportsThisMonth(userId: string): Promise<number> {
+  const supabase = await createClient();
+  const startOfMonth = new Date();
+  startOfMonth.setDate(1);
+  startOfMonth.setHours(0, 0, 0, 0);
+  const { data: carousels } = await supabase
+    .from("carousels")
+    .select("id")
+    .eq("user_id", userId);
+  if (!carousels?.length) return 0;
+  const carouselIds = carousels.map((c) => c.id);
+  const { count, error } = await supabase
+    .from("exports")
+    .select("*", { count: "exact", head: true })
+    .in("carousel_id", carouselIds)
+    .eq("status", "ready")
+    .gte("created_at", startOfMonth.toISOString());
+  if (error) return 0;
+  return count ?? 0;
+}
+
 export async function listExportsByCarousel(
   userId: string,
   carouselId: string,

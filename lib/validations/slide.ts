@@ -13,6 +13,10 @@ export const slideBackgroundOverlaySchema = z.object({
   textColor: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
   /** Where the dark part of the gradient sits: top, bottom, left, right. */
   direction: gradientDirectionSchema.optional(),
+  /** Percentage (0–100) of the slide the gradient covers from the edge. 100 = full coverage. */
+  extent: z.number().min(0).max(100).optional(),
+  /** Solid part (0–100): how much of the gradient area is solid color vs transition. 0 = full gradient, 100 = solid overlay. */
+  solidSize: z.number().min(0).max(100).optional(),
 });
 
 export const imagePositionSchema = z.enum([
@@ -107,14 +111,35 @@ export const slideBackgroundSchema = z.object({
 export const highlightStyleSchema = z.enum(["text", "background"]);
 export type HighlightStyle = z.output<typeof highlightStyleSchema>;
 
+/** Per-slide overrides for a text zone (position, size, font). */
+export const textZoneOverrideSchema = z.object({
+  x: z.number().int().min(0).max(1080).optional(),
+  y: z.number().int().min(0).max(1080).optional(),
+  w: z.number().int().min(1).max(1080).optional(),
+  h: z.number().int().min(1).max(1080).optional(),
+  fontSize: z.number().int().min(8).max(200).optional(),
+  fontWeight: z.number().int().min(100).max(900).optional(),
+  lineHeight: z.number().min(0.5).max(3).optional(),
+  maxLines: z.number().int().min(1).max(20).optional(),
+  align: z.enum(["left", "center"]).optional(),
+  color: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
+}).optional();
+export type TextZoneOverride = z.output<typeof textZoneOverrideSchema>;
+
 export const slideMetaSchema = z.object({
   show_counter: z.boolean().optional(),
   /** Override watermark/logo visibility. First, second, last = on by default; middle = off. */
   show_watermark: z.boolean().optional(),
+  /** When false, hide "Made with KarouselMaker.com" attribution. Pro only. Default true. */
+  show_made_with: z.boolean().optional(),
   /** Override headline font size (px). 8–200. */
   headline_font_size: z.number().int().min(8).max(200).optional(),
   /** Override body font size (px). 8–200. */
   body_font_size: z.number().int().min(8).max(200).optional(),
+  /** Per-slide headline zone overrides (x, y, w, h, maxLines, align, etc.). */
+  headline_zone_override: textZoneOverrideSchema,
+  /** Per-slide body zone overrides. */
+  body_zone_override: textZoneOverrideSchema,
   /** How headline {{color}} highlights render. */
   headline_highlight_style: highlightStyleSchema.optional(),
   /** How body {{color}} highlights render. */

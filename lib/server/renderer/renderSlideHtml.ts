@@ -1,4 +1,4 @@
-import { buildSlideRenderModel, type BrandKit, type SlideData } from "@/lib/renderer/renderModel";
+import { buildSlideRenderModel, type BrandKit, type SlideData, type TextZoneOverrides } from "@/lib/renderer/renderModel";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { getContrastingTextColor, hexToRgba } from "@/lib/editor/colorUtils";
 import { parseInlineFormatting } from "@/lib/editor/inlineFormat";
@@ -10,12 +10,13 @@ const HOOK_CIRCLE_INSET = 56;
 
 export type GradientDirection = "top" | "bottom" | "left" | "right";
 
-function gradientDirectionToCss(direction: GradientDirection | undefined, templateDirection: "top" | "bottom"): string {
+function gradientDirectionToCss(direction: GradientDirection | undefined, templateDirection: GradientDirection): string {
   if (direction === "top") return "to top";
   if (direction === "bottom") return "to bottom";
   if (direction === "left") return "to left";
   if (direction === "right") return "to right";
-  return templateDirection === "bottom" ? "to top" : "to bottom";
+  const map: Record<GradientDirection, string> = { top: "to top", bottom: "to bottom", left: "to left", right: "to right" };
+  return map[templateDirection] ?? "to bottom";
 }
 
 export type SlideBackgroundOverride = {
@@ -26,6 +27,8 @@ export type SlideBackgroundOverride = {
   gradientColor?: string;
   textColor?: string;
   gradientDirection?: GradientDirection;
+  gradientExtent?: number;
+  gradientSolidSize?: number;
 };
 
 export type FontSizeOverrides = {
@@ -93,7 +96,11 @@ export function renderSlideHtml(
   secondaryBackgroundImageUrl?: string | null,
   showCounterOverride?: boolean,
   showWatermarkOverride?: boolean,
+  /** When false, hide "Made with KarouselMaker.com". Pro only. Undefined = show. */
+  showMadeWithOverride?: boolean,
   fontOverrides?: FontSizeOverrides | null,
+  /** Per-slide text zone overrides (x, y, w, h, maxLines, align, etc.). Merged with fontOverrides. */
+  zoneOverrides?: TextZoneOverrides | null,
   highlightStyles: HighlightStyleOverrides = {},
   /** When true, wrap background image in a bordered frame. */
   borderedFrame?: boolean,
@@ -120,12 +127,29 @@ export function renderSlideHtml(
   dimensions?: { w: number; h: number }
 ): string {
   const { w: dimW, h: dimH } = dimensions ?? { w: 1080, h: 1080 };
+  const mergedZoneOverrides: TextZoneOverrides | undefined =
+    zoneOverrides || fontOverrides
+      ? {
+          headline: {
+            ...zoneOverrides?.headline,
+            ...(fontOverrides?.headline_font_size != null && { fontSize: fontOverrides.headline_font_size }),
+          },
+          body: {
+            ...zoneOverrides?.body,
+            ...(fontOverrides?.body_font_size != null && { fontSize: fontOverrides.body_font_size }),
+          },
+        }
+      : undefined;
+  const hasZoneOverrides =
+    mergedZoneOverrides &&
+    (Object.keys(mergedZoneOverrides.headline ?? {}).length > 0 || Object.keys(mergedZoneOverrides.body ?? {}).length > 0);
   const model = buildSlideRenderModel(
     templateConfig,
     slideData,
     brandKit,
     slideData.slide_index,
-    totalSlides
+    totalSlides,
+    hasZoneOverrides ? mergedZoneOverrides : undefined
   );
 
   const backgroundColor =
@@ -140,9 +164,9 @@ export function renderSlideHtml(
   );
   const gradientStrength =
     backgroundOverride?.gradientStrength ??
-    (backgroundImageUrl || (backgroundImageUrls?.length ?? 0) > 0 ? 0.55 : model.background.gradientStrength);
+    (model.background.gradientStrength ?? 0.55);
   const gradientOpacity = useGradient ? gradientStrength : 0;
-  const gradientColorHex = backgroundOverride?.gradientColor ?? "#000000";
+  const gradientColorHex = backgroundOverride?.gradientColor ?? (model.background as { gradientColor?: string }).gradientColor ?? "#000000";
   const gradientRgba = hexToRgba(gradientColorHex, gradientOpacity);
   const textColor = getContrastingTextColor(useGradient ? gradientColorHex : (backgroundColor ?? "#0a0a0a"));
 
@@ -166,18 +190,12 @@ export function renderSlideHtml(
 
   const textBlocksHtml = model.textBlocks
     .map((block) => {
-      const fontSizeOverride =
-        block.zone.id === "headline"
-          ? fontOverrides?.headline_font_size
-          : block.zone.id === "body"
-            ? fontOverrides?.body_font_size
-            : undefined;
-      const fontSize = fontSizeOverride ?? block.zone.fontSize;
       const zoneHighlightStyle =
         block.zone.id === "headline"
           ? (highlightStyles.headline ?? "text")
           : (highlightStyles.body ?? "text");
-      return `<div class="text-block" style="left:${block.zone.x}px;top:${block.zone.y}px;width:${block.zone.w}px;height:${block.zone.h}px;font-size:${fontSize}px;font-weight:${block.zone.fontWeight};line-height:${block.zone.lineHeight};text-align:${block.zone.align};color:${escapeHtml(textColor)}">${block.lines.map((line) => `<span>${lineToHtml(line, zoneHighlightStyle)}</span>`).join("")}</div>`;
+      const zoneColor = block.zone.color ?? textColor;
+      return `<div class="text-block" style="left:${block.zone.x}px;top:${block.zone.y}px;width:${block.zone.w}px;height:${block.zone.h}px;font-size:${block.zone.fontSize}px;font-weight:${block.zone.fontWeight};line-height:${block.zone.lineHeight};text-align:${block.zone.align};color:${escapeHtml(zoneColor)}">${block.lines.map((line) => `<span>${lineToHtml(line, zoneHighlightStyle)}</span>`).join("")}</div>`;
     })
     .join("");
 
@@ -342,8 +360,15 @@ export function renderSlideHtml(
       ? `<div class="slide-hook-circle" style="position:absolute;right:${HOOK_CIRCLE_INSET}px;bottom:${HOOK_CIRCLE_INSET}px;width:${HOOK_CIRCLE_SIZE}px;height:${HOOK_CIRCLE_SIZE}px;border-radius:50%;overflow:hidden;border:${HOOK_CIRCLE_BORDER}px solid rgba(255,255,255,0.95);box-shadow:0 8px 40px rgba(0,0,0,0.4);"><div style="position:absolute;inset:0;background-image:url(${escapeHtml(secondaryBackgroundImageUrl)});background-size:cover;background-position:center;"></div></div>`
       : "";
 
+  const gradientExtent = backgroundOverride?.gradientExtent ?? (model.background as { gradientExtent?: number }).gradientExtent ?? 100;
+  const gradientSolidSize = backgroundOverride?.gradientSolidSize ?? (model.background as { gradientSolidSize?: number }).gradientSolidSize ?? 0;
+  const gradientTransitionEnd = 100 - gradientExtent + (gradientExtent * (100 - gradientSolidSize)) / 100;
   const gradientStyle = useGradient
-    ? `linear-gradient(${gradientDir}, transparent 0%, ${gradientRgba} 100%)`
+    ? (gradientSolidSize >= 100
+        ? `linear-gradient(${gradientDir}, transparent 0%, transparent ${100 - gradientExtent}%, ${gradientRgba} ${100 - gradientExtent}%, ${gradientRgba} 100%)`
+        : gradientExtent >= 100 && gradientSolidSize <= 0
+          ? `linear-gradient(${gradientDir}, transparent 0%, ${gradientRgba} 100%)`
+          : `linear-gradient(${gradientDir}, transparent 0%, transparent ${100 - gradientExtent}%, ${gradientRgba} ${gradientTransitionEnd}%, ${gradientRgba} 100%)`)
     : "none";
 
   const isPortrait = dimH > dimW;
@@ -371,8 +396,10 @@ export function renderSlideHtml(
     .chrome-swipe { position: absolute; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; padding: 12px 0; opacity: 0.9; font-size: 24px; font-weight: 600; letter-spacing: 0.1em; z-index: 5; }
     .chrome-counter { position: absolute; top: 20px; right: 20px; padding: 6px 12px; border-radius: 9999px; background: rgba(255,255,255,0.08); font-size: 20px; font-weight: 500; letter-spacing: 0.02em; opacity: 0.85; z-index: 5; }
     .chrome-watermark { position: absolute; opacity: 0.7; font-size: 20px; font-weight: 500; z-index: 5; }
+    .chrome-watermark.tl { top: 24px; left: 24px; }
     .chrome-watermark.tr { top: 24px; right: 24px; }
     .chrome-watermark.bl { bottom: 80px; left: 24px; }
+    .chrome-watermark.br { bottom: 80px; right: 24px; }
   </style>
 </head>
 <body>
@@ -383,7 +410,21 @@ export function renderSlideHtml(
     ${hookCircleHtml}
     ${textBlocksHtml}
     ${showCounter ? `<div class="chrome-counter" style="color:${escapeHtml(textColor)}">${escapeHtml(model.chrome.counterText)}</div>` : ""}
-    ${(model.chrome.watermark.text || model.chrome.watermark.logoUrl) && (showWatermarkOverride === undefined ? model.chrome.watermark.enabled : showWatermarkOverride) ? `<div class="chrome-watermark ${model.chrome.watermark.position === "top_left" ? "tl" : model.chrome.watermark.position === "top_right" ? "tr" : "bl"}" style="color:${escapeHtml(textColor)}">${model.chrome.watermark.logoUrl ? `<img src="${escapeHtml(model.chrome.watermark.logoUrl)}" alt="" style="max-height:48px;max-width:120px;width:auto;height:auto;object-fit:contain" />` : escapeHtml(model.chrome.watermark.text)}</div>` : ""}
+    ${(model.chrome.watermark.text || model.chrome.watermark.logoUrl) && (showWatermarkOverride === undefined ? model.chrome.watermark.enabled : showWatermarkOverride) ? (() => {
+      const wm = model.chrome.watermark as { logoX?: number; logoY?: number; position: string };
+      const useCustom = wm.position === "custom" || (wm.logoX != null && wm.logoY != null);
+      const posStyle = useCustom ? `left:${wm.logoX ?? 24}px;top:${wm.logoY ?? 24}px` : "";
+      const posClass = useCustom ? "" : ` ${wm.position === "top_left" ? "tl" : wm.position === "top_right" ? "tr" : wm.position === "bottom_right" ? "br" : "bl"}`;
+      return `<div class="chrome-watermark${posClass}" style="color:${escapeHtml(textColor)}${posStyle ? ";" + posStyle : ""}">${model.chrome.watermark.logoUrl ? `<img src="${escapeHtml(model.chrome.watermark.logoUrl)}" alt="" style="max-height:48px;max-width:120px;width:auto;height:auto;object-fit:contain" />` : escapeHtml(model.chrome.watermark.text)}</div>`;
+    })() : ""}
+    ${showMadeWithOverride !== false ? (() => {
+      const headlineZone = model.textBlocks.find((b) => b.zone.id === "headline")?.zone;
+      if (headlineZone) {
+        const top = headlineZone.y + headlineZone.h + 16;
+        return `<div style="position:absolute;left:${headlineZone.x}px;top:${top}px;width:${headlineZone.w}px;font-size:30px;font-weight:500;letter-spacing:0.02em;opacity:0.65;z-index:5;color:${escapeHtml(textColor)};text-shadow:0 1px 2px rgba(0,0,0,0.3);text-align:${headlineZone.align}">Made with KarouselMaker.com</div>`;
+      }
+      return `<div style="position:absolute;bottom:16px;left:50%;transform:translateX(-50%);font-size:30px;font-weight:500;letter-spacing:0.02em;opacity:0.65;z-index:5;color:${escapeHtml(textColor)};text-shadow:0 1px 2px rgba(0,0,0,0.3)">Made with KarouselMaker.com</div>`;
+    })() : ""}
   </div>
   </div>
 </body>

@@ -2,8 +2,9 @@
 
 import OpenAI from "openai";
 import { getUser } from "@/lib/server/auth/getUser";
+import { getSubscription } from "@/lib/server/subscription";
 import { getProject } from "@/lib/server/db/projects";
-import { createCarousel, getCarousel, updateCarousel } from "@/lib/server/db/carousels";
+import { createCarousel, getCarousel, updateCarousel, countCarouselsThisMonth } from "@/lib/server/db/carousels";
 import { replaceSlides, updateSlide } from "@/lib/server/db/slides";
 import { getAsset } from "@/lib/server/db/assets";
 import {
@@ -18,6 +19,7 @@ import { searchImage } from "@/lib/server/imageSearch";
 import { trackUnsplashDownload } from "@/lib/server/unsplash";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
 import { generateCarouselInputSchema } from "@/lib/validations/carousel";
+import { PLAN_LIMITS } from "@/lib/constants";
 
 const MAX_RETRIES = 2;
 
@@ -91,6 +93,15 @@ export async function generateCarousel(formData: FormData): Promise<
   const project = await getProject(user.id, data.project_id);
   if (!project) return { error: "Project not found" };
 
+  const { isPro } = await getSubscription(user.id);
+  const count = await countCarouselsThisMonth(user.id);
+  const limit = isPro ? PLAN_LIMITS.pro.carouselsPerMonth : PLAN_LIMITS.free.carouselsPerMonth;
+  if (count >= limit) {
+    return {
+      error: `Generation limit: ${count}/${limit} carousels this month.${isPro ? "" : " Upgrade to Pro for more."}`,
+    };
+  }
+
   const voiceRules = project.voice_rules as {
     do_rules?: string;
     dont_rules?: string;
@@ -129,8 +140,8 @@ export async function generateCarousel(formData: FormData): Promise<
     number_of_slides,
     input_type: data.input_type as "topic" | "url" | "text",
     input_value: data.input_value,
-    use_ai_backgrounds: data.use_ai_backgrounds ?? false,
-    use_web_search: data.use_web_search ?? false,
+    use_ai_backgrounds: isPro ? (data.use_ai_backgrounds ?? false) : false,
+    use_web_search: isPro ? (data.use_web_search ?? false) : false,
     creator_handle: creatorHandle,
     project_niche: project.niche?.trim() || undefined,
     notes: data.notes,
@@ -140,7 +151,7 @@ export async function generateCarousel(formData: FormData): Promise<
   let lastError = "";
   let validated: CarouselOutput | null = null;
 
-  const useWebSearch = data.use_web_search ?? false;
+  const useWebSearch = isPro ? (data.use_web_search ?? false) : false;
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     const prompts =

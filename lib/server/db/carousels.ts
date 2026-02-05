@@ -47,6 +47,21 @@ export async function getCarousel(
   return data as Carousel;
 }
 
+export async function countCarouselsThisMonth(userId: string): Promise<number> {
+  const supabase = await createClient();
+  const startOfMonth = new Date();
+  startOfMonth.setDate(1);
+  startOfMonth.setHours(0, 0, 0, 0);
+  const { count, error } = await supabase
+    .from("carousels")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .gte("created_at", startOfMonth.toISOString());
+
+  if (error) return 0;
+  return count ?? 0;
+}
+
 export async function listCarousels(
   userId: string,
   projectId: string

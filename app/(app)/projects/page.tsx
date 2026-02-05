@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -7,9 +8,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { SubscriptionStatusBanner } from "@/components/subscription/SubscriptionStatusBanner";
 import { PlusCircleIcon } from "lucide-react";
 
-export default async function ProjectsPage() {
+export default async function ProjectsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ subscription?: string }>;
+}) {
   const { getUser } = await import("@/lib/server/auth/getUser");
   const { listProjects } = await import("@/lib/server/db");
   const { user } = await getUser();
@@ -18,6 +24,9 @@ export default async function ProjectsPage() {
   return (
     <div className="p-4 md:p-6">
       <div className="mx-auto max-w-2xl space-y-6">
+        <Suspense fallback={null}>
+          <SubscriptionStatusBanner />
+        </Suspense>
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-semibold">Projects</h1>
           <Button asChild>

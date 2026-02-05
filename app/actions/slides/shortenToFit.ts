@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getUser } from "@/lib/server/auth/getUser";
+import { requirePro } from "@/lib/server/subscription";
 import { getSlide, getTemplate, updateSlide } from "@/lib/server/db";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { shortenTextToZone } from "@/lib/renderer/fitText";
@@ -16,6 +17,9 @@ export async function shortenToFit(
 ): Promise<ShortenToFitResult> {
   const { user } = await getUser();
   if (!user) return { ok: false, error: "Unauthorized" };
+
+  const proCheck = await requirePro(user.id);
+  if (!proCheck.allowed) return { ok: false, error: proCheck.error ?? "Upgrade to Pro" };
 
   const slide = await getSlide(user.id, slideId);
   if (!slide) return { ok: false, error: "Slide not found" };

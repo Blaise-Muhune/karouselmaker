@@ -11,6 +11,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { DownloadIcon, Loader2Icon } from "lucide-react";
+import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
+import { PLAN_LIMITS } from "@/lib/constants";
 
 export type ExportRowDisplay = {
   id: string;
@@ -21,6 +23,11 @@ export type ExportRowDisplay = {
 
 type EditorExportSectionProps = {
   carouselId: string;
+  isPro?: boolean;
+  /** Number of exports used this month. */
+  exportsUsedThisMonth?: number;
+  /** Export limit for current plan. */
+  exportsLimit?: number;
   exportFormat?: "png" | "jpeg";
   exportSize?: "1080x1080" | "1080x1350" | "1080x1920";
   recentExports: ExportRowDisplay[];
@@ -28,10 +35,15 @@ type EditorExportSectionProps = {
 
 export function EditorExportSection({
   carouselId,
+  isPro = true,
+  exportsUsedThisMonth = 0,
+  exportsLimit,
   exportFormat = "png",
   exportSize = "1080x1080",
   recentExports,
 }: EditorExportSectionProps) {
+  const limit = exportsLimit ?? (isPro ? PLAN_LIMITS.pro.exportsPerMonth : PLAN_LIMITS.free.exportsPerMonth);
+  const canExport = exportsUsedThisMonth < limit;
   const router = useRouter();
   const [exporting, setExporting] = useState(false);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
@@ -77,6 +89,11 @@ export function EditorExportSection({
           <CardTitle className="text-base">Export</CardTitle>
           <CardDescription>
             Generate {exportSize.replace("x", "×")} {exportFormat.toUpperCase()}s and download as ZIP.
+            {canExport && (
+              <span className="block mt-1 text-muted-foreground/80">
+                {exportsUsedThisMonth}/{limit} exports used this month
+              </span>
+            )}
           </CardDescription>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -91,7 +108,7 @@ export function EditorExportSection({
           <Button
             size="sm"
             onClick={handleExport}
-            disabled={exporting}
+            disabled={!canExport || exporting}
           >
             {exporting ? (
               <Loader2Icon className="mr-2 size-4 animate-spin" />
@@ -103,6 +120,22 @@ export function EditorExportSection({
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
+        {!canExport && (
+          isPro ? (
+            <p className="text-muted-foreground rounded-lg border border-border/60 bg-muted/30 p-3 text-sm">
+              You&apos;ve used your {limit} exports this month. Limit resets next month.
+            </p>
+          ) : (
+            <UpgradeBanner
+              message={
+                exportsUsedThisMonth >= limit
+                  ? `You've used your ${limit} free exports this month. Upgrade to Pro for ${PLAN_LIMITS.pro.exportsPerMonth}/month.`
+                  : `Free: ${exportsUsedThisMonth}/${limit} exports this month. Upgrade to Pro for ${PLAN_LIMITS.pro.exportsPerMonth}/month.`
+              }
+              variant="inline"
+            />
+          )
+        )}
         {error && (
           <p className="text-destructive text-sm">{error}</p>
         )}

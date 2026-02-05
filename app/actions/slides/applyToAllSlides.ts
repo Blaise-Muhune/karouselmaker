@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getUser } from "@/lib/server/auth/getUser";
+import { requirePro } from "@/lib/server/subscription";
 import { getCarousel, listSlides, updateSlide } from "@/lib/server/db";
 import type { Json } from "@/lib/server/db/types";
 import type { Slide } from "@/lib/server/db/types";
@@ -43,6 +44,9 @@ export async function applyToAllSlides(
 ): Promise<ApplyToAllResult> {
   const { user } = await getUser();
   if (!user) return { ok: false, error: "Unauthorized" };
+
+  const proCheck = await requirePro(user.id);
+  if (!proCheck.allowed) return { ok: false, error: proCheck.error ?? "Upgrade to Pro" };
 
   const carousel = await getCarousel(user.id, carouselId);
   if (!carousel) return { ok: false, error: "Carousel not found" };
@@ -167,7 +171,7 @@ export async function applyImageCountToAllSlides(
 /** Merge overlay (gradient overlay only) into each slide's existing background. */
 export async function applyOverlayToAllSlides(
   carouselId: string,
-  overlay: { gradient?: boolean; darken?: number; color?: string; textColor?: string; direction?: "top" | "bottom" | "left" | "right" },
+  overlay: { gradient?: boolean; darken?: number; color?: string; textColor?: string; direction?: "top" | "bottom" | "left" | "right"; extent?: number; solidSize?: number },
   revalidatePathname?: string,
   scope?: ApplyScope
 ): Promise<ApplyToAllResult> {

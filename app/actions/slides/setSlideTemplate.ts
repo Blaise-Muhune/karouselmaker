@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getUser } from "@/lib/server/auth/getUser";
+import { requirePro } from "@/lib/server/subscription";
 import { getTemplate, updateSlide } from "@/lib/server/db";
 
 export type SetSlideTemplateResult = { ok: true } | { ok: false; error: string };
@@ -13,6 +14,9 @@ export async function setSlideTemplate(
 ): Promise<SetSlideTemplateResult> {
   const { user } = await getUser();
   if (!user) return { ok: false, error: "Unauthorized" };
+
+  const proCheck = await requirePro(user.id);
+  if (!proCheck.allowed) return { ok: false, error: proCheck.error ?? "Upgrade to Pro" };
 
   const template = await getTemplate(user.id, templateId);
   if (!template) {

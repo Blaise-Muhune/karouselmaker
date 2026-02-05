@@ -1,11 +1,12 @@
 import { notFound } from "next/navigation";
 import { getUser } from "@/lib/server/auth/getUser";
+import { getSubscription } from "@/lib/server/subscription";
 import { getSlide, getCarousel, getProject, listSlides, listTemplatesForUser } from "@/lib/server/db";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { resolveBrandKitLogo } from "@/lib/server/brandKit";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
-import { listSlidePresets } from "@/app/actions/presets/listSlidePresets";
 import { SlideEditForm, type TemplateWithConfig } from "@/components/editor/SlideEditForm";
+import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
 import type { BrandKit } from "@/lib/renderer/renderModel";
 
 const BUCKET = "carousel-assets";
@@ -16,13 +17,14 @@ export default async function EditSlidePage({
   const { user } = await getUser();
   const { projectId, carouselId, slideId } = await params;
 
-  const [slide, carousel, project, slides, templatesRaw, presets] = await Promise.all([
+  const { isPro } = await getSubscription(user.id);
+
+  const [slide, carousel, project, slides, templatesRaw] = await Promise.all([
     getSlide(user.id, slideId),
     getCarousel(user.id, carouselId),
     getProject(user.id, projectId),
     listSlides(user.id, carouselId),
     listTemplatesForUser(user.id, { includeSystem: true }),
-    listSlidePresets(),
   ]);
 
   if (!slide) notFound();
@@ -109,8 +111,15 @@ export default async function EditSlidePage({
 
   return (
     <div className="min-h-screen px-3 py-4 sm:px-6 sm:py-6 lg:px-8">
-      <div className="mx-auto max-w-5xl">
+      <div className="mx-auto max-w-5xl space-y-4">
+        {!isPro && (
+          <UpgradeBanner
+            message="Free plan: Edit headline and text only. Upgrade to Pro to change template, background, and more."
+            variant="inline"
+          />
+        )}
         <SlideEditForm
+          isPro={isPro}
           slide={slide}
           slides={slides}
           templates={templates}
@@ -126,7 +135,6 @@ export default async function EditSlidePage({
           initialImageSource={initialImageSource}
           initialImageSources={initialImageSources}
           initialSecondaryBackgroundImageUrl={initialSecondaryBackgroundImageUrl}
-          presets={presets}
         />
       </div>
     </div>

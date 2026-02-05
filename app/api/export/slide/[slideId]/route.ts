@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { chromium } from "playwright";
+import { launchChromium } from "@/lib/server/browser/launchChromium";
 import { createClient } from "@/lib/supabase/server";
 import { getSlide, getTemplate, getCarousel, getProject, listSlides, listTemplatesForUser } from "@/lib/server/db";
+import { getSubscription } from "@/lib/server/subscription";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { renderSlideHtml } from "@/lib/server/renderer/renderSlideHtml";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
@@ -74,6 +75,7 @@ export async function GET(
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
 
+  const { isPro } = await getSubscription(userId);
   const brandKit: BrandKit = await resolveBrandKitLogo(project.brand_kit as Record<string, unknown> | null);
   const carouselSlides = await listSlides(userId, slide.carousel_id);
   const totalSlides = carouselSlides.length || 1;
@@ -90,7 +92,7 @@ export async function GET(
         secondary_image_url?: string;
         images?: { image_url?: string; storage_path?: string }[];
         image_display?: Record<string, unknown>;
-        overlay?: { gradient?: boolean; darken?: number; color?: string; textColor?: string; direction?: string };
+        overlay?: { gradient?: boolean; darken?: number; color?: string; textColor?: string; direction?: string; extent?: number; solidSize?: number };
       }
     | null
     | undefined;
@@ -104,6 +106,8 @@ export async function GET(
     gradientColor,
     textColor: getContrastingTextColor(gradientColor),
     gradientDirection,
+    gradientExtent: slideBg?.overlay?.extent ?? 100,
+    gradientSolidSize: slideBg?.overlay?.solidSize ?? 0,
   };
   const backgroundOverride = slideBg
     ? {
@@ -158,17 +162,25 @@ export async function GET(
   const slideMeta = slide.meta as {
     show_counter?: boolean;
     show_watermark?: boolean;
+    show_made_with?: boolean;
     headline_font_size?: number;
     body_font_size?: number;
+    headline_zone_override?: { x?: number; y?: number; w?: number; h?: number; fontSize?: number; fontWeight?: number; lineHeight?: number; maxLines?: number; align?: "left" | "center"; color?: string };
+    body_zone_override?: { x?: number; y?: number; w?: number; h?: number; fontSize?: number; fontWeight?: number; lineHeight?: number; maxLines?: number; align?: "left" | "center"; color?: string };
     headline_highlight_style?: "text" | "background";
     body_highlight_style?: "text" | "background";
   } | null;
   const showCounterOverride = slideMeta?.show_counter === true;
   const defaultShowWatermark = slide.slide_index === 1 || slide.slide_index === totalSlides;
   const showWatermarkOverride = slideMeta?.show_watermark ?? defaultShowWatermark;
+  const showMadeWithOverride = slideMeta?.show_made_with ?? !isPro;
   const fontOverrides =
     slideMeta && (slideMeta.headline_font_size != null || slideMeta.body_font_size != null)
       ? { headline_font_size: slideMeta.headline_font_size, body_font_size: slideMeta.body_font_size }
+      : undefined;
+  const zoneOverrides =
+    slideMeta && (slideMeta.headline_zone_override || slideMeta.body_zone_override)
+      ? { headline: slideMeta.headline_zone_override, body: slideMeta.body_zone_override }
       : undefined;
   const highlightStyles = {
     headline: slideMeta?.headline_highlight_style === "background" ? ("background" as const) : undefined,
@@ -192,27 +204,31 @@ export async function GET(
     secondaryBackgroundImageUrl,
     showCounterOverride,
     showWatermarkOverride,
+    showMadeWithOverride,
     fontOverrides,
+    zoneOverrides,
     highlightStyles,
     borderedFrame,
-    (slideBg?.image_display as Parameters<typeof renderSlideHtml>[13]) ?? undefined,
+    (slideBg?.image_display as Parameters<typeof renderSlideHtml>[15]) ?? undefined,
     dimensions
   );
 
-  const browser = await chromium.launch({ headless: true });
+  const browser = await launchChromium();
   try {
     const page = await browser.newPage();
     await page.setViewportSize({ width: dimensions.w, height: dimensions.h });
-    await page.setContent(html, { waitUntil: "networkidle" });
+    await page.setContent(html, { waitUntil: "load" });
+    await page.waitForSelector(".slide", { state: "visible", timeout: 15000 });
+    await new Promise((r) => setTimeout(r, 300));
     const buffer = await page.screenshot({ type: format });
     const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
-    const contentType = format === "jpeg" ? "image/jpeg" : "image/png";
     const ext = format === "jpeg" ? "jpg" : "png";
     const filename = `slide-${slide.slide_index}.${ext}`;
+    // Use application/octet-stream so iOS Safari triggers download prompt instead of opening image for preview
     return new NextResponse(new Uint8Array(buf), {
       status: 200,
       headers: {
-        "Content-Type": contentType,
+        "Content-Type": "application/octet-stream",
         "Content-Disposition": `attachment; filename="${filename}"`,
       },
     });

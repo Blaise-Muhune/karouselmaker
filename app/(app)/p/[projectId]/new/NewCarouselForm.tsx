@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { BackgroundImagesPickerModal } from "@/components/carousels/BackgroundImagesPickerModal";
+import { createCheckoutSession } from "@/app/actions/subscription/createCheckoutSession";
 import { ArrowLeftIcon, GlobeIcon, ImageIcon, Loader2Icon, SparklesIcon } from "lucide-react";
 
 const INPUT_TYPES = [
@@ -33,7 +34,17 @@ const GENERATION_STEPS = [
   "Almost there…",
 ] as const;
 
-export function NewCarouselForm({ projectId }: { projectId: string }) {
+export function NewCarouselForm({
+  projectId,
+  isPro = true,
+  carouselCount = 0,
+  carouselLimit = 50,
+}: {
+  projectId: string;
+  isPro?: boolean;
+  carouselCount?: number;
+  carouselLimit?: number;
+}) {
   const router = useRouter();
   const [inputType, setInputType] = useState<"topic" | "url" | "text">("topic");
   const [inputValue, setInputValue] = useState("");
@@ -46,6 +57,23 @@ export function NewCarouselForm({ projectId }: { projectId: string }) {
   const [isPending, setIsPending] = useState(false);
   const [generationStep, setGenerationStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [upgradeLoading, setUpgradeLoading] = useState(false);
+
+  const handleUpgrade = async () => {
+    setUpgradeLoading(true);
+    try {
+      const result = await createCheckoutSession();
+      if ("url" in result) {
+        window.location.href = result.url;
+      } else {
+        setUpgradeLoading(false);
+        alert(result.error ?? "Failed to start checkout");
+      }
+    } catch {
+      setUpgradeLoading(false);
+      alert("Something went wrong");
+    }
+  };
 
   useEffect(() => {
     if (!isPending) {
@@ -137,9 +165,17 @@ export function NewCarouselForm({ projectId }: { projectId: string }) {
 
       <form onSubmit={handleSubmit} className="space-y-6">
         {error && (
-          <p className="bg-destructive/10 text-destructive rounded-md px-3 py-2 text-sm">
-            {error}
-          </p>
+          <div className="space-y-2">
+            <p className="bg-destructive/10 text-destructive rounded-md px-3 py-2 text-sm">
+              {error}
+            </p>
+            {!isPro && (
+              <Button type="button" variant="outline" size="sm" onClick={handleUpgrade} disabled={upgradeLoading}>
+                {upgradeLoading ? <Loader2Icon className="mr-2 size-4 animate-spin" /> : <SparklesIcon className="mr-2 size-4" />}
+                Upgrade to Pro
+              </Button>
+            )}
+          </div>
         )}
 
         <div className="space-y-2">
@@ -227,25 +263,27 @@ export function NewCarouselForm({ projectId }: { projectId: string }) {
               Pick from your library (round-robin) or let AI suggest images from Unsplash. Leave both unchecked to use your project&apos;s background colors.
             </p>
           </div>
-          <label className="flex cursor-pointer items-center gap-3 rounded-lg py-2 text-sm hover:bg-muted/50">
+          <label className={`flex items-center gap-3 rounded-lg py-2 text-sm ${isPro ? "cursor-pointer hover:bg-muted/50" : "opacity-70"}`}>
             <input
               type="checkbox"
               checked={useAiBackgrounds}
-              onChange={(e) => setUseAiBackgrounds(e.target.checked)}
+              onChange={(e) => isPro && setUseAiBackgrounds(e.target.checked)}
+              disabled={!isPro}
               className="rounded border-input accent-primary"
             />
             <SparklesIcon className="size-4 text-muted-foreground" />
-            <span>Let AI suggest background images (Unsplash)</span>
+            <span>Let AI suggest background images (Unsplash){!isPro && " — Pro"}</span>
           </label>
-          <label className="flex cursor-pointer items-center gap-3 rounded-lg py-2 text-sm hover:bg-muted/50">
+          <label className={`flex items-center gap-3 rounded-lg py-2 text-sm ${isPro ? "cursor-pointer hover:bg-muted/50" : "opacity-70"}`}>
             <input
               type="checkbox"
               checked={useWebSearch}
-              onChange={(e) => setUseWebSearch(e.target.checked)}
+              onChange={(e) => isPro && setUseWebSearch(e.target.checked)}
+              disabled={!isPro}
               className="rounded border-input accent-primary"
             />
             <GlobeIcon className="size-4 text-muted-foreground" />
-            <span>Use web search for current info (URLs, recent topics)</span>
+            <span>Use web search for current info (URLs, recent topics){!isPro && " — Pro"}</span>
           </label>
           <div className="flex flex-wrap items-center gap-2">
             <Button
@@ -277,16 +315,26 @@ export function NewCarouselForm({ projectId }: { projectId: string }) {
           projectId={projectId}
         />
 
-        <Button type="submit" disabled={isPending}>
-          {isPending ? (
-            <>
-              <Loader2Icon className="mr-2 size-4 animate-spin" />
-              Generating slides…
-            </>
-          ) : (
-            "Generate slides"
+        <div className="flex flex-wrap items-center gap-3">
+          <Button type="submit" disabled={isPending || carouselCount >= carouselLimit}>
+            {isPending ? (
+              <>
+                <Loader2Icon className="mr-2 size-4 animate-spin" />
+                Generating slides…
+              </>
+            ) : carouselCount >= carouselLimit ? (
+              "Limit reached"
+            ) : (
+              "Generate slides"
+            )}
+          </Button>
+          {carouselCount >= carouselLimit && !isPro && (
+            <Button type="button" variant="default" size="sm" onClick={handleUpgrade} disabled={upgradeLoading}>
+              {upgradeLoading ? <Loader2Icon className="mr-2 size-4 animate-spin" /> : <SparklesIcon className="mr-2 size-4" />}
+              Upgrade to Pro
+            </Button>
           )}
-        </Button>
+        </div>
       </form>
     </>
   );

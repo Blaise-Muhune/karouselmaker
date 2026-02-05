@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getUser } from "@/lib/server/auth/getUser";
-import { getCarousel, getProject, listSlides, listTemplatesForUser, listExportsByCarousel } from "@/lib/server/db";
+import { getSubscription } from "@/lib/server/subscription";
+import { getCarousel, getProject, listSlides, listTemplatesForUser, listExportsByCarousel, countExportsThisMonth } from "@/lib/server/db";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { resolveBrandKitLogo } from "@/lib/server/brandKit";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
@@ -17,6 +18,7 @@ import { SlideGrid, type TemplateWithConfig } from "@/components/carousels/Slide
 import { CarouselMenuDropdown } from "@/components/carousels/CarouselMenuDropdown";
 import { EditorCaptionSection } from "@/components/editor/EditorCaptionSection";
 import { EditorExportSection } from "@/components/editor/EditorExportSection";
+import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
 import type { BrandKit } from "@/lib/renderer/renderModel";
 import type { ExportFormat, ExportSize } from "@/lib/server/db/types";
 import { ArrowLeftIcon } from "lucide-react";
@@ -36,12 +38,14 @@ export default async function CarouselEditorPage({
   const { user } = await getUser();
   const { projectId, carouselId } = await params;
 
-  const [carousel, project, slides, templatesRaw, recentExports] = await Promise.all([
+  const [carousel, project, slides, templatesRaw, recentExports, subscription, exportCount] = await Promise.all([
     getCarousel(user.id, carouselId),
     getProject(user.id, projectId),
     listSlides(user.id, carouselId),
     listTemplatesForUser(user.id, { includeSystem: true }),
     listExportsByCarousel(user.id, carouselId, 3),
+    getSubscription(user.id),
+    countExportsThisMonth(user.id),
   ]);
 
   if (!carousel) notFound();
@@ -105,6 +109,9 @@ export default async function CarouselEditorPage({
   return (
     <div className="p-4 md:p-6">
       <div className="mx-auto max-w-4xl space-y-6">
+        {!subscription.isPro && (
+          <UpgradeBanner message="Upgrade to Pro to edit slides, export, and unlock AI backgrounds." />
+        )}
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="icon-sm" asChild>
@@ -125,6 +132,8 @@ export default async function CarouselEditorPage({
 
         <EditorExportSection
           carouselId={carouselId}
+          isPro={subscription.isPro}
+          exportsUsedThisMonth={exportCount}
           exportFormat={getExportFormat(carousel)}
           exportSize={getExportSize(carousel)}
           recentExports={recentExports.map((ex) => ({
@@ -153,6 +162,7 @@ export default async function CarouselEditorPage({
               carouselId={carouselId}
               slideBackgroundImageUrls={slideBackgroundImageUrls}
               exportSize={getExportSize(carousel)}
+              isPro={subscription.isPro}
             />
           </CardContent>
         </Card>

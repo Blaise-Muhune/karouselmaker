@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { getUser } from "@/lib/server/auth/getUser";
-import { updateSlide as dbUpdateSlide } from "@/lib/server/db";
+import { requirePro } from "@/lib/server/subscription";
+import { updateSlide as dbUpdateSlide, getSlide } from "@/lib/server/db";
 import type { Json } from "@/lib/server/db/types";
 import { updateSlideInputSchema } from "@/lib/validations/slide";
 
@@ -21,6 +22,35 @@ export async function updateSlide(
 ): Promise<UpdateSlideResult> {
   const { user } = await getUser();
   if (!user) return { ok: false, error: "Unauthorized" };
+
+  const proCheck = await requirePro(user.id);
+  if (!proCheck.allowed) {
+    // Free users can only update headline, body, and background (color, style, gradientOn, overlay)
+    const freeAllowed = ["slide_id", "headline", "body", "background"];
+    const keys = Object.keys(input);
+    const hasDisallowed = keys.some((k) => !freeAllowed.includes(k));
+    if (hasDisallowed) return { ok: false, error: proCheck.error ?? "Upgrade to Pro" };
+    // For background only allow color, style, gradientOn, overlay - must merge into existing
+    const bg = input.background as Record<string, unknown> | undefined;
+    const hasBgUpdate = bg && (bg.color != null || bg.style != null || bg.gradientOn != null || bg.overlay != null);
+    if (hasBgUpdate) {
+      const existing = await getSlide(user.id, input.slide_id);
+      const existingBg = (existing?.background ?? {}) as Record<string, unknown>;
+      const merged: Record<string, unknown> = { ...existingBg };
+      if (bg.color != null) merged.color = bg.color;
+      if (bg.style != null) merged.style = bg.style;
+      if (bg.gradientOn != null) merged.gradientOn = bg.gradientOn;
+      if (bg.overlay != null) merged.overlay = bg.overlay;
+      input = {
+        slide_id: input.slide_id,
+        headline: input.headline,
+        body: input.body,
+        background: merged,
+      };
+    } else {
+      input = { slide_id: input.slide_id, headline: input.headline, body: input.body };
+    }
+  }
 
   const parsed = updateSlideInputSchema.safeParse(input);
   if (!parsed.success) {

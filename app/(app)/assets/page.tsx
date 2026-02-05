@@ -1,6 +1,8 @@
 import { getUser } from "@/lib/server/auth/getUser";
-import { listAssets, listProjects } from "@/lib/server/db";
+import { getSubscription } from "@/lib/server/subscription";
+import { listAssets, listProjects, countAssets } from "@/lib/server/db";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
+import { PLAN_LIMITS } from "@/lib/constants";
 import { AssetLibrary } from "@/components/assets/AssetLibrary";
 
 const BUCKET = "carousel-assets";
@@ -18,10 +20,14 @@ export default async function AssetsPage({
   const slideId = params.slide_id?.trim() ?? undefined;
   const returnTo = params.return_to?.trim() ?? undefined;
 
-  const [assets, projects] = await Promise.all([
-    listAssets(user.id, { projectId: projectIdFilter ?? undefined, limit: 100 }),
+  const [assets, projects, subscription, assetCount] = await Promise.all([
+    listAssets(user.id, { projectId: projectIdFilter ?? undefined, limit: 200 }),
     listProjects(user.id),
+    getSubscription(user.id),
+    countAssets(user.id),
   ]);
+
+  const assetLimit = subscription.isPro ? PLAN_LIMITS.pro.assets : PLAN_LIMITS.free.assets;
 
   const urls: Record<string, string> = {};
   await Promise.all(
@@ -49,6 +55,9 @@ export default async function AssetsPage({
           pickerMode={pickerMode}
           slideId={slideId}
           returnTo={returnTo}
+          assetCount={assetCount}
+          assetLimit={assetLimit}
+          isPro={subscription.isPro}
         />
       </div>
     </div>

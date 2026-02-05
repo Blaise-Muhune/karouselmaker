@@ -5,4 +5,5 @@ export * from "./slides";
 export * from "./exports";
 export * from "./assets";
 export * from "./slidePresets";
+export * from "./admin";
 export * from "./types";

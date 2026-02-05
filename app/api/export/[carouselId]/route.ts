@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
-import { chromium } from "playwright";
+import { launchChromium } from "@/lib/server/browser/launchChromium";
 import JSZip from "jszip";
 import { createClient } from "@/lib/supabase/server";
+import { getSubscription } from "@/lib/server/subscription";
+import { PLAN_LIMITS } from "@/lib/constants";
 import {
   getCarousel,
   getProject,
@@ -10,6 +12,7 @@ import {
   createExport,
   updateExport,
   getExportStoragePaths,
+  countExportsThisMonth,
 } from "@/lib/server/db";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
 import { resolveBrandKitLogo } from "@/lib/server/brandKit";
@@ -44,6 +47,16 @@ export async function POST(
     return NextResponse.json({ error: "Carousel not found" }, { status: 404 });
   }
 
+  const { isPro } = await getSubscription(userId);
+  const exportCount = await countExportsThisMonth(userId);
+  const limit = isPro ? PLAN_LIMITS.pro.exportsPerMonth : PLAN_LIMITS.free.exportsPerMonth;
+  if (exportCount >= limit) {
+    return NextResponse.json(
+      { error: `Export limit: ${exportCount}/${limit} this month.${isPro ? "" : " Upgrade to Pro for more."}` },
+      { status: 403 }
+    );
+  }
+
   const carouselExportFormat = (carousel as { export_format?: string }).export_format ?? "png";
   const carouselExportSize = (carousel as { export_size?: string }).export_size ?? "1080x1080";
   const format = carouselExportFormat === "jpeg" ? "jpeg" : "png";
@@ -75,7 +88,7 @@ export async function POST(
     const defaultTemplateId = templatesList[0]?.id ?? null;
 
     const paths = getExportStoragePaths(userId, carouselId, exportId);
-    const browser = await chromium.launch({ headless: true });
+    const browser = await launchChromium();
     let page: Awaited<ReturnType<typeof browser.newPage>>;
     try {
       page = await browser.newPage();
@@ -104,7 +117,7 @@ export async function POST(
       if (!config.success) throw new Error(`Invalid template config for slide ${i + 1}`);
 
       const slideBg = slide.background as
-        | { style?: "solid" | "gradient"; color?: string; gradientOn?: boolean; mode?: string; storage_path?: string; image_url?: string; image_source?: string; unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string }; secondary_storage_path?: string; secondary_image_url?: string; images?: { image_url?: string; storage_path?: string; source?: string; unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string } }[]; image_display?: { position?: string; fit?: "cover" | "contain"; frame?: "none" | "thin" | "medium" | "thick"; frameRadius?: number; frameColor?: string; layout?: string; gap?: number }; overlay?: { gradient?: boolean; darken?: number; color?: string; textColor?: string; direction?: "top" | "bottom" | "left" | "right" } }
+        | { style?: "solid" | "gradient"; color?: string; gradientOn?: boolean; mode?: string; storage_path?: string; image_url?: string; image_source?: string; unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string }; secondary_storage_path?: string; secondary_image_url?: string; images?: { image_url?: string; storage_path?: string; source?: string; unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string } }[]; image_display?: { position?: string; fit?: "cover" | "contain"; frame?: "none" | "thin" | "medium" | "thick"; frameRadius?: number; frameColor?: string; layout?: string; gap?: number }; overlay?: { gradient?: boolean; darken?: number; color?: string; textColor?: string; direction?: "top" | "bottom" | "left" | "right"; extent?: number; solidSize?: number } }
         | null
         | undefined;
       const gradientColor = slideBg?.overlay?.color ?? "#000000";
@@ -113,6 +126,8 @@ export async function POST(
         gradientColor,
         textColor: getContrastingTextColor(gradientColor),
         gradientDirection: slideBg?.overlay?.direction ?? "bottom",
+        gradientExtent: slideBg?.overlay?.extent ?? 100,
+        gradientSolidSize: slideBg?.overlay?.solidSize ?? 0,
       };
       const backgroundOverride = slideBg
         ? {
@@ -163,13 +178,28 @@ export async function POST(
       }
       const borderedFrame = !!(backgroundImageUrl || backgroundImageUrls?.length);
 
-      const slideMeta = slide.meta as { show_counter?: boolean; show_watermark?: boolean; headline_font_size?: number; body_font_size?: number; headline_highlight_style?: "text" | "background"; body_highlight_style?: "text" | "background" } | null;
+      const slideMeta = slide.meta as {
+        show_counter?: boolean;
+        show_watermark?: boolean;
+        show_made_with?: boolean;
+        headline_font_size?: number;
+        body_font_size?: number;
+        headline_zone_override?: { x?: number; y?: number; w?: number; h?: number; fontSize?: number; fontWeight?: number; lineHeight?: number; maxLines?: number; align?: "left" | "center"; color?: string };
+        body_zone_override?: { x?: number; y?: number; w?: number; h?: number; fontSize?: number; fontWeight?: number; lineHeight?: number; maxLines?: number; align?: "left" | "center"; color?: string };
+        headline_highlight_style?: "text" | "background";
+        body_highlight_style?: "text" | "background";
+      } | null;
       const showCounterOverride = slideMeta?.show_counter === true;
       const defaultShowWatermark = slide.slide_index === 1 || slide.slide_index === slides.length;
       const showWatermarkOverride = slideMeta?.show_watermark ?? defaultShowWatermark;
+      const showMadeWithOverride = slideMeta?.show_made_with ?? !isPro;
       const fontOverrides =
         slideMeta && (slideMeta.headline_font_size != null || slideMeta.body_font_size != null)
           ? { headline_font_size: slideMeta.headline_font_size, body_font_size: slideMeta.body_font_size }
+          : undefined;
+      const zoneOverrides =
+        slideMeta && (slideMeta.headline_zone_override || slideMeta.body_zone_override)
+          ? { headline: slideMeta.headline_zone_override, body: slideMeta.body_zone_override }
           : undefined;
       const highlightStyles = {
         headline: slideMeta?.headline_highlight_style === "background" ? "background" as const : undefined,
@@ -192,14 +222,18 @@ export async function POST(
         secondaryBackgroundImageUrl,
         showCounterOverride,
         showWatermarkOverride,
+        showMadeWithOverride,
         fontOverrides,
+        zoneOverrides,
         highlightStyles,
         borderedFrame,
-        (slideBg?.image_display as Parameters<typeof renderSlideHtml>[13]) ?? undefined,
+        (slideBg?.image_display as Parameters<typeof renderSlideHtml>[15]) ?? undefined,
         dimensions
       );
 
-      await page.setContent(html, { waitUntil: "networkidle" });
+      await page.setContent(html, { waitUntil: "load" });
+      await page.waitForSelector(".slide", { state: "visible", timeout: 15000 });
+      await new Promise((r) => setTimeout(r, 300));
       const buffer = await page.screenshot({ type: "png" });
       const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
       pngBuffers.push(buf);

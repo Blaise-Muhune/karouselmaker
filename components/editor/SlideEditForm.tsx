@@ -23,22 +23,25 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Slider } from "@/components/ui/slider";
 import { updateSlide } from "@/app/actions/slides/updateSlide";
 import { updateExportSettings } from "@/app/actions/carousels/updateExportFormat";
 import { applyToAllSlides, applyOverlayToAllSlides, applyImageDisplayToAllSlides, applyImageCountToAllSlides, applyFontSizeToAllSlides, clearTextFromSlides, type ApplyScope } from "@/app/actions/slides/applyToAllSlides";
 import { shortenToFit } from "@/app/actions/slides/shortenToFit";
 import { rewriteHook } from "@/app/actions/slides/rewriteHook";
-import { saveSlidePreset } from "@/app/actions/presets/saveSlidePreset";
+import { createTemplateAction } from "@/app/actions/templates/createTemplate";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
 import type { BrandKit } from "@/lib/renderer/renderModel";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
-import type { Slide, SlidePreset, Template } from "@/lib/server/db/types";
+import type { Slide, Template } from "@/lib/server/db/types";
 import {
   ArrowLeftIcon,
   Bookmark,
   CheckIcon,
+  ChevronDownIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  ChevronUpIcon,
   CopyIcon,
   DownloadIcon,
   HashIcon,
@@ -47,6 +50,7 @@ import {
   InfoIcon,
   LayoutTemplateIcon,
   Loader2Icon,
+  Maximize2Icon,
   MonitorIcon,
   PaletteIcon,
   ScissorsIcon,
@@ -56,6 +60,7 @@ import {
   UploadIcon,
   XIcon,
 } from "lucide-react";
+import { ColorPicker } from "@/components/ui/color-picker";
 import { OVERLAY_PRESETS, PRESET_CUSTOM_ID, type OverlayPreset } from "@/lib/editor/overlayPresets";
 import { HIGHLIGHT_COLORS } from "@/lib/editor/inlineFormat";
 
@@ -98,6 +103,8 @@ export type SlideBackgroundState = SlideBackgroundOverride & {
     blur?: number;
     color?: string;
     textColor?: string;
+    extent?: number;
+    solidSize?: number;
     /** Where the dark part of the gradient sits: top, bottom, left, right. */
     direction?: "top" | "bottom" | "left" | "right";
   };
@@ -105,20 +112,21 @@ export type SlideBackgroundState = SlideBackgroundOverride & {
 
 /** Max preview size (longest side) so it always fits on screen. Keeps mobile and desktop usable. */
 const PREVIEW_MAX = 380;
+const PREVIEW_MAX_LARGE = 560;
 
 /** Preview dimensions and scale. Always cover - image/content fills the frame. */
-function getPreviewDimensions(size: "1080x1080" | "1080x1350" | "1080x1920"): { w: number; h: number; scale: number; offsetX: number; offsetY: number } {
+function getPreviewDimensions(size: "1080x1080" | "1080x1350" | "1080x1920", maxSize = PREVIEW_MAX): { w: number; h: number; scale: number; offsetX: number; offsetY: number } {
   const exportW = 1080;
   const exportH = size === "1080x1080" ? 1080 : size === "1080x1350" ? 1350 : 1920;
   const aspect = exportW / exportH;
   let w: number;
   let h: number;
   if (aspect >= 1) {
-    w = PREVIEW_MAX;
-    h = Math.round(PREVIEW_MAX / aspect);
+    w = maxSize;
+    h = Math.round(maxSize / aspect);
   } else {
-    h = PREVIEW_MAX;
-    w = Math.round(PREVIEW_MAX * aspect);
+    h = maxSize;
+    w = Math.round(maxSize * aspect);
   }
   const scale = Math.max(w / 1080, h / 1080);
   return {
@@ -143,9 +151,9 @@ const SECTION_INFO: Record<string, { title: string; body: string }> = {
     title: "Background",
     body: "You can use a solid color, a gradient, or a background image. Add image: pick from your library (Pick) or paste a URL. With an image, use the Gradient overlay section below to add a dark gradient so text stays readable; you can set position (top/bottom/left/right), color, opacity, and text color. With solid/gradient only, the color picker and Overlay checkbox control the fill.",
   },
-  presets: {
-    title: "Presets",
-    body: "Presets save the current template, gradient overlay (color, opacity, direction), position-number, logo visibility, and image display settings so you can reuse them. Choose a preset to load it on this slide. Apply to all applies that preset to every slide in this carousel. Save stores the current settings as a new preset (you’ll name it in the dialog).",
+  templates: {
+    title: "Save as template",
+    body: "Save the current layout and overlay settings as a new template. Your template will include the layout, gradient overlay (direction, opacity, color, extent), and chrome settings. You can then use it on other slides or carousels from the Template dropdown in Layout.",
   },
   preview: {
     title: "Preview",
@@ -165,6 +173,8 @@ const EXPORT_SIZE_LABELS: Record<ExportSize, string> = {
 };
 
 type SlideEditFormProps = {
+  /** When false, only headline and body are editable; all config (template, background, etc.) is locked. */
+  isPro?: boolean;
   slide: Slide;
   /** Ordered slides for prev/next navigation. */
   slides?: Slide[];
@@ -186,7 +196,6 @@ type SlideEditFormProps = {
   initialImageSources?: ("brave" | "unsplash" | "google")[] | null;
   /** Hook only: resolved URL for second image (circle). */
   initialSecondaryBackgroundImageUrl?: string | null;
-  presets?: SlidePreset[];
 };
 
 function getTemplateConfig(
@@ -201,6 +210,7 @@ function getTemplateConfig(
 }
 
 export function SlideEditForm({
+  isPro = true,
   slide,
   slides: slidesList = [],
   templates,
@@ -216,7 +226,6 @@ export function SlideEditForm({
   initialImageSource,
   initialImageSources,
   initialSecondaryBackgroundImageUrl,
-  presets = [],
 }: SlideEditFormProps) {
   const router = useRouter();
   const [headline, setHeadline] = useState(() => slide.headline);
@@ -291,11 +300,15 @@ export function SlideEditForm({
     const m = slide.meta as { show_counter?: boolean } | null;
     return m?.show_counter ?? false;
   });
-  const defaultShowWatermark = slide.slide_index === 1 || slide.slide_index === totalSlides; // first and last = on; middle = off
   const [showWatermark, setShowWatermark] = useState<boolean>(() => {
     const m = slide.meta as { show_watermark?: boolean } | null;
     if (m != null && typeof m.show_watermark === "boolean") return m.show_watermark;
-    return defaultShowWatermark;
+    return false; // default off for Pro; Free users cannot edit
+  });
+  const [showMadeWith, setShowMadeWith] = useState<boolean>(() => {
+    const m = slide.meta as { show_made_with?: boolean } | null;
+    if (m != null && typeof m.show_made_with === "boolean") return m.show_made_with;
+    return !isPro; // default hide for Pro; default show for Free (Free cannot edit)
   });
   const [headlineFontSize, setHeadlineFontSize] = useState<number | undefined>(() => {
     const m = slide.meta as { headline_font_size?: number } | null;
@@ -313,6 +326,17 @@ export function SlideEditForm({
     const m = slide.meta as { body_highlight_style?: "text" | "background" } | null;
     return m?.body_highlight_style === "background" ? "background" : "text";
   });
+  type ZoneOverride = { x?: number; y?: number; w?: number; h?: number; fontSize?: number; fontWeight?: number; lineHeight?: number; maxLines?: number; align?: "left" | "center"; color?: string };
+  const [headlineZoneOverride, setHeadlineZoneOverride] = useState<ZoneOverride | undefined>(() => {
+    const m = slide.meta as { headline_zone_override?: ZoneOverride } | null;
+    return m?.headline_zone_override && Object.keys(m.headline_zone_override).length > 0 ? m.headline_zone_override : undefined;
+  });
+  const [bodyZoneOverride, setBodyZoneOverride] = useState<ZoneOverride | undefined>(() => {
+    const m = slide.meta as { body_zone_override?: ZoneOverride } | null;
+    return m?.body_zone_override && Object.keys(m.body_zone_override).length > 0 ? m.body_zone_override : undefined;
+  });
+  const [headlineEditMoreOpen, setHeadlineEditMoreOpen] = useState(false);
+  const [bodyEditMoreOpen, setBodyEditMoreOpen] = useState(false);
   const headlineRef = useRef<HTMLTextAreaElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -328,16 +352,17 @@ export function SlideEditForm({
   const [applyingBackground, setApplyingBackground] = useState(false);
   const [applyingFontSize, setApplyingFontSize] = useState(false);
   const [applyingClear, setApplyingClear] = useState(false);
+  const [applyingHeadlineZone, setApplyingHeadlineZone] = useState(false);
+  const [applyingBodyZone, setApplyingBodyZone] = useState(false);
+  const [applyingMadeWith, setApplyingMadeWith] = useState(false);
   const [hookVariants, setHookVariants] = useState<string[]>([]);
-  const [savePresetOpen, setSavePresetOpen] = useState(false);
-  const [presetName, setPresetName] = useState("");
-  const [savingPreset, setSavingPreset] = useState(false);
-  const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
-  const [applyingPresetToAll, setApplyingPresetToAll] = useState(false);
+  const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
+  const [templateName, setTemplateName] = useState("");
+  const [savingTemplate, setSavingTemplate] = useState(false);
   const [infoSection, setInfoSection] = useState<string | null>(null);
   const [includeFirstSlide, setIncludeFirstSlide] = useState(false);
   const [includeLastSlide, setIncludeLastSlide] = useState(false);
-  const [exportFormat, setExportFormat] = useState<ExportFormat>(() =>
+  const [exportFormat] = useState<ExportFormat>(() =>
     (initialExportFormat === "png" || initialExportFormat === "jpeg" ? initialExportFormat : "png") as ExportFormat
   );
   const [exportSize, setExportSize] = useState<ExportSize>(() =>
@@ -346,8 +371,10 @@ export function SlideEditForm({
   const [updatingExportSettings, setUpdatingExportSettings] = useState(false);
   const [mobileBannerDismissed, setMobileBannerDismissed] = useState(false);
   const [mobilePreviewOpen, setMobilePreviewOpen] = useState(false);
+  const [previewExpanded, setPreviewExpanded] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [pendingDownload, setPendingDownload] = useState<{ url: string; filename: string } | null>(null);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 1023px)");
@@ -439,6 +466,26 @@ export function SlideEditForm({
 
   const performSave = async (navigateBack = false) => {
     setSaving(true);
+    if (!isPro) {
+      const overlayPayload = background.overlay ?? { gradient: true, darken: 0.5, color: "#000000", textColor: "#ffffff" };
+      const result = await updateSlide(
+        {
+          slide_id: slide.id,
+          headline,
+          body: body.trim() || null,
+          background: {
+            color: background.color,
+            style: background.style ?? "solid",
+            gradientOn: background.gradientOn ?? true,
+            overlay: overlayPayload,
+          },
+        },
+        editorPath
+      );
+      setSaving(false);
+      if (result.ok && navigateBack) router.push(backHref);
+      return result;
+    }
     const overlayPayload = background.overlay ?? { gradient: true, darken: 0.5, color: "#000000", textColor: "#ffffff" };
     const validUrls = imageUrls.filter((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim()));
     const imageDisplayPayload = buildImageDisplayPayload();
@@ -461,8 +508,11 @@ export function SlideEditForm({
           ...(typeof slide.meta === "object" && slide.meta !== null ? (slide.meta as Record<string, unknown>) : {}),
           show_counter: showCounter,
           show_watermark: showWatermark,
+          show_made_with: showMadeWith,
           ...(headlineFontSize != null && { headline_font_size: headlineFontSize }),
           ...(bodyFontSize != null && { body_font_size: bodyFontSize }),
+          ...(headlineZoneOverride && Object.keys(headlineZoneOverride).length > 0 && { headline_zone_override: headlineZoneOverride }),
+          ...(bodyZoneOverride && Object.keys(bodyZoneOverride).length > 0 && { body_zone_override: bodyZoneOverride }),
           headline_highlight_style: headlineHighlightStyle,
           body_highlight_style: bodyHighlightStyle,
         },
@@ -480,21 +530,24 @@ export function SlideEditForm({
 
   const handleDownloadSlide = async () => {
     setDownloading(true);
+    setPendingDownload(null);
     try {
       const saveResult = await performSave(false);
       if (!saveResult.ok) return;
+      const filename = `slide-${slide.slide_index}.${exportFormat === "jpeg" ? "jpg" : "png"}`;
       const url = `/api/export/slide/${slide.id}?format=${exportFormat}&size=${exportSize}`;
-      const res = await fetch(url);
-      if (!res.ok) return;
-      const blob = await res.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = objectUrl;
-      a.download = `slide-${slide.slide_index}.${exportFormat === "jpeg" ? "jpg" : "png"}`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(objectUrl);
+      if (isMobile) {
+        // On mobile, programmatic click after async often fails (iOS Safari ignores blob URLs and blocks non-user-gesture downloads).
+        // Show a "Tap to download" link so the user's tap is a real gesture.
+        setPendingDownload({ url, filename });
+      } else {
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
     } finally {
       setDownloading(false);
     }
@@ -602,14 +655,6 @@ export function SlideEditForm({
     if (result.ok) router.refresh();
   };
 
-  const handleExportFormatChange = async (value: ExportFormat) => {
-    setExportFormat(value);
-    setUpdatingExportSettings(true);
-    const result = await updateExportSettings({ carousel_id: carouselId, export_format: value }, editorPath);
-    setUpdatingExportSettings(false);
-    if (result.ok) router.refresh();
-  };
-
   const handleExportSizeChange = async (value: ExportSize) => {
     setExportSize(value);
     setUpdatingExportSettings(true);
@@ -631,6 +676,15 @@ export function SlideEditForm({
     setApplyingDisplay(true);
     const result = await applyToAllSlides(slide.carousel_id, { meta: { show_counter: checked } }, editorPath, applyScope);
     setApplyingDisplay(false);
+    if (result.ok) router.refresh();
+  };
+
+  const handleMadeWithChange = async (checked: boolean) => {
+    setShowMadeWith(checked);
+    setApplyingMadeWith(true);
+    const allScope = { includeFirstSlide: true, includeLastSlide: true };
+    const result = await applyToAllSlides(slide.carousel_id, { meta: { show_made_with: checked } }, editorPath, allScope);
+    setApplyingMadeWith(false);
     if (result.ok) router.refresh();
   };
 
@@ -676,63 +730,53 @@ export function SlideEditForm({
     if (result.ok) router.refresh();
   };
 
-  const selectedPreset = selectedPresetId ? presets.find((p) => p.id === selectedPresetId) : null;
-
-  const applyPresetToForm = useCallback(
-    (preset: SlidePreset) => {
-      setTemplateId(preset.template_id ?? null);
-      const ov = preset.overlay as { gradient?: boolean; darken?: number; color?: string; textColor?: string; direction?: "top" | "bottom" | "left" | "right" } | null;
-      const color = ov?.color ?? "#000000";
-      const overlay = ov ? { ...ov, color, textColor: getContrastingTextColor(color) } : { gradient: true, darken: 0.5, color: "#000000", textColor: "#ffffff", direction: "bottom" as const };
-      setBackground((b) => ({ ...b, overlay }));
-      setShowCounter(preset.show_counter);
-      if (typeof preset.show_watermark === "boolean") {
-        setShowWatermark(preset.show_watermark);
-      }
-      const imgDisp = preset.image_display as ImageDisplayState | null | undefined;
-      if (imgDisp && typeof imgDisp === "object" && Object.keys(imgDisp).length > 0) {
-        setImageDisplay((d) => ({ ...d, ...imgDisp }));
-      }
-    },
-    []
-  );
-
-  const handleApplyPresetToAll = async () => {
-    const preset = selectedPresetId ? presets.find((p) => p.id === selectedPresetId) : null;
-    if (!preset) return;
-    setApplyingPresetToAll(true);
-    const ov = preset.overlay as { gradient?: boolean; darken?: number; color?: string; textColor?: string; direction?: "top" | "bottom" | "left" | "right" };
-    const meta: Record<string, unknown> = { show_counter: preset.show_counter };
-    if (typeof preset.show_watermark === "boolean") meta.show_watermark = preset.show_watermark;
-    await applyToAllSlides(slide.carousel_id, { template_id: preset.template_id, meta }, editorPath, applyScope);
-    await applyOverlayToAllSlides(slide.carousel_id, ov ?? { gradient: true, darken: 0.5, color: "#000000", textColor: "#ffffff", direction: "bottom" }, editorPath, applyScope);
-    const imgDisp = preset.image_display as Record<string, unknown> | null | undefined;
-    if (imgDisp && typeof imgDisp === "object" && Object.keys(imgDisp).length > 0) {
-      await applyImageDisplayToAllSlides(slide.carousel_id, imgDisp, editorPath, applyScope);
-    }
-    setApplyingPresetToAll(false);
-    router.refresh();
+  const handleApplyHeadlineZoneToAll = async () => {
+    if (!headlineZoneOverride || Object.keys(headlineZoneOverride).length === 0) return;
+    setApplyingHeadlineZone(true);
+    const result = await applyToAllSlides(slide.carousel_id, { meta: { headline_zone_override: headlineZoneOverride } }, editorPath, applyScope);
+    setApplyingHeadlineZone(false);
+    if (result.ok) router.refresh();
   };
 
-  const handleSavePreset = async () => {
-    const name = presetName.trim();
-    if (!name) return;
-    setSavingPreset(true);
+  const handleApplyBodyZoneToAll = async () => {
+    if (!bodyZoneOverride || Object.keys(bodyZoneOverride).length === 0) return;
+    setApplyingBodyZone(true);
+    const result = await applyToAllSlides(slide.carousel_id, { meta: { body_zone_override: bodyZoneOverride } }, editorPath, applyScope);
+    setApplyingBodyZone(false);
+    if (result.ok) router.refresh();
+  };
+
+  const handleSaveTemplate = async () => {
+    const name = templateName.trim();
+    if (!name || !templateConfig) return;
+    setSavingTemplate(true);
     const overlayColor = background.overlay?.color ?? "#000000";
-    const overlayPayload = background.overlay ? { ...background.overlay, color: overlayColor, textColor: getContrastingTextColor(overlayColor) } : { gradient: true, darken: 0.5, color: "#000000", textColor: "#ffffff", direction: "bottom" as const };
-    const imageDisplayPayload = buildImageDisplayPayload();
-    const result = await saveSlidePreset({
-      name,
-      template_id: templateId,
-      overlay: overlayPayload,
-      show_counter: showCounter,
-      show_watermark: showWatermark,
-      image_display: imageDisplayPayload ?? null,
-    });
-    setSavingPreset(false);
+    const ov = background.overlay;
+    const gradientOverlay = {
+      enabled: ov?.gradient !== false,
+      direction: (ov?.direction ?? "bottom") as "bottom" | "top" | "left" | "right",
+      strength: ov?.darken ?? 0.5,
+      extent: ov?.extent,
+      color: overlayColor,
+      solidSize: ov?.solidSize,
+    };
+    const config: TemplateConfig = {
+      ...templateConfig,
+      overlays: {
+        ...templateConfig.overlays,
+        gradient: gradientOverlay,
+      },
+      chrome: {
+        ...templateConfig.chrome,
+        showCounter,
+        watermark: { ...templateConfig.chrome.watermark, enabled: showWatermark },
+      },
+    };
+    const result = await createTemplateAction({ name, category: "generic", config });
+    setSavingTemplate(false);
     if (result.ok) {
-      setSavePresetOpen(false);
-      setPresetName("");
+      setSaveTemplateOpen(false);
+      setTemplateName("");
       router.refresh();
     }
   };
@@ -813,6 +857,8 @@ export function SlideEditForm({
         gradientColor: overlayColor,
         textColor: overlayDefaults.textColor,
         gradientDirection: background.overlay?.direction ?? "bottom",
+        gradientExtent: background.overlay?.extent ?? 100,
+        gradientSolidSize: background.overlay?.solidSize ?? 0,
       }
     : {
         style: background.style,
@@ -822,6 +868,8 @@ export function SlideEditForm({
         gradientColor: overlayColor,
         textColor: overlayDefaults.textColor,
         gradientDirection: background.overlay?.direction ?? "bottom",
+        gradientExtent: background.overlay?.extent ?? 100,
+        gradientSolidSize: background.overlay?.solidSize ?? 0,
       };
 
   const overlaySection = (
@@ -938,6 +986,47 @@ export function SlideEditForm({
             />
           </div>
         </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-border/60">
+          <div className="space-y-2">
+            <div className="flex justify-between">
+              <Label className="text-xs">Extent (0–100%)</Label>
+              <span className="text-muted-foreground text-xs">{background.overlay?.extent ?? 100}%</span>
+            </div>
+            <Slider
+              value={[background.overlay?.extent ?? 100]}
+              onValueChange={([v]) =>
+                setBackground((b) => ({
+                  ...b,
+                  overlay: { ...b.overlay, gradient: true, extent: v ?? 100 },
+                }))
+              }
+              min={0}
+              max={100}
+              step={5}
+            />
+          </div>
+          <div className="space-y-2">
+            <div className="flex justify-between">
+              <Label className="text-xs">Solid part (0–100%)</Label>
+              <span className="text-muted-foreground text-xs">{background.overlay?.solidSize ?? 0}%</span>
+            </div>
+            <Slider
+              value={[background.overlay?.solidSize ?? 0]}
+              onValueChange={([v]) =>
+                setBackground((b) => ({
+                  ...b,
+                  overlay: { ...b.overlay, gradient: true, solidSize: v ?? 0 },
+                }))
+              }
+              min={0}
+              max={100}
+              step={5}
+            />
+            <p className="text-muted-foreground text-xs">
+              0% = full gradient. 100% = solid overlay. Extent 100 + Solid 100 = full solid color.
+            </p>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -946,43 +1035,40 @@ export function SlideEditForm({
     <div className="flex flex-col items-start rounded-xl border border-border/60 bg-card p-5 sm:p-6 shadow-sm">
       <div className="flex items-center justify-between gap-2 mb-4 w-full">
         <div className="flex items-center gap-2">
-          <h2 className="text-base font-semibold text-foreground">Preview</h2>
+          <h2 className="text-base font-semibold text-foreground">Live preview</h2>
           <button type="button" onClick={() => setInfoSection("preview")} className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors" aria-label="Help">
             <InfoIcon className="size-4" />
           </button>
         </div>
-        {isMobile && (
-          <Button variant="ghost" size="icon" className="shrink-0 rounded-full h-8 w-8" onClick={() => setMobilePreviewOpen(false)} aria-label="Close preview">
-            <XIcon className="size-4" />
+        <div className="flex items-center gap-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+            onClick={() => setPreviewExpanded(true)}
+            title="Expand preview"
+            aria-label="Expand preview"
+          >
+            <Maximize2Icon className="size-4" />
           </Button>
-        )}
+          {isMobile && (
+            <Button variant="ghost" size="icon" className="shrink-0 rounded-full h-8 w-8" onClick={() => setMobilePreviewOpen(false)} aria-label="Close preview">
+              <XIcon className="size-4" />
+            </Button>
+          )}
+        </div>
       </div>
       <p className="text-muted-foreground text-xs mb-3">
-        Export format and size apply to all slides in this carousel.
+        Export size applies to all slides in this carousel.
       </p>
       <div className="flex flex-wrap gap-3 mb-4 w-full">
         <div className="flex-1 min-w-[120px]">
-          <Label className="text-xs text-muted-foreground mb-1.5 block">Format</Label>
-          <Select
-            value={exportFormat}
-            onValueChange={(v) => handleExportFormatChange(v as ExportFormat)}
-            disabled={updatingExportSettings}
-          >
-            <SelectTrigger className="h-9 rounded-lg text-sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="png">PNG</SelectItem>
-              <SelectItem value="jpeg">JPEG</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="flex-1 min-w-[140px]">
           <Label className="text-xs text-muted-foreground mb-1.5 block">Size</Label>
           <Select
             value={exportSize}
             onValueChange={(v) => handleExportSizeChange(v as ExportSize)}
-            disabled={updatingExportSettings}
+            disabled={!isPro || updatingExportSettings}
           >
             <SelectTrigger className="h-9 rounded-lg text-sm">
               <SelectValue />
@@ -1035,9 +1121,15 @@ export function SlideEditForm({
               backgroundOverride={previewBackgroundOverride}
               showCounterOverride={showCounter}
               showWatermarkOverride={showWatermark}
+              showMadeWithOverride={showMadeWith}
               fontOverrides={
                 headlineFontSize != null || bodyFontSize != null
                   ? { headline_font_size: headlineFontSize, body_font_size: bodyFontSize }
+                  : undefined
+              }
+              zoneOverrides={
+                headlineZoneOverride || bodyZoneOverride
+                  ? { headline: headlineZoneOverride, body: bodyZoneOverride }
                   : undefined
               }
               headlineHighlightStyle={headlineHighlightStyle}
@@ -1058,17 +1150,29 @@ export function SlideEditForm({
       {/* Preview controls: download, prev/next, save */}
       <div className="flex flex-col gap-3 mt-4 w-full">
         <div className="flex items-center justify-between gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="flex-1 justify-center gap-2"
-            onClick={handleDownloadSlide}
-            disabled={downloading}
-            title={`Download slide as ${exportFormat.toUpperCase()} (${exportSize})`}
-          >
-            {downloading ? <Loader2Icon className="size-4 animate-spin" /> : <DownloadIcon className="size-4" />}
-            Download
-          </Button>
+          {pendingDownload ? (
+            <a
+              href={pendingDownload.url}
+              download={pendingDownload.filename}
+              className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground transition-colors"
+              onClick={() => setPendingDownload(null)}
+            >
+              <DownloadIcon className="size-4" />
+              Tap to download
+            </a>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1 justify-center gap-2"
+              onClick={handleDownloadSlide}
+              disabled={downloading}
+              title={`Download slide as ${exportFormat.toUpperCase()} (${exportSize})`}
+            >
+              {downloading ? <Loader2Icon className="size-4 animate-spin" /> : <DownloadIcon className="size-4" />}
+              Download
+            </Button>
+          )}
           <Button
             variant="default"
             size="sm"
@@ -1147,32 +1251,32 @@ export function SlideEditForm({
         </div>
       </header>
 
-      <Dialog open={savePresetOpen} onOpenChange={setSavePresetOpen}>
+      <Dialog open={saveTemplateOpen} onOpenChange={setSaveTemplateOpen}>
         <DialogContent showCloseButton>
           <DialogHeader>
-            <DialogTitle>Save as preset</DialogTitle>
+            <DialogTitle>Save as template</DialogTitle>
             <p className="text-muted-foreground text-sm">
-              Save current template, gradient overlay, and position number so you can reuse them on other slides or carousels.
+              Save the current layout and overlay settings as a new template. You can use it on other slides or carousels from the Template dropdown.
             </p>
           </DialogHeader>
           <div className="space-y-2">
-            <Label htmlFor="preset-name">Preset name</Label>
+            <Label htmlFor="template-name">Template name</Label>
             <Input
-              id="preset-name"
-              value={presetName}
-              onChange={(e) => setPresetName(e.target.value)}
+              id="template-name"
+              value={templateName}
+              onChange={(e) => setTemplateName(e.target.value)}
               placeholder="e.g. Dark overlay"
               className="rounded-lg"
-              onKeyDown={(e) => e.key === "Enter" && handleSavePreset()}
+              onKeyDown={(e) => e.key === "Enter" && handleSaveTemplate()}
             />
           </div>
           <DialogFooter showCloseButton={false}>
-            <Button variant="outline" onClick={() => setSavePresetOpen(false)}>
+            <Button variant="outline" onClick={() => setSaveTemplateOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleSavePreset} disabled={savingPreset || !presetName.trim()}>
-              {savingPreset ? <Loader2Icon className="size-4 animate-spin" /> : <CheckIcon className="size-4" />}
-              Save preset
+            <Button onClick={handleSaveTemplate} disabled={savingTemplate || !templateName.trim()}>
+              {savingTemplate ? <Loader2Icon className="size-4 animate-spin" /> : <CheckIcon className="size-4" />}
+              Save template
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1189,9 +1293,163 @@ export function SlideEditForm({
         </DialogContent>
       </Dialog>
 
+      <Dialog open={previewExpanded} onOpenChange={setPreviewExpanded}>
+        <DialogContent className="max-w-[95vw] max-h-[95vh] w-auto p-4 sm:p-6" showCloseButton>
+          <DialogHeader>
+            <DialogTitle>Live preview</DialogTitle>
+          </DialogHeader>
+          <div className="flex justify-center items-center min-h-[200px] bg-muted/30 rounded-lg p-4">
+            {templateConfig ? (
+              (() => {
+                const dims = getPreviewDimensions(exportSize, PREVIEW_MAX_LARGE);
+                return (
+                  <div
+                    className="overflow-hidden rounded-lg shrink-0 shadow-lg"
+                    style={{
+                      width: dims.w,
+                      height: dims.h,
+                      backgroundColor: isImageMode && background.overlay?.gradient !== false
+                        ? (background.overlay?.color ?? "#000000")
+                        : (background.color ?? brandKit.primary_color ?? "#0a0a0a"),
+                    }}
+                  >
+                    <div
+                      className="origin-top-left"
+                      style={{
+                        transform: `scale(${dims.scale})`,
+                        transformOrigin: "top left",
+                        position: "relative",
+                        left: dims.offsetX,
+                        top: dims.offsetY,
+                        width: 1080,
+                        height: 1080,
+                      }}
+                    >
+                      <SlidePreview
+                        slide={{
+                          headline,
+                          body: body.trim() || null,
+                          slide_index: slide.slide_index,
+                          slide_type: slide.slide_type,
+                        }}
+                        templateConfig={templateConfig}
+                        brandKit={brandKit}
+                        totalSlides={totalSlides}
+                        backgroundImageUrl={previewBackgroundImageUrl}
+                        backgroundImageUrls={previewBackgroundImageUrls}
+                        secondaryBackgroundImageUrl={secondaryBackgroundImageUrlForPreview ?? initialSecondaryBackgroundImageUrl}
+                        backgroundOverride={previewBackgroundOverride}
+                        showCounterOverride={showCounter}
+                        showWatermarkOverride={showWatermark}
+                        showMadeWithOverride={showMadeWith}
+                        fontOverrides={
+                          headlineFontSize != null || bodyFontSize != null
+                            ? { headline_font_size: headlineFontSize, body_font_size: bodyFontSize }
+                            : undefined
+                        }
+                        zoneOverrides={
+                          headlineZoneOverride || bodyZoneOverride
+                            ? { headline: headlineZoneOverride, body: bodyZoneOverride }
+                            : undefined
+                        }
+                        headlineHighlightStyle={headlineHighlightStyle}
+                        bodyHighlightStyle={bodyHighlightStyle}
+                        borderedFrame={!!(previewBackgroundImageUrl || previewBackgroundImageUrls?.length)}
+                        imageDisplay={isImageMode ? effectiveImageDisplay : undefined}
+                      />
+                    </div>
+                  </div>
+                );
+              })()
+            ) : (
+              <div className="flex h-[300px] items-center justify-center text-muted-foreground text-sm">
+                No template
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <div className="relative flex gap-0 lg:grid lg:grid-cols-2 lg:gap-12">
         {/* Form column: full width on mobile, left column on lg */}
         <div className="flex flex-col gap-6 flex-1 min-w-0 lg:order-1">
+          {totalSlides >= 2 && isPro && (
+            <section className="rounded-lg border border-border/50 bg-card/50 p-4 space-y-3" aria-label="Apply to all scope">
+              <div>
+                <h3 className="text-sm font-medium text-foreground">Apply to all scope</h3>
+                <p className="text-muted-foreground text-xs mt-0.5">
+                  When you click &quot;Apply to all&quot; on template, overlay, background, or other controls, these checkboxes decide which slides are affected. By default, first and last slides are excluded so you can keep them different (e.g. title and CTA).
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-4">
+                <label className="flex cursor-pointer items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={includeFirstSlide}
+                    onChange={(e) => setIncludeFirstSlide(e.target.checked)}
+                    className="rounded border-input accent-primary"
+                  />
+                  Include first slide
+                </label>
+                <label className="flex cursor-pointer items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={includeLastSlide}
+                    onChange={(e) => setIncludeLastSlide(e.target.checked)}
+                    className="rounded border-input accent-primary"
+                  />
+                  Include last slide
+                </label>
+              </div>
+            </section>
+          )}
+          <section className={`rounded-lg border border-border/50 bg-card/50 p-3 space-y-3 ${!isPro ? "pointer-events-none opacity-60" : ""}`} aria-label="Layout">
+            <div className="flex items-center gap-2 mb-4">
+              <LayoutTemplateIcon className="size-4 text-muted-foreground" aria-hidden />
+              <h2 className="text-base font-semibold text-foreground">Layout</h2>
+              <button type="button" onClick={() => setInfoSection("layout")} className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors" aria-label="Help">
+                <InfoIcon className="size-4" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <Select value={templateId ?? ""} onValueChange={(v) => setTemplateId(v || null)}>
+                <SelectTrigger className="h-10 w-full rounded-lg border-input/80 bg-background text-sm">
+                  <SelectValue placeholder="Template" />
+                </SelectTrigger>
+                <SelectContent>
+                  {templates.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <label className="flex cursor-pointer items-center gap-2 py-2 text-sm hover:bg-muted/50 rounded-lg" title="Show slide number (e.g. 3/10). Applies to all.">
+                <input type="checkbox" checked={showCounter} onChange={(e) => handlePositionNumberChange(e.target.checked)} disabled={applyingDisplay} className="rounded border-input accent-primary" />
+                {applyingDisplay ? <Loader2Icon className="size-4 animate-spin text-muted-foreground" /> : <HashIcon className="size-4 text-muted-foreground" />}
+                <span className="text-sm">Slide #</span>
+              </label>
+              {brandKit.watermark_text && (
+                <label className={`flex items-center gap-2 py-2 text-sm rounded-lg ${isPro ? "cursor-pointer hover:bg-muted/50" : "cursor-not-allowed opacity-60"}`} title={isPro ? "Show logo/watermark on this slide. Default off for Pro." : "Upgrade to Pro to control watermark visibility."}>
+                  <input type="checkbox" checked={showWatermark} onChange={(e) => isPro && setShowWatermark(e.target.checked)} disabled={!isPro} className="rounded border-input accent-primary" />
+                  <span className="text-sm">Logo</span>
+                </label>
+              )}
+              {isPro && (
+                <label className="flex cursor-pointer items-center gap-2 py-2 text-sm hover:bg-muted/50 rounded-lg" title="Show 'Made with KarouselMaker.com' attribution. Applies to all slides including first and last.">
+                  <input type="checkbox" checked={showMadeWith} onChange={(e) => handleMadeWithChange(e.target.checked)} disabled={applyingMadeWith} className="rounded border-input accent-primary" />
+                  {applyingMadeWith ? <Loader2Icon className="size-4 animate-spin text-muted-foreground" /> : null}
+                  <span className="text-sm">Made with</span>
+                </label>
+              )}
+              {totalSlides > 1 && (
+                <Button type="button" variant="ghost" size="sm" className="text-muted-foreground" onClick={handleApplyTemplateToAll} disabled={applyingTemplate} title="Apply template to all">
+                  {applyingTemplate ? <Loader2Icon className="size-4 animate-spin" /> : <CopyIcon className="size-4" />}
+                  Apply to all
+                </Button>
+              )}
+            </div>
+          </section>
           <section className="rounded-xl border border-border/60 bg-card p-5 sm:p-6 shadow-sm" aria-label="Content">
             <div className="flex items-center justify-between gap-2 mb-4">
               <div className="flex items-center gap-2">
@@ -1202,42 +1460,21 @@ export function SlideEditForm({
                 </button>
               </div>
             </div>
-            {totalSlides >= 2 && (
-              <div className="flex flex-wrap items-center gap-4 mb-5 pb-4 border-b border-border/60 rounded-lg bg-muted/30 px-3 py-2.5">
-                <span className="text-muted-foreground text-xs font-medium uppercase tracking-wider">Apply to all scope</span>
-                <div className="flex flex-wrap items-center gap-4">
-                  <label className="flex cursor-pointer items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={includeFirstSlide}
-                      onChange={(e) => setIncludeFirstSlide(e.target.checked)}
-                      className="rounded border-input accent-primary"
-                    />
-                    Include first slide
-                  </label>
-                  <label className="flex cursor-pointer items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={includeLastSlide}
-                      onChange={(e) => setIncludeLastSlide(e.target.checked)}
-                      className="rounded border-input accent-primary"
-                    />
-                    Include last slide
-                  </label>
-                </div>
-              </div>
-            )}
             <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <Label htmlFor="headline" className="text-sm font-medium text-foreground">
                   Headline
                 </Label>
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-foreground" onClick={handleClearHeadline} title="Clear headline text">
+                  <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-foreground" onClick={() => setHeadlineEditMoreOpen((o) => !o)} disabled={!isPro} title="Position, size, max lines, align">
+                    {headlineEditMoreOpen ? <ChevronUpIcon className="size-3.5" /> : <ChevronDownIcon className="size-3.5" />}
+                    Edit more
+                  </Button>
+                  <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-foreground" onClick={handleClearHeadline} disabled={!isPro} title="Clear headline text">
                     <Trash2 className="size-3.5 mr-1" />
                     Clear
                   </Button>
-                  {totalSlides > 1 && (
+                  {totalSlides > 1 && isPro && (
                     <>
                       <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-foreground" onClick={handleApplyHeadlineFontSizeToAll} disabled={applyingFontSize} title="Apply headline font size to all slides">
                         {applyingFontSize ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
@@ -1260,6 +1497,7 @@ export function SlideEditForm({
               className="min-h-[96px] resize-none rounded-lg border-input/80 text-base field-sizing-content px-3 py-2.5"
               rows={2}
             />
+            {isPro && (
             <div className="space-y-1.5">
               <span className="text-muted-foreground text-xs font-medium">Highlight colors</span>
               <div className="flex flex-wrap items-center gap-1.5">
@@ -1271,6 +1509,8 @@ export function SlideEditForm({
               <button type="button" onClick={() => insertCloseHighlight("headline")} className="text-muted-foreground rounded px-1.5 py-0.5 text-xs hover:bg-muted" title="{{/}}">{"{{/}}"}</button>
               </div>
             </div>
+            )}
+            {isPro && (
             <div className="space-y-2 pt-1">
               <span className="text-muted-foreground text-xs font-medium">Font size</span>
               <div className="flex flex-wrap items-center gap-2">
@@ -1288,16 +1528,119 @@ export function SlideEditForm({
               </Button>
               </div>
             </div>
+            )}
+            {isPro && headlineEditMoreOpen && templateConfig?.textZones?.find((z) => z.id === "headline") && (
+              <div className="rounded-lg border border-border/60 bg-muted/30 p-4 space-y-4 mt-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground text-xs font-medium">Headline position & layout</span>
+                  {totalSlides > 1 && (
+                    <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-foreground" onClick={handleApplyHeadlineZoneToAll} disabled={applyingHeadlineZone || !headlineZoneOverride || Object.keys(headlineZoneOverride).length === 0} title="Apply headline position & layout to all slides">
+                      {applyingHeadlineZone ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
+                      Apply to all
+                    </Button>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                  {(["x", "y", "w", "h"] as const).map((key) => {
+                    const base = templateConfig!.textZones!.find((z) => z.id === "headline")!;
+                    const val = headlineZoneOverride?.[key] ?? base[key];
+                    return (
+                      <div key={key} className="space-y-2">
+                        <div className="flex justify-between">
+                          <Label className="text-xs capitalize">{key}</Label>
+                          <span className="text-muted-foreground text-xs">{val}</span>
+                        </div>
+                        <Slider
+                          value={[val]}
+                          onValueChange={([v]) => setHeadlineZoneOverride((o) => ({ ...o, [key]: v ?? (key === "x" || key === "y" ? 0 : 1) }))}
+                          min={key === "w" || key === "h" ? 1 : 0}
+                          max={1080}
+                          step={8}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <Label className="text-xs">Max lines</Label>
+                      <span className="text-muted-foreground text-xs">{headlineZoneOverride?.maxLines ?? templateConfig!.textZones!.find((z) => z.id === "headline")!.maxLines}</span>
+                    </div>
+                    <Slider
+                      value={[headlineZoneOverride?.maxLines ?? templateConfig!.textZones!.find((z) => z.id === "headline")!.maxLines]}
+                      onValueChange={([v]) => setHeadlineZoneOverride((o) => ({ ...o, maxLines: v ?? 1 }))}
+                      min={1}
+                      max={20}
+                      step={1}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <Label className="text-xs">Font weight</Label>
+                      <span className="text-muted-foreground text-xs">{headlineZoneOverride?.fontWeight ?? templateConfig!.textZones!.find((z) => z.id === "headline")!.fontWeight}</span>
+                    </div>
+                    <Slider
+                      value={[headlineZoneOverride?.fontWeight ?? templateConfig!.textZones!.find((z) => z.id === "headline")!.fontWeight]}
+                      onValueChange={([v]) => setHeadlineZoneOverride((o) => ({ ...o, fontWeight: v ?? 400 }))}
+                      min={100}
+                      max={900}
+                      step={100}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <Label className="text-xs">Line height</Label>
+                      <span className="text-muted-foreground text-xs">{(headlineZoneOverride?.lineHeight ?? templateConfig!.textZones!.find((z) => z.id === "headline")!.lineHeight).toFixed(1)}</span>
+                    </div>
+                    <Slider
+                      value={[headlineZoneOverride?.lineHeight ?? templateConfig!.textZones!.find((z) => z.id === "headline")!.lineHeight]}
+                      onValueChange={([v]) => setHeadlineZoneOverride((o) => ({ ...o, lineHeight: v ?? 1 }))}
+                      min={0.5}
+                      max={3}
+                      step={0.05}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Align</Label>
+                    <Select
+                      value={headlineZoneOverride?.align ?? templateConfig!.textZones!.find((z) => z.id === "headline")!.align}
+                      onValueChange={(v) => setHeadlineZoneOverride((o) => ({ ...o, align: v as "left" | "center" }))}
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="left">Left</SelectItem>
+                        <SelectItem value="center">Center</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Text color</Label>
+                  <ColorPicker
+                    value={headlineZoneOverride?.color ?? ""}
+                    onChange={(v) => setHeadlineZoneOverride((o) => ({ ...o, color: v.trim() || undefined }))}
+                    placeholder="Auto (contrast)"
+                  />
+                </div>
+              </div>
+            )}
             </div>
             <div className="border-t border-border/60 pt-6 mt-6 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <Label htmlFor="body" className="text-sm font-medium text-foreground">Body</Label>
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-foreground" onClick={handleClearBody} title="Clear body text">
+                  <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-foreground" onClick={() => setBodyEditMoreOpen((o) => !o)} disabled={!isPro} title="Position, size, max lines, align">
+                    {bodyEditMoreOpen ? <ChevronUpIcon className="size-3.5" /> : <ChevronDownIcon className="size-3.5" />}
+                    Edit more
+                  </Button>
+                  <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-foreground" onClick={handleClearBody} disabled={!isPro} title="Clear body text">
                     <Trash2 className="size-3.5 mr-1" />
                     Clear
                   </Button>
-                  {totalSlides > 1 && (
+                  {totalSlides > 1 && isPro && (
                     <>
                       <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-foreground" onClick={handleApplyBodyFontSizeToAll} disabled={applyingFontSize} title="Apply body font size to all slides">
                         {applyingFontSize ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
@@ -1331,6 +1674,7 @@ export function SlideEditForm({
               <button type="button" onClick={() => insertCloseHighlight("body")} className="text-muted-foreground rounded px-1.5 py-0.5 text-xs hover:bg-muted" title="{{/}}">{"{{/}}"}</button>
               </div>
             </div>
+            {isPro && (
             <div className="space-y-2 pt-1">
               <span className="text-muted-foreground text-xs font-medium">Font size</span>
               <div className="flex flex-wrap items-center gap-2">
@@ -1348,46 +1692,105 @@ export function SlideEditForm({
               </Button>
               </div>
             </div>
-            </div>
-          </section>
-          <section className="rounded-lg border border-border/50 bg-card/50 p-3 space-y-3" aria-label="Layout">
-            <div className="flex items-center gap-2 mb-4">
-              <LayoutTemplateIcon className="size-4 text-muted-foreground" aria-hidden />
-              <h2 className="text-base font-semibold text-foreground">Layout</h2>
-              <button type="button" onClick={() => setInfoSection("layout")} className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors" aria-label="Help">
-                <InfoIcon className="size-4" />
-              </button>
-            </div>
-            <div className="space-y-4">
-              <Select value={templateId ?? ""} onValueChange={(v) => setTemplateId(v || null)}>
-                <SelectTrigger className="h-10 w-full rounded-lg border-input/80 bg-background text-sm">
-                  <SelectValue placeholder="Template" />
-                </SelectTrigger>
-                <SelectContent>
-                  {templates.map((t) => (
-                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <label className="flex cursor-pointer items-center gap-2 py-2 text-sm hover:bg-muted/50 rounded-lg" title="Show slide number (e.g. 3/10). Applies to all.">
-                <input type="checkbox" checked={showCounter} onChange={(e) => handlePositionNumberChange(e.target.checked)} disabled={applyingDisplay} className="rounded border-input accent-primary" />
-                {applyingDisplay ? <Loader2Icon className="size-4 animate-spin text-muted-foreground" /> : <HashIcon className="size-4 text-muted-foreground" />}
-                <span className="text-sm">Slide #</span>
-              </label>
-              {brandKit.watermark_text && (
-                <label className="flex cursor-pointer items-center gap-2 py-2 text-sm hover:bg-muted/50 rounded-lg" title="Show logo/watermark on this slide. First, second, last = on by default; middle = off.">
-                  <input type="checkbox" checked={showWatermark} onChange={(e) => setShowWatermark(e.target.checked)} className="rounded border-input accent-primary" />
-                  <span className="text-sm">Logo</span>
-                </label>
-              )}
-              {totalSlides > 1 && (
-                <Button type="button" variant="ghost" size="sm" className="text-muted-foreground" onClick={handleApplyTemplateToAll} disabled={applyingTemplate} title="Apply template to all">
-                  {applyingTemplate ? <Loader2Icon className="size-4 animate-spin" /> : <CopyIcon className="size-4" />}
-                  Apply to all
-                </Button>
-              )}
+            )}
+            {isPro && bodyEditMoreOpen && templateConfig?.textZones?.find((z) => z.id === "body") && (
+              <div className="rounded-lg border border-border/60 bg-muted/30 p-4 space-y-4 mt-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground text-xs font-medium">Body position & layout</span>
+                  {totalSlides > 1 && (
+                    <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-foreground" onClick={handleApplyBodyZoneToAll} disabled={applyingBodyZone || !bodyZoneOverride || Object.keys(bodyZoneOverride).length === 0} title="Apply body position & layout to all slides">
+                      {applyingBodyZone ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
+                      Apply to all
+                    </Button>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                  {(["x", "y", "w", "h"] as const).map((key) => {
+                    const base = templateConfig!.textZones!.find((z) => z.id === "body")!;
+                    const val = bodyZoneOverride?.[key] ?? base[key];
+                    return (
+                      <div key={key} className="space-y-2">
+                        <div className="flex justify-between">
+                          <Label className="text-xs capitalize">{key}</Label>
+                          <span className="text-muted-foreground text-xs">{val}</span>
+                        </div>
+                        <Slider
+                          value={[val]}
+                          onValueChange={([v]) => setBodyZoneOverride((o) => ({ ...o, [key]: v ?? (key === "x" || key === "y" ? 0 : 1) }))}
+                          min={key === "w" || key === "h" ? 1 : 0}
+                          max={1080}
+                          step={8}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <Label className="text-xs">Max lines</Label>
+                      <span className="text-muted-foreground text-xs">{bodyZoneOverride?.maxLines ?? templateConfig!.textZones!.find((z) => z.id === "body")!.maxLines}</span>
+                    </div>
+                    <Slider
+                      value={[bodyZoneOverride?.maxLines ?? templateConfig!.textZones!.find((z) => z.id === "body")!.maxLines]}
+                      onValueChange={([v]) => setBodyZoneOverride((o) => ({ ...o, maxLines: v ?? 1 }))}
+                      min={1}
+                      max={20}
+                      step={1}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <Label className="text-xs">Font weight</Label>
+                      <span className="text-muted-foreground text-xs">{bodyZoneOverride?.fontWeight ?? templateConfig!.textZones!.find((z) => z.id === "body")!.fontWeight}</span>
+                    </div>
+                    <Slider
+                      value={[bodyZoneOverride?.fontWeight ?? templateConfig!.textZones!.find((z) => z.id === "body")!.fontWeight]}
+                      onValueChange={([v]) => setBodyZoneOverride((o) => ({ ...o, fontWeight: v ?? 400 }))}
+                      min={100}
+                      max={900}
+                      step={100}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <Label className="text-xs">Line height</Label>
+                      <span className="text-muted-foreground text-xs">{(bodyZoneOverride?.lineHeight ?? templateConfig!.textZones!.find((z) => z.id === "body")!.lineHeight).toFixed(1)}</span>
+                    </div>
+                    <Slider
+                      value={[bodyZoneOverride?.lineHeight ?? templateConfig!.textZones!.find((z) => z.id === "body")!.lineHeight]}
+                      onValueChange={([v]) => setBodyZoneOverride((o) => ({ ...o, lineHeight: v ?? 1 }))}
+                      min={0.5}
+                      max={3}
+                      step={0.05}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Align</Label>
+                    <Select
+                      value={bodyZoneOverride?.align ?? templateConfig!.textZones!.find((z) => z.id === "body")!.align}
+                      onValueChange={(v) => setBodyZoneOverride((o) => ({ ...o, align: v as "left" | "center" }))}
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="left">Left</SelectItem>
+                        <SelectItem value="center">Center</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Text color</Label>
+                  <ColorPicker
+                    value={bodyZoneOverride?.color ?? ""}
+                    onChange={(v) => setBodyZoneOverride((o) => ({ ...o, color: v.trim() || undefined }))}
+                    placeholder="Auto (contrast)"
+                  />
+                </div>
+              </div>
+            )}
             </div>
           </section>
           <section className="rounded-xl border border-border/60 bg-card p-5 sm:p-6 shadow-sm" aria-label="Background">
@@ -1435,7 +1838,7 @@ export function SlideEditForm({
               </div>
             </div>
             {isImageMode && (
-              <>
+              <div className={!isPro ? "pointer-events-none opacity-60" : ""}>
                 <div className="space-y-2">
                   <Label className="text-muted-foreground text-xs font-medium">Image URLs</Label>
                   {imageUrls.map((item, i) => (
@@ -1820,22 +2223,24 @@ export function SlideEditForm({
                     )}
                   </div>
                 </div>
-              </>
+              </div>
             )}
             {!isImageMode && (
               <div className="flex flex-wrap items-center gap-3">
-                <Select
-                  value={background.style ?? "solid"}
-                  onValueChange={(v: "solid" | "gradient") => setBackground((b) => ({ ...b, style: v }))}
-                >
-                  <SelectTrigger className="h-10 w-[130px] rounded-lg border-input/80 bg-background">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="solid">Solid</SelectItem>
-                    <SelectItem value="gradient">Gradient</SelectItem>
-                  </SelectContent>
-                </Select>
+                {isPro && (
+                  <Select
+                    value={background.style ?? "solid"}
+                    onValueChange={(v: "solid" | "gradient") => setBackground((b) => ({ ...b, style: v }))}
+                  >
+                    <SelectTrigger className="h-10 w-[130px] rounded-lg border-input/80 bg-background">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="solid">Solid</SelectItem>
+                      <SelectItem value="gradient">Gradient</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
                 <div className="flex items-center gap-2">
                   <input
                     type="color"
@@ -1856,7 +2261,7 @@ export function SlideEditForm({
               </div>
             )}
             {!isImageMode && (
-              <>
+              <div className={!isPro ? "pointer-events-none opacity-60" : ""}>
                 <div className="flex flex-wrap items-center gap-2">
                   <Button type="button" variant="outline" size="sm" className="rounded-lg h-9" title="Pick image" onClick={() => { setPickerForSecondary(false); setPickerOpen(true); }}>
                     <ImageIcon className="size-4" />
@@ -1886,49 +2291,25 @@ export function SlideEditForm({
                     className="h-10 rounded-lg border-input/80 bg-background text-sm"
                   />
                 </div>
-              </>
+              </div>
             )}
-            {overlaySection}
+            {background.gradientOn && overlaySection}
           </section>
-          <section className="rounded-xl border border-border/60 bg-card p-5 sm:p-6 shadow-sm" aria-label="Presets">
+          <section className={`rounded-xl border border-border/60 bg-card p-5 sm:p-6 shadow-sm ${!isPro ? "pointer-events-none opacity-60" : ""}`} aria-label="Save as template">
             <div className="flex items-center gap-2 mb-4">
               <Bookmark className="size-4 text-muted-foreground" />
-              <h2 className="text-base font-semibold text-foreground">Presets</h2>
-              <button type="button" onClick={() => setInfoSection("presets")} className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors" aria-label="Help">
+              <h2 className="text-base font-semibold text-foreground">Save as template</h2>
+              <button type="button" onClick={() => setInfoSection("templates")} className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors" aria-label="Help">
                 <InfoIcon className="size-4" />
               </button>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Select
-                value={selectedPresetId ?? ""}
-                onValueChange={(id) => {
-                  setSelectedPresetId(id || null);
-                  const preset = presets.find((p) => p.id === id);
-                  if (preset) applyPresetToForm(preset);
-                }}
-              >
-                <SelectTrigger className="h-9 w-[160px] rounded-lg border-input/80 bg-background text-sm">
-                  <SelectValue placeholder="Preset" />
-                </SelectTrigger>
-                <SelectContent>
-                  {presets.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {selectedPreset && totalSlides > 1 && (
-                <Button type="button" variant="outline" size="sm" className="h-9 rounded-lg text-xs" onClick={handleApplyPresetToAll} disabled={applyingPresetToAll} title="Apply preset to all slides">
-                  {applyingPresetToAll ? <Loader2Icon className="size-4 animate-spin" /> : <CopyIcon className="size-4" />}
-                  Apply to all
-                </Button>
-              )}
-              <Button type="button" variant="ghost" size="sm" className="h-9 rounded-lg text-muted-foreground hover:text-foreground text-xs" onClick={() => setSavePresetOpen(true)} title="Save as preset">
-                <Bookmark className="size-4" />
-                Save
-              </Button>
-            </div>
+            <p className="text-muted-foreground text-sm mb-4">
+              Save the current layout, gradient overlay, and chrome settings as a reusable template.
+            </p>
+            <Button type="button" variant="outline" size="sm" className="h-9 rounded-lg text-xs" onClick={() => setSaveTemplateOpen(true)} disabled={!templateConfig} title="Save as template">
+              <Bookmark className="size-4" />
+              Save as template
+            </Button>
           </section>
           <AssetPickerModal open={pickerOpen} onOpenChange={setPickerOpen} onPick={handlePickImage} />
         </div>
@@ -2008,7 +2389,7 @@ export function SlideEditForm({
           >
             {shortening ? <Loader2Icon className="size-4 animate-spin" /> : <ScissorsIcon className="size-4" />}
           </Button>
-          {isHook && (
+          {isHook && isPro && (
             <Button variant="outline" size="sm" className="h-9 w-9 p-0" title="Rewrite hook" onClick={handleRewriteHook} disabled={rewriting}>
               {rewriting ? <Loader2Icon className="size-4 animate-spin" /> : <SparklesIcon className="size-4" />}
             </Button>

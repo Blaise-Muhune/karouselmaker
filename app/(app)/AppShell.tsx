@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "@/app/actions/auth";
+import { createCustomerPortalSession } from "@/app/actions/subscription/createCustomerPortalSession";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -20,7 +21,33 @@ import {
 } from "@/components/ui/sheet";
 import { ThemeToggle } from "@/components/theme-toggle";
 import type { Project } from "@/lib/server/db/types";
-import { ChevronDownIcon, LogOutIcon, MenuIcon, PlusCircleIcon, UserIcon } from "lucide-react";
+import { ChevronDownIcon, CreditCardIcon, Loader2Icon, LogOutIcon, MenuIcon, PlusCircleIcon, ShieldIcon, UserIcon } from "lucide-react";
+
+const ADMIN_EMAILS = ["blaisemu007@gmail.com", "muyumba@andrews.edu"];
+
+function ManageSubscriptionButton() {
+  const [loading, setLoading] = useState(false);
+  return (
+    <button
+      type="button"
+      className="flex w-full items-center"
+      onClick={async () => {
+        setLoading(true);
+        const result = await createCustomerPortalSession();
+        if ("url" in result) {
+          window.location.href = result.url;
+        } else {
+          setLoading(false);
+          alert(result.error ?? "Failed to open billing");
+        }
+      }}
+      disabled={loading}
+    >
+      {loading ? <Loader2Icon className="mr-2 size-4 animate-spin" /> : <CreditCardIcon className="mr-2 size-4" />}
+      Manage subscription
+    </button>
+  );
+}
 
 function getCurrentProjectId(pathname: string): string | undefined {
   const match = pathname.match(/^\/p\/([^/]+)/);
@@ -31,13 +58,23 @@ function NavContent({
   currentProject,
   projects,
   setSheetOpen,
+  isAdmin,
 }: {
   currentProject?: Project;
   projects: Project[];
   setSheetOpen?: (open: boolean) => void;
+  isAdmin?: boolean;
 }) {
   return (
     <>
+      {isAdmin && (
+        <Button variant="ghost" size="sm" className="w-full justify-start md:w-auto" asChild>
+          <Link href="/admin" onClick={() => setSheetOpen?.(false)}>
+            <ShieldIcon className="mr-2 size-4" />
+            Admin
+          </Link>
+        </Button>
+      )}
       <Button variant="ghost" size="sm" className="w-full justify-start md:w-auto" asChild>
         <Link href="/templates" onClick={() => setSheetOpen?.(false)}>Templates</Link>
       </Button>
@@ -96,13 +133,16 @@ export function AppShell({
   userEmail,
   projects,
   children,
+  isPro = false,
 }: {
   userEmail: string;
   projects: Project[];
   children: React.ReactNode;
+  isPro?: boolean;
 }) {
   const pathname = usePathname();
   const currentProjectId = getCurrentProjectId(pathname);
+  const isAdmin = ADMIN_EMAILS.includes(userEmail);
 
   const currentProject = currentProjectId
     ? projects.find((p) => p.id === currentProjectId)
@@ -131,7 +171,7 @@ export function AppShell({
                   </SheetTitle>
                 </SheetHeader>
                 <nav className="mt-6 flex flex-col gap-2">
-                  <NavContent currentProject={currentProject} projects={projects} setSheetOpen={setSheetOpen} />
+                  <NavContent currentProject={currentProject} projects={projects} setSheetOpen={setSheetOpen} isAdmin={isAdmin} />
                 </nav>
               </SheetContent>
             </Sheet>
@@ -141,7 +181,7 @@ export function AppShell({
           </div>
           {/* Desktop nav */}
           <nav className="hidden flex-1 items-center justify-center gap-3 md:flex">
-            <NavContent currentProject={currentProject} projects={projects} />
+            <NavContent currentProject={currentProject} projects={projects} isAdmin={isAdmin} />
           </nav>
           <div className="flex shrink-0 items-center gap-1">
             <ThemeToggle />
@@ -155,6 +195,11 @@ export function AppShell({
                 <DropdownMenuItem className="text-muted-foreground cursor-default" disabled>
                   {userEmail}
                 </DropdownMenuItem>
+                {isPro && (
+                  <DropdownMenuItem asChild>
+                    <ManageSubscriptionButton />
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem asChild>
                   <form action={signOut}>
                     <button type="submit" className="flex w-full items-center">
@@ -170,9 +215,19 @@ export function AppShell({
       </header>
       <main className="flex-1">{children}</main>
       <footer className="border-t py-3">
-        <div className="flex flex-wrap items-center justify-center gap-4 px-4 text-sm text-muted-foreground">
-          <Link href="/terms" className="hover:text-foreground">Terms</Link>
-          <Link href="/privacy" className="hover:text-foreground">Privacy</Link>
+        <div className="flex flex-col items-center gap-2 px-4">
+          <a
+            href="https://karouselmaker.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-muted-foreground text-sm hover:text-foreground transition-colors"
+          >
+            Made with KarouselMaker.com
+          </a>
+          <div className="flex flex-wrap items-center justify-center gap-4 text-sm text-muted-foreground">
+            <Link href="/terms" className="hover:text-foreground">Terms</Link>
+            <Link href="/privacy" className="hover:text-foreground">Privacy</Link>
+          </div>
         </div>
       </footer>
     </div>

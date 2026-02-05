@@ -48,6 +48,16 @@ export async function getTemplate(
   return data as Template;
 }
 
+export async function countUserTemplates(userId: string): Promise<number> {
+  const supabase = await createClient();
+  const { count, error } = await supabase
+    .from("templates")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", userId);
+  if (error) return 0;
+  return count ?? 0;
+}
+
 export async function createTemplate(
   userId: string,
   payload: TemplateInsert
@@ -58,4 +68,35 @@ export async function createTemplate(
 
   if (error) throw new Error(error.message);
   return data as Template;
+}
+
+export async function updateTemplate(
+  userId: string,
+  templateId: string,
+  payload: { name?: string; category?: string; aspect_ratio?: string; config?: unknown }
+): Promise<{ ok: boolean; error?: string }> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("templates")
+    .update({ ...payload, updated_at: new Date().toISOString() })
+    .eq("id", templateId)
+    .eq("user_id", userId);
+
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+export async function deleteTemplate(
+  userId: string,
+  templateId: string
+): Promise<{ ok: boolean; error?: string }> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("templates")
+    .delete()
+    .eq("id", templateId)
+    .eq("user_id", userId);
+
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
 }

@@ -19,6 +19,8 @@ import {
 } from "@/components/ui/select";
 import { uploadAsset } from "@/app/actions/assets/uploadAsset";
 import { setSlideBackground } from "@/app/actions/slides/setSlideBackground";
+import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
+import { PLAN_LIMITS } from "@/lib/constants";
 import type { Asset } from "@/lib/server/db/types";
 import { ImageIcon, Loader2Icon, UploadIcon } from "lucide-react";
 
@@ -31,6 +33,9 @@ type AssetLibraryProps = {
   slideId?: string;
   returnTo?: string;
   onPick?: (asset: Asset, url: string) => void;
+  assetCount?: number;
+  assetLimit?: number;
+  isPro?: boolean;
 };
 
 export function AssetLibrary({
@@ -42,6 +47,9 @@ export function AssetLibrary({
   slideId,
   returnTo,
   onPick,
+  assetCount = 0,
+  assetLimit = 100,
+  isPro = true,
 }: AssetLibraryProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -49,12 +57,17 @@ export function AssetLibrary({
   const assets = initialAssets;
   const urls = initialUrls;
   const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [projectFilter, setProjectFilter] = useState<string>(projectIdFilter ?? "all");
+
+  const atLimit = assetLimit > 0 && assetCount >= assetLimit;
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (atLimit) return;
     setUploading(true);
+    setUploadError(null);
     const formData = new FormData();
     formData.set("file", file);
     if (projectFilter !== "all") formData.set("project_id", projectFilter);
@@ -63,6 +76,8 @@ export function AssetLibrary({
     e.target.value = "";
     if (result.ok) {
       startTransition(() => router.refresh());
+    } else {
+      setUploadError(result.error ?? "Upload failed");
     }
   };
 
@@ -101,6 +116,21 @@ export function AssetLibrary({
 
   return (
     <div className="space-y-4">
+      {atLimit && !isPro && (
+        <UpgradeBanner
+          message={`You've reached the ${assetLimit} image limit on the free plan. Upgrade to Pro for ${PLAN_LIMITS.pro.assets} images.`}
+          variant="inline"
+        />
+      )}
+      {uploadError && !isPro && (uploadError.toLowerCase().includes("limit") || uploadError.toLowerCase().includes("upgrade")) && (
+        <UpgradeBanner
+          message={uploadError}
+          variant="inline"
+        />
+      )}
+      {uploadError && (!uploadError.toLowerCase().includes("limit") && !uploadError.toLowerCase().includes("upgrade")) && (
+        <p className="text-destructive text-sm rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2">{uploadError}</p>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <Select
           value={projectFilter}
@@ -120,22 +150,25 @@ export function AssetLibrary({
             ))}
           </SelectContent>
         </Select>
-        <label className="cursor-pointer">
+        <span className="text-muted-foreground text-xs">
+          {assetCount}/{assetLimit} images
+        </span>
+        <label className={atLimit ? "cursor-not-allowed opacity-60" : "cursor-pointer"}>
           <input
             type="file"
             accept="image/*"
             className="hidden"
             onChange={handleFileChange}
-            disabled={uploading}
+            disabled={uploading || atLimit}
           />
-          <Button type="button" variant="outline" size="sm" asChild>
+          <Button type="button" variant="outline" size="sm" disabled={uploading || atLimit} asChild>
             <span>
               {uploading ? (
                 <Loader2Icon className="mr-2 size-4 animate-spin" />
               ) : (
                 <UploadIcon className="mr-2 size-4" />
               )}
-              Upload image
+              {atLimit ? "Upload (limit reached)" : "Upload image"}
             </span>
           </Button>
         </label>

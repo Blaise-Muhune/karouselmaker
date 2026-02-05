@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getSlide, getTemplate, getCarousel, getProject, listSlides } from "@/lib/server/db";
+import { getSubscription } from "@/lib/server/subscription";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { renderSlideHtml } from "@/lib/server/renderer/renderSlideHtml";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
@@ -57,12 +58,13 @@ export async function GET(
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
 
+  const { isPro } = await getSubscription(userId);
   const brandKit: BrandKit = await resolveBrandKitLogo(project.brand_kit as Record<string, unknown> | null);
   const carouselSlides = await listSlides(userId, slide.carousel_id);
   const totalSlides = carouselSlides.length || 1;
 
   const slideBg = slide.background as
-    | { style?: "solid" | "gradient"; color?: string; gradientOn?: boolean; mode?: string; storage_path?: string; image_url?: string; secondary_storage_path?: string; secondary_image_url?: string; images?: { image_url?: string; storage_path?: string }[]; overlay?: { gradient?: boolean; darken?: number; color?: string; textColor?: string; direction?: "top" | "bottom" | "left" | "right" } }
+    | { style?: "solid" | "gradient"; color?: string; gradientOn?: boolean; mode?: string; storage_path?: string; image_url?: string; secondary_storage_path?: string; secondary_image_url?: string; images?: { image_url?: string; storage_path?: string }[]; overlay?: { gradient?: boolean; darken?: number; color?: string; textColor?: string; direction?: "top" | "bottom" | "left" | "right"; extent?: number; solidSize?: number } }
     | null
     | undefined;
   const gradientColor = slideBg?.overlay?.color ?? "#000000";
@@ -121,13 +123,28 @@ export async function GET(
   }
   const borderedFrame = !!(backgroundImageUrl || backgroundImageUrls?.length);
 
-  const slideMeta = slide.meta as { show_counter?: boolean; show_watermark?: boolean; headline_font_size?: number; body_font_size?: number; headline_highlight_style?: "text" | "background"; body_highlight_style?: "text" | "background" } | null;
+  const slideMeta = slide.meta as {
+    show_counter?: boolean;
+    show_watermark?: boolean;
+    show_made_with?: boolean;
+    headline_font_size?: number;
+    body_font_size?: number;
+    headline_zone_override?: { x?: number; y?: number; w?: number; h?: number; fontSize?: number; fontWeight?: number; lineHeight?: number; maxLines?: number; align?: "left" | "center"; color?: string };
+    body_zone_override?: { x?: number; y?: number; w?: number; h?: number; fontSize?: number; fontWeight?: number; lineHeight?: number; maxLines?: number; align?: "left" | "center"; color?: string };
+    headline_highlight_style?: "text" | "background";
+    body_highlight_style?: "text" | "background";
+  } | null;
   const showCounterOverride = slideMeta?.show_counter === true;
   const defaultShowWatermark = slide.slide_index === 1 || slide.slide_index === totalSlides;
   const showWatermarkOverride = slideMeta?.show_watermark ?? defaultShowWatermark;
+  const showMadeWithOverride = slideMeta?.show_made_with ?? !isPro;
   const fontOverrides =
     slideMeta && (slideMeta.headline_font_size != null || slideMeta.body_font_size != null)
       ? { headline_font_size: slideMeta.headline_font_size, body_font_size: slideMeta.body_font_size }
+      : undefined;
+  const zoneOverrides =
+    slideMeta && (slideMeta.headline_zone_override || slideMeta.body_zone_override)
+      ? { headline: slideMeta.headline_zone_override, body: slideMeta.body_zone_override }
       : undefined;
   const highlightStyles = {
     headline: slideMeta?.headline_highlight_style === "background" ? "background" as const : undefined,
@@ -150,7 +167,9 @@ export async function GET(
     secondaryBackgroundImageUrl,
     showCounterOverride,
     showWatermarkOverride,
+    showMadeWithOverride,
     fontOverrides,
+    zoneOverrides,
     highlightStyles,
     borderedFrame
   );

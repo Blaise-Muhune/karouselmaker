@@ -49,6 +49,7 @@ type SlideGridProps = {
   carouselId: string;
   slideBackgroundImageUrls?: Record<string, string | string[]>;
   exportSize?: "1080x1080" | "1080x1350" | "1080x1920";
+  isPro?: boolean;
 };
 
 function getTemplateConfig(
@@ -101,6 +102,12 @@ function getShowWatermarkOverride(slide: Slide, totalSlides: number): boolean | 
   return slide.slide_index === 1 || slide.slide_index === totalSlides ? true : false;
 }
 
+function getShowMadeWithOverride(slide: Slide, isPro: boolean): boolean | undefined {
+  const m = slide.meta as { show_made_with?: boolean } | null;
+  if (m != null && typeof m.show_made_with === "boolean") return m.show_made_with;
+  return !isPro; // default hide for Pro; default show for Free
+}
+
 function getFontOverrides(slide: Slide): { headline_font_size?: number; body_font_size?: number } | undefined {
   const m = slide.meta as { headline_font_size?: number; body_font_size?: number } | null;
   if (m == null) return undefined;
@@ -139,7 +146,9 @@ export function SlideGrid({
   carouselId,
   slideBackgroundImageUrls = {},
   exportSize = "1080x1080",
+  isPro = true,
 }: SlideGridProps) {
+  const canEdit = isPro;
   const previewDims = getPreviewDimensions(exportSize);
   const [isPending, startTransition] = useTransition();
   const [slidesOrder, setSlidesOrder] = useState<Slide[]>(slides);
@@ -208,72 +217,124 @@ export function SlideGrid({
           return (
             <li
               key={slide.id}
-              draggable
-              onDragStart={(e) => handleDragStart(e, slide.id)}
-              onDragOver={(e) => handleDragOver(e, slide.id)}
-              onDragLeave={handleDragLeave}
-              onDrop={(e) => handleDrop(e, slide.id)}
-              onDragEnd={handleDragEnd}
+              draggable={canEdit}
+              onDragStart={canEdit ? (e) => handleDragStart(e, slide.id) : undefined}
+              onDragOver={canEdit ? (e) => handleDragOver(e, slide.id) : undefined}
+              onDragLeave={canEdit ? handleDragLeave : undefined}
+              onDrop={canEdit ? (e) => handleDrop(e, slide.id) : undefined}
+              onDragEnd={canEdit ? handleDragEnd : undefined}
               className={`flex flex-col gap-2 transition-opacity ${isDragging ? "opacity-50" : ""} ${isDragOver ? "ring-2 ring-primary rounded-lg" : ""}`}
             >
               <div className="flex items-start gap-1">
-                <div
-                  className="cursor-grab active:cursor-grabbing mt-2 p-1 rounded text-muted-foreground hover:text-foreground touch-none"
-                  draggable
-                  onDragStart={(e) => {
-                    e.stopPropagation();
-                    handleDragStart(e, slide.id);
-                  }}
-                  aria-label="Drag to reorder"
-                >
-                  <GripVerticalIcon className="size-4" />
-                </div>
-                <div className="flex-1 min-w-0 flex flex-col gap-2">
-                  <Link
-                    href={`/p/${projectId}/c/${carouselId}/s/${slide.id}`}
-                    className="overflow-hidden rounded-lg border border-border bg-muted/30 text-left transition-colors hover:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/50 block"
-                    style={{
-                      width: previewDims.w,
-                      height: previewDims.h,
+                {canEdit && (
+                  <div
+                    className="cursor-grab active:cursor-grabbing mt-2 p-1 rounded text-muted-foreground hover:text-foreground touch-none"
+                    draggable
+                    onDragStart={(e) => {
+                      e.stopPropagation();
+                      handleDragStart(e, slide.id);
                     }}
+                    aria-label="Drag to reorder"
                   >
-                    {templateConfig ? (
-                      <div
-                        style={{
-                          transform: `translate(${previewDims.translateX}px, ${previewDims.translateY}px) scale(${previewDims.scale})`,
-                          transformOrigin: "top left",
-                          width: 1080,
-                          height: 1080,
-                        }}
-                      >
-                        <SlidePreview
-                          slide={{
-                            headline: slide.headline,
-                            body: slide.body,
-                            slide_index: slide.slide_index,
-                            slide_type: slide.slide_type,
+                    <GripVerticalIcon className="size-4" />
+                  </div>
+                )}
+                <div className="flex-1 min-w-0 flex flex-col gap-2">
+                  {canEdit ? (
+                    <Link
+                      href={`/p/${projectId}/c/${carouselId}/s/${slide.id}`}
+                      className="overflow-hidden rounded-lg border border-border bg-muted/30 text-left transition-colors hover:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/50 block"
+                      style={{
+                        width: previewDims.w,
+                        height: previewDims.h,
+                      }}
+                    >
+                      {templateConfig ? (
+                        <div
+                          style={{
+                            transform: `translate(${previewDims.translateX}px, ${previewDims.translateY}px) scale(${previewDims.scale})`,
+                            transformOrigin: "top left",
+                            width: 1080,
+                            height: 1080,
                           }}
-                          templateConfig={templateConfig}
-                          brandKit={brandKit}
-                          totalSlides={slidesOrder.length}
-                          backgroundImageUrl={typeof slideBackgroundImageUrls[slide.id] === "string" ? slideBackgroundImageUrls[slide.id] as string : undefined}
-                          backgroundImageUrls={Array.isArray(slideBackgroundImageUrls[slide.id]) ? slideBackgroundImageUrls[slide.id] as string[] : undefined}
-                          backgroundOverride={backgroundOverride}
-                          showCounterOverride={getShowCounterOverride(slide)}
-                          showWatermarkOverride={getShowWatermarkOverride(slide, slidesOrder.length)}
-                          fontOverrides={getFontOverrides(slide)}
-                          imageDisplay={getImageDisplay(slide)}
-                        />
-                      </div>
-                    ) : (
-                      <div
-                        className="flex h-full items-center justify-center text-muted-foreground text-sm"
-                        style={{ width: previewDims.w, height: previewDims.h }}
-                      >
-                        No template
-                      </div>
-                    )}
-                  </Link>
+                        >
+                          <SlidePreview
+                            slide={{
+                              headline: slide.headline,
+                              body: slide.body,
+                              slide_index: slide.slide_index,
+                              slide_type: slide.slide_type,
+                            }}
+                            templateConfig={templateConfig}
+                            brandKit={brandKit}
+                            totalSlides={slidesOrder.length}
+                            backgroundImageUrl={typeof slideBackgroundImageUrls[slide.id] === "string" ? slideBackgroundImageUrls[slide.id] as string : undefined}
+                            backgroundImageUrls={Array.isArray(slideBackgroundImageUrls[slide.id]) ? slideBackgroundImageUrls[slide.id] as string[] : undefined}
+                            backgroundOverride={backgroundOverride}
+                            showCounterOverride={getShowCounterOverride(slide)}
+                            showWatermarkOverride={getShowWatermarkOverride(slide, slidesOrder.length)}
+                            showMadeWithOverride={getShowMadeWithOverride(slide, isPro)}
+                            fontOverrides={getFontOverrides(slide)}
+                            imageDisplay={getImageDisplay(slide)}
+                          />
+                        </div>
+                      ) : (
+                        <div
+                          className="flex h-full items-center justify-center text-muted-foreground text-sm"
+                          style={{ width: previewDims.w, height: previewDims.h }}
+                        >
+                          No template
+                        </div>
+                      )}
+                    </Link>
+                  ) : (
+                    <Link
+                      href={`/p/${projectId}/c/${carouselId}/s/${slide.id}`}
+                      className="overflow-hidden rounded-lg border border-border bg-muted/30 text-left block transition-colors hover:border-primary/30 focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      style={{
+                        width: previewDims.w,
+                        height: previewDims.h,
+                      }}
+                    >
+                      {templateConfig ? (
+                        <div
+                          style={{
+                            transform: `translate(${previewDims.translateX}px, ${previewDims.translateY}px) scale(${previewDims.scale})`,
+                            transformOrigin: "top left",
+                            width: 1080,
+                            height: 1080,
+                          }}
+                        >
+                          <SlidePreview
+                            slide={{
+                              headline: slide.headline,
+                              body: slide.body,
+                              slide_index: slide.slide_index,
+                              slide_type: slide.slide_type,
+                            }}
+                            templateConfig={templateConfig}
+                            brandKit={brandKit}
+                            totalSlides={slidesOrder.length}
+                            backgroundImageUrl={typeof slideBackgroundImageUrls[slide.id] === "string" ? slideBackgroundImageUrls[slide.id] as string : undefined}
+                            backgroundImageUrls={Array.isArray(slideBackgroundImageUrls[slide.id]) ? slideBackgroundImageUrls[slide.id] as string[] : undefined}
+                            backgroundOverride={backgroundOverride}
+                            showCounterOverride={getShowCounterOverride(slide)}
+                            showWatermarkOverride={getShowWatermarkOverride(slide, slidesOrder.length)}
+                            showMadeWithOverride={getShowMadeWithOverride(slide, isPro)}
+                            fontOverrides={getFontOverrides(slide)}
+                            imageDisplay={getImageDisplay(slide)}
+                          />
+                        </div>
+                      ) : (
+                        <div
+                          className="flex h-full items-center justify-center text-muted-foreground text-sm"
+                          style={{ width: previewDims.w, height: previewDims.h }}
+                        >
+                          No template
+                        </div>
+                      )}
+                    </Link>
+                  )}
                   <div className="flex items-center gap-2 flex-wrap">
                     <Select
                       value={currentTemplateId ?? ""}
@@ -283,7 +344,7 @@ export function SlideGrid({
                           setSlideTemplate(slide.id, templateId, editorPath);
                         });
                       }}
-                      disabled={isPending || reorderPending || templates.length === 0}
+                      disabled={!canEdit || isPending || reorderPending || templates.length === 0}
                     >
                       <SelectTrigger size="sm" className="text-xs">
                         <SelectValue placeholder="Template" />
@@ -306,11 +367,13 @@ export function SlideGrid({
                         {getImageCount(slide)}
                       </span>
                     )}
-                    <Button variant="outline" size="icon-sm" asChild title="Edit slide">
-                      <Link href={`/p/${projectId}/c/${carouselId}/s/${slide.id}`}>
-                        <PencilIcon className="size-4" />
-                      </Link>
-                    </Button>
+                    {canEdit ? (
+                      <Button variant="outline" size="icon-sm" asChild title="Edit slide">
+                        <Link href={`/p/${projectId}/c/${carouselId}/s/${slide.id}`}>
+                          <PencilIcon className="size-4" />
+                        </Link>
+                      </Button>
+                    ) : null}
                   </div>
                 </div>
               </div>

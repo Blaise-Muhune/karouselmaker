@@ -1,7 +1,7 @@
 "use client";
 
 import { applyTemplate } from "@/lib/renderer/applyTemplate";
-import type { BrandKit, SlideData } from "@/lib/renderer/renderModel";
+import type { BrandKit, SlideData, TextZoneOverrides } from "@/lib/renderer/renderModel";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { getContrastingTextColor, hexToRgba } from "@/lib/editor/colorUtils";
 import { parseInlineFormatting } from "@/lib/editor/inlineFormat";
@@ -10,12 +10,13 @@ const CANVAS_SIZE = 1080;
 
 export type GradientDirection = "top" | "bottom" | "left" | "right";
 
-function gradientDirectionToCss(direction: GradientDirection | undefined, templateDirection: "top" | "bottom"): string {
+function gradientDirectionToCss(direction: GradientDirection | undefined, templateDirection: GradientDirection): string {
   if (direction === "top") return "to top";
   if (direction === "bottom") return "to bottom";
   if (direction === "left") return "to left";
   if (direction === "right") return "to right";
-  return templateDirection === "bottom" ? "to top" : "to bottom";
+  const map: Record<GradientDirection, string> = { top: "to top", bottom: "to bottom", left: "to left", right: "to right" };
+  return map[templateDirection] ?? "to bottom";
 }
 
 export type SlideBackgroundOverride = {
@@ -30,6 +31,10 @@ export type SlideBackgroundOverride = {
   textColor?: string;
   /** Where the dark part of the gradient sits: top, bottom, left, right. */
   gradientDirection?: GradientDirection;
+  /** Percentage (0–100) of the slide the gradient covers. Default 100. */
+  gradientExtent?: number;
+  /** Solid part (0–100): 0 = full gradient transition, 100 = solid overlay. */
+  gradientSolidSize?: number;
 };
 
 export type FontSizeOverrides = {
@@ -57,8 +62,12 @@ export type SlidePreviewProps = {
   showCounterOverride?: boolean;
   /** Override template: show/hide watermark. Undefined = use template default (model.chrome.watermark.enabled). */
   showWatermarkOverride?: boolean;
+  /** When false, hide "Made with KarouselMaker.com" attribution. Pro only. Undefined = show. */
+  showMadeWithOverride?: boolean;
   /** Override font sizes per zone (headline_font_size, body_font_size in px). */
   fontOverrides?: FontSizeOverrides | null;
+  /** Per-slide text zone overrides (x, y, w, h, maxLines, align, etc.). */
+  zoneOverrides?: TextZoneOverrides | null;
   /** Headline {{color}} style: "text" or "background" (highlighter). */
   headlineHighlightStyle?: "text" | "background";
   /** Body {{color}} style: "text" or "background" (highlighter). */
@@ -174,7 +183,9 @@ export function SlidePreview({
   backgroundOverride,
   showCounterOverride,
   showWatermarkOverride,
+  showMadeWithOverride,
   fontOverrides,
+  zoneOverrides,
   headlineHighlightStyle = "text",
   bodyHighlightStyle = "text",
   borderedFrame = false,
@@ -188,36 +199,63 @@ export function SlidePreview({
     slide_type: slide.slide_type,
   };
 
+  const mergedZoneOverrides =
+    zoneOverrides || fontOverrides
+      ? {
+          headline: {
+            ...zoneOverrides?.headline,
+            ...(fontOverrides?.headline_font_size != null && { fontSize: fontOverrides.headline_font_size }),
+          },
+          body: {
+            ...zoneOverrides?.body,
+            ...(fontOverrides?.body_font_size != null && { fontSize: fontOverrides.body_font_size }),
+          },
+        }
+      : undefined;
+  const hasZoneOverrides =
+    mergedZoneOverrides &&
+    (Object.keys(mergedZoneOverrides.headline ?? {}).length > 0 || Object.keys(mergedZoneOverrides.body ?? {}).length > 0);
   const model = applyTemplate(
     templateConfig,
     slideData,
     brandKit,
     slide.slide_index,
-    totalSlides
+    totalSlides,
+    hasZoneOverrides ? mergedZoneOverrides : undefined
   );
 
   const backgroundColor =
     backgroundOverride?.color ?? model.background.backgroundColor;
-  const useGradient =
+  const baseUseGradient =
     backgroundOverride?.gradientOn !== undefined
       ? backgroundOverride.gradientOn
       : model.background.useGradient;
 
-  const bgImageUrl = backgroundImageUrl ?? model.background.backgroundImageUrl;
-  const multiImages = (backgroundImageUrls?.length ?? 0) >= 2 ? backgroundImageUrls : null;
+  const allowImage = templateConfig.backgroundRules?.allowImage ?? true;
+  const rawBgImageUrl = backgroundImageUrl ?? model.background.backgroundImageUrl;
+  const rawMultiImages = (backgroundImageUrls?.length ?? 0) >= 2 ? backgroundImageUrls : null;
+  const bgImageUrl = allowImage ? rawBgImageUrl : undefined;
+  const multiImages = allowImage ? rawMultiImages : null;
+  const hasBackgroundImage = !!(bgImageUrl || multiImages);
+  const defaultStyle = templateConfig.backgroundRules?.defaultStyle;
+  const useGradient =
+    hasBackgroundImage && (defaultStyle === "none" || defaultStyle === "blur")
+      ? false
+      : baseUseGradient;
+  const useBlur = hasBackgroundImage && defaultStyle === "blur";
   const gradientDir = gradientDirectionToCss(
     backgroundOverride?.gradientDirection,
     model.background.gradientDirection
   );
   const gradientStrengthOverride = backgroundOverride?.gradientStrength;
   const gradientOpacity = useGradient
-    ? gradientStrengthOverride ?? (bgImageUrl ? 0.55 : model.background.gradientStrength)
+    ? gradientStrengthOverride ?? (model.background.gradientStrength ?? 0.55)
     : 0;
-  const gradientColorHex = backgroundOverride?.gradientColor ?? "#000000";
+  const gradientColorHex = backgroundOverride?.gradientColor ?? (model.background as { gradientColor?: string }).gradientColor ?? "#000000";
   const gradientRgba = hexToRgba(gradientColorHex, gradientOpacity);
   const textColor = getContrastingTextColor(useGradient ? gradientColorHex : (backgroundColor ?? "#0a0a0a"));
 
-  const showCounter = showCounterOverride ?? false;
+  const showCounter = showCounterOverride ?? model.chrome.showCounter;
 
   return (
     <div
@@ -282,6 +320,7 @@ export function SlidePreview({
                     backgroundImage: `url(${bgUrl})`,
                     backgroundSize: fit,
                     backgroundPosition: POSITION_TO_CSS[pos],
+                    ...(useBlur ? { filter: "blur(24px)", transform: "scale(1.1)" } : {}),
                   }}
                 />
                 {circleUrls.map((url, i) => {
@@ -499,6 +538,7 @@ export function SlidePreview({
                 backgroundImage: `url(${bgImageUrl})`,
                 backgroundSize: fit,
                 backgroundPosition: POSITION_TO_CSS[pos],
+                ...(useBlur ? { filter: "blur(24px)", transform: "scale(1.1)" } : {}),
                 ...(frameW > 0
                   ? { left: inset, top: inset, width: CANVAS_SIZE - inset * 2, height: CANVAS_SIZE - inset * 2, ...shapeStyles, border: `${frameW}px solid ${frameColor}`, boxShadow: "0 8px 32px rgba(0,0,0,0.3)" }
                   : { inset: 0 }),
@@ -527,14 +567,23 @@ export function SlidePreview({
       )}
 
       {/* Gradient overlay */}
-      {useGradient && (
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            background: `linear-gradient(${gradientDir}, transparent 0%, ${gradientRgba} 100%)`,
-          }}
-        />
-      )}
+      {useGradient && (() => {
+        const extent = backgroundOverride?.gradientExtent ?? (model.background as { gradientExtent?: number }).gradientExtent ?? 100;
+        const solidSize = backgroundOverride?.gradientSolidSize ?? (model.background as { gradientSolidSize?: number }).gradientSolidSize ?? 0;
+        const transitionEnd = 100 - extent + (extent * (100 - solidSize)) / 100;
+        const gradientStyle =
+          solidSize >= 100
+            ? `linear-gradient(${gradientDir}, transparent 0%, transparent ${100 - extent}%, ${gradientRgba} ${100 - extent}%, ${gradientRgba} 100%)`
+            : extent >= 100 && solidSize <= 0
+              ? `linear-gradient(${gradientDir}, transparent 0%, ${gradientRgba} 100%)`
+              : `linear-gradient(${gradientDir}, transparent 0%, transparent ${100 - extent}%, ${gradientRgba} ${transitionEnd}%, ${gradientRgba} 100%)`;
+        return (
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{ background: gradientStyle }}
+          />
+        );
+      })()}
 
       {/* Text zones (positioned in 1080x1080 space) */}
       {model.textBlocks.map((block) => {
@@ -546,12 +595,13 @@ export function SlidePreview({
               : undefined;
         const fontSize = fontSizeOverride ?? block.zone.fontSize;
         const zoneHighlightStyle = block.zone.id === "headline" ? headlineHighlightStyle : bodyHighlightStyle;
+        const zoneColor = block.zone.color ?? textColor;
         return (
         <div
           key={block.zone.id}
           className="absolute flex flex-col justify-center"
           style={{
-            color: textColor,
+            color: zoneColor,
             left: block.zone.x,
             top: block.zone.y,
             width: block.zone.w,
@@ -625,11 +675,15 @@ export function SlidePreview({
             fontSize: 20,
             fontWeight: 500,
             zIndex: 5,
-            ...(model.chrome.watermark.position === "top_left"
-              ? { top: 24, left: 24 }
-              : model.chrome.watermark.position === "top_right"
-                ? { top: 24, right: 24 }
-                : { bottom: 80, left: 24 }),
+            ...(model.chrome.watermark.position === "custom" || (model.chrome.watermark.logoX != null && model.chrome.watermark.logoY != null)
+              ? { left: model.chrome.watermark.logoX ?? 24, top: model.chrome.watermark.logoY ?? 24 }
+              : model.chrome.watermark.position === "top_left"
+                ? { top: 24, left: 24 }
+                : model.chrome.watermark.position === "top_right"
+                  ? { top: 24, right: 24 }
+                  : model.chrome.watermark.position === "bottom_right"
+                    ? { bottom: 80, right: 24 }
+                    : { bottom: 80, left: 24 }),
           }}
         >
           {model.chrome.watermark.logoUrl ? (
@@ -644,6 +698,50 @@ export function SlidePreview({
           )}
         </div>
       )}
+
+      {/* Made with KarouselMaker.com - Pro users can hide via showMadeWithOverride */}
+      {showMadeWithOverride !== false && (() => {
+        const headlineBlock = model.textBlocks.find((b) => b.zone.id === "headline");
+        const zone = headlineBlock?.zone;
+        if (zone) {
+          return (
+            <div
+              className="absolute"
+              style={{
+                left: zone.x,
+                top: zone.y + zone.h + 16,
+                width: zone.w,
+                fontSize: 30,
+                fontWeight: 500,
+                letterSpacing: "0.02em",
+                color: textColor,
+                opacity: 0.65,
+                zIndex: 5,
+                textAlign: zone.align,
+                textShadow: "0 1px 2px rgba(0,0,0,0.3)",
+              }}
+            >
+              Made with KarouselMaker.com
+            </div>
+          );
+        }
+        return (
+          <div
+            className="absolute left-1/2 bottom-4 -translate-x-1/2"
+            style={{
+              fontSize: 30,
+              fontWeight: 500,
+              letterSpacing: "0.02em",
+              color: textColor,
+              opacity: 0.65,
+              zIndex: 5,
+              textShadow: "0 1px 2px rgba(0,0,0,0.3)",
+            }}
+          >
+            Made with KarouselMaker.com
+          </div>
+        );
+      })()}
     </div>
   );
 }

@@ -2,10 +2,15 @@
 
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
+export type Plan = "free" | "pro";
+
 export interface Profile {
   id: string;
   user_id: string;
   display_name: string | null;
+  plan: Plan;
+  stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
   created_at: string;
   updated_at: string;
 }

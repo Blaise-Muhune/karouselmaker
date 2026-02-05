@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getUser } from "@/lib/server/auth/getUser";
+import { requirePro } from "@/lib/server/subscription";
 import { updateSlide } from "@/lib/server/db";
 import type { Json } from "@/lib/server/db/types";
 
@@ -14,6 +15,9 @@ export async function setSlideBackground(
 ): Promise<SetSlideBackgroundResult> {
   const { user } = await getUser();
   if (!user) return { ok: false, error: "Unauthorized" };
+
+  const proCheck = await requirePro(user.id);
+  if (!proCheck.allowed) return { ok: false, error: proCheck.error ?? "Upgrade to Pro" };
 
   try {
     await updateSlide(user.id, slideId, { background: background as Json });
