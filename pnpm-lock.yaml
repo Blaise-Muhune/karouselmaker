@@ -29,7 +29,7 @@ importers:
       '@radix-ui/react-slot':
         specifier: ^1.2.4
         version: 1.2.4(@types/react@19.2.10)(react@19.2.3)
-      '@sparticuz/chromium':
+      '@sparticuz/chromium-min':
         specifier: ^143.0.4
         version: 143.0.4
       '@supabase/ssr':
@@ -1245,8 +1245,8 @@ packages:
   '@rtsao/scc@1.1.0':
     resolution: {integrity: sha512-zt6OdqaDoOnJ1ZYsCYGt9YmWzDXl4vQdKTyJev62gFhRGKdx7mcT54V9KIjg+d2wi9EXsPvAPKe7i7WjfVWB8g==}
 
-  '@sparticuz/chromium@143.0.4':
-    resolution: {integrity: sha512-/6I7uQTRhRDD2/gGPQ1Gkf+Dqk0RYDACPJDZfSzz0OWk4JmUTonNHPXbrn6UIklOHlnDLf8xAAzkOZKB/cJpLA==}
+  '@sparticuz/chromium-min@143.0.4':
+    resolution: {integrity: sha512-vAV731SUEVH0FUmMc+404ZoRq0glq7DlhEGpAX0C7/rXupZ0HasOIJHbrjNNNE+VElenkdmwBm8MVTzwYcFPyQ==}
     engines: {node: '>=20.11.0'}
 
   '@standard-schema/utils@0.3.0':
@@ -4228,7 +4228,7 @@ snapshots:
 
   '@rtsao/scc@1.1.0': {}
 
-  '@sparticuz/chromium@143.0.4':
+  '@sparticuz/chromium-min@143.0.4':
     dependencies:
       follow-redirects: 1.15.11
       tar-fs: 3.1.1

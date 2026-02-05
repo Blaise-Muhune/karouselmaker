@@ -5,6 +5,7 @@ import { fileURLToPath } from "url";
 const projectRoot = path.dirname(fileURLToPath(import.meta.url));
 
 const nextConfig: NextConfig = {
+  serverExternalPackages: ["@sparticuz/chromium-min", "playwright-core"],
   turbopack: {
     root: projectRoot,
   },
