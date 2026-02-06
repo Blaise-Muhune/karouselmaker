@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { ContactUsModal } from "@/components/admin/ContactUsModal";
 import { usePathname } from "next/navigation";
 import { signOut } from "@/app/actions/auth";
 import { createCustomerPortalSession } from "@/app/actions/subscription/createCustomerPortalSession";
@@ -131,11 +132,13 @@ function NavContent({
 
 export function AppShell({
   userEmail,
+  userName = "",
   projects,
   children,
   isPro = false,
 }: {
   userEmail: string;
+  userName?: string;
   projects: Project[];
   children: React.ReactNode;
   isPro?: boolean;
@@ -227,6 +230,7 @@ export function AppShell({
           <div className="flex flex-wrap items-center justify-center gap-4 text-sm text-muted-foreground">
             <Link href="/terms" className="hover:text-foreground">Terms</Link>
             <Link href="/privacy" className="hover:text-foreground">Privacy</Link>
+            <ContactUsModal userEmail={userEmail} userName={userName} />
           </div>
         </div>
       </footer>

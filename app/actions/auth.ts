@@ -3,6 +3,25 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
+export async function signInWithGoogle() {
+  const supabase = await createClient();
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const redirectTo = `${baseUrl.replace(/\/$/, "")}/auth/callback`;
+
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: { redirectTo },
+  });
+
+  if (error) {
+    redirect(`/login?error=${encodeURIComponent(error.message)}`);
+  }
+  if (data?.url) {
+    redirect(data.url);
+  }
+  redirect("/login?error=Failed+to+get+Google+sign-in+URL");
+}
+
 export async function signUp(formData: FormData) {
   const email = (formData.get("email") as string)?.trim();
   const password = formData.get("password") as string;

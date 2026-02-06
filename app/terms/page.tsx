@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
+import { ContactUsModal } from "@/components/admin/ContactUsModal";
 
 export const metadata = {
   title: "Terms of Service",
@@ -143,6 +144,7 @@ export default function TermsPage() {
           <Link href="/" className="hover:text-foreground">Home</Link>
           <Link href="/privacy" className="hover:text-foreground">Privacy Policy</Link>
           <Link href="/terms" className="hover:text-foreground">Terms of Service</Link>
+          <ContactUsModal userEmail="" />
         </div>
       </footer>
     </main>
