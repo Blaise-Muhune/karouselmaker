@@ -25,6 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { updateSlide } from "@/app/actions/slides/updateSlide";
+import { getRandomUnsplashImage } from "@/app/actions/slides/getRandomUnsplashImage";
 import { updateExportSettings } from "@/app/actions/carousels/updateExportFormat";
 import { applyToAllSlides, applyOverlayToAllSlides, applyImageDisplayToAllSlides, applyImageCountToAllSlides, applyFontSizeToAllSlides, clearTextFromSlides, type ApplyScope } from "@/app/actions/slides/applyToAllSlides";
 import { shortenToFit } from "@/app/actions/slides/shortenToFit";
@@ -54,6 +55,7 @@ import {
   MonitorIcon,
   PaletteIcon,
   ScissorsIcon,
+  Shuffle,
   SparklesIcon,
   Trash2,
   Type,
@@ -375,6 +377,25 @@ export function SlideEditForm({
   const [isMobile, setIsMobile] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [pendingDownload, setPendingDownload] = useState<{ url: string; filename: string } | null>(null);
+  const [shufflingUnsplash, setShufflingUnsplash] = useState(false);
+  const [shuffleError, setShuffleError] = useState<string | null>(null);
+
+  const handleShuffleUnsplash = useCallback(async () => {
+    setShuffleError(null);
+    setShufflingUnsplash(true);
+    try {
+      const result = await getRandomUnsplashImage(headline, body);
+      if ("error" in result) {
+        setShuffleError(result.error);
+        return;
+      }
+      setImageUrls([{ url: result.url, source: "unsplash", unsplash_attribution: result.attribution }]);
+      setBackground((b) => ({ ...b, mode: "image" }));
+      setBackgroundImageUrlForPreview(result.url);
+    } finally {
+      setShufflingUnsplash(false);
+    }
+  }, [headline, body]);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 1023px)");
@@ -1909,6 +1930,37 @@ export function SlideEditForm({
                           placeholder="https://..."
                           className="h-10 flex-1 rounded-lg border-input/80 bg-background text-sm"
                         />
+                        {i === 0 && isPro && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="shrink-0 h-10 w-10 p-0"
+                            title="Random Unsplash image related to slide"
+                            onClick={async () => {
+                              setShuffleError(null);
+                              setShufflingUnsplash(true);
+                              try {
+                                const result = await getRandomUnsplashImage(headline, body);
+                                if ("error" in result) {
+                                  setShuffleError(result.error);
+                                  return;
+                                }
+                                setImageUrls((prev) => {
+                                  const next = [...prev];
+                                  next[0] = { url: result.url, source: "unsplash", unsplash_attribution: result.attribution };
+                                  return next;
+                                });
+                                setBackgroundImageUrlForPreview(result.url);
+                              } finally {
+                                setShufflingUnsplash(false);
+                              }
+                            }}
+                            disabled={shufflingUnsplash}
+                          >
+                            {shufflingUnsplash ? <Loader2Icon className="size-4 animate-spin" /> : <Shuffle className="size-4" />}
+                          </Button>
+                        )}
                         {item.source && (
                           <span
                             className={`shrink-0 self-center inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium ${
@@ -1968,6 +2020,7 @@ export function SlideEditForm({
                       Add image URL
                     </Button>
                   )}
+                  {shuffleError && <p className="text-destructive text-xs">{shuffleError}</p>}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <Button type="button" variant="outline" size="sm" className="rounded-lg h-9" title="Pick from library" onClick={() => { setPickerForSecondary(false); setPickerOpen(true); }}>
@@ -2348,7 +2401,20 @@ export function SlideEditForm({
                       <span className="sr-only">Upload</span>
                     </a>
                   </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="rounded-lg h-9 gap-1.5"
+                    title="Random Unsplash image related to slide"
+                    onClick={handleShuffleUnsplash}
+                    disabled={shufflingUnsplash || !isPro}
+                  >
+                    {shufflingUnsplash ? <Loader2Icon className="size-4 animate-spin" /> : <Shuffle className="size-4" />}
+                    <span className="text-xs">Unsplash</span>
+                  </Button>
                 </div>
+                {shuffleError && <p className="text-destructive text-xs mt-1">{shuffleError}</p>}
                 <div className="space-y-1.5">
                   <Label htmlFor="image-url-solid" className="text-muted-foreground text-xs font-medium">URL</Label>
                   <Input

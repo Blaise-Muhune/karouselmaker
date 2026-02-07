@@ -29,6 +29,7 @@ Rules:
 - Short lines. No filler. No complex sentences.
 - Headlines: max 120 chars, punchy. Body: default short (under 300 chars). Use up to 600 chars only when needed—e.g. quotes, full explanations, step-by-step, lists. Most slides stay brief.
 - Minimal punctuation.
+- NEVER include URLs, links, or web addresses in headline or body. Summarize the content in plain text only—no "read more at...", no "source:", no https:// or www. links.
 - slide_index starts at 1 and increments.
 - slide_type must be exactly one of: hook, point, context, cta, generic.
 - The FIRST slide must ALWAYS be slide_type "hook"—an intro that hooks visually and textually. Punchy headline, compelling image. Never skip the hook.
@@ -53,8 +54,8 @@ Output format (JSON only). Plain text only—no ** or {{color}} formatting. Exam
   const urlNote =
     ctx.input_type === "url"
       ? ctx.use_web_search
-        ? " Use web search to fetch and summarize the URL content. Create a carousel based on what you find."
-        : " Note: URL fetching is not implemented yet. Treat the URL as topic text; do not hallucinate quotes or content from the page."
+        ? " Use web search to fetch and summarize the URL content. Create a carousel based on what you find. Do NOT include any URLs or links in the slide text—summarize in plain text only."
+        : " Note: URL fetching is not implemented yet. Treat the URL as topic text; do not hallucinate quotes or content from the page. Do NOT include URLs or links in slide headline or body."
       : ctx.use_web_search
         ? " You have web search. Use it for time-sensitive topics (e.g. 2025 releases, recent events) to ensure accurate, current info."
         : "";
@@ -129,7 +130,7 @@ ${raw}
 Validation errors:
 ${errors}
 
-Respond with corrected JSON only. Plain text in headline and body.`;
+Respond with corrected JSON only. Plain text in headline and body. Remove any URLs or links from the content.`;
 
   return { system, user };
 }
