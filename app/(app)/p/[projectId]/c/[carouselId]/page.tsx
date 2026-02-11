@@ -29,7 +29,7 @@ function getExportFormat(c: { export_format?: unknown }): ExportFormat {
 function getExportSize(c: { export_size?: unknown }): ExportSize {
   return c.export_size === "1080x1080" || c.export_size === "1080x1350" || c.export_size === "1080x1920"
     ? (c.export_size as ExportSize)
-    : "1080x1080";
+    : "1080x1350";
 }
 
 export default async function CarouselEditorPage({

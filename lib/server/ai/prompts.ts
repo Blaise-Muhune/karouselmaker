@@ -29,6 +29,7 @@ Rules:
 - Short lines. No filler. No complex sentences.
 - Headlines: max 120 chars, punchy. Body: default short (under 300 chars). Use up to 600 chars only when needed—e.g. quotes, full explanations, step-by-step, lists. Most slides stay brief.
 - Minimal punctuation.
+- Sound human, not AI: use contractions (don't, it's, can't). Vary sentence length—mix short punchy lines with occasional longer ones. Use active voice. Avoid generic AI phrases: "dive into", "unlock", "transform", "harness", "game-changer", "cutting-edge", "seamlessly", "at the forefront", "in today's world", "elevate", "innovative solutions", "firstly/secondly/lastly", "it's important to note". Write like a real creator sharing tips—conversational, specific, not corporate buzzwords.
 - NEVER include URLs, links, or web addresses in headline or body. Summarize the content in plain text only—no "read more at...", no "source:", no https:// or www. links.
 - slide_index starts at 1 and increments.
 - slide_type must be exactly one of: hook, point, context, cta, generic.
@@ -41,12 +42,13 @@ Rules:
 ${ctx.do_rules ? `Do: ${ctx.do_rules}` : ""}
 ${ctx.dont_rules ? `Don't: ${ctx.dont_rules}` : ""}
 
-${ctx.use_ai_backgrounds ? `- For EVERY slide add unsplash_queries (array). DEFAULT: 1 IMAGE per slide. Use unsplash_queries with ONE string only unless the slide truly needs 2.
+${ctx.use_ai_backgrounds ? `- CRITICAL: EVERY slide MUST have unsplash_queries (array with at least 1 string). No exceptions. If you omit unsplash_queries on any slide, images will not load.
   • 1 IMAGE: almost always. One query string, e.g. unsplash_queries: ["nature landscape peaceful"] or ["Lionel Messi 4k"].
-  • 2 IMAGES: only when the slide explicitly compares or contrasts two distinct things—e.g. "Player A vs Player B", "before vs after", "option 1 vs option 2". Then use 2 queries: ["Player A 4k", "Player B 4k"]. Do NOT use 2 images for single-concept slides.
+  • 2 IMAGES: only when the slide explicitly compares or contrasts two distinct things—e.g. "Player A vs Player B", "before vs after". Then use 2 queries. Do NOT use 2 images for single-concept slides.
   • GENERIC slides (quotes, verses, motivation): one nature/landscape query—e.g. "peaceful nature landscape", "mountain sunrise", "calm ocean".
-  • SPECIFIC slides (celebrities, sports): one concrete query—e.g. "Lionel Messi 4k". For shared context (teammates, same movie): one query like "Neymar and Messi Barcelona". Add "4k" or "high quality" for specific queries.
-  • CTA slides: use a topic-related image that fits the carousel's subject and project niche—e.g. "productivity workspace", "fitness motivation", "marketing strategy". Not generic landscape.` : ""}
+  • SPECIFIC slides (celebrities, sports): one concrete query—e.g. "Lionel Messi 4k". Add "4k" or "high quality" for specific queries. If unsure, use "nature landscape" or "abstract background".
+  • CTA slides: use a topic-related image—e.g. "productivity workspace", "fitness motivation". Not generic landscape.
+  • Use simple, common search terms that return results. Avoid very niche or obscure phrases.` : ""}
 
 Output format (JSON only). Plain text only—no ** or {{color}} formatting. Example: {"slide_index":1,"slide_type":"hook","headline":"One habit that changes everything","body":"Focus on one thing first. Simple."}
 {"title":"string","slides":[{"slide_index":1,"slide_type":"hook|point|context|cta|generic","headline":"string","body":"string or omit"${ctx.use_ai_backgrounds ? ',"unsplash_queries":["phrase"]' : ""}}],"caption_variants":{"short":"string","medium":"string","spicy":"string"},"hashtags":["string"]}`;
@@ -82,7 +84,7 @@ Input value:
 ${ctx.input_value}
 ${urlNote}${creatorHandleNote}${projectNicheNote}${notesSection}
 
-${ctx.use_ai_backgrounds ? "CRITICAL: 1 IMAGE per slide unless comparing 2 things (e.g. vs, before/after). unsplash_queries: one string for most slides. Two strings ONLY when slide explicitly contrasts two subjects. For GENERIC: 'peaceful nature landscape', 'mountain sunrise'. For SPECIFIC: 'Lionel Messi 4k'. Add '4k' for specific queries." : ""}
+${ctx.use_ai_backgrounds ? "CRITICAL: Every slide MUST have unsplash_queries with at least 1 string. Use simple, common search terms: 'peaceful nature landscape', 'mountain sunrise', 'calm ocean', 'productivity workspace', 'Lionel Messi 4k'. Avoid obscure or very niche phrases—they may return no images." : ""}
 
 ${ctx.use_web_search ? "CRITICAL: After any web search, your response must be ONLY the raw JSON object. No markdown, no code fences, no text before or after. Start with { and end with }." : "Respond with valid JSON only."}`;
 
@@ -102,6 +104,7 @@ Rules:
 - Short. Readable in 2 seconds.
 - Minimal punctuation.
 - No emojis unless the project allows.
+- Sound human: use contractions, avoid AI phrases ("dive in", "unlock", "transform", "game-changer", "cutting-edge").
 - Tone: ${ctx.tone_preset}.
 ${ctx.do_rules ? `Do: ${ctx.do_rules}` : ""}
 ${ctx.dont_rules ? `Don't: ${ctx.dont_rules}` : ""}
@@ -122,7 +125,8 @@ export function buildValidationRetryPrompt(
 ): { system: string; user: string } {
   const system = `You are a carousel script writer. You must output STRICT JSON that validates against this schema.
 Previous attempt had validation errors. Fix them and output valid JSON only. No markdown, no explanation.
-Use plain text only—no ** or {{color}} formatting.`;
+Use plain text only—no ** or {{color}} formatting. Sound human: contractions, no AI phrases (dive into, unlock, transform, game-changer).
+CRITICAL: Preserve unsplash_queries on every slide from the previous output. Do not remove them—only fix the validation errors.`;
 
   const user = `Your previous output:
 ${raw}

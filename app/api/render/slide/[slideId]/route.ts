@@ -63,16 +63,34 @@ export async function GET(
   const carouselSlides = await listSlides(userId, slide.carousel_id);
   const totalSlides = carouselSlides.length || 1;
 
+  const templateCfg = config.data;
   const slideBg = slide.background as
     | { style?: "solid" | "gradient"; color?: string; gradientOn?: boolean; mode?: string; storage_path?: string; image_url?: string; secondary_storage_path?: string; secondary_image_url?: string; images?: { image_url?: string; storage_path?: string }[]; overlay?: { gradient?: boolean; darken?: number; color?: string; textColor?: string; direction?: "top" | "bottom" | "left" | "right"; extent?: number; solidSize?: number } }
     | null
     | undefined;
-  const gradientColor = slideBg?.overlay?.color ?? "#000000";
+  const gradientColor = slideBg?.overlay?.color ?? templateCfg?.overlays?.gradient?.color ?? "#000000";
+  const templateStrength = templateCfg?.overlays?.gradient?.strength ?? 0.5;
+  const gradientStrength =
+    slideBg?.overlay?.darken != null && slideBg.overlay.darken !== 0.5
+      ? slideBg.overlay.darken
+      : templateStrength;
+  const templateExtent = templateCfg?.overlays?.gradient?.extent ?? 100;
+  const templateSolidSize = templateCfg?.overlays?.gradient?.solidSize ?? 0;
+  const gradientExtent =
+    slideBg?.overlay?.extent != null && slideBg.overlay.extent !== 100
+      ? slideBg.overlay.extent
+      : templateExtent;
+  const gradientSolidSize =
+    slideBg?.overlay?.solidSize != null && slideBg.overlay.solidSize !== 0
+      ? slideBg.overlay.solidSize
+      : templateSolidSize;
   const overlayFields = {
-    gradientStrength: slideBg?.overlay?.darken ?? 0.5,
+    gradientStrength,
     gradientColor,
     textColor: getContrastingTextColor(gradientColor),
-    gradientDirection: slideBg?.overlay?.direction ?? "bottom",
+    gradientDirection: slideBg?.overlay?.direction ?? templateCfg?.overlays?.gradient?.direction ?? "bottom",
+    gradientExtent,
+    gradientSolidSize,
   };
   const backgroundOverride = slideBg
     ? {

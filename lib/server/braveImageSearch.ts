@@ -56,6 +56,7 @@ export async function searchBraveImage(
   const skipPattern = /\.gif(\?|$)|giphy|tenor|clipart|\.svg(\?|$)/i;
   const skipDomains = /pinimg|tumblr|imgur|reddit|redd\.it|wikipedia|wikimedia|wallpapers|wallpaperaccess|sftcdn|alphacoders|quora|wallpapercave|blogspot|blogger|etsy|amazonaws|ebay|ebayimg|amazon\.com|knowyourmeme|deviantart|flickr/i;
 
+  const suitable: string[] = [];
   for (const item of results) {
     const imageUrl = item.properties?.url ?? item.url ?? item.thumbnail?.src;
     if (!imageUrl || !/^https?:\/\//i.test(imageUrl)) continue;
@@ -72,11 +73,15 @@ export async function searchBraveImage(
     } catch {
       continue;
     }
-    return { url: imageUrl };
+    suitable.push(imageUrl);
   }
 
-  if (DEBUG) console.log("[braveImageSearch] no suitable results (all GIF/clipart?)");
-  return null;
+  if (suitable.length === 0) {
+    if (DEBUG) console.log("[braveImageSearch] no suitable results (all GIF/clipart?)");
+    return null;
+  }
+  const idx = Math.floor(Math.random() * suitable.length);
+  return { url: suitable[idx]! };
 }
 
 export function isBraveImageSearchConfigured(): boolean {

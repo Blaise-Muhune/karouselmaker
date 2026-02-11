@@ -58,7 +58,7 @@ export async function POST(
   }
 
   const carouselExportFormat = (carousel as { export_format?: string }).export_format ?? "png";
-  const carouselExportSize = (carousel as { export_size?: string }).export_size ?? "1080x1080";
+  const carouselExportSize = (carousel as { export_size?: string }).export_size ?? "1080x1350";
   const format = carouselExportFormat === "jpeg" ? "jpeg" : "png";
   const dimensions = carouselExportSize === "1080x1350"
     ? { w: 1080, h: 1350 }
@@ -116,18 +116,34 @@ export async function POST(
       const config = templateConfigSchema.safeParse(template.config);
       if (!config.success) throw new Error(`Invalid template config for slide ${i + 1}`);
 
+      const templateCfg = config.data;
       const slideBg = slide.background as
         | { style?: "solid" | "gradient"; color?: string; gradientOn?: boolean; mode?: string; storage_path?: string; image_url?: string; image_source?: string; unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string }; secondary_storage_path?: string; secondary_image_url?: string; images?: { image_url?: string; storage_path?: string; source?: string; unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string } }[]; image_display?: { position?: string; fit?: "cover" | "contain"; frame?: "none" | "thin" | "medium" | "thick"; frameRadius?: number; frameColor?: string; layout?: string; gap?: number }; overlay?: { gradient?: boolean; darken?: number; color?: string; textColor?: string; direction?: "top" | "bottom" | "left" | "right"; extent?: number; solidSize?: number } }
         | null
         | undefined;
-      const gradientColor = slideBg?.overlay?.color ?? "#000000";
+      const gradientColor = slideBg?.overlay?.color ?? templateCfg?.overlays?.gradient?.color ?? "#000000";
+      const templateStrength = templateCfg?.overlays?.gradient?.strength ?? 0.5;
+      const gradientStrength =
+        slideBg?.overlay?.darken != null && slideBg.overlay.darken !== 0.5
+          ? slideBg.overlay.darken
+          : templateStrength;
+      const templateExtent = templateCfg?.overlays?.gradient?.extent ?? 100;
+      const templateSolidSize = templateCfg?.overlays?.gradient?.solidSize ?? 0;
+      const gradientExtent =
+        slideBg?.overlay?.extent != null && slideBg.overlay.extent !== 100
+          ? slideBg.overlay.extent
+          : templateExtent;
+      const gradientSolidSize =
+        slideBg?.overlay?.solidSize != null && slideBg.overlay.solidSize !== 0
+          ? slideBg.overlay.solidSize
+          : templateSolidSize;
       const overlayFields = {
-        gradientStrength: slideBg?.overlay?.darken ?? 0.5,
+        gradientStrength,
         gradientColor,
         textColor: getContrastingTextColor(gradientColor),
-        gradientDirection: slideBg?.overlay?.direction ?? "bottom",
-        gradientExtent: slideBg?.overlay?.extent ?? 100,
-        gradientSolidSize: slideBg?.overlay?.solidSize ?? 0,
+        gradientDirection: slideBg?.overlay?.direction ?? templateCfg?.overlays?.gradient?.direction ?? "bottom",
+        gradientExtent,
+        gradientSolidSize,
       };
       const backgroundOverride = slideBg
         ? {

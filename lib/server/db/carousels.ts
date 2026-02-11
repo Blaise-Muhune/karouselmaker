@@ -20,6 +20,7 @@ export async function createCarousel(
       input_type: inputType,
       input_value: inputValue,
       status: "draft",
+      export_size: "1080x1350",
     })
     .select()
     .single();

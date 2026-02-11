@@ -222,7 +222,7 @@ export function SlideEditForm({
   editorPath,
   carouselId,
   initialExportFormat = "png",
-  initialExportSize = "1080x1080",
+  initialExportSize = "1080x1350",
   initialBackgroundImageUrl,
   initialBackgroundImageUrls,
   initialImageSource,
@@ -234,19 +234,51 @@ export function SlideEditForm({
   const [body, setBody] = useState(() => slide.body ?? "");
   const [templateId, setTemplateId] = useState<string | null>(() => slide.template_id ?? templates[0]?.id ?? null);
   const [background, setBackground] = useState<SlideBackgroundState>(() => {
+    const initTemplateConfig = getTemplateConfig(slide.template_id ?? templates[0]?.id ?? null, templates);
+    const templateOverlayStrength = initTemplateConfig?.overlays?.gradient?.strength ?? 0.5;
     const bg = slide.background as SlideBackgroundState | null;
     if (bg && (bg.mode === "image" || bg.style || bg.color != null)) {
       const base = { ...bg, style: bg.style ?? "solid", color: bg.color ?? brandKit.primary_color ?? "#0a0a0a", gradientOn: bg.gradientOn ?? true };
       if (bg.overlay) {
         const defaultOverlayColor = brandKit.primary_color?.trim() || "#000000";
         const overlayColor = bg.overlay.color ?? defaultOverlayColor;
-        base.overlay = { ...bg.overlay, darken: bg.overlay.darken ?? 0.5, color: overlayColor, textColor: getContrastingTextColor(overlayColor) };
+        const darken = bg.overlay.darken ?? templateOverlayStrength;
+        const effectiveDarken = darken === 0.5 ? templateOverlayStrength : darken;
+        const grad = initTemplateConfig?.overlays?.gradient;
+        const extent = bg.overlay.extent ?? grad?.extent ?? 100;
+        const effectiveExtent = extent === 100 ? (grad?.extent ?? 100) : extent;
+        const solidSize = bg.overlay.solidSize ?? grad?.solidSize ?? 0;
+        const effectiveSolidSize = solidSize === 0 ? (grad?.solidSize ?? 0) : solidSize;
+        base.overlay = { ...bg.overlay, darken: effectiveDarken, extent: effectiveExtent, solidSize: effectiveSolidSize, color: overlayColor, textColor: getContrastingTextColor(overlayColor) };
+      } else {
+        const defaultOverlayColor = brandKit.primary_color?.trim() || "#000000";
+        const grad = initTemplateConfig?.overlays?.gradient;
+        base.overlay = {
+          gradient: grad?.enabled ?? true,
+          darken: templateOverlayStrength,
+          color: grad?.color ?? defaultOverlayColor,
+          textColor: getContrastingTextColor(grad?.color ?? defaultOverlayColor),
+          direction: grad?.direction ?? "bottom",
+          extent: grad?.extent ?? 100,
+          solidSize: grad?.solidSize ?? 0,
+        };
       }
       if (bg.image_display) base.image_display = { ...bg.image_display };
       return base;
     }
     const defaultOverlayColor = brandKit.primary_color?.trim() || "#000000";
-    return { style: "solid", color: brandKit.primary_color ?? "#0a0a0a", gradientOn: true, overlay: { gradient: true, darken: 0.5, color: defaultOverlayColor, textColor: getContrastingTextColor(defaultOverlayColor) } };
+    const grad = initTemplateConfig?.overlays?.gradient;
+    return {
+      style: "solid",
+      color: brandKit.primary_color ?? "#0a0a0a",
+      gradientOn: true,
+      overlay: {
+        gradient: true,
+        darken: templateOverlayStrength,
+        color: grad?.color ?? defaultOverlayColor,
+        textColor: getContrastingTextColor(grad?.color ?? defaultOverlayColor),
+      },
+    };
   });
   const [imageDisplay, setImageDisplay] = useState<ImageDisplayState>(() => {
     const bg = slide.background as { image_display?: ImageDisplayState; images?: unknown[] } | null;
@@ -368,7 +400,7 @@ export function SlideEditForm({
     (initialExportFormat === "png" || initialExportFormat === "jpeg" ? initialExportFormat : "png") as ExportFormat
   );
   const [exportSize, setExportSize] = useState<ExportSize>(() =>
-    (initialExportSize && ["1080x1080", "1080x1350", "1080x1920"].includes(initialExportSize) ? initialExportSize : "1080x1080") as ExportSize
+    (initialExportSize && ["1080x1080", "1080x1350", "1080x1920"].includes(initialExportSize) ? initialExportSize : "1080x1350") as ExportSize
   );
   const [updatingExportSettings, setUpdatingExportSettings] = useState(false);
   const [mobileBannerDismissed, setMobileBannerDismissed] = useState(false);
@@ -841,15 +873,6 @@ export function SlideEditForm({
     }));
   };
 
-  const currentPresetId =
-    OVERLAY_PRESETS.find(
-      (p) =>
-        p.id !== PRESET_CUSTOM_ID &&
-        p.gradientColor === (background.overlay?.color ?? "#000000") &&
-        p.gradientOpacity === (background.overlay?.darken ?? 0.5) &&
-        p.textColor === (background.overlay?.textColor ?? "#ffffff")
-    )?.id ?? PRESET_CUSTOM_ID;
-
   const validImageUrls = imageUrls.filter((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim()));
   const isImageMode =
     background.mode === "image" ||
@@ -865,32 +888,58 @@ export function SlideEditForm({
   const previewBackgroundImageUrls =
     validImageUrls.length >= 2 ? validImageUrls.map((i) => i.url) : undefined;
   const overlayColor = background.overlay?.color ?? brandKit.primary_color?.trim() ?? "#000000";
+  const templateOverlayStrength = templateConfig?.overlays?.gradient?.strength ?? 0.5;
   const overlayDefaults = {
-    gradientStrength: 0.5,
+    gradientStrength: templateOverlayStrength,
     gradientColor: overlayColor,
     textColor: getContrastingTextColor(overlayColor),
   };
+  // Prefer template strength when slide has legacy default (0.5) from carousel generation
+  const effectiveOverlayOpacity =
+    background.overlay?.darken != null && background.overlay.darken !== 0.5
+      ? background.overlay.darken
+      : templateOverlayStrength;
+  const templateExtent = templateConfig?.overlays?.gradient?.extent ?? 100;
+  const templateSolidSize = templateConfig?.overlays?.gradient?.solidSize ?? 0;
+  const effectiveExtent =
+    background.overlay?.extent != null && background.overlay.extent !== 100
+      ? background.overlay.extent
+      : templateExtent;
+  const effectiveSolidSize =
+    background.overlay?.solidSize != null && background.overlay.solidSize !== 0
+      ? background.overlay.solidSize
+      : templateSolidSize;
+
+  const currentPresetId =
+    OVERLAY_PRESETS.find(
+      (p) =>
+        p.id !== PRESET_CUSTOM_ID &&
+        p.gradientColor === (background.overlay?.color ?? "#000000") &&
+        p.gradientOpacity === effectiveOverlayOpacity &&
+        p.textColor === (background.overlay?.textColor ?? "#ffffff")
+    )?.id ?? PRESET_CUSTOM_ID;
+
   const previewBackgroundOverride: SlideBackgroundOverride = isImageMode
     ? {
         gradientOn: background.overlay?.gradient ?? true,
         color: background.color ?? brandKit.primary_color ?? "#0a0a0a",
-        gradientStrength: background.overlay?.darken ?? overlayDefaults.gradientStrength,
+        gradientStrength: effectiveOverlayOpacity,
         gradientColor: overlayColor,
         textColor: overlayDefaults.textColor,
-        gradientDirection: background.overlay?.direction ?? "bottom",
-        gradientExtent: background.overlay?.extent ?? 100,
-        gradientSolidSize: background.overlay?.solidSize ?? templateConfig?.overlays?.gradient?.solidSize ?? 0,
+        gradientDirection: background.overlay?.direction ?? templateConfig?.overlays?.gradient?.direction ?? "bottom",
+        gradientExtent: effectiveExtent,
+        gradientSolidSize: effectiveSolidSize,
       }
     : {
         style: background.style,
         color: background.color,
         gradientOn: background.gradientOn,
-        gradientStrength: background.overlay?.darken ?? overlayDefaults.gradientStrength,
+        gradientStrength: effectiveOverlayOpacity,
         gradientColor: overlayColor,
         textColor: overlayDefaults.textColor,
-        gradientDirection: background.overlay?.direction ?? "bottom",
-        gradientExtent: background.overlay?.extent ?? 100,
-        gradientSolidSize: background.overlay?.solidSize ?? templateConfig?.overlays?.gradient?.solidSize ?? 0,
+        gradientDirection: background.overlay?.direction ?? templateConfig?.overlays?.gradient?.direction ?? "bottom",
+        gradientExtent: effectiveExtent,
+        gradientSolidSize: effectiveSolidSize,
       };
 
   const overlaySection = (
@@ -923,7 +972,7 @@ export function SlideEditForm({
             onValueChange={(v: "top" | "bottom" | "left" | "right") =>
               setBackground((b) => {
                 const color = b.overlay?.color ?? "#000000";
-                return { ...b, overlay: { ...b.overlay, gradient: true, direction: v, darken: b.overlay?.darken ?? 0.5, color, textColor: getContrastingTextColor(color) } };
+                return { ...b, overlay: { ...b.overlay, gradient: true, direction: v, darken: b.overlay?.darken ?? templateOverlayStrength, color, textColor: getContrastingTextColor(color) } };
               })
             }
           >
@@ -969,7 +1018,7 @@ export function SlideEditForm({
                 const color = e.target.value;
                 setBackground((b) => ({
                   ...b,
-                  overlay: { ...b.overlay, gradient: true, color, textColor: getContrastingTextColor(color), darken: b.overlay?.darken ?? 0.5 },
+                  overlay: { ...b.overlay, gradient: true, color, textColor: getContrastingTextColor(color), darken: b.overlay?.darken ?? templateOverlayStrength },
                 }));
               }}
               className="h-10 w-12 cursor-pointer rounded-lg border border-input/80 bg-background"
@@ -982,7 +1031,7 @@ export function SlideEditForm({
                 type="range"
                 min={0}
                 max={100}
-                value={Math.round((background.overlay?.darken ?? 0.5) * 100)}
+                value={Math.round(effectiveOverlayOpacity * 100)}
                 onChange={(e) =>
                   setBackground((b) => {
                     const color = b.overlay?.color ?? "#000000";
@@ -992,7 +1041,7 @@ export function SlideEditForm({
                 className="h-2 w-24 cursor-pointer appearance-none rounded-full bg-muted accent-primary"
               />
               <span className="text-muted-foreground min-w-8 text-xs tabular-nums">
-                {Math.round((background.overlay?.darken ?? 0.5) * 100)}%
+                {Math.round(effectiveOverlayOpacity * 100)}%
               </span>
             </div>
           </div>
@@ -1011,10 +1060,10 @@ export function SlideEditForm({
           <div className="space-y-2">
             <div className="flex justify-between">
               <Label className="text-xs">Extent (0–100%)</Label>
-              <span className="text-muted-foreground text-xs">{background.overlay?.extent ?? 100}%</span>
+              <span className="text-muted-foreground text-xs">{effectiveExtent}%</span>
             </div>
             <Slider
-              value={[background.overlay?.extent ?? 100]}
+              value={[effectiveExtent]}
               onValueChange={([v]) =>
                 setBackground((b) => ({
                   ...b,
@@ -1029,10 +1078,10 @@ export function SlideEditForm({
           <div className="space-y-2">
             <div className="flex justify-between">
               <Label className="text-xs">Solid overlay (0–100%)</Label>
-              <span className="text-muted-foreground text-xs">{background.overlay?.solidSize ?? templateConfig?.overlays?.gradient?.solidSize ?? 0}%</span>
+              <span className="text-muted-foreground text-xs">{effectiveSolidSize}%</span>
             </div>
             <Slider
-              value={[background.overlay?.solidSize ?? templateConfig?.overlays?.gradient?.solidSize ?? 0]}
+              value={[effectiveSolidSize]}
               onValueChange={([v]) =>
                 setBackground((b) => ({
                   ...b,

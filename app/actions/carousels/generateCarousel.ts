@@ -16,7 +16,7 @@ import {
   buildValidationRetryPrompt,
 } from "@/lib/server/ai/prompts";
 import { searchImage } from "@/lib/server/imageSearch";
-import { trackUnsplashDownload } from "@/lib/server/unsplash";
+import { searchUnsplashPhotoRandom, trackUnsplashDownload } from "@/lib/server/unsplash";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
 import { generateCarouselInputSchema } from "@/lib/validations/carousel";
 import { PLAN_LIMITS } from "@/lib/constants";
@@ -76,6 +76,7 @@ export async function generateCarousel(formData: FormData): Promise<
       }
     })(),
     use_ai_backgrounds: formData.get("use_ai_backgrounds") ?? undefined,
+    use_unsplash_only: formData.get("use_unsplash_only") ?? undefined,
     use_web_search: formData.get("use_web_search") ?? undefined,
     notes: ((formData.get("notes") as string | null) ?? "").trim() || undefined,
   };
@@ -273,6 +274,7 @@ export async function generateCarousel(formData: FormData): Promise<
     }
   }
 
+  const useUnsplashOnly = !!parsed.data.use_unsplash_only;
   if (parsed.data.use_ai_backgrounds && validated.slides.some((s) => (s.unsplash_queries?.length ?? 0) > 0 || s.unsplash_query?.trim())) {
     const aiSlideByIndex = new Map(
       validated.slides.map((s) => [s.slide_index, s])
@@ -284,8 +286,40 @@ export async function generateCarousel(formData: FormData): Promise<
       if (queries.length === 0) continue;
       const imageResults: Awaited<ReturnType<typeof searchImage>>[] = [];
       for (const query of queries.slice(0, 4)) {
-        const result = await searchImage(query);
+        let result: Awaited<ReturnType<typeof searchImage>> | null;
+        if (useUnsplashOnly) {
+          const unsplash = await searchUnsplashPhotoRandom(query, 15);
+          result = unsplash?.url
+            ? {
+                url: unsplash.url,
+                source: "unsplash" as const,
+                unsplashDownloadLocation: unsplash.downloadLocation,
+                unsplashAttribution: unsplash.attribution,
+              }
+            : null;
+        } else {
+          result = await searchImage(query);
+        }
         if (result) imageResults.push(result);
+      }
+      // Fallback: if all queries failed, try a generic query so we don't end up with no image
+      if (imageResults.length === 0) {
+        const fallbackQuery = "nature landscape peaceful";
+        let fallback: Awaited<ReturnType<typeof searchImage>> | null;
+        if (useUnsplashOnly) {
+          const unsplash = await searchUnsplashPhotoRandom(fallbackQuery, 15);
+          fallback = unsplash?.url
+            ? {
+                url: unsplash.url,
+                source: "unsplash" as const,
+                unsplashDownloadLocation: unsplash.downloadLocation,
+                unsplashAttribution: unsplash.attribution,
+              }
+            : null;
+        } else {
+          fallback = await searchImage(fallbackQuery);
+        }
+        if (fallback) imageResults.push(fallback);
       }
       if (imageResults.length === 0) continue;
       slidesWithImage.add(slide.id);

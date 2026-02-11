@@ -8,13 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { BackgroundImagesPickerModal } from "@/components/carousels/BackgroundImagesPickerModal";
 import { createCheckoutSession } from "@/app/actions/subscription/createCheckoutSession";
 import { ArrowLeftIcon, GlobeIcon, ImageIcon, Loader2Icon, SparklesIcon } from "lucide-react";
@@ -51,6 +44,7 @@ export function NewCarouselForm({
   const [numberOfSlides, setNumberOfSlides] = useState<string>("");
   const [backgroundAssetIds, setBackgroundAssetIds] = useState<string[]>([]);
   const [useAiBackgrounds, setUseAiBackgrounds] = useState(false);
+  const [useUnsplashOnly, setUseUnsplashOnly] = useState(false);
   const [useWebSearch, setUseWebSearch] = useState(false);
   const [notes, setNotes] = useState("");
   const [backgroundPickerOpen, setBackgroundPickerOpen] = useState(false);
@@ -108,6 +102,7 @@ export function NewCarouselForm({
       }
       if (backgroundAssetIds.length) formData.set("background_asset_ids", JSON.stringify(backgroundAssetIds));
       if (useAiBackgrounds) formData.set("use_ai_backgrounds", "true");
+      if (useUnsplashOnly) formData.set("use_unsplash_only", "true");
       if (useWebSearch) formData.set("use_web_search", "true");
       if (notes.trim()) formData.set("notes", notes.trim());
       const result = await generateCarousel(formData);
@@ -180,21 +175,22 @@ export function NewCarouselForm({
 
         <div className="space-y-2">
           <Label>Input type</Label>
-          <Select
-            value={inputType}
-            onValueChange={(v) => setInputType(v as "topic" | "url" | "text")}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Select type" />
-            </SelectTrigger>
-            <SelectContent>
-              {INPUT_TYPES.map((o) => (
-                <SelectItem key={o.value} value={o.value}>
-                  {o.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex rounded-lg border border-input p-0.5 bg-muted/30">
+            {INPUT_TYPES.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                onClick={() => setInputType(o.value)}
+                className={`flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                  inputType === o.value
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="space-y-2">
@@ -267,13 +263,35 @@ export function NewCarouselForm({
             <input
               type="checkbox"
               checked={useAiBackgrounds}
-              onChange={(e) => isPro && setUseAiBackgrounds(e.target.checked)}
+              onChange={(e) => {
+              if (!isPro) return;
+              const checked = e.target.checked;
+              setUseAiBackgrounds(checked);
+              if (!checked) setUseUnsplashOnly(false);
+            }}
               disabled={!isPro}
               className="rounded border-input accent-primary"
             />
             <SparklesIcon className="size-4 text-muted-foreground" />
-            <span>Let AI suggest background images (Unsplash){!isPro && " — Pro"}</span>
+            <span>Let AI suggest background images{!isPro && " — Pro"}</span>
           </label>
+          {useAiBackgrounds && (
+            <label className="flex items-center gap-3 rounded-lg py-2 pl-7 text-sm cursor-pointer hover:bg-muted/50">
+              <input
+                type="checkbox"
+                checked={useUnsplashOnly}
+                onChange={(e) => setUseUnsplashOnly(e.target.checked)}
+                className="rounded border-input accent-primary"
+              />
+              <ImageIcon className="size-4 text-muted-foreground" />
+              <span>Only use Unsplash</span>
+            </label>
+          )}
+          {useAiBackgrounds && (
+            <p className="text-muted-foreground text-xs pl-7 -mt-1">
+              Unsplash: high quality, mostly generic (nature, cityscapes, abstracts, lifestyle, objects).
+            </p>
+          )}
           <label className={`flex items-center gap-3 rounded-lg py-2 text-sm ${isPro ? "cursor-pointer hover:bg-muted/50" : "opacity-70"}`}>
             <input
               type="checkbox"

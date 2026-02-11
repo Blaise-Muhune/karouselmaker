@@ -30,9 +30,9 @@ export async function GET(
   const { slideId } = await context.params;
   const { searchParams } = new URL(request.url);
   const format = (searchParams.get("format") === "jpeg" ? "jpeg" : "png") as ExportFormat;
-  const size = (searchParams.get("size") === "1080x1350" || searchParams.get("size") === "1080x1920"
+  const size = (searchParams.get("size") === "1080x1080" || searchParams.get("size") === "1080x1350" || searchParams.get("size") === "1080x1920"
     ? searchParams.get("size")
-    : "1080x1080") as ExportSize;
+    : "1080x1350") as ExportSize;
 
   const supabase = await createClient();
   const {
@@ -97,17 +97,33 @@ export async function GET(
     | null
     | undefined;
 
-  const dir = slideBg?.overlay?.direction;
+  const templateCfg = config.data;
+  const dir = slideBg?.overlay?.direction ?? templateCfg?.overlays?.gradient?.direction;
   const gradientDirection: "top" | "bottom" | "left" | "right" =
     dir === "top" || dir === "bottom" || dir === "left" || dir === "right" ? dir : "bottom";
-  const gradientColor = slideBg?.overlay?.color ?? "#000000";
+  const gradientColor = slideBg?.overlay?.color ?? templateCfg?.overlays?.gradient?.color ?? "#000000";
+  const templateStrength = templateCfg?.overlays?.gradient?.strength ?? 0.5;
+  const gradientStrength =
+    slideBg?.overlay?.darken != null && slideBg.overlay.darken !== 0.5
+      ? slideBg.overlay.darken
+      : templateStrength;
+  const templateExtent = templateCfg?.overlays?.gradient?.extent ?? 100;
+  const templateSolidSize = templateCfg?.overlays?.gradient?.solidSize ?? 0;
+  const gradientExtent =
+    slideBg?.overlay?.extent != null && slideBg.overlay.extent !== 100
+      ? slideBg.overlay.extent
+      : templateExtent;
+  const gradientSolidSize =
+    slideBg?.overlay?.solidSize != null && slideBg.overlay.solidSize !== 0
+      ? slideBg.overlay.solidSize
+      : templateSolidSize;
   const overlayFields = {
-    gradientStrength: slideBg?.overlay?.darken ?? 0.5,
+    gradientStrength,
     gradientColor,
     textColor: getContrastingTextColor(gradientColor),
     gradientDirection,
-    gradientExtent: slideBg?.overlay?.extent ?? 100,
-    gradientSolidSize: slideBg?.overlay?.solidSize ?? 0,
+    gradientExtent,
+    gradientSolidSize,
   };
   const backgroundOverride = slideBg
     ? {

@@ -63,21 +63,32 @@ function getTemplateConfig(
   return templates[0]?.parsedConfig ?? null;
 }
 
-function getBackgroundOverride(slide: Slide): SlideBackgroundOverride | null {
+function getBackgroundOverride(slide: Slide, templateConfig: TemplateConfig | null): SlideBackgroundOverride | null {
   const bg = slide.background as {
     style?: "solid" | "gradient";
     color?: string;
     gradientOn?: boolean;
     mode?: string;
-    overlay?: { gradient?: boolean; darken?: number; color?: string; textColor?: string; direction?: "top" | "bottom" | "left" | "right" };
+    overlay?: { gradient?: boolean; darken?: number; color?: string; textColor?: string; direction?: "top" | "bottom" | "left" | "right"; extent?: number; solidSize?: number };
   } | null;
   if (!bg) return null;
-  const gradientColor = bg.overlay?.color ?? "#000000";
+  const gradientColor = bg.overlay?.color ?? templateConfig?.overlays?.gradient?.color ?? "#000000";
+  const templateStrength = templateConfig?.overlays?.gradient?.strength ?? 0.5;
+  const gradientStrength =
+    bg.overlay?.darken != null && bg.overlay.darken !== 0.5 ? bg.overlay.darken : templateStrength;
+  const templateExtent = templateConfig?.overlays?.gradient?.extent ?? 100;
+  const templateSolidSize = templateConfig?.overlays?.gradient?.solidSize ?? 0;
+  const gradientExtent =
+    bg.overlay?.extent != null && bg.overlay.extent !== 100 ? bg.overlay.extent : templateExtent;
+  const gradientSolidSize =
+    bg.overlay?.solidSize != null && bg.overlay.solidSize !== 0 ? bg.overlay.solidSize : templateSolidSize;
   const overlayFields = {
-    gradientStrength: bg.overlay?.darken ?? 0.5,
+    gradientStrength,
     gradientColor,
     textColor: getContrastingTextColor(gradientColor),
-    gradientDirection: bg.overlay?.direction ?? "bottom",
+    gradientDirection: bg.overlay?.direction ?? templateConfig?.overlays?.gradient?.direction ?? "bottom",
+    gradientExtent,
+    gradientSolidSize,
   };
   if (bg.mode === "image")
     return {
@@ -145,7 +156,7 @@ export function SlideGrid({
   projectId,
   carouselId,
   slideBackgroundImageUrls = {},
-  exportSize = "1080x1080",
+  exportSize = "1080x1350",
   isPro = true,
 }: SlideGridProps) {
   const canEdit = isPro;
@@ -210,7 +221,7 @@ export function SlideGrid({
         {slidesOrder.map((slide) => {
           const templateConfig = getTemplateConfig(slide, templates);
           const currentTemplateId = slide.template_id ?? templates[0]?.id;
-          const backgroundOverride = getBackgroundOverride(slide);
+          const backgroundOverride = getBackgroundOverride(slide, templateConfig);
           const isDragging = draggedId === slide.id;
           const isDragOver = dragOverId === slide.id;
 

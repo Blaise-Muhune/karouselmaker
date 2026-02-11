@@ -39,7 +39,7 @@ export function EditorExportSection({
   exportsUsedThisMonth = 0,
   exportsLimit,
   exportFormat = "png",
-  exportSize = "1080x1080",
+  exportSize = "1080x1350",
   recentExports,
 }: EditorExportSectionProps) {
   const limit = exportsLimit ?? (isPro ? PLAN_LIMITS.pro.exportsPerMonth : PLAN_LIMITS.free.exportsPerMonth);

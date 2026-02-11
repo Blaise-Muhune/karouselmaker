@@ -129,7 +129,7 @@ export default async function EditSlidePage({
           editorPath={editorPath}
           carouselId={carouselId}
           initialExportFormat={carouselExportFormat === "png" || carouselExportFormat === "jpeg" ? carouselExportFormat : "png"}
-          initialExportSize={carouselExportSize === "1080x1080" || carouselExportSize === "1080x1350" || carouselExportSize === "1080x1920" ? carouselExportSize : "1080x1080"}
+          initialExportSize={carouselExportSize === "1080x1080" || carouselExportSize === "1080x1350" || carouselExportSize === "1080x1920" ? carouselExportSize : "1080x1350"}
           initialBackgroundImageUrl={initialBackgroundImageUrl}
           initialBackgroundImageUrls={initialBackgroundImageUrls}
           initialImageSource={initialImageSource}

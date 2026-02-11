@@ -6,7 +6,7 @@
  */
 
 import { searchBraveImage, isBraveImageSearchConfigured } from "@/lib/server/braveImageSearch";
-import { searchUnsplashPhoto } from "@/lib/server/unsplash";
+import { searchUnsplashPhotoRandom } from "@/lib/server/unsplash";
 
 const DEBUG = process.env.IMAGE_SEARCH_DEBUG === "true" || process.env.IMAGE_SEARCH_DEBUG === "1";
 const BRAVE_MIN_INTERVAL_MS = 1100; // Free tier: 1 req/sec; add small buffer
@@ -125,7 +125,7 @@ export async function searchImage(
   log("query:", JSON.stringify(query), "| preferUnsplash:", useUnsplashFirst, "| Brave configured:", braveConfigured);
 
   async function tryUnsplash(): Promise<ImageSearchResult | null> {
-    const unsplash = await searchUnsplashPhoto(query);
+    const unsplash = await searchUnsplashPhotoRandom(query, 15);
     if (unsplash?.url) {
       log("Unsplash OK:", unsplash.url.slice(0, 60) + "...");
       return {
