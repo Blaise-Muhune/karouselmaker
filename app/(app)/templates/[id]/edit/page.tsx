@@ -24,8 +24,8 @@ export default async function EditTemplatePage({
 
   if (!subscription.isPro) {
     return (
-      <div className="p-4 md:p-6">
-        <div className="mx-auto max-w-2xl space-y-4">
+      <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">
+        <div className="mx-auto max-w-xl space-y-6">
           <UpgradeBanner
             message="Upgrade to Pro to edit custom templates."
             variant="banner"
@@ -43,8 +43,8 @@ export default async function EditTemplatePage({
   const config = templateConfigSchema.safeParse(template.config);
   if (!config.success) {
     return (
-      <div className="p-4 md:p-6">
-        <div className="mx-auto max-w-2xl space-y-4">
+      <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">
+        <div className="mx-auto max-w-xl space-y-6">
           <p className="text-destructive">Invalid template config. Cannot edit.</p>
           <Link href="/templates" className="text-sm underline hover:no-underline">
             ← Back to templates
@@ -55,7 +55,7 @@ export default async function EditTemplatePage({
   }
 
   return (
-    <div className="p-4 md:p-6">
+    <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">
       <div className="mx-auto max-w-4xl">
         <TemplateBuilderForm
           mode="edit"

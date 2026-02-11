@@ -110,8 +110,8 @@ export default async function EditSlidePage({
   const carouselExportSize = (carousel as { export_size?: string }).export_size;
 
   return (
-    <div className="min-h-screen px-3 py-4 sm:px-6 sm:py-6 lg:px-8">
-      <div className="mx-auto max-w-5xl space-y-4">
+    <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">
+      <div className="mx-auto max-w-5xl space-y-10">
         {!isPro && (
           <UpgradeBanner
             message="Free plan: Edit headline and text only. Upgrade to Pro to change template, background, and more."

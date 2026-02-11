@@ -1,18 +1,11 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -34,7 +27,7 @@ import { updateTemplateAction } from "@/app/actions/templates/updateTemplate";
 import { DEFAULT_TEMPLATE_CONFIG, LAYOUT_PRESETS } from "@/lib/templateDefaults";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import type { Template } from "@/lib/server/db/types";
-import { ArrowLeftIcon, Maximize2Icon } from "lucide-react";
+import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, Maximize2Icon } from "lucide-react";
 
 const CATEGORIES = ["hook", "point", "context", "cta", "generic"] as const;
 const DEFAULT_BRAND_KIT = { primary_color: "#0a0a0a" };
@@ -112,6 +105,16 @@ export function TemplateBuilderForm({
   const [previewSlideIndex, setPreviewSlideIndex] = useState(1);
   const [previewTotalSlides] = useState(10);
   const [previewExpanded, setPreviewExpanded] = useState(false);
+  const [mobilePreviewOpen, setMobilePreviewOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 1023px)");
+    const handler = () => setIsMobile(mq.matches);
+    handler();
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
 
   const updateConfig = useCallback((updates: Partial<TemplateConfig> | ((prev: TemplateConfig) => Partial<TemplateConfig>)) => {
     setConfig((prev) => {
@@ -168,33 +171,242 @@ export function TemplateBuilderForm({
   const headlineZone = config.textZones.find((z) => z.id === "headline");
   const bodyZone = config.textZones.find((z) => z.id === "body");
 
+  const templatePreviewContent = (
+    <>
+      <section>
+        <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
+          Preview content
+        </p>
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <Label className="text-xs">Headline</Label>
+            <Input
+              value={previewHeadline}
+              onChange={(e) => setPreviewHeadline(e.target.value)}
+              placeholder="Sample headline"
+            />
+          </div>
+          {config.textZones.some((z) => z.id === "body") && (
+            <div className="space-y-1">
+              <Label className="text-xs">Body</Label>
+              <Input
+                value={previewBody}
+                onChange={(e) => setPreviewBody(e.target.value)}
+                placeholder="Sample body text"
+              />
+            </div>
+          )}
+          <div className="space-y-1">
+            <Label className="text-xs">Background image URL</Label>
+            <Input
+              type="url"
+              value={previewImageUrl}
+              onChange={(e) => setPreviewImageUrl(e.target.value)}
+              placeholder="https://example.com/image.jpg"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Background color (for testing)</Label>
+            <ColorPicker
+              value={previewBackgroundColor}
+              onChange={setPreviewBackgroundColor}
+              placeholder="#0a0a0a"
+            />
+          </div>
+        </div>
+      </section>
+      <div className="rounded-lg border border-border/60 bg-muted/20 p-4">
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <p className="text-muted-foreground text-xs font-medium">Live preview</p>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+            onClick={() => setPreviewExpanded(true)}
+            title="Expand preview"
+            aria-label="Expand preview"
+          >
+            <Maximize2Icon className="size-4" />
+          </Button>
+        </div>
+        <div className="flex flex-wrap gap-2 mb-3">
+          <div className="flex-1 min-w-[80px]">
+            <Label className="text-xs text-muted-foreground mb-1 block">Slide</Label>
+            <Select
+              value={String(previewSlideIndex)}
+              onValueChange={(v) => setPreviewSlideIndex(parseInt(v, 10))}
+            >
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Array.from({ length: previewTotalSlides }, (_, i) => (
+                  <SelectItem key={i} value={String(i + 1)}>
+                    {i + 1} of {previewTotalSlides}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex-1 min-w-[80px]">
+            <Label className="text-xs text-muted-foreground mb-1 block">Size</Label>
+            <Select value={previewSize} onValueChange={(v) => setPreviewSize(v as PreviewSize)}>
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1080x1080">{PREVIEW_SIZE_LABELS["1080x1080"]}</SelectItem>
+                <SelectItem value="1080x1350">{PREVIEW_SIZE_LABELS["1080x1350"]}</SelectItem>
+                <SelectItem value="1080x1920">{PREVIEW_SIZE_LABELS["1080x1920"]}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <div className="flex justify-center">
+          {(() => {
+            const dims = getPreviewDimensions(previewSize, PREVIEW_MAX);
+            return (
+              <div
+                className="overflow-hidden rounded-lg shrink-0"
+                style={{ width: dims.w, height: dims.h }}
+              >
+                <div
+                  className="origin-top-left"
+                  style={{
+                    transform: `scale(${dims.scale})`,
+                    transformOrigin: "top left",
+                    position: "relative",
+                    left: dims.offsetX,
+                    top: dims.offsetY,
+                    width: 1080,
+                    height: 1080,
+                  }}
+                >
+                  <SlidePreview
+                    slide={{
+                      headline: previewHeadline || "Your headline text",
+                      body: config.textZones.some((z) => z.id === "body") ? (previewBody || "Body text goes here.") : null,
+                      slide_index: previewSlideIndex,
+                      slide_type: "point",
+                    }}
+                    templateConfig={config}
+                    brandKit={{
+                      ...DEFAULT_BRAND_KIT,
+                      primary_color: previewBackgroundColor,
+                      logo_url: config.chrome.watermark.enabled ? MOCK_LOGO_URL : undefined,
+                    }}
+                    totalSlides={previewTotalSlides}
+                    backgroundImageUrl={previewImageUrl.trim() || undefined}
+                    backgroundOverride={{ color: previewBackgroundColor }}
+                    showMadeWithOverride={false}
+                  />
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      </div>
+      <Dialog open={previewExpanded} onOpenChange={setPreviewExpanded}>
+        <DialogContent className="max-w-[95vw] max-h-[95vh] w-auto p-4 sm:p-6" showCloseButton>
+          <DialogHeader>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <DialogTitle>Live preview</DialogTitle>
+              <Select
+                value={String(previewSlideIndex)}
+                onValueChange={(v) => setPreviewSlideIndex(parseInt(v, 10))}
+              >
+                <SelectTrigger className="h-9 w-[120px] rounded-lg text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: previewTotalSlides }, (_, i) => (
+                    <SelectItem key={i} value={String(i + 1)}>
+                      Slide {i + 1} of {previewTotalSlides}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </DialogHeader>
+          <div className="flex justify-center items-center min-h-[200px] bg-muted/30 rounded-lg p-4">
+            {(() => {
+              const dims = getPreviewDimensions(previewSize, PREVIEW_MAX_LARGE);
+              return (
+                <div
+                  className="overflow-hidden rounded-lg shrink-0 shadow-lg"
+                  style={{ width: dims.w, height: dims.h }}
+                >
+                  <div
+                    className="origin-top-left"
+                    style={{
+                      transform: `scale(${dims.scale})`,
+                      transformOrigin: "top left",
+                      position: "relative",
+                      left: dims.offsetX,
+                      top: dims.offsetY,
+                      width: 1080,
+                      height: 1080,
+                    }}
+                  >
+                    <SlidePreview
+                      slide={{
+                        headline: previewHeadline || "Your headline text",
+                        body: config.textZones.some((z) => z.id === "body") ? (previewBody || "Body text goes here.") : null,
+                        slide_index: previewSlideIndex,
+                        slide_type: "point",
+                      }}
+                      templateConfig={config}
+                      brandKit={{
+                        ...DEFAULT_BRAND_KIT,
+                        primary_color: previewBackgroundColor,
+                        logo_url: config.chrome.watermark.enabled ? MOCK_LOGO_URL : undefined,
+                      }}
+                      totalSlides={previewTotalSlides}
+                      backgroundImageUrl={previewImageUrl.trim() || undefined}
+                      backgroundOverride={{ color: previewBackgroundColor }}
+                      showMadeWithOverride={false}
+                    />
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+
   return (
-    <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
-      <form onSubmit={handleSubmit} className="min-w-0 flex-1 space-y-6">
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" asChild>
+    <div className="flex flex-col gap-10 lg:flex-row lg:items-start">
+      <form onSubmit={handleSubmit} className="min-w-0 flex-1 space-y-8">
+        <header className="flex items-start gap-2">
+          <Button variant="ghost" size="icon-sm" className="-ml-1 shrink-0" asChild>
             <Link href="/templates" aria-label="Back to templates">
               <ArrowLeftIcon className="size-4" />
             </Link>
           </Button>
-          <h1 className="text-xl font-semibold">
-            {mode === "create" ? "Create template" : "Edit template"}
-          </h1>
-        </div>
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight">
+              {mode === "create" ? "Create template" : "Edit template"}
+            </h1>
+            <p className="mt-1 text-muted-foreground text-sm">
+              {initialName || "Configure layout, zones, and chrome"}
+            </p>
+          </div>
+        </header>
 
         {error && (
-          <p className="text-destructive rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm">
+          <p className="text-destructive rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm">
             {error}
           </p>
         )}
 
         {mode === "create" && baseOptions.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Start from</CardTitle>
-              <CardDescription>Optionally start from a system template to customize.</CardDescription>
-            </CardHeader>
-            <CardContent>
+          <section>
+            <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
+              Start from
+            </p>
               <Select
                 value={baseId}
                 onValueChange={(id) => {
@@ -224,16 +436,14 @@ export function TemplateBuilderForm({
                   ))}
                 </SelectContent>
               </Select>
-            </CardContent>
-          </Card>
+          </section>
         )}
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Basic</CardTitle>
-            <CardDescription>Name and category for organizing your template.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+        <section>
+          <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
+            Basic
+          </p>
+          <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="name">Template name</Label>
               <Input
@@ -260,15 +470,13 @@ export function TemplateBuilderForm({
                 </SelectContent>
               </Select>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </section>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Layout</CardTitle>
-            <CardDescription>Choose a layout structure. Each has preset text positions.</CardDescription>
-          </CardHeader>
-          <CardContent>
+        <section>
+          <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
+            Layout
+          </p>
             <Select value={config.layout} onValueChange={(v) => setLayout(v as TemplateConfig["layout"])}>
               <SelectTrigger className="w-full">
                 <SelectValue />
@@ -280,15 +488,12 @@ export function TemplateBuilderForm({
                 <SelectItem value="headline_only">Headline only</SelectItem>
               </SelectContent>
             </Select>
-          </CardContent>
-        </Card>
+        </section>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Safe area</CardTitle>
-            <CardDescription>Padding (px) from edges. Content stays within this area.</CardDescription>
-          </CardHeader>
-          <CardContent>
+        <section>
+          <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
+            Safe area
+          </p>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
               {(["top", "right", "bottom", "left"] as const).map((side) => (
                 <div key={side} className="space-y-2">
@@ -310,16 +515,14 @@ export function TemplateBuilderForm({
                 </div>
               ))}
             </div>
-          </CardContent>
-        </Card>
+        </section>
 
         {headlineZone && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Headline zone</CardTitle>
-              <CardDescription>Position, size, and font settings for the headline.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
+          <section>
+            <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
+              Headline zone
+            </p>
+            <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
                 {(["x", "y", "w", "h"] as const).map((key) => (
                   <div key={key} className="space-y-2">
@@ -414,17 +617,16 @@ export function TemplateBuilderForm({
                   placeholder="Auto (contrast)"
                 />
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </section>
         )}
 
         {bodyZone && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Body zone</CardTitle>
-              <CardDescription>Position and font settings for the body text.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
+          <section>
+            <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
+              Body zone
+            </p>
+            <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
                 {(["x", "y", "w", "h"] as const).map((key) => (
                   <div key={key} className="space-y-2">
@@ -519,16 +721,15 @@ export function TemplateBuilderForm({
                   placeholder="Auto (contrast)"
                 />
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </section>
         )}
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Background</CardTitle>
-            <CardDescription>Allow background images and default overlay style.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+        <section>
+          <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
+            Background
+          </p>
+          <div className="space-y-4">
             <div className="flex items-center justify-between">
               <Label>Allow background image</Label>
               <input
@@ -561,19 +762,14 @@ export function TemplateBuilderForm({
                 </SelectContent>
               </Select>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </section>
 
-        <Card className={config.backgroundRules.defaultStyle !== "darken" ? "opacity-60" : undefined}>
-          <CardHeader>
-            <CardTitle className="text-base">Overlays</CardTitle>
-            <CardDescription>
-              {config.backgroundRules.defaultStyle !== "darken"
-                ? "Default overlay must be gradient to use these options."
-                : "Gradient and vignette over background images."}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+        <section className={config.backgroundRules.defaultStyle !== "darken" ? "opacity-70" : undefined}>
+          <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
+            Overlays
+          </p>
+          <div className="space-y-4">
             {config.backgroundRules.defaultStyle !== "darken" ? (
               <p className="text-muted-foreground text-sm">Default overlay must be gradient.</p>
             ) : (
@@ -704,15 +900,14 @@ export function TemplateBuilderForm({
             )}
             </>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </section>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Chrome</CardTitle>
-            <CardDescription>Swipe hint, slide counter, and watermark.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+        <section>
+          <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
+            Chrome
+          </p>
+          <div className="space-y-4">
             <div className="flex items-center justify-between">
               <Label>Show swipe hint</Label>
               <input
@@ -921,10 +1116,10 @@ export function TemplateBuilderForm({
                 )}
               </div>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </section>
 
-        <div className="flex gap-2">
+        <div className="flex gap-2 pt-2">
           <Button type="submit" disabled={loading}>
             {loading ? "Saving…" : mode === "create" ? "Create template" : "Save changes"}
           </Button>
@@ -934,211 +1129,50 @@ export function TemplateBuilderForm({
         </div>
       </form>
 
-      <div className="lg:sticky lg:top-6 lg:w-80 lg:shrink-0 space-y-4">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Preview content</CardTitle>
-            <CardDescription>Customize sample text and image to see how your template renders.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="space-y-1">
-              <Label className="text-xs">Headline</Label>
-              <Input
-                value={previewHeadline}
-                onChange={(e) => setPreviewHeadline(e.target.value)}
-                placeholder="Sample headline"
-              />
-            </div>
-            {config.textZones.some((z) => z.id === "body") && (
-              <div className="space-y-1">
-                <Label className="text-xs">Body</Label>
-                <Input
-                  value={previewBody}
-                  onChange={(e) => setPreviewBody(e.target.value)}
-                  placeholder="Sample body text"
-                />
-              </div>
-            )}
-            <div className="space-y-1">
-              <Label className="text-xs">Background image URL</Label>
-              <Input
-                type="url"
-                value={previewImageUrl}
-                onChange={(e) => setPreviewImageUrl(e.target.value)}
-                placeholder="https://example.com/image.jpg"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Background color (for testing)</Label>
-              <ColorPicker
-                value={previewBackgroundColor}
-                onChange={setPreviewBackgroundColor}
-                placeholder="#0a0a0a"
-              />
-            </div>
-          </CardContent>
-        </Card>
-        <div className="rounded-lg border bg-muted/30 p-4">
-          <div className="flex items-center justify-between gap-2 mb-2">
-            <p className="text-muted-foreground text-xs font-medium">Live preview</p>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
-              onClick={() => setPreviewExpanded(true)}
-              title="Expand preview"
-              aria-label="Expand preview"
-            >
-              <Maximize2Icon className="size-4" />
-            </Button>
-          </div>
-          <div className="flex flex-wrap gap-2 mb-3">
-            <div className="flex-1 min-w-[80px]">
-              <Label className="text-xs text-muted-foreground mb-1 block">Slide</Label>
-              <Select
-                value={String(previewSlideIndex)}
-                onValueChange={(v) => setPreviewSlideIndex(parseInt(v, 10))}
-              >
-                <SelectTrigger className="h-8 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Array.from({ length: previewTotalSlides }, (_, i) => (
-                    <SelectItem key={i} value={String(i + 1)}>
-                      {i + 1} of {previewTotalSlides}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex-1 min-w-[80px]">
-              <Label className="text-xs text-muted-foreground mb-1 block">Size</Label>
-              <Select value={previewSize} onValueChange={(v) => setPreviewSize(v as PreviewSize)}>
-                <SelectTrigger className="h-8 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1080x1080">{PREVIEW_SIZE_LABELS["1080x1080"]}</SelectItem>
-                  <SelectItem value="1080x1350">{PREVIEW_SIZE_LABELS["1080x1350"]}</SelectItem>
-                  <SelectItem value="1080x1920">{PREVIEW_SIZE_LABELS["1080x1920"]}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="flex justify-center">
-            {(() => {
-              const dims = getPreviewDimensions(previewSize, PREVIEW_MAX);
-              return (
-            <div
-              className="overflow-hidden rounded-lg shrink-0"
-              style={{ width: dims.w, height: dims.h }}
-            >
-              <div
-                className="origin-top-left"
-                style={{
-                  transform: `scale(${dims.scale})`,
-                  transformOrigin: "top left",
-                  position: "relative",
-                  left: dims.offsetX,
-                  top: dims.offsetY,
-                  width: 1080,
-                  height: 1080,
-                }}
-              >
-                <SlidePreview
-                  slide={{
-                    headline: previewHeadline || "Your headline text",
-                    body: config.textZones.some((z) => z.id === "body") ? (previewBody || "Body text goes here.") : null,
-                    slide_index: previewSlideIndex,
-                    slide_type: "point",
-                  }}
-                  templateConfig={config}
-                  brandKit={{
-                    ...DEFAULT_BRAND_KIT,
-                    primary_color: previewBackgroundColor,
-                    logo_url: config.chrome.watermark.enabled ? MOCK_LOGO_URL : undefined,
-                  }}
-                  totalSlides={previewTotalSlides}
-                  backgroundImageUrl={previewImageUrl.trim() || undefined}
-                  backgroundOverride={{ color: previewBackgroundColor }}
-                  showMadeWithOverride={false}
-                />
-              </div>
-            </div>
-              );
-            })()}
-          </div>
-        </div>
+        {/* Mobile: tab to open preview (hidden when panel is open) */}
+        {isMobile && !mobilePreviewOpen && (
+          <button
+            type="button"
+            onClick={() => setMobilePreviewOpen(true)}
+            className="fixed right-0 top-1/2 -translate-y-1/2 z-40 flex items-center justify-center w-10 h-16 rounded-l-lg border border-r-0 border-border/80 bg-card shadow-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+            aria-label="Show preview"
+          >
+            <ChevronLeftIcon className="size-5" aria-hidden />
+          </button>
+        )}
 
-        <Dialog open={previewExpanded} onOpenChange={setPreviewExpanded}>
-          <DialogContent className="max-w-[95vw] max-h-[95vh] w-auto p-4 sm:p-6" showCloseButton>
-            <DialogHeader>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <DialogTitle>Live preview</DialogTitle>
-                <Select
-                  value={String(previewSlideIndex)}
-                  onValueChange={(v) => setPreviewSlideIndex(parseInt(v, 10))}
-                >
-                  <SelectTrigger className="h-9 w-[120px] rounded-lg text-sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Array.from({ length: previewTotalSlides }, (_, i) => (
-                      <SelectItem key={i} value={String(i + 1)}>
-                        Slide {i + 1} of {previewTotalSlides}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+        {/* Mobile: slide-out overlay panel with close tab on left edge */}
+        {isMobile && (
+          <>
+            <div
+              className={`fixed inset-0 z-50 bg-black/40 transition-opacity duration-200 ${mobilePreviewOpen ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+              onClick={() => setMobilePreviewOpen(false)}
+              aria-hidden="true"
+            />
+            <div
+              className={`fixed right-0 top-0 bottom-0 z-50 w-[min(100vw,580px)] bg-background shadow-xl transition-transform duration-200 ease-out overflow-y-auto ${mobilePreviewOpen ? "translate-x-0" : "translate-x-full"}`}
+            >
+              <button
+                type="button"
+                onClick={() => setMobilePreviewOpen(false)}
+                className="absolute left-0 top-1/2 -translate-y-1/2 z-10 flex items-center justify-center w-10 h-16 rounded-r-lg border border-l-0 border-border/80 bg-card shadow-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                aria-label="Hide preview"
+              >
+                <ChevronRightIcon className="size-5" aria-hidden />
+              </button>
+              <div className="pl-14 pr-4 py-4 space-y-4">
+                {templatePreviewContent}
               </div>
-            </DialogHeader>
-            <div className="flex justify-center items-center min-h-[200px] bg-muted/30 rounded-lg p-4">
-              {(() => {
-                const dims = getPreviewDimensions(previewSize, PREVIEW_MAX_LARGE);
-                return (
-                  <div
-                    className="overflow-hidden rounded-lg shrink-0 shadow-lg"
-                    style={{ width: dims.w, height: dims.h }}
-                  >
-                    <div
-                      className="origin-top-left"
-                      style={{
-                        transform: `scale(${dims.scale})`,
-                        transformOrigin: "top left",
-                        position: "relative",
-                        left: dims.offsetX,
-                        top: dims.offsetY,
-                        width: 1080,
-                        height: 1080,
-                      }}
-                    >
-                      <SlidePreview
-                        slide={{
-                          headline: previewHeadline || "Your headline text",
-                          body: config.textZones.some((z) => z.id === "body") ? (previewBody || "Body text goes here.") : null,
-                          slide_index: previewSlideIndex,
-                          slide_type: "point",
-                        }}
-                        templateConfig={config}
-                        brandKit={{
-                          ...DEFAULT_BRAND_KIT,
-                          primary_color: previewBackgroundColor,
-                          logo_url: config.chrome.watermark.enabled ? MOCK_LOGO_URL : undefined,
-                        }}
-                        totalSlides={previewTotalSlides}
-                        backgroundImageUrl={previewImageUrl.trim() || undefined}
-                        backgroundOverride={{ color: previewBackgroundColor }}
-                        showMadeWithOverride={false}
-                      />
-                    </div>
-                  </div>
-                );
-              })()}
             </div>
-          </DialogContent>
-        </Dialog>
-      </div>
+          </>
+        )}
+
+        {/* Desktop: sticky sidebar */}
+        {!isMobile && (
+          <div className="lg:sticky lg:top-6 lg:w-80 lg:shrink-0 space-y-4">
+            {templatePreviewContent}
+          </div>
+        )}
     </div>
   );
 }

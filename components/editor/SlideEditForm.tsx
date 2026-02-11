@@ -943,7 +943,7 @@ export function SlideEditForm({
       };
 
   const overlaySection = (
-    <div className="space-y-3 rounded-xl border border-border/60 bg-muted/30 p-4 shadow-sm">
+    <div className="space-y-3 rounded-xl border border-border/50 bg-muted/10 p-4">
       <div className="flex items-center justify-between gap-2">
         <Label className="flex items-center gap-2 text-sm font-medium text-foreground">
           <PaletteIcon className="size-4 text-muted-foreground" />
@@ -1102,7 +1102,7 @@ export function SlideEditForm({
   );
 
   const previewContent = (
-    <div className="flex flex-col items-start rounded-xl border border-border/60 bg-card p-5 sm:p-6 shadow-sm">
+    <div className="flex flex-col items-start rounded-xl border border-border/50 bg-muted/5 p-5 sm:p-6">
       <div className="flex items-center justify-between gap-2 mb-4 w-full">
         <div className="flex items-center gap-2">
           <h2 className="text-base font-semibold text-foreground">Live preview</h2>
@@ -1122,11 +1122,6 @@ export function SlideEditForm({
           >
             <Maximize2Icon className="size-4" />
           </Button>
-          {isMobile && (
-            <Button variant="ghost" size="icon" className="shrink-0 rounded-full h-8 w-8" onClick={() => setMobilePreviewOpen(false)} aria-label="Close preview">
-              <XIcon className="size-4" />
-            </Button>
-          )}
         </div>
       </div>
       <p className="text-muted-foreground text-xs mb-3">
@@ -1316,7 +1311,7 @@ export function SlideEditForm({
 
   return (
     <>
-    <div className="space-y-8">
+    <div className="space-y-10">
       {isMobile && !mobileBannerDismissed && (
         <div className="flex items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3">
           <MonitorIcon className="size-5 shrink-0 text-amber-600 dark:text-amber-500" />
@@ -1334,16 +1329,18 @@ export function SlideEditForm({
           </Button>
         </div>
       )}
-      <header className="flex flex-wrap items-center gap-4">
-        <Button variant="ghost" size="icon" className="shrink-0 rounded-full" asChild>
-          <Link href={backHref} className="flex items-center justify-center">
-            <ArrowLeftIcon className="size-5" />
+      <header className="flex items-start gap-2">
+        <Button variant="ghost" size="icon-sm" className="-ml-1 shrink-0" asChild>
+          <Link href={backHref}>
+            <ArrowLeftIcon className="size-4" />
             <span className="sr-only">Back to carousel</span>
           </Link>
         </Button>
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Edit slide {slide.slide_index}</h1>
-          <p className="text-muted-foreground mt-0.5 text-sm">Slide {slide.slide_index} of {totalSlides}</p>
+          <h1 className="text-xl font-semibold tracking-tight">Slide {slide.slide_index}</h1>
+          <p className="text-muted-foreground mt-1 text-sm">
+            {slide.slide_index} of {totalSlides}
+          </p>
         </div>
       </header>
 
@@ -1495,7 +1492,7 @@ export function SlideEditForm({
         {/* Form column: full width on mobile, left column on lg */}
         <div className="flex flex-col gap-6 flex-1 min-w-0 lg:order-1">
           {totalSlides >= 2 && isPro && (
-            <section className="rounded-lg border border-border/50 bg-card/50 p-4 space-y-3" aria-label="Apply to all scope">
+            <section className="rounded-lg border border-border/50 bg-muted/10 p-4 space-y-3" aria-label="Apply to all scope">
               <div>
                 <h3 className="text-sm font-medium text-foreground">Apply to all scope</h3>
                 <p className="text-muted-foreground text-xs mt-0.5">
@@ -1524,7 +1521,7 @@ export function SlideEditForm({
               </div>
             </section>
           )}
-          <section className={`rounded-lg border border-border/50 bg-card/50 p-3 space-y-3 ${!isPro ? "pointer-events-none opacity-60" : ""}`} aria-label="Layout">
+          <section className={`rounded-lg border border-border/50 bg-muted/10 p-4 space-y-3 ${!isPro ? "pointer-events-none opacity-60" : ""}`} aria-label="Layout">
             <div className="flex items-center gap-2 mb-4">
               <LayoutTemplateIcon className="size-4 text-muted-foreground" aria-hidden />
               <h2 className="text-base font-semibold text-foreground">Layout</h2>
@@ -1571,7 +1568,7 @@ export function SlideEditForm({
               )}
             </div>
           </section>
-          <section className="rounded-xl border border-border/60 bg-card p-5 sm:p-6 shadow-sm" aria-label="Content">
+          <section className="rounded-xl border border-border/50 bg-muted/5 p-5 sm:p-6" aria-label="Content">
             <div className="flex items-center justify-between gap-2 mb-4">
               <div className="flex items-center gap-2">
                 <Type className="size-4 text-muted-foreground" />
@@ -1651,7 +1648,7 @@ export function SlideEditForm({
             </div>
             )}
             {isPro && headlineEditMoreOpen && templateConfig?.textZones?.find((z) => z.id === "headline") && (
-              <div className="rounded-lg border border-border/60 bg-muted/30 p-4 space-y-4 mt-3">
+              <div className="rounded-lg border border-border/50 bg-muted/10 p-4 space-y-4 mt-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-muted-foreground text-xs font-medium">Headline position & layout</span>
                   {totalSlides > 1 && (
@@ -1815,7 +1812,7 @@ export function SlideEditForm({
             </div>
             )}
             {isPro && bodyEditMoreOpen && templateConfig?.textZones?.find((z) => z.id === "body") && (
-              <div className="rounded-lg border border-border/60 bg-muted/30 p-4 space-y-4 mt-3">
+              <div className="rounded-lg border border-border/50 bg-muted/10 p-4 space-y-4 mt-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-muted-foreground text-xs font-medium">Body position & layout</span>
                   {totalSlides > 1 && (
@@ -1914,7 +1911,7 @@ export function SlideEditForm({
             )}
             </div>
           </section>
-          <section className="rounded-xl border border-border/60 bg-card p-5 sm:p-6 shadow-sm" aria-label="Background">
+          <section className="rounded-xl border border-border/50 bg-muted/5 p-5 sm:p-6" aria-label="Background">
             <div className="flex items-center justify-between gap-2 mb-4">
               <div className="flex items-center gap-2">
                 <PaletteIcon className="size-4 text-muted-foreground" />
@@ -2093,7 +2090,7 @@ export function SlideEditForm({
                     Apply {validImageCount} to all
                   </Button>
                 </div>
-                <div className="space-y-3 rounded-lg border border-border/40 bg-muted/20 p-3">
+                <div className="space-y-3 rounded-lg border border-border/50 bg-muted/10 p-3">
                   <div className="flex items-center justify-between gap-2">
                     <Label className="text-muted-foreground text-xs font-medium flex items-center gap-1.5">
                       <LayoutTemplateIcon className="size-3.5" /> Image display
@@ -2507,7 +2504,7 @@ export function SlideEditForm({
             )}
             {background.gradientOn && overlaySection}
           </section>
-          <section className={`rounded-xl border border-border/60 bg-card p-5 sm:p-6 shadow-sm ${!isPro ? "pointer-events-none opacity-60" : ""}`} aria-label="Save as template">
+          <section className={`rounded-xl border border-border/50 bg-muted/5 p-5 sm:p-6 ${!isPro ? "pointer-events-none opacity-60" : ""}`} aria-label="Save as template">
             <div className="flex items-center gap-2 mb-4">
               <Bookmark className="size-4 text-muted-foreground" />
               <h2 className="text-base font-semibold text-foreground">Save as template</h2>
@@ -2527,7 +2524,7 @@ export function SlideEditForm({
         </div>
 
         {/* Preview: desktop = right column sticky; mobile = slide-out panel from right */}
-        {/* Mobile: reveal tab on right edge (hidden when panel is open) */}
+        {/* Mobile: tab toggles preview - right edge when closed, left edge of panel when open */}
         {isMobile && !mobilePreviewOpen && (
           <button
             type="button"
@@ -2539,7 +2536,7 @@ export function SlideEditForm({
           </button>
         )}
 
-        {/* Mobile: slide-out overlay panel */}
+        {/* Mobile: slide-out overlay panel with close tab on left edge */}
         {isMobile && (
           <>
             <div
@@ -2550,7 +2547,15 @@ export function SlideEditForm({
             <div
               className={`fixed right-0 top-0 bottom-0 z-50 w-[min(100vw,580px)] bg-background shadow-xl transition-transform duration-200 ease-out overflow-y-auto ${mobilePreviewOpen ? "translate-x-0" : "translate-x-full"}`}
             >
-              <div className="p-4 pb-8">
+              <button
+                type="button"
+                onClick={() => setMobilePreviewOpen(false)}
+                className="absolute left-0 top-1/2 -translate-y-1/2 z-10 flex items-center justify-center w-10 h-16 rounded-r-lg border border-l-0 border-border/80 bg-card shadow-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                aria-label="Hide preview"
+              >
+                <ChevronRightIcon className="size-5" aria-hidden />
+              </button>
+              <div className="pl-14 pr-4 py-4 pb-8">
                 {previewContent}
               </div>
             </div>
@@ -2566,7 +2571,7 @@ export function SlideEditForm({
       </div>
 
       {hookVariants.length > 0 && (
-        <div className="rounded-lg border border-border bg-muted/30 p-3">
+        <div className="rounded-lg border border-border/50 bg-muted/10 p-3">
           <Label className="text-xs flex items-center gap-1.5">
             <SparklesIcon className="size-3.5" /> Pick variant
           </Label>

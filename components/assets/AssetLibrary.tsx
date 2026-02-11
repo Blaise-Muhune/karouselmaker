@@ -115,7 +115,7 @@ export function AssetLibrary({
         : assets.filter((a) => a.project_id === projectFilter);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       {atLimit && !isPro && (
         <UpgradeBanner
           message={`You've reached the ${assetLimit} image limit on the free plan. Upgrade to Pro for ${PLAN_LIMITS.pro.assets} images.`}
@@ -131,7 +131,11 @@ export function AssetLibrary({
       {uploadError && (!uploadError.toLowerCase().includes("limit") && !uploadError.toLowerCase().includes("upgrade")) && (
         <p className="text-destructive text-sm rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2">{uploadError}</p>
       )}
-      <div className="flex flex-wrap items-center gap-2">
+      <section>
+        <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
+          Library
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
         <Select
           value={projectFilter}
           onValueChange={setProjectFilter}
@@ -175,8 +179,16 @@ export function AssetLibrary({
       </div>
 
       {filteredAssets.length === 0 ? (
-        <div className="text-muted-foreground flex min-h-[200px] items-center justify-center rounded-lg border border-dashed p-8 text-center text-sm">
-          No images yet. Upload an image to use as slide backgrounds.
+        <div className="flex min-h-[220px] flex-col items-center justify-center rounded-2xl border border-dashed border-border/60 bg-muted/20 p-8 text-center">
+          <p className="text-muted-foreground text-sm mb-2">
+            No images yet. Upload your first image to use as slide backgrounds.
+          </p>
+          <p className="text-muted-foreground text-xs mb-4 max-w-sm">
+            Pro tip: Use high-res images (1080×1080 or larger). Landscapes, textures, and solid colors work great.
+          </p>
+          <p className="text-xs text-muted-foreground/80">
+            Drag & drop or click Upload above ↑
+          </p>
         </div>
       ) : (
         <ul className="grid gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
@@ -185,7 +197,7 @@ export function AssetLibrary({
               <button
                 type="button"
                 onClick={() => setSelectedAsset(asset)}
-                className="border-border hover:border-primary/50 flex aspect-square w-full overflow-hidden rounded-lg border bg-muted/30 transition-colors focus:outline-none focus:ring-2 focus:ring-primary/50"
+                className="border-border/50 hover:border-primary/30 flex aspect-square w-full overflow-hidden rounded-lg border bg-muted/10 transition-colors hover:bg-muted/20 focus:outline-none focus:ring-2 focus:ring-primary/50"
               >
                 {urls[asset.id] ? (
                   <img
@@ -203,6 +215,7 @@ export function AssetLibrary({
           ))}
         </ul>
       )}
+      </section>
 
       <Dialog open={!!selectedAsset} onOpenChange={(open) => !open && setSelectedAsset(null)}>
         <DialogContent className="max-w-md" showCloseButton>

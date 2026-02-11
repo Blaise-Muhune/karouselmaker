@@ -34,6 +34,8 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  --color-accent-brand: var(--accent-brand);
+  --color-accent-brand-foreground: var(--accent-brand-foreground);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -52,7 +54,7 @@
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
+  --primary: oklch(0.55 0.17 163);
   --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
@@ -69,6 +71,8 @@
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
+  --accent-brand: oklch(0.55 0.17 163);
+  --accent-brand-foreground: oklch(0.985 0 0);
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
@@ -80,44 +84,105 @@
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --background: oklch(0.145 0.02 163);
+  --foreground: oklch(0.97 0 0);
+  --card: oklch(0.185 0.025 163);
+  --card-foreground: oklch(0.97 0 0);
+  --popover: oklch(0.185 0.025 163);
+  --popover-foreground: oklch(0.97 0 0);
+  --primary: oklch(0.72 0.17 163);
+  --primary-foreground: oklch(0.12 0 0);
+  --secondary: oklch(0.22 0.03 163);
+  --secondary-foreground: oklch(0.97 0 0);
+  --muted: oklch(0.22 0.03 163);
+  --muted-foreground: oklch(0.65 0 0);
+  --accent: oklch(0.22 0.04 163);
+  --accent-foreground: oklch(0.97 0 0);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
+  --border: oklch(0.5 0.05 163 / 25%);
+  --input: oklch(0.5 0.05 163 / 20%);
   --ring: oklch(0.556 0 0);
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
+  --accent-brand: oklch(0.72 0.17 163);
+  --accent-brand-foreground: oklch(0.15 0 0);
+  --sidebar: oklch(0.185 0.025 163);
+  --sidebar-foreground: oklch(0.97 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent: oklch(0.22 0.04 163);
   --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-border: oklch(0.5 0.05 163 / 25%);
   --sidebar-ring: oklch(0.556 0 0);
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+/* Scroll-driven animations (View Transitions API) - progressive enhancement */
+/* Scroll-driven animations - progressive enhancement (Chrome 115+, Safari 18+) */
+@supports (animation-timeline: view()) {
+  .scroll-reveal {
+    view-timeline: --scroll-reveal block;
+    animation-timeline: view(--scroll-reveal);
+    animation-name: scroll-reveal;
+    animation-fill-mode: both;
+    animation-duration: 1ms;
+  }
+  @keyframes scroll-reveal {
+    from {
+      opacity: 0;
+      transform: translateY(1rem);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+/* View transition styles for page navigation */
+@supports (view-transition-name: none) {
+  ::view-transition-old(root) {
+    animation: fade-out 0.2s ease-out forwards;
+  }
+  ::view-transition-new(root) {
+    animation: fade-in 0.25s ease-in 0.05s both;
+  }
+  @keyframes fade-out {
+    to { opacity: 0; }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
+  html {
+    scroll-behavior: smooth;
+  }
   body {
     @apply bg-background text-foreground;
+  }
+  .dark body {
+    background-image: linear-gradient(
+      160deg,
+      oklch(0.16 0.028 163) 0%,
+      oklch(0.14 0.02 163) 40%,
+      oklch(0.12 0.015 170) 100%
+    );
   }
 }

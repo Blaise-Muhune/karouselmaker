@@ -99,9 +99,8 @@ export function ActivityChartWithToggle(stats: AdminStatsChartData) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium">Activity</h3>
-        <div className="flex rounded-lg border border-border p-0.5">
+      <div className="flex items-center justify-end">
+        <div className="flex rounded-lg border border-border/50 p-0.5">
           <button
             type="button"
             onClick={() => setRange("7")}

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getUser } from "@/lib/server/auth/getUser";
 import { getSubscription } from "@/lib/server/subscription";
@@ -5,6 +6,8 @@ import { getProject, countCarouselsThisMonth } from "@/lib/server/db";
 import { PLAN_LIMITS } from "@/lib/constants";
 import { NewCarouselForm } from "./NewCarouselForm";
 import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
+import { Button } from "@/components/ui/button";
+import { ArrowLeftIcon } from "lucide-react";
 
 export default async function NewCarouselPage({
   params,
@@ -22,15 +25,25 @@ export default async function NewCarouselPage({
   const carouselLimit = subscription.isPro ? PLAN_LIMITS.pro.carouselsPerMonth : PLAN_LIMITS.free.carouselsPerMonth;
 
   return (
-    <div className="p-4 md:p-6">
-      <div className="mx-auto max-w-xl space-y-6">
+    <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">
+      <div className="mx-auto max-w-xl space-y-10">
         {!subscription.isPro && (
           <UpgradeBanner message={`Free: ${carouselCount}/${carouselLimit} carousels this month. Upgrade to Pro for ${PLAN_LIMITS.pro.carouselsPerMonth}/month, AI backgrounds, and web search.`} />
         )}
-        <h1 className="text-2xl font-semibold">Create a carousel</h1>
-        <p className="text-muted-foreground text-sm">
-          {carouselCount}/{carouselLimit} carousels this month
-        </p>
+        <header className="flex items-start gap-2">
+          <Button variant="ghost" size="icon-sm" className="-ml-1 shrink-0" asChild>
+            <Link href={`/p/${projectId}`}>
+              <ArrowLeftIcon className="size-4" />
+              <span className="sr-only">Back</span>
+            </Link>
+          </Button>
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight">New carousel</h1>
+            <p className="mt-1 text-muted-foreground text-sm">
+              {carouselCount}/{carouselLimit} this month
+            </p>
+          </div>
+        </header>
         <NewCarouselForm projectId={projectId} isPro={subscription.isPro} carouselCount={carouselCount} carouselLimit={carouselLimit} />
       </div>
     </div>

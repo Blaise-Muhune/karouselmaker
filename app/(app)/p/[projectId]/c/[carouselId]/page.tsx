@@ -7,13 +7,6 @@ import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { resolveBrandKitLogo } from "@/lib/server/brandKit";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { SlideGrid, type TemplateWithConfig } from "@/components/carousels/SlideGrid";
 import { CarouselMenuDropdown } from "@/components/carousels/CarouselMenuDropdown";
 import { EditorCaptionSection } from "@/components/editor/EditorCaptionSection";
@@ -131,29 +124,38 @@ export default async function CarouselEditorPage({
   const unsplashAttributions = Array.from(unsplashAttributionsMap.values());
 
   return (
-    <div className="p-4 md:p-6">
-      <div className="mx-auto max-w-4xl space-y-6">
+    <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">
+      <div className="mx-auto max-w-4xl space-y-10">
         {!subscription.isPro && (
           <UpgradeBanner message="Upgrade to Pro to edit slides, export, and unlock AI backgrounds." />
         )}
-        <div className="flex flex-wrap items-center justify-between gap-4">
+
+        {/* Header */}
+        <header className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon-sm" asChild>
+            <Button variant="ghost" size="icon-sm" className="-ml-1" asChild>
               <Link href={`/p/${projectId}`}>
                 <ArrowLeftIcon className="size-4" />
                 <span className="sr-only">Back to project</span>
               </Link>
             </Button>
-            <h1 className="text-2xl font-semibold">{carousel.title}</h1>
+            <div>
+              <h1 className="text-xl font-semibold tracking-tight">{carousel.title}</h1>
+              <p className="text-muted-foreground text-sm">
+                {getExportSize(carousel).replace("x", "×")}
+                <span className="mx-1.5 opacity-50">·</span>
+                {carousel.status}
+              </p>
+            </div>
             <CarouselMenuDropdown
               carouselId={carouselId}
               projectId={projectId}
               isFavorite={!!carousel.is_favorite}
             />
           </div>
-          <span className="text-muted-foreground text-sm">{carousel.status}</span>
-        </div>
+        </header>
 
+        {/* Export */}
         <EditorExportSection
           carouselId={carouselId}
           isPro={subscription.isPro}
@@ -168,29 +170,24 @@ export default async function CarouselEditorPage({
           }))}
         />
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">
-              Slide previews ({getExportSize(carousel).replace("x", "×")})
-            </CardTitle>
-            <CardDescription>
-              Click a slide to edit. Drag the grip to reorder. Pick a template per slide.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <SlideGrid
-              slides={slides}
-              templates={templates}
-              brandKit={brandKit}
-              projectId={projectId}
-              carouselId={carouselId}
-              slideBackgroundImageUrls={slideBackgroundImageUrls}
-              exportSize={getExportSize(carousel)}
-              isPro={subscription.isPro}
-            />
-          </CardContent>
-        </Card>
+        {/* Slides */}
+        <section>
+          <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
+            Slides · Click to edit, drag to reorder
+          </p>
+          <SlideGrid
+            slides={slides}
+            templates={templates}
+            brandKit={brandKit}
+            projectId={projectId}
+            carouselId={carouselId}
+            slideBackgroundImageUrls={slideBackgroundImageUrls}
+            exportSize={getExportSize(carousel)}
+            isPro={subscription.isPro}
+          />
+        </section>
 
+        {/* Caption */}
         <EditorCaptionSection
           carouselId={carouselId}
           captionVariants={captionVariants}

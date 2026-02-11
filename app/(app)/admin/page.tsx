@@ -12,6 +12,7 @@ import {
   DollarSignIcon,
 } from "lucide-react";
 import Link from "next/link";
+import { Button } from "@/components/ui/button";
 import { ActivityChartWithToggle, PlanDonutChart } from "@/components/admin/AdminCharts";
 
 const ADMIN_EMAILS = ["blaisemu007@gmail.com", "muyumba@andrews.edu"];
@@ -28,7 +29,7 @@ function StatCard({
   sub?: string;
 }) {
   return (
-    <div className="rounded-xl border border-border/60 bg-card p-4 sm:p-5 shadow-sm transition-colors hover:border-border">
+    <div className="rounded-xl border border-border/50 bg-muted/5 p-4 sm:p-5 transition-colors hover:border-border/80">
       <div className="flex items-center gap-2 text-muted-foreground">
         <Icon className="size-4 shrink-0" />
         <span className="text-xs font-medium uppercase tracking-wider truncate">{label}</span>
@@ -48,8 +49,10 @@ export default async function AdminPage() {
   const stats = await getAdminStats();
   if (!stats) {
     return (
-      <div className="container max-w-4xl py-12 px-4">
-        <p className="text-muted-foreground">Unable to load admin stats. Check SUPABASE_SERVICE_ROLE_KEY.</p>
+      <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">
+        <div className="mx-auto max-w-4xl">
+          <p className="text-muted-foreground">Unable to load admin stats. Check SUPABASE_SERVICE_ROLE_KEY.</p>
+        </div>
       </div>
     );
   }
@@ -59,26 +62,30 @@ export default async function AdminPage() {
   const slidesPerCarousel = stats.totalCarousels ? (stats.totalSlides / stats.totalCarousels).toFixed(1) : "0";
 
   return (
-    <div className="container max-w-6xl py-6 sm:py-8 px-4 sm:px-6">
-      {/* Header */}
-      <div className="mb-6 sm:mb-8 flex flex-col gap-3 sm:gap-4">
-        <Link
-          href="/projects"
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors w-fit"
-        >
-          <ArrowLeftIcon className="size-4" />
-          Back to app
-        </Link>
-        <div>
-          <h1 className="text-xl sm:text-2xl font-semibold tracking-tight">Admin Dashboard</h1>
-          <p className="text-muted-foreground text-xs sm:text-sm mt-0.5">
-            KarouselMaker · Pro $15.99/mo
-          </p>
-        </div>
-      </div>
+    <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">
+      <div className="mx-auto max-w-6xl space-y-10">
+        {/* Header */}
+        <header className="flex items-start gap-2">
+          <Button variant="ghost" size="icon-sm" className="-ml-1 shrink-0" asChild>
+            <Link href="/projects">
+              <ArrowLeftIcon className="size-4" />
+              <span className="sr-only">Back to app</span>
+            </Link>
+          </Button>
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight">Admin Dashboard</h1>
+            <p className="mt-1 text-muted-foreground text-sm">
+              KarouselMaker · Pro $15.99/mo
+            </p>
+          </div>
+        </header>
 
-      {/* KPI row - responsive grid */}
-      <div className="grid gap-3 sm:gap-4 grid-cols-2 lg:grid-cols-5">
+        {/* KPI row */}
+        <section>
+          <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
+            Overview
+          </p>
+          <div className="grid gap-3 sm:gap-4 grid-cols-2 lg:grid-cols-5">
         <StatCard
           icon={UsersIcon}
           label="Users"
@@ -89,11 +96,16 @@ export default async function AdminPage() {
         <StatCard icon={LayoutIcon} label="Carousels" value={stats.totalCarousels} />
         <StatCard icon={LayersIcon} label="Slides" value={stats.totalSlides} sub={`~${slidesPerCarousel}/carousel`} />
         <StatCard icon={DownloadIcon} label="Exports" value={stats.totalExports} />
-      </div>
+          </div>
+        </section>
 
-      {/* Revenue + Plan split - improved layout */}
-      <div className="mt-4 sm:mt-6 grid gap-4 sm:gap-6 grid-cols-1 lg:grid-cols-3">
-        <div className="rounded-xl border border-border/60 bg-card p-4 sm:p-5 shadow-sm lg:col-span-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        {/* Revenue + Plan split */}
+        <section>
+          <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
+            Revenue & plans
+          </p>
+          <div className="grid gap-4 sm:gap-6 grid-cols-1 lg:grid-cols-3">
+        <div className="rounded-xl border border-border/50 bg-muted/5 p-4 sm:p-5 lg:col-span-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="flex items-start gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
               <DollarSignIcon className="size-5" />
@@ -113,7 +125,7 @@ export default async function AdminPage() {
             </div>
           )}
         </div>
-        <div className="rounded-xl border border-border/60 bg-card p-4 sm:p-5 shadow-sm">
+        <div className="rounded-xl border border-border/50 bg-muted/5 p-4 sm:p-5">
           <div className="flex items-center gap-2 text-muted-foreground mb-3">
             <TrendingUpIcon className="size-4" />
             <span className="text-xs font-medium uppercase tracking-wider">Plan split</span>
@@ -124,10 +136,15 @@ export default async function AdminPage() {
             <span>Free {100 - Number(proPct)}%</span>
           </div>
         </div>
-      </div>
+          </div>
+        </section>
 
-      {/* Activity chart - with legend */}
-      <div className="mt-4 sm:mt-6 rounded-xl border border-border/60 bg-card p-4 sm:p-5 shadow-sm">
+        {/* Activity chart */}
+        <section>
+          <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
+            Activity
+          </p>
+          <div className="rounded-xl border border-border/50 bg-muted/5 p-4 sm:p-5">
         <ActivityChartWithToggle
           carouselsLast7Days={stats.carouselsLast7Days}
           exportsLast7Days={stats.exportsLast7Days}
@@ -136,11 +153,15 @@ export default async function AdminPage() {
           exportsLast30Days={stats.exportsLast30Days}
           newUsersLast30Days={stats.newUsersLast30Days}
         />
-      </div>
+          </div>
+        </section>
 
-      {/* App details - compact */}
-      <div className="mt-4 sm:mt-6 rounded-xl border border-border/60 bg-card p-4 sm:p-5 shadow-sm">
-        <h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-3">App details</h2>
+        {/* App details */}
+        <section>
+          <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
+            App details
+          </p>
+          <div className="rounded-xl border border-border/50 bg-muted/5 p-4 sm:p-5">
         <dl className="grid gap-3 sm:gap-4 text-sm grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
           <div>
             <dt className="text-muted-foreground text-xs">Stack</dt>
@@ -159,6 +180,8 @@ export default async function AdminPage() {
             <dd className="font-medium mt-0.5">50 carousels, 100 exports, 100 images</dd>
           </div>
         </dl>
+          </div>
+        </section>
       </div>
     </div>
   );

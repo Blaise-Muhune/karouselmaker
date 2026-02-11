@@ -38,20 +38,28 @@ export default async function ProjectsPage({
         </div>
 
         {projects.length === 0 ? (
-          <Card>
+          <Card className="border-dashed">
             <CardHeader>
               <CardTitle>No projects yet</CardTitle>
               <CardDescription>
-                Create a project to define your niche, tone, and brand. Then generate carousels from topics or URLs.
+                One project = one niche. Set your brand, tone, and style—then spin up carousels in seconds.
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               <Button asChild>
                 <Link href="/projects/new">
                   <PlusCircleIcon className="mr-2 size-4" />
                   Create project
                 </Link>
               </Button>
+              <div className="rounded-lg border border-border/60 bg-muted/30 p-4">
+                <p className="text-muted-foreground text-xs font-medium mb-2">Quick start ideas</p>
+                <ul className="text-muted-foreground text-xs space-y-1">
+                  <li>• Fitness tips · Tone: Casual</li>
+                  <li>• Tech reviews · Tone: Professional</li>
+                  <li>• Recipes · Tone: Friendly</li>
+                </ul>
+              </div>
             </CardContent>
           </Card>
         ) : (
@@ -60,7 +68,7 @@ export default async function ProjectsPage({
               <li key={p.id}>
                 <Link
                   href={`/p/${p.id}`}
-                  className="bg-card hover:bg-accent/50 border-border flex items-center justify-between rounded-lg border p-4 transition-colors"
+                  className="bg-card hover:bg-accent/30 border-border flex items-center justify-between rounded-xl border p-4 transition-all duration-200 hover:shadow-md hover:shadow-primary/5 hover:border-primary/20 hover:-translate-y-0.5"
                 >
                   <div>
                     <p className="font-medium">{p.name}</p>

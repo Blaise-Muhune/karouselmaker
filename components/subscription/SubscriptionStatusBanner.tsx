@@ -48,6 +48,19 @@ export function SubscriptionStatusBanner() {
     return () => clearTimeout(timer);
   }, [status, clearParam]);
 
+  // Refresh server data when subscription succeeds/updates so Pro features unlock immediately
+  useEffect(() => {
+    if (status === "success" || status === "updated") {
+      router.refresh(); // immediate refresh in case webhook already completed
+      const t1 = setTimeout(() => router.refresh(), 800); // webhook typically completes within 1s
+      const t2 = setTimeout(() => router.refresh(), 2500); // fallback for slow webhooks
+      return () => {
+        clearTimeout(t1);
+        clearTimeout(t2);
+      };
+    }
+  }, [status, router]);
+
   const handleUpgrade = async () => {
     setLoading(true);
     try {

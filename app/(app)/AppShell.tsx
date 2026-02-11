@@ -21,6 +21,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { cn } from "@/lib/utils";
 import type { Project } from "@/lib/server/db/types";
 import { ChevronDownIcon, CreditCardIcon, Loader2Icon, LogOutIcon, MenuIcon, PlusCircleIcon, ShieldIcon, UserIcon } from "lucide-react";
 
@@ -55,36 +56,96 @@ function getCurrentProjectId(pathname: string): string | undefined {
   return match?.[1];
 }
 
+function NavLink({
+  href,
+  children,
+  isActive,
+  className,
+  onClick,
+}: {
+  href: string;
+  children: React.ReactNode;
+  isActive: boolean;
+  className?: string;
+  onClick?: () => void;
+}) {
+  return (
+    <Link
+      href={href}
+      onClick={onClick}
+      className={cn(
+        "rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors",
+        isActive
+          ? "text-primary"
+          : "text-muted-foreground hover:text-foreground",
+        className
+      )}
+    >
+      {children}
+    </Link>
+  );
+}
+
 function NavContent({
   currentProject,
   projects,
   setSheetOpen,
   isAdmin,
+  pathname,
 }: {
   currentProject?: Project;
   projects: Project[];
   setSheetOpen?: (open: boolean) => void;
   isAdmin?: boolean;
+  pathname: string;
 }) {
   return (
     <>
+      <NavLink
+        href="/projects"
+        isActive={pathname === "/projects" || pathname.startsWith("/projects/")}
+        onClick={() => setSheetOpen?.(false)}
+        className="w-full justify-start md:w-auto md:inline-flex"
+      >
+        Projects
+      </NavLink>
       {isAdmin && (
-        <Button variant="ghost" size="sm" className="w-full justify-start md:w-auto" asChild>
-          <Link href="/admin" onClick={() => setSheetOpen?.(false)}>
-            <ShieldIcon className="mr-2 size-4" />
-            Admin
-          </Link>
-        </Button>
+        <NavLink
+          href="/admin"
+          isActive={pathname.startsWith("/admin")}
+          onClick={() => setSheetOpen?.(false)}
+          className="w-full justify-start md:w-auto md:inline-flex"
+        >
+          <ShieldIcon className="mr-2 size-4" />
+          Admin
+        </NavLink>
       )}
-      <Button variant="ghost" size="sm" className="w-full justify-start md:w-auto" asChild>
-        <Link href="/templates" onClick={() => setSheetOpen?.(false)}>Templates</Link>
-      </Button>
-      <Button variant="ghost" size="sm" className="w-full justify-start md:w-auto" asChild>
-        <Link href="/assets" onClick={() => setSheetOpen?.(false)}>Assets</Link>
-      </Button>
-      <DropdownMenu>
+      <NavLink
+        href="/templates"
+        isActive={pathname.startsWith("/templates")}
+        onClick={() => setSheetOpen?.(false)}
+        className="w-full justify-start md:w-auto md:inline-flex"
+      >
+        Templates
+      </NavLink>
+      <NavLink
+        href="/assets"
+        isActive={pathname.startsWith("/assets")}
+        onClick={() => setSheetOpen?.(false)}
+        className="w-full justify-start md:w-auto md:inline-flex"
+      >
+        Assets
+      </NavLink>
+          <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" className="w-full min-w-0 justify-between md:w-auto md:min-w-[180px]">
+          <Button
+            variant="outline"
+            size="sm"
+            className={cn(
+              "w-full min-w-0 justify-between md:w-auto md:min-w-[160px] font-normal",
+              currentProject && "border-primary/30 text-primary"
+            )}
+          >
             <span className="truncate">
               {currentProject?.name ?? "Select project"}
             </span>
@@ -99,7 +160,11 @@ function NavContent({
           ) : (
             <>
               {projects.map((p) => (
-                <DropdownMenuItem key={p.id} asChild>
+                <DropdownMenuItem
+                  key={p.id}
+                  asChild
+                  className={p.id === currentProject?.id ? "bg-primary/10 text-primary" : undefined}
+                >
                   <Link href={`/p/${p.id}`} onClick={() => setSheetOpen?.(false)}>{p.name}</Link>
                 </DropdownMenuItem>
               ))}
@@ -155,8 +220,8 @@ export function AppShell({
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="border-b bg-background sticky top-0 z-10">
-        <div className="flex h-14 items-center gap-2 px-3 sm:px-4 md:px-6 md:gap-4">
+      <header className="border-b border-border/60 bg-background/95 sticky top-0 z-10 backdrop-blur">
+        <div className="flex h-14 items-center gap-2 px-4 sm:px-5 md:px-6 md:gap-4">
           <div className="flex min-w-0 shrink-0 items-center gap-2">
             {/* Mobile: hamburger menu */}
             <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
@@ -168,23 +233,25 @@ export function AppShell({
               <SheetContent side="left" className="w-[280px] sm:w-[300px]">
                 <SheetHeader>
                   <SheetTitle>
-                    <Link href="/projects" className="font-semibold" onClick={() => setSheetOpen(false)}>
+                    <Link href="/projects" className="flex items-center gap-2 font-semibold tracking-tight" onClick={() => setSheetOpen(false)}>
+                      <img src="/logo.svg" alt="" className="h-5 w-5" />
                       Karouselmaker
                     </Link>
                   </SheetTitle>
                 </SheetHeader>
-                <nav className="mt-6 flex flex-col gap-2">
-                  <NavContent currentProject={currentProject} projects={projects} setSheetOpen={setSheetOpen} isAdmin={isAdmin} />
+                <nav className="mt-6 flex flex-col gap-1">
+                  <NavContent currentProject={currentProject} projects={projects} setSheetOpen={setSheetOpen} isAdmin={isAdmin} pathname={pathname} />
                 </nav>
               </SheetContent>
             </Sheet>
-            <Link href="/projects" className="truncate font-semibold">
-              Karouselmaker
+            <Link href="/projects" className="flex items-center gap-2 truncate font-semibold tracking-tight transition-opacity hover:opacity-80">
+              <img src="/logo.svg" alt="" className="h-5 w-5 shrink-0" />
+              <span>Karouselmaker</span>
             </Link>
           </div>
           {/* Desktop nav */}
-          <nav className="hidden flex-1 items-center justify-center gap-3 md:flex">
-            <NavContent currentProject={currentProject} projects={projects} isAdmin={isAdmin} />
+          <nav className="hidden flex-1 items-center justify-center gap-1 md:flex">
+            <NavContent currentProject={currentProject} projects={projects} isAdmin={isAdmin} pathname={pathname} />
           </nav>
           <div className="flex shrink-0 items-center gap-1">
             <ThemeToggle />
@@ -217,7 +284,7 @@ export function AppShell({
         </div>
       </header>
       <main className="flex-1">{children}</main>
-      <footer className="border-t py-3">
+      <footer className="border-t border-border/60 py-3">
         <div className="flex flex-col items-center gap-2 px-4">
           <a
             href="https://karouselmaker.com"

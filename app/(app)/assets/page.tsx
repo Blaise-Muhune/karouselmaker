@@ -41,12 +41,14 @@ export default async function AssetsPage({
   );
 
   return (
-    <div className="p-4 md:p-6">
-      <div className="mx-auto max-w-4xl space-y-6">
-        <h1 className="text-2xl font-semibold">Asset library</h1>
-        <p className="text-muted-foreground text-sm">
-          Upload images to use as slide backgrounds. Choose an image to use as background when editing a slide.
-        </p>
+    <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">
+      <div className="mx-auto max-w-4xl space-y-10">
+        <header>
+          <h1 className="text-xl font-semibold tracking-tight">Asset library</h1>
+          <p className="mt-1 text-muted-foreground text-sm">
+            Upload images to use as slide backgrounds. Choose an image when editing a slide.
+          </p>
+        </header>
         <AssetLibrary
           assets={assets}
           imageUrls={urls}

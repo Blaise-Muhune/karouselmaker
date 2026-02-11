@@ -80,7 +80,7 @@ export function AssetPickerModal({
                       onOpenChange(false);
                     }
                   }}
-                  className="border-border hover:border-primary/50 flex aspect-square w-full overflow-hidden rounded-lg border bg-muted/30 transition-colors focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  className="border-border/50 hover:border-primary/30 flex aspect-square w-full overflow-hidden rounded-lg border bg-muted/10 transition-colors hover:bg-muted/20 focus:outline-none focus:ring-2 focus:ring-primary/50"
                 >
                   {urls[asset.id] ? (
                     <img

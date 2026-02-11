@@ -22,8 +22,8 @@ export default async function NewTemplatePage() {
 
   if (!subscription.isPro) {
     return (
-      <div className="p-4 md:p-6">
-        <div className="mx-auto max-w-2xl space-y-4">
+      <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">
+        <div className="mx-auto max-w-xl space-y-6">
           <UpgradeBanner
             message="Upgrade to Pro to create and customize your own templates."
             variant="banner"
@@ -40,8 +40,8 @@ export default async function NewTemplatePage() {
 
   if (atLimit) {
     return (
-      <div className="p-4 md:p-6">
-        <div className="mx-auto max-w-2xl space-y-4">
+      <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">
+        <div className="mx-auto max-w-xl space-y-6">
           <p className="text-muted-foreground">
             You&apos;ve reached your template limit ({limit}). Delete a template to create a new one.
           </p>
@@ -61,7 +61,7 @@ export default async function NewTemplatePage() {
     .filter((x): x is { template: (typeof systemTemplates)[0]; config: ReturnType<typeof templateConfigSchema.parse> } => x != null);
 
   return (
-    <div className="p-4 md:p-6">
+    <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">
       <div className="mx-auto max-w-4xl">
         <TemplateBuilderForm mode="create" baseOptions={baseOptions} />
       </div>

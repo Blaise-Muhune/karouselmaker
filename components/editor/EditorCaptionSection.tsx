@@ -2,13 +2,6 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { CaptionEditModal } from "@/components/editor/CaptionEditModal";
 
 type UnsplashAttribution = {
@@ -37,34 +30,31 @@ export function EditorCaptionSection({
 
   return (
     <>
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0">
-          <div>
-            <CardTitle className="text-base">Caption & hashtags</CardTitle>
-            <CardDescription>
-              Short, medium, and spicy caption variants. Edit to customize.
-            </CardDescription>
-          </div>
-          <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
-            Edit caption
+      <section>
+        <div className="flex items-center justify-between gap-4">
+          <p className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
+            Caption & hashtags
+          </p>
+          <Button variant="ghost" size="sm" className="text-muted-foreground -mr-1" onClick={() => setEditOpen(true)}>
+            Edit
           </Button>
-        </CardHeader>
-        <CardContent className="space-y-3">
+        </div>
+        <div className="mt-3 space-y-2">
           {captionVariants.short && (
             <div>
-              <p className="text-muted-foreground text-xs font-medium">Short</p>
+              <p className="text-muted-foreground text-xs">Short</p>
               <p className="text-sm">{captionVariants.short}</p>
             </div>
           )}
           {captionVariants.medium && (
             <div>
-              <p className="text-muted-foreground text-xs font-medium">Medium</p>
+              <p className="text-muted-foreground text-xs">Medium</p>
               <p className="text-sm">{captionVariants.medium}</p>
             </div>
           )}
           {captionVariants.spicy && (
             <div>
-              <p className="text-muted-foreground text-xs font-medium">Spicy</p>
+              <p className="text-muted-foreground text-xs">Spicy</p>
               <p className="text-sm">{captionVariants.spicy}</p>
             </div>
           )}
@@ -72,7 +62,7 @@ export function EditorCaptionSection({
             <p className="text-muted-foreground text-sm">No caption variants yet.</p>
           )}
           <div>
-            <p className="text-muted-foreground text-xs font-medium">Hashtags</p>
+            <p className="text-muted-foreground text-xs">Hashtags</p>
             {hashtags.length > 0 ? (
               <p className="text-sm">
                 {hashtags.map((h) => `#${h.replace(/^#/, "")}`).join(" ")}
@@ -83,8 +73,8 @@ export function EditorCaptionSection({
           </div>
           {unsplashAttributions.length > 0 && (
             <div>
-              <p className="text-muted-foreground text-xs font-medium">Image credits (Unsplash)</p>
-              <ul className="text-sm space-y-1 mt-1">
+              <p className="text-muted-foreground text-xs">Image credits</p>
+              <ul className="mt-1 space-y-1 text-sm">
                 {unsplashAttributions.map((a) => (
                   <li key={a.photographerUsername}>
                     Photo by{" "}
@@ -110,8 +100,8 @@ export function EditorCaptionSection({
               </ul>
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
       <CaptionEditModal
         key={editOpen ? "open" : "closed"}

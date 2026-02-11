@@ -38,6 +38,24 @@ export async function POST(request: Request) {
         });
         break;
       }
+      case "customer.subscription.created": {
+        const sub = event.data.object as Stripe.Subscription;
+        const userId = sub.metadata?.user_id;
+        if (!userId) break;
+        const status = sub.status;
+        const isActive =
+          status === "active" ||
+          status === "trialing" ||
+          status === "past_due" ||
+          (status === "canceled" && sub.cancel_at_period_end);
+        if (isActive) {
+          await upsertProfileAsAdmin(userId, {
+            plan: "pro",
+            stripe_subscription_id: sub.id,
+          });
+        }
+        break;
+      }
       case "customer.subscription.updated":
       case "customer.subscription.deleted": {
         const sub = event.data.object as Stripe.Subscription;

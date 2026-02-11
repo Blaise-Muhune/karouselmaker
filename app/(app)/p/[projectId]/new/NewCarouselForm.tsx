@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { generateCarousel } from "@/app/actions/carousels/generateCarousel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { BackgroundImagesPickerModal } from "@/components/carousels/BackgroundImagesPickerModal";
 import { createCheckoutSession } from "@/app/actions/subscription/createCheckoutSession";
-import { ArrowLeftIcon, GlobeIcon, ImageIcon, Loader2Icon, SparklesIcon } from "lucide-react";
+import { GlobeIcon, ImageIcon, Loader2Icon, SparklesIcon } from "lucide-react";
 
 const INPUT_TYPES = [
   { value: "topic", label: "Topic" },
@@ -149,19 +148,10 @@ export function NewCarouselForm({
         </div>
       )}
 
-      <div className="mb-4">
-        <Button variant="ghost" size="icon-sm" asChild>
-          <Link href={`/p/${projectId}`}>
-            <ArrowLeftIcon className="size-4" />
-            <span className="sr-only">Back</span>
-          </Link>
-        </Button>
-      </div>
-
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form onSubmit={handleSubmit} className="space-y-8">
         {error && (
           <div className="space-y-2">
-            <p className="bg-destructive/10 text-destructive rounded-md px-3 py-2 text-sm">
+            <p className="text-destructive rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm">
               {error}
             </p>
             {!isPro && (
@@ -173,8 +163,11 @@ export function NewCarouselForm({
           </div>
         )}
 
-        <div className="space-y-2">
-          <Label>Input type</Label>
+        <section>
+          <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
+            Input
+          </p>
+          <div className="space-y-4">
           <div className="flex rounded-lg border border-input p-0.5 bg-muted/30">
             {INPUT_TYPES.map((o) => (
               <button
@@ -183,7 +176,7 @@ export function NewCarouselForm({
                 onClick={() => setInputType(o.value)}
                 className={`flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
                   inputType === o.value
-                    ? "bg-background text-foreground shadow-sm"
+                    ? "bg-background text-primary shadow-sm ring-1 ring-primary/20"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >
@@ -191,10 +184,9 @@ export function NewCarouselForm({
               </button>
             ))}
           </div>
-        </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="input_value">
+          <div className="space-y-2">
+          <Label htmlFor="input_value" className="text-sm">
             {inputType === "text"
               ? "Paste your text"
               : inputType === "url"
@@ -224,10 +216,17 @@ export function NewCarouselForm({
               required
             />
           )}
-        </div>
+          </div>
+          </div>
+        </section>
 
-        <div className="space-y-2">
-          <Label htmlFor="number_of_slides">Number of slides (optional)</Label>
+        <section>
+          <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
+            Options
+          </p>
+          <div className="space-y-4">
+          <div className="space-y-2">
+          <Label htmlFor="number_of_slides" className="text-sm">Number of slides (optional)</Label>
           <Input
             id="number_of_slides"
             type="number"
@@ -238,11 +237,11 @@ export function NewCarouselForm({
             onChange={(e) => setNumberOfSlides(e.target.value)}
             className="w-full"
           />
-          <p className="text-muted-foreground text-xs">Leave empty for AI to choose (e.g. top 20 → 6 slides with ~4 items each).</p>
-        </div>
+          <p className="text-muted-foreground text-xs">Leave empty for AI to choose.</p>
+          </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="notes">Anything we should know before generating? (optional)</Label>
+          <div className="space-y-2">
+          <Label htmlFor="notes" className="text-sm">Notes (optional)</Label>
           <Textarea
             id="notes"
             placeholder="e.g. Use 2 images per slide, use images.nasa.gov, focus on beginners… (overrides other rules)"
@@ -250,15 +249,13 @@ export function NewCarouselForm({
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
           />
-        </div>
-
-        <div className="rounded-xl border border-border/80 bg-muted/10 p-4 space-y-4">
-          <div>
-            <Label className="text-sm font-medium">Background images (optional)</Label>
-            <p className="text-muted-foreground mt-0.5 text-xs">
-              Pick from your library (round-robin) or let AI suggest images from Unsplash. Leave both unchecked to use your project&apos;s background colors.
-            </p>
           </div>
+
+          <div>
+            <p className="text-muted-foreground mb-2 text-xs font-medium">Background images</p>
+            <p className="text-muted-foreground mb-3 text-xs">
+              Pick from library or let AI suggest. Leave unchecked for project colors.
+            </p>
           <label className={`flex items-center gap-3 rounded-lg py-2 text-sm ${isPro ? "cursor-pointer hover:bg-muted/50" : "opacity-70"}`}>
             <input
               type="checkbox"
@@ -324,7 +321,9 @@ export function NewCarouselForm({
               </Button>
             )}
           </div>
-        </div>
+          </div>
+          </div>
+        </section>
         <BackgroundImagesPickerModal
           open={backgroundPickerOpen}
           onOpenChange={setBackgroundPickerOpen}
@@ -333,7 +332,7 @@ export function NewCarouselForm({
           projectId={projectId}
         />
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3 pt-2">
           <Button type="submit" disabled={isPending || carouselCount >= carouselLimit}>
             {isPending ? (
               <>
