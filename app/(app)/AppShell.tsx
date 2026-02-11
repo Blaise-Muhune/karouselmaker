@@ -220,8 +220,8 @@ export function AppShell({
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="border-b border-border/60 bg-background/95 sticky top-0 z-10 backdrop-blur">
-        <div className="flex h-14 items-center gap-2 px-4 sm:px-5 md:px-6 md:gap-4">
+      <header className="border-b border-border/60 bg-background/95 sticky top-0 z-10 backdrop-blur safe-area-t">
+        <div className="flex h-14 items-center gap-2 px-4 sm:px-5 md:px-6 md:gap-4 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:pl-[max(1.25rem,env(safe-area-inset-left))] sm:pr-[max(1.25rem,env(safe-area-inset-right))] md:pl-[max(1.5rem,env(safe-area-inset-left))] md:pr-[max(1.5rem,env(safe-area-inset-right))]">
           <div className="flex min-w-0 shrink-0 items-center gap-2">
             {/* Mobile: hamburger menu */}
             <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
@@ -283,9 +283,9 @@ export function AppShell({
           </div>
         </div>
       </header>
-      <main className="flex-1">{children}</main>
-      <footer className="border-t border-border/60 py-3">
-        <div className="flex flex-col items-center gap-2 px-4">
+      <main className="flex-1 pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">{children}</main>
+      <footer className="border-t border-border/60 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        <div className="flex flex-col items-center gap-2 px-4 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]">
           <a
             href="https://karouselmaker.com"
             target="_blank"

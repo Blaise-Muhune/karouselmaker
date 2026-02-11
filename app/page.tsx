@@ -19,8 +19,8 @@ export default async function Home() {
 
   return (
     <main className="min-h-screen flex flex-col">
-      <header className="border-b border-border/50 bg-background/95 backdrop-blur sticky top-0 z-10">
-        <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4 sm:px-6">
+      <header className="border-b border-border/50 bg-background/95 backdrop-blur sticky top-0 z-10 pt-[env(safe-area-inset-top)]">
+        <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4 sm:px-6 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:pl-[max(1.5rem,env(safe-area-inset-left))] sm:pr-[max(1.5rem,env(safe-area-inset-right))]">
           <Link href="/" className="font-semibold text-lg flex items-center gap-2 hover:opacity-80 transition-opacity">
             <img src="/logo.svg" alt="" className="h-6 w-6" />
             Karouselmaker
@@ -117,7 +117,7 @@ export default async function Home() {
                 { title: "Follow @you", type: "cta" },
               ].map((slide) => (
                 <div
-                  key={slide.type}
+                  key={slide.title}
                   className="shrink-0 w-[140px] sm:w-[160px] md:w-[180px] aspect-square rounded-lg sm:rounded-xl border border-border/50 bg-muted/5 overflow-hidden snap-start"
                 >
                   <div className="h-full flex flex-col p-3 sm:p-4 justify-between bg-linear-to-b from-muted/40 to-muted">

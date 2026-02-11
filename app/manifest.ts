@@ -3,12 +3,14 @@ import type { MetadataRoute } from "next";
 export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "Karouselmaker",
-    short_name: "Karouselmaker",
+    short_name: "Karousel",
     description: "Generate swipe carousel posts from topics or URLs.",
     start_url: "/",
     display: "standalone",
+    orientation: "portrait-primary",
     background_color: "#ffffff",
     theme_color: "#0a0a0a",
+    categories: ["productivity", "business"],
     icons: [
       {
         src: "/logo.png",
