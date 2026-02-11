@@ -181,6 +181,38 @@
   }
 }
 
+/* Thin scrollbar for horizontal carousels (desktop) - matches brand primary teal */
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: oklch(0.55 0.17 163) oklch(0.922 0 0);
+}
+.scrollbar-thin::-webkit-scrollbar {
+  height: 6px;
+}
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: oklch(0.922 0 0);
+  border-radius: var(--radius);
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: oklch(0.55 0.17 163);
+  border-radius: var(--radius);
+}
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.5 0.17 163);
+}
+.dark .scrollbar-thin {
+  scrollbar-color: oklch(0.72 0.17 163) oklch(0.22 0.03 163);
+}
+.dark .scrollbar-thin::-webkit-scrollbar-track {
+  background: oklch(0.22 0.03 163);
+}
+.dark .scrollbar-thin::-webkit-scrollbar-thumb {
+  background: oklch(0.72 0.17 163);
+}
+.dark .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.78 0.17 163);
+}
+
 /* Min touch target 44px for mobile (Apple HIG) */
 @media (hover: none) and (pointer: coarse) {
   button[data-slot="button"][data-size="icon-sm"],

@@ -3,7 +3,16 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { DownloadIcon, Loader2Icon } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { CarouselVideoPlayer } from "@/components/carousels/CarouselVideoPlayer";
+import { createVideoFromImages } from "@/lib/video/createVideoFromImages";
+import { DownloadIcon, Loader2Icon, PlayIcon, VideoIcon } from "lucide-react";
 import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
 import { PLAN_LIMITS } from "@/lib/constants";
 
@@ -40,12 +49,21 @@ export function EditorExportSection({
   const router = useRouter();
   const [exporting, setExporting] = useState(false);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [slideUrls, setSlideUrls] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [videoPreviewOpen, setVideoPreviewOpen] = useState(false);
+  const [videoUrlsLoading, setVideoUrlsLoading] = useState(false);
+  const [videoDownloading, setVideoDownloading] = useState(false);
+  const [videoDownloadProgress, setVideoDownloadProgress] = useState(0);
+  const [videoDownloadError, setVideoDownloadError] = useState<string | null>(null);
+
+  const latestReadyExport = recentExports.find((ex) => ex.status === "ready");
 
   const handleExport = async () => {
     setExporting(true);
     setError(null);
     setDownloadUrl(null);
+    setSlideUrls([]);
     try {
       const res = await fetch(`/api/export/${carouselId}`, { method: "POST" });
       const data = await res.json().catch(() => ({}));
@@ -55,6 +73,7 @@ export function EditorExportSection({
       }
       if (data.downloadUrl) {
         setDownloadUrl(data.downloadUrl);
+        if (data.slideUrls?.length) setSlideUrls(data.slideUrls);
         router.refresh();
       }
     } catch {
@@ -63,6 +82,48 @@ export function EditorExportSection({
       setExporting(false);
     }
   };
+
+  const loadVideoUrls = async (): Promise<string[]> => {
+    if (slideUrls.length > 0) return slideUrls;
+    if (!latestReadyExport) return [];
+    setVideoUrlsLoading(true);
+    try {
+      const res = await fetch(`/api/export/${carouselId}/${latestReadyExport.id}/slide-urls`);
+      const data = await res.json().catch(() => ({}));
+      if (data.slideUrls?.length) {
+        setSlideUrls(data.slideUrls);
+        return data.slideUrls as string[];
+      }
+      return [];
+    } finally {
+      setVideoUrlsLoading(false);
+    }
+  };
+
+  const handleDownloadVideo = async () => {
+    const urls = await loadVideoUrls();
+    if (urls.length === 0) return;
+    setVideoDownloading(true);
+    setVideoDownloadError(null);
+    setVideoDownloadProgress(0);
+    try {
+      const width = exportSize === "1080x1080" ? 1080 : 1080;
+      const height = exportSize === "1080x1080" ? 1080 : exportSize === "1080x1350" ? 1350 : 1920;
+      const blob = await createVideoFromImages(urls, width, height, setVideoDownloadProgress);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "carousel.mp4";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setVideoDownloadError(e instanceof Error ? e.message : "Video download failed");
+    } finally {
+      setVideoDownloading(false);
+      setVideoDownloadProgress(0);
+    }
+  };
+
 
   const formatDate = (iso: string) => {
     try {
@@ -101,6 +162,65 @@ export function EditorExportSection({
           )}
           {exporting ? "Exporting…" : downloadUrl ? "Export again" : "Export"}
         </Button>
+        {latestReadyExport && (
+          <Dialog open={videoPreviewOpen} onOpenChange={(open) => {
+            setVideoPreviewOpen(open);
+            if (open && slideUrls.length === 0) loadVideoUrls();
+          }}>
+            <DialogTrigger asChild>
+              <Button size="sm" variant="outline">
+                <PlayIcon className="mr-2 size-4" />
+                Video preview
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>Carousel video preview</DialogTitle>
+              </DialogHeader>
+              <div className="flex justify-center py-4">
+                {videoUrlsLoading ? (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Loader2Icon className="size-5 animate-spin" />
+                    Loading…
+                  </div>
+                ) : (
+                  <CarouselVideoPlayer
+                    slideUrls={slideUrls}
+                    width={exportSize === "1080x1080" ? 1080 : exportSize === "1080x1350" ? 1080 : 1080}
+                    height={exportSize === "1080x1080" ? 1080 : exportSize === "1080x1350" ? 1350 : 1920}
+                  />
+                )}
+              </div>
+              <div className="flex flex-col items-center gap-2 mt-4">
+                <Button
+                  size="sm"
+                  onClick={handleDownloadVideo}
+                  disabled={slideUrls.length === 0 || videoDownloading || videoUrlsLoading}
+                >
+                  {videoDownloading ? (
+                    <>
+                      <Loader2Icon className="mr-2 size-4 animate-spin" />
+                      {videoDownloadProgress > 0
+                        ? `Encoding… ${Math.round(videoDownloadProgress * 100)}%`
+                        : "Loading FFmpeg…"}
+                    </>
+                  ) : (
+                    <>
+                      <VideoIcon className="mr-2 size-4" />
+                      Download MP4
+                    </>
+                  )}
+                </Button>
+                {videoDownloadError && (
+                  <p className="text-destructive text-xs">{videoDownloadError}</p>
+                )}
+                <p className="text-muted-foreground text-xs text-center">
+                  Made with Remotion · Encodes in browser (may take a minute)
+                </p>
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
         {canExport && (
           <span className="text-muted-foreground text-xs">
             {exportsUsedThisMonth}/{limit} this month

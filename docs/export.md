@@ -43,6 +43,16 @@ On any failure, export row is set to `status: failed` and a clean error message 
 - **Background images:** Slide background image URLs are not yet resolved in export (render model has `backgroundImageUrl` but it’s not set from slide assets). Future: resolve asset URLs and pass into `renderSlideHtml`.
 - **Fonts:** Export HTML uses system fonts (-apple-system, Segoe UI, Roboto, Arial, sans-serif) so screenshots don’t depend on external font loading.
 
+## Video preview (Remotion)
+
+Carousel slides can be previewed as a video using [Remotion](https://www.remotion.dev/). After exporting, use **Video preview** in the editor to play slides in sequence with fade transitions. The export API returns `slideUrls` (signed URLs for each slide image) for the Remotion Player.
+
+To render an MP4 locally:
+```bash
+npx remotion render remotion/index.ts CarouselVideo out.mp4 --props='{"slideUrls":["https://...","https://..."], "width":1080, "height":1080}'
+```
+Requires FFmpeg. Server-side rendering on Vercel is not supported; use [Remotion Lambda](https://www.remotion.dev/docs/lambda) for serverless video rendering.
+
 ## Future improvements
 
 - Background images: upload slide images to storage, pass signed or public URLs into render model for export.

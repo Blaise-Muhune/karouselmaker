@@ -327,11 +327,15 @@ export async function POST(
     await updateExport(userId, exportId, { status: "ready", storage_path: paths.zipPath });
 
     const downloadUrl = await getSignedDownloadUrl(BUCKET, paths.zipPath, 600);
+    const slideUrls = await Promise.all(
+      slides.map((_, i) => getSignedImageUrl(BUCKET, paths.slidePath(i), 600))
+    );
 
     return NextResponse.json({
       exportId,
       status: "ready",
       downloadUrl,
+      slideUrls,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Export failed";

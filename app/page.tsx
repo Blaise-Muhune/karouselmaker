@@ -62,7 +62,7 @@ export default async function Home() {
         </div>
 
         {/* Animated carousel preview - mock Instagram output */}
-        <div className="scroll-reveal [content-visibility:auto] mx-auto mt-12 sm:mt-16 max-w-2xl w-full px-4">
+        <div className="scroll-reveal [content-visibility:auto] mx-auto mt-12 sm:mt-16 w-full max-w-2xl px-4 flex flex-col items-center min-w-0">
           <p className="text-center text-muted-foreground text-sm mb-4 animate-in fade-in duration-500">Your next post, in seconds →</p>
           <HeroCarouselPreview />
         </div>
