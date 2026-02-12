@@ -368,7 +368,7 @@ export async function generateCarousel(formData: FormData): Promise<
               gap: 8,
               dividerStyle: "wave",
               dividerColor: "#ffffff",
-              dividerWidth: 8,
+              dividerWidth: 48,
             },
           },
         });

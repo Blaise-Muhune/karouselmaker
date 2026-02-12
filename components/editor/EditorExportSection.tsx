@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useIsStandalonePWA } from "@/lib/hooks/useIsStandalonePWA";
@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { CarouselVideoPlayer } from "@/components/carousels/CarouselVideoPlayer";
 import { createVideoFromImages, preloadFFmpeg } from "@/lib/video/createVideoFromImages";
-import { DownloadIcon, Loader2Icon, PlayIcon, VideoIcon } from "lucide-react";
+import { DownloadIcon, Loader2Icon, PlayIcon, ShareIcon, VideoIcon } from "lucide-react";
 import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
 import { PLAN_LIMITS } from "@/lib/constants";
 
@@ -58,7 +58,12 @@ export function EditorExportSection({
   const [videoDownloadProgress, setVideoDownloadProgress] = useState(0);
   const [videoDownloadError, setVideoDownloadError] = useState<string | null>(null);
   const [zipDownloading, setZipDownloading] = useState(false);
+  const [canShare, setCanShare] = useState(false);
   const isStandalonePWA = useIsStandalonePWA();
+
+  useEffect(() => {
+    setCanShare(typeof navigator !== "undefined" && !!navigator.share);
+  }, []);
 
   const latestReadyExport = recentExports.find((ex) => ex.status === "ready");
 
@@ -127,6 +132,22 @@ export function EditorExportSection({
     }
   };
 
+  /** In PWA, share the download link so user can open in Safari/Chrome and download there. */
+  const handleOpenInBrowser = async () => {
+    if (!downloadUrl || !navigator.share) return;
+    try {
+      await navigator.share({
+        url: downloadUrl,
+        title: "Carousel export",
+        text: "Open in browser to download your carousel ZIP",
+      });
+    } catch (e) {
+      if ((e as Error).name !== "AbortError") {
+        setError("Share failed");
+      }
+    }
+  };
+
   /** In PWA, fetch zip and trigger download in-place so we don't open browser. */
   const handleDownloadZipInPWA = async () => {
     if (!downloadUrl) return;
@@ -169,15 +190,28 @@ export function EditorExportSection({
         {downloadUrl && (
           <div className="flex flex-wrap items-center gap-2">
             {isStandalonePWA ? (
-              <Button
-                size="sm"
-                onClick={handleDownloadZipInPWA}
-                disabled={zipDownloading}
-                loading={zipDownloading}
-              >
-                <DownloadIcon className="mr-2 size-4" />
-                {zipDownloading ? "Downloading…" : "Download ZIP"}
-              </Button>
+              <>
+                <Button
+                  size="sm"
+                  onClick={handleDownloadZipInPWA}
+                  disabled={zipDownloading}
+                  loading={zipDownloading}
+                >
+                  <DownloadIcon className="mr-2 size-4" />
+                  {zipDownloading ? "Downloading…" : "Download ZIP"}
+                </Button>
+                {canShare && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleOpenInBrowser}
+                    title="Share link and open in Safari or Chrome to download"
+                  >
+                    <ShareIcon className="mr-2 size-4" />
+                    Open in browser
+                  </Button>
+                )}
+              </>
             ) : (
               <Button asChild size="sm">
                 <a href={downloadUrl} download="carousel.zip" target="_blank" rel="noopener noreferrer">

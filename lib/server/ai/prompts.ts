@@ -30,7 +30,7 @@ Rules:
 - Headlines: max 120 chars, punchy. Body: default short (under 300 chars). Use up to 600 chars only when needed—e.g. quotes, full explanations, step-by-step, lists. Most slides stay brief.
 - Minimal punctuation.
 - Sound human, not AI: use contractions (don't, it's, can't). Vary sentence length—mix short punchy lines with occasional longer ones. Use active voice. Avoid generic AI phrases: "dive into", "unlock", "transform", "harness", "game-changer", "cutting-edge", "seamlessly", "at the forefront", "in today's world", "elevate", "innovative solutions", "firstly/secondly/lastly", "it's important to note". Write like a real creator sharing tips—conversational, specific, not corporate buzzwords.
-- NEVER include URLs, links, or web addresses in headline or body. Summarize the content in plain text only—no "read more at...", no "source:", no https:// or www. links.
+- NEVER include URLs, links, or web addresses in headline or body. No markdown links like [text](url) or (url). No "source:", "read more at", or citations. Summarize in plain text only—slide text must be link-free.
 - slide_index starts at 1 and increments.
 - slide_type must be exactly one of: hook, point, context, cta, generic.
 - The FIRST slide must ALWAYS be slide_type "hook"—an intro that hooks visually and textually. Punchy headline, compelling image. Never skip the hook.
@@ -56,10 +56,10 @@ Output format (JSON only). Plain text only—no ** or {{color}} formatting. Exam
   const urlNote =
     ctx.input_type === "url"
       ? ctx.use_web_search
-        ? " Use web search to fetch and summarize the URL content. Create a carousel based on what you find. Do NOT include any URLs or links in the slide text—summarize in plain text only."
+        ? " Use web search to fetch and summarize the URL content. Create a carousel based on what you find. Do NOT include any URLs, markdown links [text](url), or source citations in headline or body—summarize in plain text only."
         : " Note: URL fetching is not implemented yet. Treat the URL as topic text; do not hallucinate quotes or content from the page. Do NOT include URLs or links in slide headline or body."
       : ctx.use_web_search
-        ? " You have web search. Use it for time-sensitive topics (e.g. 2025 releases, recent events) to ensure accurate, current info."
+        ? " You have web search. Use it for time-sensitive topics (e.g. 2025 releases, recent events) to ensure accurate, current info. Do NOT put any URLs, markdown links, or source citations in headline or body—summarize what you find in plain text only."
         : "";
 
   const slideCountInstruction = ctx.number_of_slides != null
@@ -86,7 +86,7 @@ ${urlNote}${creatorHandleNote}${projectNicheNote}${notesSection}
 
 ${ctx.use_ai_backgrounds ? "CRITICAL: Every slide MUST have unsplash_queries with at least 1 string. Use simple, common search terms: 'peaceful nature landscape', 'mountain sunrise', 'calm ocean', 'productivity workspace', 'Lionel Messi 4k'. Avoid obscure or very niche phrases—they may return no images." : ""}
 
-${ctx.use_web_search ? "CRITICAL: After any web search, your response must be ONLY the raw JSON object. No markdown, no code fences, no text before or after. Start with { and end with }." : "Respond with valid JSON only."}`;
+${ctx.use_web_search ? "CRITICAL: After any web search, your response must be ONLY the raw JSON object. No markdown, no code fences, no text before or after. Start with { and end with }. Do NOT include any URLs or links (e.g. [site](url)) in headline or body—plain text only." : "Respond with valid JSON only."}`;
 
   return { system, user };
 }

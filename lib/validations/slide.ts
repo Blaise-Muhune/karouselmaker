@@ -49,8 +49,8 @@ export const imageDisplaySchema = z.object({
   dividerStyle: imageDividerSchema.optional(),
   /** Color of divider line (for line/zigzag/diagonal). */
   dividerColor: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
-  /** Width of divider line in px (2–32). */
-  dividerWidth: z.number().min(2).max(32).optional(),
+  /** Width of divider line in px (2–100). */
+  dividerWidth: z.number().min(2).max(100).optional(),
   /** Overlay-circles layout only: circle size in px (120–400). */
   overlayCircleSize: z.number().min(120).max(400).optional(),
   /** Overlay-circles layout only: border width in px (4–24). */

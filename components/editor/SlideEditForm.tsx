@@ -25,7 +25,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { updateSlide } from "@/app/actions/slides/updateSlide";
-import { getRandomUnsplashImage } from "@/app/actions/slides/getRandomUnsplashImage";
 import { updateExportSettings } from "@/app/actions/carousels/updateExportFormat";
 import { applyToAllSlides, applyOverlayToAllSlides, applyImageDisplayToAllSlides, applyImageCountToAllSlides, applyFontSizeToAllSlides, clearTextFromSlides, type ApplyScope } from "@/app/actions/slides/applyToAllSlides";
 import { shortenToFit } from "@/app/actions/slides/shortenToFit";
@@ -55,7 +54,6 @@ import {
   MonitorIcon,
   PaletteIcon,
   ScissorsIcon,
-  Shuffle,
   SparklesIcon,
   Trash2,
   Type,
@@ -290,7 +288,7 @@ export function SlideEditForm({
     if (Object.keys(d).length === 0 && hasMultiImages) {
       const fc = brandKit.primary_color?.trim() || "#ffffff";
       const dc = brandKit.secondary_color?.trim() || "#ffffff";
-      return { position: "center", fit: "cover", frame: "none", frameRadius: 16, frameColor: fc, frameShape: "squircle", layout: "auto", gap: 8, dividerStyle: "wave", dividerColor: dc, dividerWidth: 8 };
+      return { position: "center", fit: "cover", frame: "none", frameRadius: 16, frameColor: fc, frameShape: "squircle", layout: "auto", gap: 8, dividerStyle: "wave", dividerColor: dc, dividerWidth: 48 };
     }
     if (Object.keys(d).length === 0) {
       const fc = brandKit.primary_color?.trim() || "#ffffff";
@@ -376,6 +374,7 @@ export function SlideEditForm({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerForSecondary, setPickerForSecondary] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [shortening, setShortening] = useState(false);
   const [rewriting, setRewriting] = useState(false);
   const [applyingTemplate, setApplyingTemplate] = useState(false);
@@ -409,26 +408,6 @@ export function SlideEditForm({
   const [isMobile, setIsMobile] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [pendingDownload, setPendingDownload] = useState<{ url: string; filename: string } | null>(null);
-  const [shufflingUnsplash, setShufflingUnsplash] = useState(false);
-  const [shuffleError, setShuffleError] = useState<string | null>(null);
-
-  const handleShuffleUnsplash = useCallback(async () => {
-    setShuffleError(null);
-    setShufflingUnsplash(true);
-    try {
-      const result = await getRandomUnsplashImage(headline, body);
-      if ("error" in result) {
-        setShuffleError(result.error);
-        return;
-      }
-      setImageUrls([{ url: result.url, source: "unsplash", unsplash_attribution: result.attribution }]);
-      setBackground((b) => ({ ...b, mode: "image" }));
-      setBackgroundImageUrlForPreview(result.url);
-    } finally {
-      setShufflingUnsplash(false);
-    }
-  }, [headline, body]);
-
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 1023px)");
     const handler = () => setIsMobile(mq.matches);
@@ -444,7 +423,7 @@ export function SlideEditForm({
   const defaultBodySize = templateConfig?.textZones?.find((z) => z.id === "body")?.fontSize ?? 48;
 
   const validImageCount = imageUrls.filter((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim())).length;
-  const multiImageDefaults: ImageDisplayState = { position: "center", fit: "cover", frame: "none", frameRadius: 0, frameColor: "#ffffff", frameShape: "squircle", layout: "auto", gap: 8, dividerStyle: "wave", dividerColor: "#ffffff", dividerWidth: 8 };
+  const multiImageDefaults: ImageDisplayState = { position: "center", fit: "cover", frame: "none", frameRadius: 0, frameColor: "#ffffff", frameShape: "squircle", layout: "auto", gap: 8, dividerStyle: "wave", dividerColor: "#ffffff", dividerWidth: 48 };
   const effectiveImageDisplay = validImageCount >= 2 ? { ...multiImageDefaults, ...imageDisplay } : imageDisplay;
 
   const insertAtCursor = useCallback(
@@ -501,24 +480,25 @@ export function SlideEditForm({
     if (source.position != null) payload.position = source.position;
     if (source.fit != null) payload.fit = source.fit;
     if (source.frame != null) payload.frame = source.frame;
-    if (source.frameRadius != null) payload.frameRadius = source.frameRadius;
+    if (source.frameRadius != null) payload.frameRadius = Math.min(48, Math.max(0, source.frameRadius ?? 0));
     if (source.frameColor != null) payload.frameColor = source.frameColor;
     if (source.frameShape != null) payload.frameShape = source.frameShape;
     if (source.layout != null) payload.layout = source.layout;
-    if (source.gap != null) payload.gap = source.gap;
+    if (source.gap != null) payload.gap = Math.min(48, Math.max(8, source.gap));
     if (source.dividerStyle != null) payload.dividerStyle = source.dividerStyle;
     if (source.dividerColor != null) payload.dividerColor = source.dividerColor;
-    if (source.dividerWidth != null) payload.dividerWidth = source.dividerWidth;
-    if (source.overlayCircleSize != null) payload.overlayCircleSize = source.overlayCircleSize;
-    if (source.overlayCircleBorderWidth != null) payload.overlayCircleBorderWidth = source.overlayCircleBorderWidth;
+    if (source.dividerWidth != null) payload.dividerWidth = Math.min(100, Math.max(2, source.dividerWidth));
+    if (source.overlayCircleSize != null) payload.overlayCircleSize = Math.min(400, Math.max(120, source.overlayCircleSize));
+    if (source.overlayCircleBorderWidth != null) payload.overlayCircleBorderWidth = Math.min(24, Math.max(4, source.overlayCircleBorderWidth));
     if (source.overlayCircleBorderColor != null) payload.overlayCircleBorderColor = source.overlayCircleBorderColor;
-    if (source.overlayCircleX != null) payload.overlayCircleX = source.overlayCircleX;
-    if (source.overlayCircleY != null) payload.overlayCircleY = source.overlayCircleY;
+    if (source.overlayCircleX != null) payload.overlayCircleX = Math.min(100, Math.max(0, source.overlayCircleX));
+    if (source.overlayCircleY != null) payload.overlayCircleY = Math.min(100, Math.max(0, source.overlayCircleY));
     return Object.keys(payload).length > 0 ? payload : undefined;
   };
 
   const performSave = async (navigateBack = false) => {
     setSaving(true);
+    setSaveError(null);
     if (!isPro) {
       const overlayPayload = background.overlay ?? { gradient: true, darken: 0.5, color: "#000000", textColor: "#ffffff" };
       const result = await updateSlide(
@@ -536,7 +516,11 @@ export function SlideEditForm({
         editorPath
       );
       setSaving(false);
-      if (result.ok && navigateBack) router.push(backHref);
+      if (result.ok) {
+        if (navigateBack) router.push(backHref);
+      } else {
+        setSaveError("error" in result ? result.error : "Save failed");
+      }
       return result;
     }
     const overlayPayload = background.overlay ?? { gradient: true, darken: 0.5, color: "#000000", textColor: "#ffffff" };
@@ -573,8 +557,10 @@ export function SlideEditForm({
       editorPath
     );
     setSaving(false);
-    if (result.ok && navigateBack) {
-      router.push(backHref);
+    if (result.ok) {
+      if (navigateBack) router.push(backHref);
+    } else {
+      setSaveError("error" in result ? result.error : "Save failed");
     }
     return result;
   };
@@ -701,7 +687,7 @@ export function SlideEditForm({
       gap: imageDisplay.gap ?? 12,
       dividerStyle: imageDisplay.dividerStyle ?? "gap",
       dividerColor: imageDisplay.dividerColor ?? "#ffffff",
-      dividerWidth: imageDisplay.dividerWidth ?? 4,
+      dividerWidth: imageDisplay.dividerWidth ?? 48,
     };
     const result = await applyImageDisplayToAllSlides(slide.carousel_id, fullPayload, editorPath, applyScope);
     setApplyingImageDisplay(false);
@@ -1305,6 +1291,11 @@ export function SlideEditForm({
               <ChevronRightIcon className="size-4" />
             </Button>
           </div>
+        )}
+        {saveError && (
+          <p className="text-destructive text-sm w-full" role="alert">
+            {saveError}
+          </p>
         )}
       </div>
     </div>
@@ -1978,37 +1969,6 @@ export function SlideEditForm({
                           placeholder="https://..."
                           className="h-10 flex-1 rounded-lg border-input/80 bg-background text-sm"
                         />
-                        {i === 0 && isPro && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="shrink-0 h-10 w-10 p-0"
-                            title="Random Unsplash image related to slide"
-                            onClick={async () => {
-                              setShuffleError(null);
-                              setShufflingUnsplash(true);
-                              try {
-                                const result = await getRandomUnsplashImage(headline, body);
-                                if ("error" in result) {
-                                  setShuffleError(result.error);
-                                  return;
-                                }
-                                setImageUrls((prev) => {
-                                  const next = [...prev];
-                                  next[0] = { url: result.url, source: "unsplash", unsplash_attribution: result.attribution };
-                                  return next;
-                                });
-                                setBackgroundImageUrlForPreview(result.url);
-                              } finally {
-                                setShufflingUnsplash(false);
-                              }
-                            }}
-                            disabled={shufflingUnsplash}
-                          >
-                            {shufflingUnsplash ? <Loader2Icon className="size-4 animate-spin" /> : <Shuffle className="size-4" />}
-                          </Button>
-                        )}
                         {item.source && (
                           <span
                             className={`shrink-0 self-center inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium ${
@@ -2068,7 +2028,6 @@ export function SlideEditForm({
                       Add image URL
                     </Button>
                   )}
-                  {shuffleError && <p className="text-destructive text-xs">{shuffleError}</p>}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <Button type="button" variant="outline" size="sm" className="rounded-lg h-9" title="Pick from library" onClick={() => { setPickerForSecondary(false); setPickerOpen(true); }}>
@@ -2245,9 +2204,9 @@ export function SlideEditForm({
                               <div className="flex items-center gap-2">
                                 <input
                                   type="range"
-                                  min={1}
+                                  min={8}
                                   max={48}
-                                  value={imageDisplay.gap ?? 12}
+                                  value={Math.min(48, Math.max(8, imageDisplay.gap ?? 12))}
                                   onChange={(e) => setImageDisplay((d) => ({ ...d, gap: Number(e.target.value) }))}
                                   className="h-2 flex-1 cursor-pointer appearance-none rounded-full bg-muted accent-primary"
                                 />
@@ -2288,13 +2247,13 @@ export function SlideEditForm({
                                     <div className="flex items-center gap-2">
                                       <input
                                         type="range"
-                                        min={0}
-                                        max={60}
-                                        value={effectiveImageDisplay.dividerWidth ?? 4}
+                                        min={2}
+                                        max={100}
+                                        value={Math.min(100, Math.max(2, effectiveImageDisplay.dividerWidth ?? 48))}
                                         onChange={(e) => setImageDisplay((d) => ({ ...d, dividerWidth: Number(e.target.value) }))}
                                         className="h-2 w-20 cursor-pointer appearance-none rounded-full bg-muted accent-primary"
                                       />
-                                      <span className="text-muted-foreground min-w-6 text-xs tabular-nums">{imageDisplay.dividerWidth ?? 4}px</span>
+                                      <span className="text-muted-foreground min-w-6 text-xs tabular-nums">{imageDisplay.dividerWidth ?? 48}px</span>
                                     </div>
                                   </>
                                 )}
@@ -2449,20 +2408,7 @@ export function SlideEditForm({
                       <span className="sr-only">Upload</span>
                     </a>
                   </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="rounded-lg h-9 gap-1.5"
-                    title="Random Unsplash image related to slide"
-                    onClick={handleShuffleUnsplash}
-                    disabled={shufflingUnsplash || !isPro}
-                  >
-                    {shufflingUnsplash ? <Loader2Icon className="size-4 animate-spin" /> : <Shuffle className="size-4" />}
-                    <span className="text-xs">Unsplash</span>
-                  </Button>
                 </div>
-                {shuffleError && <p className="text-destructive text-xs mt-1">{shuffleError}</p>}
                 <div className="space-y-1.5">
                   <Label htmlFor="image-url-solid" className="text-muted-foreground text-xs font-medium">URL</Label>
                   <Input
