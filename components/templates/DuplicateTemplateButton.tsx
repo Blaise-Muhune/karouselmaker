@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { createTemplateAction } from "@/app/actions/templates/createTemplate";
-import { CopyIcon, Loader2Icon } from "lucide-react";
+import { CopyIcon } from "lucide-react";
 
 type DuplicateTemplateButtonProps = {
   templateId: string;
@@ -49,14 +49,11 @@ export function DuplicateTemplateButton({
       size="icon-xs"
       onClick={handleDuplicate}
       disabled={loading}
+      loading={loading}
       aria-label={`Duplicate ${templateName}`}
       title="Duplicate and edit"
     >
-      {loading ? (
-        <Loader2Icon className="size-3.5 animate-spin" />
-      ) : (
-        <CopyIcon className="size-3.5" />
-      )}
+      {loading ? null : <CopyIcon className="size-3.5" />}
     </Button>
   );
 }

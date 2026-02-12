@@ -121,29 +121,37 @@ export function NewCarouselForm({
     <>
       {isPending && (
         <div
-          className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-background/95 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-background/98 backdrop-blur-md"
           aria-live="polite"
           aria-busy="true"
         >
           <div className="mx-auto max-w-sm space-y-8 px-6 text-center">
-            <div className="space-y-2">
-              <div className="flex justify-center">
-                <div className="h-1 w-48 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full bg-foreground/80 transition-all duration-500 ease-out"
-                    style={{
-                      width: `${((generationStep + 1) / GENERATION_STEPS.length) * 100}%`,
-                    }}
-                  />
-                </div>
+            <div className="flex flex-col items-center gap-6">
+              <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 shadow-lg shadow-primary/5">
+                <Loader2Icon className="size-12 animate-spin text-primary" />
               </div>
-              <p className="text-sm text-muted-foreground">
-                {GENERATION_STEPS[generationStep]}
-              </p>
+              <div className="space-y-4">
+                <h3 className="font-semibold text-foreground text-lg">
+                  Generating your carousel
+                </h3>
+                <div className="flex justify-center">
+                  <div className="h-2 w-full max-w-xs overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full bg-primary transition-all duration-500 ease-out"
+                      style={{
+                        width: `${((generationStep + 1) / GENERATION_STEPS.length) * 100}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+                <p className="text-sm text-muted-foreground transition-opacity duration-300">
+                  {GENERATION_STEPS[generationStep]}
+                </p>
+                <p className="text-xs text-muted-foreground/80">
+                  Usually 15–30 seconds
+                </p>
+              </div>
             </div>
-            <p className="text-xs text-muted-foreground/80">
-              This usually takes 15–30 seconds
-            </p>
           </div>
         </div>
       )}

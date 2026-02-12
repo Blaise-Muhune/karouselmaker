@@ -31,7 +31,7 @@ import {
   type ProjectFormInput,
 } from "@/lib/validations/project";
 import { DO_PRESETS, DONT_PRESETS } from "@/lib/editor/voicePresets";
-import { ArrowLeftIcon } from "lucide-react";
+import { ArrowLeftIcon, Loader2Icon } from "lucide-react";
 
 const TONE_OPTIONS = [
   { value: "neutral", label: "Neutral" },
@@ -292,7 +292,7 @@ export default function NewProjectPage() {
               </div>
             </div>
             <div className="flex gap-4">
-              <Button type="submit" disabled={isPending}>
+              <Button type="submit" disabled={isPending} loading={isPending}>
                 {isPending ? "Creating…" : "Create project"}
               </Button>
               <Button type="button" variant="outline" asChild>

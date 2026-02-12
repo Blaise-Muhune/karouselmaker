@@ -98,7 +98,7 @@ export function SubscriptionStatusBanner() {
       </div>
       <div className="flex items-center gap-2 shrink-0">
         {config.showUpgrade && (
-          <Button size="sm" onClick={handleUpgrade} disabled={loading}>
+          <Button size="sm" onClick={handleUpgrade} disabled={loading} loading={loading}>
             {loading ? "Loading…" : (
               <>
                 <SparklesIcon className="mr-2 size-4" />

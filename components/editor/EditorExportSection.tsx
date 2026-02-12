@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { useIsStandalonePWA } from "@/lib/hooks/useIsStandalonePWA";
 import {
   Dialog,
   DialogContent,
@@ -12,7 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { CarouselVideoPlayer } from "@/components/carousels/CarouselVideoPlayer";
 import { createVideoFromImages } from "@/lib/video/createVideoFromImages";
-import { DownloadIcon, Loader2Icon, PlayIcon, VideoIcon } from "lucide-react";
+import { CopyIcon, DownloadIcon, Loader2Icon, PlayIcon, ShareIcon, VideoIcon } from "lucide-react";
 import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
 import { PLAN_LIMITS } from "@/lib/constants";
 
@@ -56,6 +57,13 @@ export function EditorExportSection({
   const [videoDownloading, setVideoDownloading] = useState(false);
   const [videoDownloadProgress, setVideoDownloadProgress] = useState(0);
   const [videoDownloadError, setVideoDownloadError] = useState<string | null>(null);
+  const [copyFeedback, setCopyFeedback] = useState(false);
+  const [canShare, setCanShare] = useState(false);
+  const isStandalonePWA = useIsStandalonePWA();
+
+  useEffect(() => {
+    setCanShare(typeof navigator !== "undefined" && !!navigator.share);
+  }, []);
 
   const latestReadyExport = recentExports.find((ex) => ex.status === "ready");
 
@@ -124,6 +132,31 @@ export function EditorExportSection({
     }
   };
 
+  const handleCopyDownloadLink = async () => {
+    if (!downloadUrl) return;
+    try {
+      await navigator.clipboard.writeText(downloadUrl);
+      setCopyFeedback(true);
+      setTimeout(() => setCopyFeedback(false), 2000);
+    } catch {
+      setError("Could not copy link");
+    }
+  };
+
+  const handleShareDownloadLink = async () => {
+    if (!downloadUrl || !navigator.share) return;
+    try {
+      await navigator.share({
+        url: downloadUrl,
+        title: "Carousel export",
+        text: "Download your carousel ZIP",
+      });
+    } catch (e) {
+      if ((e as Error).name !== "AbortError") {
+        setError("Share failed");
+      }
+    }
+  };
 
   const formatDate = (iso: string) => {
     try {
@@ -143,24 +176,56 @@ export function EditorExportSection({
       </p>
       <div className="flex flex-wrap items-center gap-3">
         {downloadUrl && (
-          <Button asChild size="sm">
-            <a href={downloadUrl} download="carousel.zip" target="_blank" rel="noopener noreferrer">
-              <DownloadIcon className="mr-2 size-4" />
-              Download ZIP
-            </a>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button asChild size="sm">
+              <a href={downloadUrl} download="carousel.zip" target="_blank" rel="noopener noreferrer">
+                <DownloadIcon className="mr-2 size-4" />
+                Download ZIP
+              </a>
+            </Button>
+            {isStandalonePWA && (
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleCopyDownloadLink}
+                  title="Copy link (open in Safari to download)"
+                >
+                  <CopyIcon className="mr-2 size-4" />
+                  {copyFeedback ? "Copied!" : "Copy link"}
+                </Button>
+                {canShare && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleShareDownloadLink}
+                    title="Share link (use Safari to download)"
+                  >
+                    <ShareIcon className="mr-2 size-4" />
+                    Share
+                  </Button>
+                )}
+                <span className="text-muted-foreground text-xs w-full sm:w-auto">
+                  Copy link → open Safari → paste URL to download
+                </span>
+              </>
+            )}
+          </div>
         )}
         <Button
           size="sm"
           onClick={handleExport}
           disabled={!canExport || exporting}
+          loading={exporting}
         >
           {exporting ? (
-            <Loader2Icon className="mr-2 size-4 animate-spin" />
+            "Exporting…"
           ) : (
-            <DownloadIcon className="mr-2 size-4" />
+            <>
+              <DownloadIcon className="mr-2 size-4" />
+              {downloadUrl ? "Export again" : "Export"}
+            </>
           )}
-          {exporting ? "Exporting…" : downloadUrl ? "Export again" : "Export"}
         </Button>
         {latestReadyExport && (
           <Dialog open={videoPreviewOpen} onOpenChange={(open) => {

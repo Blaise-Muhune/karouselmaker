@@ -7,6 +7,7 @@ import { useActionState } from "react";
 import { requestPasswordReset } from "@/app/actions/auth";
 import { forgotPasswordSchema, type ForgotPasswordInput } from "@/lib/validations/auth";
 import { Button } from "@/components/ui/button";
+import { FormSubmitButton } from "@/components/ui/form-submit-button";
 import { Input } from "@/components/ui/input";
 import {
   Form,
@@ -63,9 +64,9 @@ export default function ForgotPasswordPage() {
               </FormItem>
             )}
           />
-          <Button type="submit" className="w-full">
+          <FormSubmitButton className="w-full" loadingText="Sending…">
             Send reset link
-          </Button>
+          </FormSubmitButton>
         </form>
       </Form>
       <p className="text-center text-muted-foreground text-sm">

@@ -1120,7 +1120,7 @@ export function TemplateBuilderForm({
         </section>
 
         <div className="flex gap-2 pt-2">
-          <Button type="submit" disabled={loading}>
+          <Button type="submit" disabled={loading} loading={loading}>
             {loading ? "Saving…" : mode === "create" ? "Create template" : "Save changes"}
           </Button>
           <Button variant="outline" type="button" asChild>

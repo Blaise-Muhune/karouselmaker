@@ -9,6 +9,7 @@ import { updatePassword } from "@/app/actions/auth";
 import { resetPasswordSchema, type ResetPasswordInput } from "@/lib/validations/auth";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
+import { FormSubmitButton } from "@/components/ui/form-submit-button";
 import { Input } from "@/components/ui/input";
 import {
   Form,
@@ -134,9 +135,9 @@ export default function ResetPasswordPage() {
               </FormItem>
             )}
           />
-          <Button type="submit" className="w-full">
+          <FormSubmitButton className="w-full" loadingText="Updating…">
             Update password
-          </Button>
+          </FormSubmitButton>
         </form>
       </Form>
       <p className="text-center text-muted-foreground text-sm">
