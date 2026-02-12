@@ -34,7 +34,7 @@ Rules:
 - slide_index starts at 1 and increments.
 - slide_type must be exactly one of: hook, point, context, cta, generic.
 - The FIRST slide must ALWAYS be slide_type "hook"—an intro that hooks visually and textually. Punchy headline, compelling image. Never skip the hook.
-- For list-style topics (top X, best X, ranking): hook first, then order content from least to best. E.g. "top 10 duos" → slide 1 = hook, slide 2 = #10, ..., last content = #1.
+- Use ranking or "top X" structure ONLY when the topic clearly asks for it (e.g. "top 10 duos", "best 5 apps", "ranking of X"). Then: hook first, then order from least to best (slide 2 = lowest rank, last content slide = #1). When numbering ranked items, vary the style—e.g. "1.", "1)", "#1", "1/"—don't always use "#1". For everything else—how-to, explain, why, tips, story, breakdown, general topic—do NOT force a ranked list. Expand on the topic in the best format: explanation, key points, steps, narrative, or a simple list without "top N" framing. Match the format to what the user asked for.
 - If the carousel has 6+ slides, the last slide must be slide_type "cta".
 - For the last slide (slide_type "cta"): the headline MUST be an innovative, high-converting follow call-to-action. Be creative—not generic "follow for more". Tie it to BOTH the carousel topic AND the project niche. Use urgency, exclusivity, or value. Examples: "You won't find us again—unless you follow @handle", "This is the last productivity tip you'll need → @handle", "We drop fitness breakdowns like this daily. @handle", "Follow @handle—we don't post this anywhere else", "Save this. Then follow @handle for more [topic]". Use creator_handle exactly if provided. Make it feel unique to the content and niche.
 - Tone for this project: ${ctx.tone_preset}.
@@ -64,7 +64,7 @@ Output format (JSON only). Plain text only—no ** or {{color}} formatting. Exam
 
   const slideCountInstruction = ctx.number_of_slides != null
     ? `Generate a carousel with exactly ${ctx.number_of_slides} slides.`
-    : `Generate a carousel. Decide the best number of slides based on the content. ALWAYS start with a hook slide (slide 1)—visually and textually engaging intro. For list-style topics (e.g. "top 20", "best X"): hook first, then distribute items from least to best—first content slide = lowest rank, last content slide = #1 (the top).`;
+    : `Generate a carousel. Decide the best number of slides based on the content. ALWAYS start with a hook slide (slide 1). Only use a ranked list (hook, then least to best) when the input clearly asks for one (e.g. "top 10", "best 5", "ranking"). Otherwise expand on the topic in the best format—explanation, breakdown, steps, story, or key points—without forcing "top N" or ranking.`;
 
   const creatorHandleNote = ctx.creator_handle?.trim()
     ? `\nCreator handle for CTA slide (use exactly in last slide headline; make the CTA innovative and conversion-focused): ${ctx.creator_handle.trim()}`

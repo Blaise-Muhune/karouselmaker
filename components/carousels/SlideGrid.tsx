@@ -30,8 +30,7 @@ function getPreviewDimensions(exportSize: string): { w: number; h: number; scale
       : { w: 1080, h: 1080 };
   const containerW = dims.w * PREVIEW_SCALE;
   const containerH = dims.h * PREVIEW_SCALE;
-  const isPortrait = dims.h > dims.w;
-  const scale = isPortrait ? Math.max(containerW / 1080, containerH / 1080) : PREVIEW_SCALE;
+  const scale = Math.max(containerW / 1080, containerH / 1080);
   const scaledW = 1080 * scale;
   const scaledH = 1080 * scale;
   const translateX = (containerW - scaledW) / 2;
@@ -287,6 +286,7 @@ export function SlideGrid({
                             showMadeWithOverride={getShowMadeWithOverride(slide, isPro)}
                             fontOverrides={getFontOverrides(slide)}
                             imageDisplay={getImageDisplay(slide)}
+                            exportSize={exportSize}
                           />
                         </div>
                       ) : (
@@ -334,6 +334,7 @@ export function SlideGrid({
                             showMadeWithOverride={getShowMadeWithOverride(slide, isPro)}
                             fontOverrides={getFontOverrides(slide)}
                             imageDisplay={getImageDisplay(slide)}
+                            exportSize={exportSize}
                           />
                         </div>
                       ) : (

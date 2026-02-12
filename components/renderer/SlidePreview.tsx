@@ -94,6 +94,8 @@ export type SlidePreviewProps = {
     overlayCircleX?: number;
     overlayCircleY?: number;
   } | null;
+  /** When set, headline/body font sizes are scaled so text fits at this export size (4:5, 9:16). */
+  exportSize?: "1080x1080" | "1080x1350" | "1080x1920";
   className?: string;
 };
 
@@ -191,8 +193,12 @@ export function SlidePreview({
   bodyHighlightStyle = "text",
   borderedFrame = false,
   imageDisplay,
+  exportSize,
   className = "",
 }: SlidePreviewProps) {
+  const maxDim = exportSize === "1080x1350" ? 1350 : exportSize === "1080x1920" ? 1920 : 1080;
+  const textScale = maxDim <= 1080 ? 1 : Math.max(0.5, 1080 / maxDim);
+
   const slideData: SlideData = {
     headline: slide.headline,
     body: slide.body ?? null,
@@ -594,7 +600,8 @@ export function SlidePreview({
             : block.zone.id === "body"
               ? fontOverrides?.body_font_size
               : undefined;
-        const fontSize = fontSizeOverride ?? block.zone.fontSize;
+        const baseFontSize = fontSizeOverride ?? block.zone.fontSize;
+        const fontSize = Math.round(baseFontSize * textScale);
         const zoneHighlightStyle = block.zone.id === "headline" ? headlineHighlightStyle : bodyHighlightStyle;
         const zoneColor = block.zone.color ?? textColor;
         return (

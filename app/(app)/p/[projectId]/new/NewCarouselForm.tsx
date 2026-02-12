@@ -121,7 +121,7 @@ export function NewCarouselForm({
     <>
       {isPending && (
         <div
-          className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-background/98 backdrop-blur-md"
+          className="fixed inset-0 z-[100] flex min-h-screen min-h-[100dvh] flex-col items-center justify-center bg-background/98 backdrop-blur-md"
           aria-live="polite"
           aria-busy="true"
         >

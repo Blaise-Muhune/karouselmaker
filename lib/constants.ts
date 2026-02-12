@@ -9,8 +9,8 @@ export const PLAN_LIMITS = {
   free: {
     assets: 5,
     carouselsPerMonth: 5,
-    exportsPerMonth: 2,
-    customTemplates: 0,
+    exportsPerMonth: 5,
+    customTemplates: 1,
   },
   pro: {
     assets: 100,

@@ -74,7 +74,7 @@ function getShapeCss(shape: string, radius: number): string {
 /**
  * Build full HTML document for a single slide (default 1080x1080).
  * Matches SlidePreview layout for screenshot parity.
- * For portrait sizes (1080x1350, 1080x1920), the 1080x1080 content is top-aligned with extra space below.
+ * Template is scaled to cover the given dimensions (fills 4:5 and 9:16 with no letterboxing); centered crop for overflow.
  */
 export type HighlightStyle = "text" | "background";
 
@@ -127,6 +127,11 @@ export function renderSlideHtml(
   dimensions?: { w: number; h: number }
 ): string {
   const { w: dimW, h: dimH } = dimensions ?? { w: 1080, h: 1080 };
+
+  // Size-based text multiplier: scale down headline/body font so they always fit on 4:5 and 9:16 (no overflow)
+  const maxDim = Math.max(dimW, dimH);
+  const textScale = maxDim <= 1080 ? 1 : Math.max(0.5, 1080 / maxDim);
+
   const mergedZoneOverrides: TextZoneOverrides | undefined =
     zoneOverrides || fontOverrides
       ? {
@@ -195,7 +200,9 @@ export function renderSlideHtml(
           ? (highlightStyles.headline ?? "text")
           : (highlightStyles.body ?? "text");
       const zoneColor = block.zone.color ?? textColor;
-      return `<div class="text-block" style="left:${block.zone.x}px;top:${block.zone.y}px;width:${block.zone.w}px;height:${block.zone.h}px;font-size:${block.zone.fontSize}px;font-weight:${block.zone.fontWeight};line-height:${block.zone.lineHeight};text-align:${block.zone.align};color:${escapeHtml(zoneColor)}">${block.lines.map((line) => `<span>${lineToHtml(line, zoneHighlightStyle)}</span>`).join("")}</div>`;
+      const fontSize = Math.round(block.zone.fontSize * textScale);
+      const lineHeight = block.zone.lineHeight;
+      return `<div class="text-block" style="left:${block.zone.x}px;top:${block.zone.y}px;width:${block.zone.w}px;height:${block.zone.h}px;font-size:${fontSize}px;font-weight:${block.zone.fontWeight};line-height:${lineHeight};text-align:${block.zone.align};color:${escapeHtml(zoneColor)}">${block.lines.map((line) => `<span>${lineToHtml(line, zoneHighlightStyle)}</span>`).join("")}</div>`;
     })
     .join("");
 
@@ -371,9 +378,8 @@ export function renderSlideHtml(
           : `linear-gradient(${gradientDir}, transparent 0%, transparent ${100 - gradientExtent}%, ${gradientRgba} ${gradientTransitionEnd}%, ${gradientRgba} 100%)`)
     : "none";
 
-  const isPortrait = dimH > dimW;
-  const scaleToCover = isPortrait ? dimH / 1080 : dimW / 1080;
-  const scale = scaleToCover;
+  // Scale to cover: template fills the full frame at 4:5 and 9:16 (no letterboxing); centered crop clips overflow
+  const scale = Math.max(dimW / 1080, dimH / 1080);
   const scaledSize = 1080 * scale;
   const slideTranslateX = (dimW - scaledSize) / 2;
   const slideTranslateY = (dimH - scaledSize) / 2;

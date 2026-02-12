@@ -116,7 +116,7 @@ export type SlideBackgroundState = SlideBackgroundOverride & {
 const PREVIEW_MAX = 380;
 const PREVIEW_MAX_LARGE = 560;
 
-/** Preview dimensions and scale. Always cover - image/content fills the frame. */
+/** Preview dimensions and scale. Scale to cover so template fills the frame (centered crop at 4:5 / 9:16). */
 function getPreviewDimensions(size: "1080x1080" | "1080x1350" | "1080x1920", maxSize = PREVIEW_MAX): { w: number; h: number; scale: number; offsetX: number; offsetY: number } {
   const exportW = 1080;
   const exportH = size === "1080x1080" ? 1080 : size === "1080x1350" ? 1350 : 1920;
@@ -1227,6 +1227,7 @@ export function SlideEditForm({
               bodyHighlightStyle={bodyHighlightStyle}
               borderedFrame={!!(previewBackgroundImageUrl || previewBackgroundImageUrls?.length)}
               imageDisplay={isImageMode ? effectiveImageDisplay : undefined}
+              exportSize={exportSize}
             />
           </div>
         ) : (
@@ -1474,6 +1475,7 @@ export function SlideEditForm({
                         bodyHighlightStyle={bodyHighlightStyle}
                         borderedFrame={!!(previewBackgroundImageUrl || previewBackgroundImageUrls?.length)}
                         imageDisplay={isImageMode ? effectiveImageDisplay : undefined}
+                        exportSize={exportSize}
                       />
                     </div>
                   </div>

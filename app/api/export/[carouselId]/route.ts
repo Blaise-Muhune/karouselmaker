@@ -82,9 +82,8 @@ export async function POST(
     const slides = await listSlides(userId, carouselId);
     if (slides.length === 0) throw new Error("No slides to export");
 
-    const { listTemplatesForUser } = await import("@/lib/server/db");
-    const templatesList = await listTemplatesForUser(userId, { includeSystem: true });
-    const defaultTemplateId = templatesList[0]?.id ?? null;
+    const { getDefaultTemplateId } = await import("@/lib/server/db/templates");
+    const defaultTemplateId = await getDefaultTemplateId(userId);
 
     const paths = getExportStoragePaths(userId, carouselId, exportId);
     const browser = await launchChromium();

@@ -4,6 +4,7 @@ import OpenAI from "openai";
 import { getUser } from "@/lib/server/auth/getUser";
 import { getSubscription, getPlanLimits } from "@/lib/server/subscription";
 import { getProject } from "@/lib/server/db/projects";
+import { getDefaultTemplateForNewCarousel } from "@/lib/server/db/templates";
 import { createCarousel, getCarousel, updateCarousel, countCarouselsThisMonth } from "@/lib/server/db/carousels";
 import { replaceSlides, updateSlide } from "@/lib/server/db/slides";
 import { getAsset } from "@/lib/server/db/assets";
@@ -228,13 +229,17 @@ export async function generateCarousel(formData: FormData): Promise<
     hashtags: validated.hashtags,
   });
 
+  const defaultTemplate = await getDefaultTemplateForNewCarousel(user.id);
+  const defaultTemplateId = defaultTemplate?.templateId ?? null;
+  const isFollowCta = defaultTemplate?.isFollowCta ?? false;
+
   const slideRows = validated.slides.map((s) => ({
     carousel_id: carousel.id,
     slide_index: s.slide_index,
     slide_type: s.slide_type,
     headline: s.headline,
     body: s.body || null,
-    template_id: null,
+    template_id: defaultTemplateId,
     background: {},
     meta: { show_counter: false },
   }));
@@ -243,7 +248,9 @@ export async function generateCarousel(formData: FormData): Promise<
 
   const overlayColor = brandKit?.primary_color?.trim() || "#000000";
   const overlayTextColor = getContrastingTextColor(overlayColor);
-  const defaultOverlay = { gradient: true, darken: 0.5, color: overlayColor, textColor: overlayTextColor };
+  const defaultOverlay = isFollowCta
+    ? { gradient: true, darken: 1, extent: 60, solidSize: 20, color: overlayColor, textColor: overlayTextColor }
+    : { gradient: true, darken: 0.5, color: overlayColor, textColor: overlayTextColor };
   const slidesWithImage = new Set<string>();
 
   if (parsed.data.background_asset_ids?.length && createdSlides.length) {
@@ -374,7 +381,8 @@ export async function generateCarousel(formData: FormData): Promise<
   const solidBg = { style: "solid" as const, color: primaryColor, gradientOn: true };
   for (const slide of createdSlides) {
     if (slidesWithImage.has(slide.id)) continue;
-    await updateSlide(user.id, slide.id, { background: solidBg });
+    const bg = isFollowCta ? { ...solidBg, overlay: defaultOverlay } : solidBg;
+    await updateSlide(user.id, slide.id, { background: bg });
   }
 
   return { carouselId: carousel.id };

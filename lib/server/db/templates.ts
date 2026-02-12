@@ -48,6 +48,33 @@ export async function getTemplate(
   return data as Template;
 }
 
+/**
+ * Default template for new carousels and for slides with no template_id: if the user has any custom
+ * template, use the first (by name); otherwise use the system template "Follow CTA".
+ */
+export async function getDefaultTemplateForNewCarousel(userId: string): Promise<{
+  templateId: string;
+  isFollowCta: boolean;
+} | null> {
+  const userTemplates = await listTemplatesForUser(userId, { includeSystem: false });
+  if (userTemplates.length > 0) {
+    const first = userTemplates[0];
+    if (first) return { templateId: first.id, isFollowCta: false };
+  }
+  const allTemplates = await listTemplatesForUser(userId, { includeSystem: true });
+  const followCta = allTemplates.find((t) => t.user_id === null && t.name === "Follow CTA");
+  if (followCta) return { templateId: followCta.id, isFollowCta: true };
+  const fallback = allTemplates[0];
+  if (fallback) return { templateId: fallback.id, isFollowCta: false };
+  return null;
+}
+
+/** Template ID to use when a slide has template_id null (e.g. export). Same order as above. */
+export async function getDefaultTemplateId(userId: string): Promise<string | null> {
+  const def = await getDefaultTemplateForNewCarousel(userId);
+  return def?.templateId ?? null;
+}
+
 export async function countUserTemplates(userId: string): Promise<number> {
   const supabase = await createClient();
   const { count, error } = await supabase

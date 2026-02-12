@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { launchChromium } from "@/lib/server/browser/launchChromium";
 import { createClient } from "@/lib/supabase/server";
-import { getSlide, getTemplate, getCarousel, getProject, listSlides, listTemplatesForUser } from "@/lib/server/db";
+import { getSlide, getTemplate, getCarousel, getProject, listSlides } from "@/lib/server/db";
+import { getDefaultTemplateId } from "@/lib/server/db/templates";
 import { getSubscription } from "@/lib/server/subscription";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { renderSlideHtml } from "@/lib/server/renderer/renderSlideHtml";
@@ -48,8 +49,7 @@ export async function GET(
     return NextResponse.json({ error: "Slide not found" }, { status: 404 });
   }
 
-  const templatesList = await listTemplatesForUser(userId, { includeSystem: true });
-  const defaultTemplateId = templatesList[0]?.id ?? null;
+  const defaultTemplateId = await getDefaultTemplateId(userId);
   const templateId = slide.template_id ?? defaultTemplateId;
   if (!templateId) {
     return NextResponse.json({ error: "Slide has no template and no templates available" }, { status: 400 });
