@@ -87,15 +87,6 @@ export async function POST(
 
     const paths = getExportStoragePaths(userId, carouselId, exportId);
     const browser = await launchChromium();
-    let page: Awaited<ReturnType<typeof browser.newPage>>;
-    try {
-      page = await browser.newPage();
-    } catch (e) {
-      await browser.close();
-      throw e;
-    }
-    await page.setViewportSize({ width: dimensions.w, height: dimensions.h });
-
     const zip = new JSZip();
     const pngBuffers: Buffer[] = [];
     const unsplashAttributions = new Map<
@@ -263,18 +254,24 @@ export async function POST(
         dimensions
       );
 
-      await page.setContent(html, { waitUntil: "domcontentloaded", timeout: 20000 });
-      await page.waitForSelector(".slide", { state: "visible", timeout: 25000 });
-      await new Promise((r) => setTimeout(r, 500));
-      const buffer = await page.screenshot({ type: "png" });
-      const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
-      pngBuffers.push(buf);
+      const page = await browser.newPage();
+      try {
+        await page.setViewportSize({ width: dimensions.w, height: dimensions.h });
+        await page.setContent(html, { waitUntil: "domcontentloaded", timeout: 15000 });
+        await page.waitForSelector(".slide", { state: "visible", timeout: 15000 });
+        await new Promise((r) => setTimeout(r, 400));
+        const buffer = await page.screenshot({ type: "png" });
+        const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+        pngBuffers.push(buf);
 
-      const slidePath = paths.slidePath(i);
-      const { error: uploadError } = await supabase.storage
-        .from(BUCKET)
-        .upload(slidePath, buf, { contentType: "image/png", upsert: true });
-      if (uploadError) throw new Error(`Upload slide failed: ${uploadError.message}`);
+        const slidePath = paths.slidePath(i);
+        const { error: uploadError } = await supabase.storage
+          .from(BUCKET)
+          .upload(slidePath, buf, { contentType: "image/png", upsert: true });
+        if (uploadError) throw new Error(`Upload slide failed: ${uploadError.message}`);
+      } finally {
+        await page.close();
+      }
     }
     } finally {
       await browser.close();
