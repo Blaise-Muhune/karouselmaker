@@ -16,7 +16,7 @@ export async function setSlideBackground(
   const { user } = await getUser();
   if (!user) return { ok: false, error: "Unauthorized" };
 
-  const proCheck = await requirePro(user.id);
+  const proCheck = await requirePro(user.id, user.email);
   if (!proCheck.allowed) return { ok: false, error: proCheck.error ?? "Upgrade to Pro" };
 
   try {

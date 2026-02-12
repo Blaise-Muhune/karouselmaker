@@ -2,8 +2,7 @@ import { NextResponse } from "next/server";
 import { launchChromium } from "@/lib/server/browser/launchChromium";
 import JSZip from "jszip";
 import { createClient } from "@/lib/supabase/server";
-import { getSubscription } from "@/lib/server/subscription";
-import { PLAN_LIMITS } from "@/lib/constants";
+import { getSubscription, getPlanLimits } from "@/lib/server/subscription";
 import {
   getCarousel,
   getProject,
@@ -47,12 +46,12 @@ export async function POST(
     return NextResponse.json({ error: "Carousel not found" }, { status: 404 });
   }
 
-  const { isPro } = await getSubscription(userId);
+  const { isPro } = await getSubscription(userId, session.user.email);
+  const limits = await getPlanLimits(userId, session.user.email);
   const exportCount = await countExportsThisMonth(userId);
-  const limit = isPro ? PLAN_LIMITS.pro.exportsPerMonth : PLAN_LIMITS.free.exportsPerMonth;
-  if (exportCount >= limit) {
+  if (exportCount >= limits.exportsPerMonth) {
     return NextResponse.json(
-      { error: `Export limit: ${exportCount}/${limit} this month.${isPro ? "" : " Upgrade to Pro for more."}` },
+      { error: `Export limit: ${exportCount}/${limits.exportsPerMonth} this month.${isPro ? "" : " Upgrade to Pro for more."}` },
       { status: 403 }
     );
   }

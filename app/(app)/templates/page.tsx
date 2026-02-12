@@ -13,7 +13,7 @@ export default async function TemplatesPage() {
   const { user } = await getUser();
   const [templates, subscription, userTemplateCount] = await Promise.all([
     listTemplatesForUser(user.id, { includeSystem: true }),
-    getSubscription(user.id),
+    getSubscription(user.id, user.email),
     countUserTemplates(user.id),
   ]);
 

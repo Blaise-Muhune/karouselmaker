@@ -37,7 +37,7 @@ export default async function CarouselEditorPage({
     listSlides(user.id, carouselId),
     listTemplatesForUser(user.id, { includeSystem: true }),
     listExportsByCarousel(user.id, carouselId, 3),
-    getSubscription(user.id),
+    getSubscription(user.id, user.email),
     countExportsThisMonth(user.id),
   ]);
 

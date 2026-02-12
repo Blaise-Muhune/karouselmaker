@@ -2,7 +2,7 @@
 
 import OpenAI from "openai";
 import { getUser } from "@/lib/server/auth/getUser";
-import { getSubscription } from "@/lib/server/subscription";
+import { getSubscription, getPlanLimits } from "@/lib/server/subscription";
 import { getProject } from "@/lib/server/db/projects";
 import { createCarousel, getCarousel, updateCarousel, countCarouselsThisMonth } from "@/lib/server/db/carousels";
 import { replaceSlides, updateSlide } from "@/lib/server/db/slides";
@@ -19,7 +19,6 @@ import { searchImage } from "@/lib/server/imageSearch";
 import { searchUnsplashPhotoRandom, trackUnsplashDownload } from "@/lib/server/unsplash";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
 import { generateCarouselInputSchema } from "@/lib/validations/carousel";
-import { PLAN_LIMITS } from "@/lib/constants";
 
 const MAX_RETRIES = 2;
 
@@ -94,12 +93,12 @@ export async function generateCarousel(formData: FormData): Promise<
   const project = await getProject(user.id, data.project_id);
   if (!project) return { error: "Project not found" };
 
-  const { isPro } = await getSubscription(user.id);
+  const { isPro } = await getSubscription(user.id, user.email);
+  const limits = await getPlanLimits(user.id, user.email);
   const count = await countCarouselsThisMonth(user.id);
-  const limit = isPro ? PLAN_LIMITS.pro.carouselsPerMonth : PLAN_LIMITS.free.carouselsPerMonth;
-  if (count >= limit) {
+  if (count >= limits.carouselsPerMonth) {
     return {
-      error: `Generation limit: ${count}/${limit} carousels this month.${isPro ? "" : " Upgrade to Pro for more."}`,
+      error: `Generation limit: ${count}/${limits.carouselsPerMonth} carousels this month.${isPro ? "" : " Upgrade to Pro for more."}`,
     };
   }
 

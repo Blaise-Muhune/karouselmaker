@@ -12,7 +12,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { CarouselVideoPlayer } from "@/components/carousels/CarouselVideoPlayer";
-import { createVideoFromImages } from "@/lib/video/createVideoFromImages";
+import { createVideoFromImages, preloadFFmpeg } from "@/lib/video/createVideoFromImages";
 import { CopyIcon, DownloadIcon, Loader2Icon, PlayIcon, ShareIcon, VideoIcon } from "lucide-react";
 import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
 import { PLAN_LIMITS } from "@/lib/constants";
@@ -230,7 +230,10 @@ export function EditorExportSection({
         {latestReadyExport && (
           <Dialog open={videoPreviewOpen} onOpenChange={(open) => {
             setVideoPreviewOpen(open);
-            if (open && slideUrls.length === 0) loadVideoUrls();
+            if (open) {
+              if (slideUrls.length === 0) loadVideoUrls();
+              preloadFFmpeg(); // Start loading FFmpeg so Download MP4 is faster
+            }
           }}>
             <DialogTrigger asChild>
               <Button size="sm" variant="outline">
@@ -280,7 +283,7 @@ export function EditorExportSection({
                   <p className="text-destructive text-xs">{videoDownloadError}</p>
                 )}
                 <p className="text-muted-foreground text-xs text-center">
-                  Made with Remotion · Encodes in browser (may take a minute)
+                  Encodes in browser · Open this dialog first for faster download
                 </p>
               </div>
             </DialogContent>

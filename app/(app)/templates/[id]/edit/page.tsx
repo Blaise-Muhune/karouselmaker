@@ -16,7 +16,7 @@ export default async function EditTemplatePage({
   const { user } = await getUser();
   const [template, subscription] = await Promise.all([
     getTemplate(user.id, id),
-    getSubscription(user.id),
+    getSubscription(user.id, user.email),
   ]);
 
   if (!template) notFound();

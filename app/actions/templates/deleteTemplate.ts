@@ -8,7 +8,7 @@ export async function deleteTemplateAction(
   templateId: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const { user } = await getUser();
-  const { isPro } = await getSubscription(user.id);
+  const { isPro } = await getSubscription(user.id, user.email);
 
   if (!isPro) {
     return { ok: false, error: "Upgrade to Pro to manage custom templates." };

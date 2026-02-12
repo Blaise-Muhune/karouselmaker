@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getUser } from "@/lib/server/auth/getUser";
-import { getSubscription } from "@/lib/server/subscription";
+import { getSubscription, getPlanLimits } from "@/lib/server/subscription";
 import { getProject, countCarouselsThisMonth } from "@/lib/server/db";
 import { PLAN_LIMITS } from "@/lib/constants";
 import { NewCarouselForm } from "./NewCarouselForm";
@@ -14,15 +14,16 @@ export default async function NewCarouselPage({
 }: Readonly<{ params: Promise<{ projectId: string }> }>) {
   const { user } = await getUser();
   const { projectId } = await params;
-  const [project, subscription, carouselCount] = await Promise.all([
+  const [project, subscription, limits, carouselCount] = await Promise.all([
     getProject(user.id, projectId),
-    getSubscription(user.id),
+    getSubscription(user.id, user.email),
+    getPlanLimits(user.id, user.email),
     countCarouselsThisMonth(user.id),
   ]);
 
   if (!project) notFound();
 
-  const carouselLimit = subscription.isPro ? PLAN_LIMITS.pro.carouselsPerMonth : PLAN_LIMITS.free.carouselsPerMonth;
+  const carouselLimit = limits.carouselsPerMonth;
 
   return (
     <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">

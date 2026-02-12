@@ -10,7 +10,7 @@ export default async function AppLayout({
   const { user } = await getUser();
   const [projects, subscription, profile] = await Promise.all([
     listProjects(user.id),
-    getSubscription(user.id),
+    getSubscription(user.id, user.email),
     getProfile(user.id),
   ]);
   const userName = profile?.display_name ?? user.email?.split("@")[0] ?? "";

@@ -2,10 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { getUser } from "@/lib/server/auth/getUser";
-import { getSubscription } from "@/lib/server/subscription";
+import { getSubscription, getPlanLimits } from "@/lib/server/subscription";
 import { createAsset, countAssets } from "@/lib/server/db";
 import { uploadUserAsset } from "@/lib/server/storage/upload";
-import { PLAN_LIMITS } from "@/lib/constants";
 
 const MAX_SIZE_BYTES = 8 * 1024 * 1024; // 8MB
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
@@ -21,13 +20,13 @@ export async function uploadAsset(
   const { user } = await getUser();
   if (!user) return { ok: false, error: "Unauthorized" };
 
-  const { isPro } = await getSubscription(user.id);
-  const limit = isPro ? PLAN_LIMITS.pro.assets : PLAN_LIMITS.free.assets;
+  const { isPro } = await getSubscription(user.id, user.email);
+  const limits = await getPlanLimits(user.id, user.email);
   const currentCount = await countAssets(user.id);
-  if (currentCount >= limit) {
+  if (currentCount >= limits.assets) {
     return {
       ok: false,
-      error: `Asset limit reached (${limit}${isPro ? "" : " on free plan. Upgrade to Pro for more"}).`,
+      error: `Asset limit reached (${limits.assets}${isPro ? "" : " on free plan. Upgrade to Pro for more"}).`,
     };
   }
 

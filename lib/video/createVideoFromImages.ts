@@ -1,12 +1,37 @@
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 
 const SECONDS_PER_SLIDE = 4;
-const FADE_DURATION_SEC = 20 / 30;
-const OUTPUT_FPS = 30;
+const OUTPUT_FPS = 24; // Lower FPS = fewer frames to encode = faster (was 30)
+const FADE_DURATION_SEC = 20 / OUTPUT_FPS;
+
+/** Single shared FFmpeg instance + load promise so we can preload when dialog opens. */
+let ffmpegInstance: FFmpeg | null = null;
+let ffmpegLoadPromise: Promise<FFmpeg> | null = null;
+
+/**
+ * Start loading FFmpeg in the background. Call when the user opens the video preview dialog
+ * so that "Download MP4" doesn't wait on the ~20MB WASM load.
+ */
+export function preloadFFmpeg(): void {
+  if (ffmpegLoadPromise) return;
+  ffmpegLoadPromise = (async () => {
+    const ffmpeg = new FFmpeg();
+    await ffmpeg.load();
+    ffmpegInstance = ffmpeg;
+    return ffmpeg;
+  })();
+}
+
+async function getFFmpeg(): Promise<FFmpeg> {
+  if (ffmpegInstance) return ffmpegInstance;
+  if (!ffmpegLoadPromise) preloadFFmpeg();
+  return ffmpegLoadPromise!;
+}
 
 /**
  * Create an MP4 video from image URLs using ffmpeg.wasm in the browser.
  * Each image is shown for SECONDS_PER_SLIDE seconds with crossfade transitions (matches Remotion preview).
+ * Uses parallel image fetch, faster x264 preset, and 24fps to reduce encode time.
  */
 export async function createVideoFromImages(
   imageUrls: string[],
@@ -14,27 +39,32 @@ export async function createVideoFromImages(
   height: number,
   onProgress?: (p: number) => void
 ): Promise<Blob> {
-  const ffmpeg = new FFmpeg();
-
+  const ffmpeg = await getFFmpeg();
   ffmpeg.on("progress", ({ progress }) => {
     onProgress?.(Math.min(1, progress));
   });
 
-  await ffmpeg.load();
+  // Fetch all images in parallel (was sequential — big win for many slides)
+  const buffers = await Promise.all(
+    imageUrls.map(async (url, i) => {
+      const res = await fetch(url, { mode: "cors" });
+      if (!res.ok) throw new Error(`Failed to fetch image ${i + 1}`);
+      return res.arrayBuffer();
+    })
+  );
 
-  for (let i = 0; i < imageUrls.length; i++) {
+  for (let i = 0; i < buffers.length; i++) {
     const name = `img${String(i + 1).padStart(3, "0")}.png`;
-    const res = await fetch(imageUrls[i]!, { mode: "cors" });
-    if (!res.ok) throw new Error(`Failed to fetch image ${i + 1}`);
-    const data = await res.arrayBuffer();
-    await ffmpeg.writeFile(name, new Uint8Array(data));
+    await ffmpeg.writeFile(name, new Uint8Array(buffers[i]!));
   }
 
   const n = imageUrls.length;
   const scale = `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2`;
 
+  // -preset veryfast + -crf 23: much faster encode with good quality (was default preset = medium/slow)
+  const x264Args = ["-preset", "veryfast", "-crf", "23"];
+
   let args: string[];
-  let filterComplex: string;
 
   if (n === 1) {
     args = [
@@ -42,6 +72,7 @@ export async function createVideoFromImages(
       "-i", "img001.png",
       "-vf", `${scale},format=yuv420p`,
       "-c:v", "libx264",
+      ...x264Args,
       "output.mp4",
     ];
   } else {
@@ -66,13 +97,14 @@ export async function createVideoFromImages(
       length = length + SECONDS_PER_SLIDE - FADE_DURATION_SEC;
     }
 
-    filterComplex = scaleFilters.join(";") + ";" + xfadeParts.join(";") + `;[v${n - 1}]format=yuv420p[vout]`;
+    const filterComplex = scaleFilters.join(";") + ";" + xfadeParts.join(";") + `;[v${n - 1}]format=yuv420p[vout]`;
 
     args = [
       ...inputArgs.flat(),
       "-filter_complex", filterComplex,
       "-map", "[vout]",
       "-c:v", "libx264",
+      ...x264Args,
       "output.mp4",
     ];
   }

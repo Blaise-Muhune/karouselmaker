@@ -17,7 +17,7 @@ export default async function EditSlidePage({
   const { user } = await getUser();
   const { projectId, carouselId, slideId } = await params;
 
-  const { isPro } = await getSubscription(user.id);
+  const { isPro } = await getSubscription(user.id, user.email);
 
   const [slide, carousel, project, slides, templatesRaw] = await Promise.all([
     getSlide(user.id, slideId),

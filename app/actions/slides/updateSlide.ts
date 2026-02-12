@@ -23,7 +23,7 @@ export async function updateSlide(
   const { user } = await getUser();
   if (!user) return { ok: false, error: "Unauthorized" };
 
-  const proCheck = await requirePro(user.id);
+  const proCheck = await requirePro(user.id, user.email);
   if (!proCheck.allowed) {
     // Free users can only update headline, body, and background (color, style, gradientOn, overlay)
     const freeAllowed = ["slide_id", "headline", "body", "background"];

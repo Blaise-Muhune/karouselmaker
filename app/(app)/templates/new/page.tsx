@@ -10,7 +10,7 @@ import Link from "next/link";
 export default async function NewTemplatePage() {
   const { user } = await getUser();
   const [subscription, userTemplateCount, templates] = await Promise.all([
-    getSubscription(user.id),
+    getSubscription(user.id, user.email),
     countUserTemplates(user.id),
     listTemplatesForUser(user.id, { includeSystem: true }),
   ]);
