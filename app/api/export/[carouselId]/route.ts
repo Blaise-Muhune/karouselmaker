@@ -263,9 +263,9 @@ export async function POST(
         dimensions
       );
 
-      await page.setContent(html, { waitUntil: "load" });
-      await page.waitForSelector(".slide", { state: "visible", timeout: 15000 });
-      await new Promise((r) => setTimeout(r, 300));
+      await page.setContent(html, { waitUntil: "domcontentloaded", timeout: 20000 });
+      await page.waitForSelector(".slide", { state: "visible", timeout: 25000 });
+      await new Promise((r) => setTimeout(r, 500));
       const buffer = await page.screenshot({ type: "png" });
       const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
       pngBuffers.push(buf);
@@ -336,7 +336,13 @@ export async function POST(
       slideUrls,
     });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "Export failed";
+    const raw = e instanceof Error ? e.message : "Export failed";
+    const isBrowserClosed =
+      /Target page, context or browser has been closed/i.test(raw) ||
+      /page\.(waitForSelector|screenshot)/i.test(raw);
+    const msg = isBrowserClosed
+      ? "Export timed out or was interrupted. Try again or export fewer slides."
+      : raw;
     try {
       await updateExport(userId, exportId, { status: "failed" });
     } catch {
