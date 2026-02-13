@@ -233,9 +233,9 @@ export async function GET(
   try {
     const page = await browser.newPage();
     await page.setViewportSize({ width: dimensions.w, height: dimensions.h });
-    await page.setContent(html, { waitUntil: "domcontentloaded", timeout: 20000 });
-    await page.waitForSelector(".slide", { state: "visible", timeout: 25000 });
-    await new Promise((r) => setTimeout(r, 500));
+    await page.setContent(html, { waitUntil: "load" });
+    await page.waitForSelector(".slide", { state: "visible", timeout: 15000 });
+    await new Promise((r) => setTimeout(r, 300));
     const buffer = await page.screenshot({ type: format });
     const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
     const ext = format === "jpeg" ? "jpg" : "png";

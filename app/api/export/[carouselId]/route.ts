@@ -27,19 +27,11 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-function isMobileUserAgent(request: Request): boolean {
-  const ua = request.headers.get("user-agent") ?? "";
-  return /iPhone|iPad|iPod|Android|webOS|Mobile/i.test(ua);
-}
-
 export async function POST(
-  request: Request,
+  _request: Request,
   context: { params: Promise<{ carouselId: string }> }
 ) {
   const { carouselId } = await context.params;
-  const url = new URL(request.url);
-  const useAsync = url.searchParams.get("async") === "1" || isMobileUserAgent(request);
-
   const supabase = await createClient();
   const {
     data: { session },
@@ -82,14 +74,6 @@ export async function POST(
     return NextResponse.json({ error: msg }, { status: 400 });
   }
 
-  if (useAsync) {
-    const origin = url.origin;
-    const runUrl = `${origin}/api/export/${carouselId}/${exportId}/run`;
-    const cookie = request.headers.get("cookie") ?? "";
-    fetch(runUrl, { method: "POST", headers: { cookie } }).catch(() => {});
-    return NextResponse.json({ exportId, status: "pending" });
-  }
-
   try {
     const project = await getProject(userId, carousel.project_id);
     if (!project) throw new Error("Project not found");
@@ -103,6 +87,15 @@ export async function POST(
 
     const paths = getExportStoragePaths(userId, carouselId, exportId);
     const browser = await launchChromium();
+    let page: Awaited<ReturnType<typeof browser.newPage>>;
+    try {
+      page = await browser.newPage();
+    } catch (e) {
+      await browser.close();
+      throw e;
+    }
+    await page.setViewportSize({ width: dimensions.w, height: dimensions.h });
+
     const zip = new JSZip();
     const pngBuffers: Buffer[] = [];
     const unsplashAttributions = new Map<
@@ -270,24 +263,18 @@ export async function POST(
         dimensions
       );
 
-      const page = await browser.newPage();
-      try {
-        await page.setViewportSize({ width: dimensions.w, height: dimensions.h });
-        await page.setContent(html, { waitUntil: "domcontentloaded", timeout: 15000 });
-        await page.waitForSelector(".slide", { state: "visible", timeout: 15000 });
-        await new Promise((r) => setTimeout(r, 400));
-        const buffer = await page.screenshot({ type: "png" });
-        const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
-        pngBuffers.push(buf);
+      await page.setContent(html, { waitUntil: "load" });
+      await page.waitForSelector(".slide", { state: "visible", timeout: 15000 });
+      await new Promise((r) => setTimeout(r, 300));
+      const buffer = await page.screenshot({ type: "png" });
+      const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+      pngBuffers.push(buf);
 
-        const slidePath = paths.slidePath(i);
-        const { error: uploadError } = await supabase.storage
-          .from(BUCKET)
-          .upload(slidePath, buf, { contentType: "image/png", upsert: true });
-        if (uploadError) throw new Error(`Upload slide failed: ${uploadError.message}`);
-      } finally {
-        await page.close();
-      }
+      const slidePath = paths.slidePath(i);
+      const { error: uploadError } = await supabase.storage
+        .from(BUCKET)
+        .upload(slidePath, buf, { contentType: "image/png", upsert: true });
+      if (uploadError) throw new Error(`Upload slide failed: ${uploadError.message}`);
     }
     } finally {
       await browser.close();
@@ -349,13 +336,7 @@ export async function POST(
       slideUrls,
     });
   } catch (e) {
-    const raw = e instanceof Error ? e.message : "Export failed";
-    const isBrowserClosed =
-      /Target page, context or browser has been closed/i.test(raw) ||
-      /page\.(waitForSelector|screenshot)/i.test(raw);
-    const msg = isBrowserClosed
-      ? "Export timed out or was interrupted. Try again or export fewer slides."
-      : raw;
+    const msg = e instanceof Error ? e.message : "Export failed";
     try {
       await updateExport(userId, exportId, { status: "failed" });
     } catch {

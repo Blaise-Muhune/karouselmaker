@@ -47,8 +47,6 @@ type SlideGridProps = {
   projectId: string;
   carouselId: string;
   slideBackgroundImageUrls?: Record<string, string | string[]>;
-  /** Hook slides: second image (circle) URL per slide id. */
-  slideSecondaryBackgroundImageUrl?: Record<string, string>;
   exportSize?: "1080x1080" | "1080x1350" | "1080x1920";
   isPro?: boolean;
 };
@@ -150,24 +148,6 @@ function getImageDisplay(slide: Slide): React.ComponentProps<typeof SlidePreview
   return (bg?.image_display ?? undefined) as React.ComponentProps<typeof SlidePreview>["imageDisplay"];
 }
 
-function getZoneOverrides(slide: Slide): React.ComponentProps<typeof SlidePreview>["zoneOverrides"] {
-  const m = slide.meta as { headline_zone_override?: Record<string, unknown>; body_zone_override?: Record<string, unknown> } | null;
-  if (!m?.headline_zone_override && !m?.body_zone_override) return undefined;
-  return { headline: m.headline_zone_override, body: m.body_zone_override };
-}
-
-function getHighlightStyles(slide: Slide): {
-  headlineHighlightStyle?: "text" | "background";
-  bodyHighlightStyle?: "text" | "background";
-} {
-  const m = slide.meta as { headline_highlight_style?: "text" | "background"; body_highlight_style?: "text" | "background" } | null;
-  if (!m) return {};
-  return {
-    headlineHighlightStyle: m.headline_highlight_style,
-    bodyHighlightStyle: m.body_highlight_style,
-  };
-}
-
 export function SlideGrid({
   slides,
   templates,
@@ -175,7 +155,6 @@ export function SlideGrid({
   projectId,
   carouselId,
   slideBackgroundImageUrls = {},
-  slideSecondaryBackgroundImageUrl = {},
   exportSize = "1080x1350",
   isPro = true,
 }: SlideGridProps) {
@@ -301,17 +280,12 @@ export function SlideGrid({
                             totalSlides={slidesOrder.length}
                             backgroundImageUrl={typeof slideBackgroundImageUrls[slide.id] === "string" ? slideBackgroundImageUrls[slide.id] as string : undefined}
                             backgroundImageUrls={Array.isArray(slideBackgroundImageUrls[slide.id]) ? slideBackgroundImageUrls[slide.id] as string[] : undefined}
-                            secondaryBackgroundImageUrl={slideSecondaryBackgroundImageUrl[slide.id]}
                             backgroundOverride={backgroundOverride}
                             showCounterOverride={getShowCounterOverride(slide)}
                             showWatermarkOverride={getShowWatermarkOverride(slide, slidesOrder.length)}
                             showMadeWithOverride={getShowMadeWithOverride(slide, isPro)}
                             fontOverrides={getFontOverrides(slide)}
                             imageDisplay={getImageDisplay(slide)}
-                            zoneOverrides={getZoneOverrides(slide)}
-                            headlineHighlightStyle={getHighlightStyles(slide).headlineHighlightStyle}
-                            bodyHighlightStyle={getHighlightStyles(slide).bodyHighlightStyle}
-                            borderedFrame={!!(typeof slideBackgroundImageUrls[slide.id] === "string" || (Array.isArray(slideBackgroundImageUrls[slide.id]) && (slideBackgroundImageUrls[slide.id] as string[]).length > 0))}
                             exportSize={exportSize}
                           />
                         </div>
@@ -354,17 +328,12 @@ export function SlideGrid({
                             totalSlides={slidesOrder.length}
                             backgroundImageUrl={typeof slideBackgroundImageUrls[slide.id] === "string" ? slideBackgroundImageUrls[slide.id] as string : undefined}
                             backgroundImageUrls={Array.isArray(slideBackgroundImageUrls[slide.id]) ? slideBackgroundImageUrls[slide.id] as string[] : undefined}
-                            secondaryBackgroundImageUrl={slideSecondaryBackgroundImageUrl[slide.id]}
                             backgroundOverride={backgroundOverride}
                             showCounterOverride={getShowCounterOverride(slide)}
                             showWatermarkOverride={getShowWatermarkOverride(slide, slidesOrder.length)}
                             showMadeWithOverride={getShowMadeWithOverride(slide, isPro)}
                             fontOverrides={getFontOverrides(slide)}
                             imageDisplay={getImageDisplay(slide)}
-                            zoneOverrides={getZoneOverrides(slide)}
-                            headlineHighlightStyle={getHighlightStyles(slide).headlineHighlightStyle}
-                            bodyHighlightStyle={getHighlightStyles(slide).bodyHighlightStyle}
-                            borderedFrame={!!(typeof slideBackgroundImageUrls[slide.id] === "string" || (Array.isArray(slideBackgroundImageUrls[slide.id]) && (slideBackgroundImageUrls[slide.id] as string[]).length > 0))}
                             exportSize={exportSize}
                           />
                         </div>

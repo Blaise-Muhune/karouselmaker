@@ -48,27 +48,6 @@ export async function createExport(
   return data as ExportRow;
 }
 
-export async function getExport(
-  userId: string,
-  exportId: string
-): Promise<ExportRow | null> {
-  const supabase = await createClient();
-  const { data: row } = await supabase
-    .from("exports")
-    .select("id, carousel_id, format, status, storage_path, created_at")
-    .eq("id", exportId)
-    .single();
-  if (!row) return null;
-  const { data: carousel } = await supabase
-    .from("carousels")
-    .select("id")
-    .eq("id", row.carousel_id)
-    .eq("user_id", userId)
-    .single();
-  if (!carousel) return null;
-  return row as ExportRow;
-}
-
 export async function updateExport(
   userId: string,
   exportId: string,

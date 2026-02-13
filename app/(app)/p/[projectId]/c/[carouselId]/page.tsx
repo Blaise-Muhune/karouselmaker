@@ -55,17 +55,9 @@ export default async function CarouselEditorPage({
   const brandKit: BrandKit = await resolveBrandKitLogo(project.brand_kit as Record<string, unknown> | null);
 
   const slideBackgroundImageUrls: Record<string, string | string[]> = {};
-  const slideSecondaryBackgroundImageUrl: Record<string, string> = {};
   await Promise.all(
     slides.map(async (s) => {
-      const bg = s.background as {
-        mode?: string;
-        storage_path?: string;
-        image_url?: string;
-        images?: { image_url?: string; storage_path?: string }[];
-        secondary_image_url?: string;
-        secondary_storage_path?: string;
-      } | null;
+      const bg = s.background as { mode?: string; storage_path?: string; image_url?: string; images?: { image_url?: string; storage_path?: string }[] } | null;
       if (bg?.mode !== "image") return;
       if (bg.images?.length) {
         const urls: string[] = [];
@@ -80,9 +72,13 @@ export default async function CarouselEditorPage({
           }
         }
         if (urls.length) slideBackgroundImageUrls[s.id] = urls.length === 1 ? urls[0]! : urls;
-      } else if (bg.image_url) {
+        return;
+      }
+      if (bg.image_url) {
         slideBackgroundImageUrls[s.id] = bg.image_url;
-      } else if (bg.storage_path) {
+        return;
+      }
+      if (bg.storage_path) {
         try {
           slideBackgroundImageUrls[s.id] = await getSignedImageUrl(
             "carousel-assets",
@@ -91,21 +87,6 @@ export default async function CarouselEditorPage({
           );
         } catch {
           // skip
-        }
-      }
-      if (s.slide_type === "hook" && !bg.images?.length) {
-        if (bg.secondary_image_url) {
-          slideSecondaryBackgroundImageUrl[s.id] = bg.secondary_image_url;
-        } else if (bg.secondary_storage_path) {
-          try {
-            slideSecondaryBackgroundImageUrl[s.id] = await getSignedImageUrl(
-              "carousel-assets",
-              bg.secondary_storage_path,
-              600
-            );
-          } catch {
-            // skip
-          }
         }
       }
     })
@@ -201,7 +182,6 @@ export default async function CarouselEditorPage({
             projectId={projectId}
             carouselId={carouselId}
             slideBackgroundImageUrls={slideBackgroundImageUrls}
-            slideSecondaryBackgroundImageUrl={slideSecondaryBackgroundImageUrl}
             exportSize={getExportSize(carousel)}
             isPro={subscription.isPro}
           />

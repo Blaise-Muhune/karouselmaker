@@ -114,22 +114,14 @@ export type SlideBackgroundState = SlideBackgroundOverride & {
 const PREVIEW_MAX = 380;
 const PREVIEW_MAX_LARGE = 560;
 
-/** Preview dimensions and scale. Scale to cover so template fills the frame (centered crop at 4:5 / 9:16). When measuredW/measuredH are provided (e.g. from ResizeObserver), use them so the preview fits the viewport on mobile. */
-function getPreviewDimensions(
-  size: "1080x1080" | "1080x1350" | "1080x1920",
-  maxSize = PREVIEW_MAX,
-  measuredW?: number,
-  measuredH?: number
-): { w: number; h: number; scale: number; offsetX: number; offsetY: number } {
+/** Preview dimensions and scale. Scale to cover so template fills the frame (centered crop at 4:5 / 9:16). */
+function getPreviewDimensions(size: "1080x1080" | "1080x1350" | "1080x1920", maxSize = PREVIEW_MAX): { w: number; h: number; scale: number; offsetX: number; offsetY: number } {
   const exportW = 1080;
   const exportH = size === "1080x1080" ? 1080 : size === "1080x1350" ? 1350 : 1920;
   const aspect = exportW / exportH;
   let w: number;
   let h: number;
-  if (measuredW != null && measuredW > 0 && measuredH != null && measuredH > 0) {
-    w = measuredW;
-    h = measuredH;
-  } else if (aspect >= 1) {
+  if (aspect >= 1) {
     w = maxSize;
     h = Math.round(maxSize / aspect);
   } else {
@@ -413,8 +405,6 @@ export function SlideEditForm({
   const [mobileBannerDismissed, setMobileBannerDismissed] = useState(false);
   const [mobilePreviewOpen, setMobilePreviewOpen] = useState(false);
   const [previewExpanded, setPreviewExpanded] = useState(false);
-  const [previewContainerSize, setPreviewContainerSize] = useState<{ w: number; h: number } | null>(null);
-  const previewContainerRef = useRef<HTMLDivElement>(null);
   const [isMobile, setIsMobile] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [pendingDownload, setPendingDownload] = useState<{ url: string; filename: string } | null>(null);
@@ -425,21 +415,6 @@ export function SlideEditForm({
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);
   }, []);
-
-  useEffect(() => {
-    const el = previewContainerRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => {
-      if (el.offsetWidth > 0 && el.offsetHeight > 0) {
-        setPreviewContainerSize({ w: el.offsetWidth, h: el.offsetHeight });
-      }
-    });
-    ro.observe(el);
-    if (el.offsetWidth > 0 && el.offsetHeight > 0) {
-      setPreviewContainerSize({ w: el.offsetWidth, h: el.offsetHeight });
-    }
-    return () => ro.disconnect();
-  }, [exportSize]);
 
   const templateConfig = getTemplateConfig(templateId, templates);
   const isHook = slide.slide_type === "hook";
@@ -1184,32 +1159,26 @@ export function SlideEditForm({
         </div>
       </div>
       <div
-        ref={previewContainerRef}
-        className="w-full mx-auto shrink-0 max-w-full"
+        className="rounded-lg border border-border/80 shrink-0 max-w-full mx-auto"
         style={{
-          maxWidth: PREVIEW_MAX,
-          aspectRatio: exportSize === "1080x1080" ? "1" : exportSize === "1080x1350" ? "1080/1350" : "1080/1920",
+          width: getPreviewDimensions(exportSize).w,
+          height: getPreviewDimensions(exportSize).h,
+          overflow: "hidden",
+          position: "relative",
+          backgroundColor: isImageMode && background.overlay?.gradient !== false
+            ? (background.overlay?.color ?? "#000000")
+            : (background.color ?? brandKit.primary_color ?? "#0a0a0a"),
         }}
       >
-        <div
-          className="rounded-lg border border-border/80 w-full h-full overflow-hidden relative"
-          style={{
-            backgroundColor: isImageMode && background.overlay?.gradient !== false
-              ? (background.overlay?.color ?? "#000000")
-              : (background.color ?? brandKit.primary_color ?? "#0a0a0a"),
-          }}
-        >
-        {templateConfig ? (() => {
-          const dims = getPreviewDimensions(exportSize, PREVIEW_MAX, previewContainerSize?.w, previewContainerSize?.h);
-          return (
+        {templateConfig ? (
           <div
             style={{
               position: "absolute",
-              left: dims.offsetX,
-              top: dims.offsetY,
+              left: getPreviewDimensions(exportSize).offsetX,
+              top: getPreviewDimensions(exportSize).offsetY,
               width: 1080,
               height: 1080,
-              transform: `scale(${dims.scale})`,
+              transform: `scale(${getPreviewDimensions(exportSize).scale})`,
               transformOrigin: "top left",
             }}
           >
@@ -1247,13 +1216,14 @@ export function SlideEditForm({
               exportSize={exportSize}
             />
           </div>
-          );
-        })() : (
-          <div className="flex h-full w-full items-center justify-center text-muted-foreground text-sm overflow-hidden min-h-[200px]">
+        ) : (
+          <div
+            className="flex h-full items-center justify-center text-muted-foreground text-sm"
+            style={{ width: getPreviewDimensions(exportSize).w, height: getPreviewDimensions(exportSize).h, overflow: "hidden" }}
+          >
             No template
           </div>
         )}
-        </div>
       </div>
       {/* Preview controls: download, prev/next, save */}
       <div className="flex flex-col gap-3 mt-4 w-full">
