@@ -27,11 +27,19 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
+function isMobileUserAgent(request: Request): boolean {
+  const ua = request.headers.get("user-agent") ?? "";
+  return /iPhone|iPad|iPod|Android|webOS|Mobile/i.test(ua);
+}
+
 export async function POST(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ carouselId: string }> }
 ) {
   const { carouselId } = await context.params;
+  const url = new URL(request.url);
+  const useAsync = url.searchParams.get("async") === "1" || isMobileUserAgent(request);
+
   const supabase = await createClient();
   const {
     data: { session },
@@ -72,6 +80,14 @@ export async function POST(
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Failed to create export";
     return NextResponse.json({ error: msg }, { status: 400 });
+  }
+
+  if (useAsync) {
+    const origin = url.origin;
+    const runUrl = `${origin}/api/export/${carouselId}/${exportId}/run`;
+    const cookie = request.headers.get("cookie") ?? "";
+    fetch(runUrl, { method: "POST", headers: { cookie } }).catch(() => {});
+    return NextResponse.json({ exportId, status: "pending" });
   }
 
   try {
