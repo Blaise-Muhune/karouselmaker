@@ -83,6 +83,27 @@ export function EditorExportSection({
         setDownloadUrl(data.downloadUrl);
         if (data.slideUrls?.length) setSlideUrls(data.slideUrls);
         router.refresh();
+        return;
+      }
+      if (data.status === "pending" && data.exportId) {
+        const exportId = data.exportId as string;
+        const maxAttempts = 60;
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+          await new Promise((r) => setTimeout(r, 2000));
+          const pollRes = await fetch(`/api/export/${carouselId}/${exportId}`);
+          const pollData = await pollRes.json().catch(() => ({}));
+          if (pollData.status === "ready" && pollData.downloadUrl) {
+            setDownloadUrl(pollData.downloadUrl);
+            if (pollData.slideUrls?.length) setSlideUrls(pollData.slideUrls);
+            router.refresh();
+            return;
+          }
+          if (pollData.status === "failed") {
+            setError("Export failed. Try again.");
+            return;
+          }
+        }
+        setError("Export is taking longer than usual. Refresh the page and check back.");
       }
     } catch {
       setError("Export failed");
