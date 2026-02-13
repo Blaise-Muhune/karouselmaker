@@ -388,14 +388,12 @@ export function SlidePreview({
                   <div
                     className="absolute inset-0 pointer-events-none"
                     style={{
-                      zIndex: 1,
                       background: `linear-gradient(135deg, transparent calc(50% - ${dividerWidth}px), ${dividerColor} calc(50% - ${dividerWidth}px), ${dividerColor} calc(50% + ${dividerWidth}px), transparent calc(50% + ${dividerWidth}px))`,
                     }}
                   />
                 ) : (
                   <svg
                     className="absolute inset-0 w-full h-full pointer-events-none"
-                    style={{ zIndex: 1 }}
                     viewBox="0 0 100 100"
                     preserveAspectRatio="none"
                   >
@@ -433,7 +431,7 @@ export function SlidePreview({
           const flexDir = useStacked ? "column" : "row";
 
           const renderDividerSegment = (seg: DividerSegment, idx: number) => {
-            const baseStyle: React.CSSProperties = { position: "absolute" as const, left: seg.x, top: seg.y, width: seg.w, height: seg.h, pointerEvents: "none", zIndex: 1 };
+            const baseStyle: React.CSSProperties = { position: "absolute" as const, left: seg.x, top: seg.y, width: seg.w, height: seg.h, pointerEvents: "none", zIndex: 0 };
             const segSize = seg.vertical ? seg.w : seg.h;
             const strokeInUnits = Math.min(25, Math.max(8, (50 * Math.max(2, dividerWidth)) / Math.max(1, segSize)));
 
@@ -589,7 +587,7 @@ export function SlidePreview({
         return (
           <div
             className="absolute inset-0 pointer-events-none"
-            style={{ background: gradientStyle, zIndex: 2 }}
+            style={{ background: gradientStyle, zIndex: 1 }}
           />
         );
       })()}

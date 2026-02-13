@@ -273,8 +273,8 @@ export function renderSlideHtml(
             `<div style="position:absolute;inset:0;background-size:${fit};background-position:${posCss};background-image:url(${escapeHtml(url)});clip-path:${i === 0 ? clip0 : clip1}"></div>`
           ).join("");
           const divOverlay = isDiagonal
-            ? `<div style="position:absolute;inset:0;z-index:1;background:linear-gradient(135deg, transparent calc(50% - ${dividerWidth}px), ${escapeHtml(dividerColor)} calc(50% - ${dividerWidth}px), ${escapeHtml(dividerColor)} calc(50% + ${dividerWidth}px), transparent calc(50% + ${dividerWidth}px));pointer-events:none"></div>`
-            : `<svg style="position:absolute;inset:0;z-index:1;width:100%;height:100%;pointer-events:none" viewBox="0 0 100 100" preserveAspectRatio="none"><polyline points="50,0 35,25 65,50 35,75 50,100" fill="none" stroke="${escapeHtml(dividerColor)}" stroke-width="${Math.max(0.8, dividerWidth / 12)}" stroke-linecap="square"/></svg>`;
+            ? `<div style="position:absolute;inset:0;background:linear-gradient(135deg, transparent calc(50% - ${dividerWidth}px), ${escapeHtml(dividerColor)} calc(50% - ${dividerWidth}px), ${escapeHtml(dividerColor)} calc(50% + ${dividerWidth}px), transparent calc(50% + ${dividerWidth}px));pointer-events:none"></div>`
+            : `<svg style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none" viewBox="0 0 100 100" preserveAspectRatio="none"><polyline points="50,0 35,25 65,50 35,75 50,100" fill="none" stroke="${escapeHtml(dividerColor)}" stroke-width="${Math.max(0.8, dividerWidth / 12)}" stroke-linecap="square"/></svg>`;
           return `<div style="position:absolute;left:${pad}px;top:${pad}px;width:${inner}px;height:${inner}px;overflow:hidden;${shapeCss};${frameW > 0 ? `border:${frameW}px solid ${escapeHtml(frameColor)};box-shadow:0 8px 32px rgba(0,0,0,0.3);` : ""}">${imgs}${divOverlay}</div>`;
         }
 
@@ -316,28 +316,28 @@ export function renderSlideHtml(
           segs.push({ x: pad, y: pad + itemH + effectiveGap / 2 - dividerWidth / 2, w: inner, h: dividerWidth, vertical: false });
         }
 
-        const zDivider = "z-index:1;";
         const segsHtml = useVisibleDividers ? segs.map((seg) => {
           const segSize = seg.vertical ? seg.w : seg.h;
           const strokeInUnits = Math.min(25, Math.max(8, (50 * Math.max(2, dividerWidth)) / Math.max(1, segSize)));
+          const z0 = "z-index:0;";
           if (dividerStyle === "line") {
-            return `<div style="position:absolute;left:${seg.x}px;top:${seg.y}px;width:${seg.w}px;height:${seg.h}px;background-color:${escapeHtml(dividerColor)};pointer-events:none;${zDivider}"></div>`;
+            return `<div style="position:absolute;left:${seg.x}px;top:${seg.y}px;width:${seg.w}px;height:${seg.h}px;background-color:${escapeHtml(dividerColor)};pointer-events:none;${z0}"></div>`;
           }
           if (dividerStyle === "scalloped") {
             const path = seg.vertical ? "M 50 0 Q 10 12.5 50 25 Q 90 37.5 50 50 Q 10 62.5 50 75 Q 90 87.5 50 100" : "M 0 50 Q 12.5 90 25 50 Q 37.5 10 50 50 Q 62.5 90 75 50 Q 87.5 10 100 50";
-            return `<svg style="position:absolute;left:${seg.x}px;top:${seg.y}px;width:${seg.w}px;height:${seg.h}px;pointer-events:none;${zDivider}" viewBox="0 0 100 100" preserveAspectRatio="none"><path d="${path}" fill="none" stroke="${escapeHtml(dividerColor)}" stroke-width="${strokeInUnits}" stroke-linecap="round"/></svg>`;
+            return `<svg style="position:absolute;left:${seg.x}px;top:${seg.y}px;width:${seg.w}px;height:${seg.h}px;pointer-events:none;${z0}" viewBox="0 0 100 100" preserveAspectRatio="none"><path d="${path}" fill="none" stroke="${escapeHtml(dividerColor)}" stroke-width="${strokeInUnits}" stroke-linecap="round"/></svg>`;
           }
           if (dividerStyle === "dashed") {
             const x1 = seg.vertical ? 50 : 0; const y1 = seg.vertical ? 0 : 50; const x2 = seg.vertical ? 50 : 100; const y2 = seg.vertical ? 100 : 50;
-            return `<svg style="position:absolute;left:${seg.x}px;top:${seg.y}px;width:${seg.w}px;height:${seg.h}px;pointer-events:none;${zDivider}" viewBox="0 0 100 100" preserveAspectRatio="none"><line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${escapeHtml(dividerColor)}" stroke-width="${strokeInUnits}" stroke-dasharray="12 8" stroke-linecap="square"/></svg>`;
+            return `<svg style="position:absolute;left:${seg.x}px;top:${seg.y}px;width:${seg.w}px;height:${seg.h}px;pointer-events:none;${z0}" viewBox="0 0 100 100" preserveAspectRatio="none"><line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${escapeHtml(dividerColor)}" stroke-width="${strokeInUnits}" stroke-dasharray="12 8" stroke-linecap="square"/></svg>`;
           }
           if (dividerStyle === "wave") {
             const path = seg.vertical ? "M 50 0 Q 90 25 50 50 Q 10 75 50 100" : "M 0 50 Q 25 10 50 50 Q 75 90 100 50";
-            return `<svg style="position:absolute;left:${seg.x}px;top:${seg.y}px;width:${seg.w}px;height:${seg.h}px;pointer-events:none;${zDivider}" viewBox="0 0 100 100" preserveAspectRatio="none"><path d="${path}" fill="none" stroke="${escapeHtml(dividerColor)}" stroke-width="${strokeInUnits}"/></svg>`;
+            return `<svg style="position:absolute;left:${seg.x}px;top:${seg.y}px;width:${seg.w}px;height:${seg.h}px;pointer-events:none;${z0}" viewBox="0 0 100 100" preserveAspectRatio="none"><path d="${path}" fill="none" stroke="${escapeHtml(dividerColor)}" stroke-width="${strokeInUnits}"/></svg>`;
           }
           if (dividerStyle === "zigzag") {
             const pts = seg.vertical ? "50,0 10,25 90,50 10,75 50,100" : "0,50 25,10 50,90 75,10 100,50";
-            return `<svg style="position:absolute;left:${seg.x}px;top:${seg.y}px;width:${seg.w}px;height:${seg.h}px;pointer-events:none;${zDivider}" viewBox="0 0 100 100" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="${escapeHtml(dividerColor)}" stroke-width="${strokeInUnits}" stroke-linecap="square"/></svg>`;
+            return `<svg style="position:absolute;left:${seg.x}px;top:${seg.y}px;width:${seg.w}px;height:${seg.h}px;pointer-events:none;${z0}" viewBox="0 0 100 100" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="${escapeHtml(dividerColor)}" stroke-width="${strokeInUnits}" stroke-linecap="square"/></svg>`;
           }
           return "";
         }).join("") : "";
@@ -397,8 +397,8 @@ export function renderSlideHtml(
     .slide-wrap { position: absolute; left: 0; top: 0; width: ${dimW}px; height: ${dimH}px; overflow: hidden; }
     .slide { position: absolute; width: 1080px; height: 1080px; left: ${slideTranslateX}px; top: ${slideTranslateY}px; transform: scale(${scale}); transform-origin: top left; background-color: ${escapeHtml(backgroundColor)}; }
     .slide-bg-image { position: absolute; inset: 0; ${bgImageStyle} }
-    .slide-gradient { position: absolute; inset: 0; background: ${gradientStyle}; pointer-events: none; z-index: 2; }
-    .text-block { position: absolute; display: flex; flex-direction: column; justify-content: center; z-index: 5; }
+    .slide-gradient { position: absolute; inset: 0; background: ${gradientStyle}; pointer-events: none; z-index: 1; }
+    .text-block { position: absolute; display: flex; flex-direction: column; justify-content: center; }
     .text-block span { display: block; }
     .chrome-swipe { position: absolute; display: flex; align-items: center; justify-content: center; padding: 12px 0; opacity: 0.9; font-size: 24px; font-weight: 600; letter-spacing: 0.1em; z-index: 5; }
     .chrome-counter { position: absolute; top: 20px; right: 20px; padding: 6px 12px; border-radius: 9999px; background: rgba(255,255,255,0.08); font-size: 20px; font-weight: 500; letter-spacing: 0.02em; opacity: 0.85; z-index: 5; }
