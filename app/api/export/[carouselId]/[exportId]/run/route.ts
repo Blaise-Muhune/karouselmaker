@@ -16,9 +16,9 @@ import { getContrastingTextColor } from "@/lib/editor/colorUtils";
 import { resolveBrandKitLogo } from "@/lib/server/brandKit";
 import { formatUnsplashAttributionLine } from "@/lib/server/unsplash";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
-import { renderSlideHtml } from "@/lib/server/renderer/renderSlideHtml";
+import { renderSlideHtml, type SlideBackgroundOverride, type GradientDirection } from "@/lib/server/renderer/renderSlideHtml";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
-import type { BrandKit } from "@/lib/renderer/renderModel";
+import type { BrandKit, TextZoneOverrides } from "@/lib/renderer/renderModel";
 
 const BUCKET = "carousel-assets";
 export const dynamic = "force-dynamic";
@@ -102,19 +102,22 @@ export async function POST(
         const templateSolidSize = (templateCfg?.overlays?.gradient as { solidSize?: number })?.solidSize ?? 0;
         const gradientExtent = (slideBg?.overlay as { extent?: number })?.extent != null && (slideBg?.overlay as { extent?: number }).extent !== 100 ? (slideBg?.overlay as { extent?: number }).extent! : templateExtent;
         const gradientSolidSize = (slideBg?.overlay as { solidSize?: number })?.solidSize != null && (slideBg?.overlay as { solidSize?: number }).solidSize !== 0 ? (slideBg?.overlay as { solidSize?: number }).solidSize! : templateSolidSize;
+        const rawDirection = (slideBg?.overlay as { direction?: string })?.direction ?? (templateCfg?.overlays?.gradient as { direction?: string })?.direction ?? "bottom";
+        const gradientDirection: GradientDirection = (rawDirection === "top" || rawDirection === "bottom" || rawDirection === "left" || rawDirection === "right") ? rawDirection : "bottom";
         const overlayFields = {
           gradientStrength,
           gradientColor,
           textColor: getContrastingTextColor(gradientColor),
-          gradientDirection: (slideBg?.overlay as { direction?: string })?.direction ?? (templateCfg?.overlays?.gradient as { direction?: string })?.direction ?? "bottom",
+          gradientDirection,
           gradientExtent,
           gradientSolidSize,
         };
-        const backgroundOverride = slideBg
+        const rawGradientOn = slideBg?.gradientOn ?? (slideBg?.overlay as { gradient?: boolean })?.gradient ?? true;
+        const backgroundOverride: SlideBackgroundOverride | undefined = slideBg
           ? {
-              style: slideBg.style,
-              color: slideBg.color,
-              gradientOn: slideBg.gradientOn ?? (slideBg.overlay as { gradient?: boolean })?.gradient ?? true,
+              style: slideBg.style === "solid" || slideBg.style === "gradient" ? slideBg.style : undefined,
+              color: typeof slideBg.color === "string" ? slideBg.color : undefined,
+              gradientOn: typeof rawGradientOn === "boolean" ? rawGradientOn : true,
               ...overlayFields,
             }
           : undefined;
@@ -174,10 +177,10 @@ export async function POST(
         const slideMeta = slide.meta as Record<string, unknown> | null;
         const showCounterOverride = slideMeta?.show_counter === true;
         const defaultShowWatermark = slide.slide_index === 1 || slide.slide_index === slides.length;
-        const showWatermarkOverride = slideMeta?.show_watermark ?? defaultShowWatermark;
-        const showMadeWithOverride = slideMeta?.show_made_with ?? !isPro;
+        const showWatermarkOverride: boolean = slideMeta?.show_watermark === true || slideMeta?.show_watermark === false ? (slideMeta.show_watermark as boolean) : defaultShowWatermark;
+        const showMadeWithOverride: boolean = slideMeta?.show_made_with === true || slideMeta?.show_made_with === false ? (slideMeta.show_made_with as boolean) : !isPro;
         const fontOverrides = slideMeta && (slideMeta.headline_font_size != null || slideMeta.body_font_size != null) ? { headline_font_size: slideMeta.headline_font_size as number, body_font_size: slideMeta.body_font_size as number } : undefined;
-        const zoneOverrides = slideMeta && (slideMeta.headline_zone_override || slideMeta.body_zone_override) ? { headline: slideMeta.headline_zone_override, body: slideMeta.body_zone_override } : undefined;
+        const zoneOverrides: TextZoneOverrides | undefined = slideMeta && (slideMeta.headline_zone_override || slideMeta.body_zone_override) ? { headline: slideMeta.headline_zone_override as TextZoneOverrides["headline"], body: slideMeta.body_zone_override as TextZoneOverrides["body"] } : undefined;
         const highlightStyles = { headline: slideMeta?.headline_highlight_style === "background" ? "background" as const : undefined, body: slideMeta?.body_highlight_style === "background" ? "background" as const : undefined };
 
         const html = renderSlideHtml(
