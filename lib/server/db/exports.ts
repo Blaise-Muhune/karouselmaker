@@ -6,6 +6,27 @@ import type { ExportRow } from "./types";
  * - user/{userId}/exports/{carouselId}/{exportId}/slides/01.png, 02.png, ...
  * - user/{userId}/exports/{carouselId}/{exportId}/carousel.zip
  */
+export async function getExport(
+  userId: string,
+  exportId: string
+): Promise<ExportRow | null> {
+  const supabase = await createClient();
+  const { data: row, error } = await supabase
+    .from("exports")
+    .select("*")
+    .eq("id", exportId)
+    .single();
+  if (error || !row) return null;
+  const { data: carousel } = await supabase
+    .from("carousels")
+    .select("id")
+    .eq("id", row.carousel_id)
+    .eq("user_id", userId)
+    .single();
+  if (!carousel) return null;
+  return row as ExportRow;
+}
+
 export function getExportStoragePaths(
   userId: string,
   carouselId: string,
