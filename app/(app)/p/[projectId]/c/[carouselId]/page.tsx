@@ -183,6 +183,7 @@ export default async function CarouselEditorPage({
             carouselId={carouselId}
             slideBackgroundImageUrls={slideBackgroundImageUrls}
             exportSize={getExportSize(carousel)}
+            exportFormat={getExportFormat(carousel)}
             isPro={subscription.isPro}
           />
         </section>

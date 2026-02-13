@@ -7,6 +7,7 @@ import { getContrastingTextColor, hexToRgba } from "@/lib/editor/colorUtils";
 import { parseInlineFormatting } from "@/lib/editor/inlineFormat";
 import { Hand, ChevronsLeft, ChevronsRight, MoveHorizontal } from "lucide-react";
 
+/** Base design size (slide content is laid out in 1080x1080, then scaled to cover export dimensions). */
 const CANVAS_SIZE = 1080;
 
 export type GradientDirection = "top" | "bottom" | "left" | "right";
@@ -196,8 +197,13 @@ export function SlidePreview({
   exportSize,
   className = "",
 }: SlidePreviewProps) {
-  const maxDim = exportSize === "1080x1350" ? 1350 : exportSize === "1080x1920" ? 1920 : 1080;
+  const canvasH = exportSize === "1080x1920" ? 1920 : exportSize === "1080x1350" ? 1350 : 1080;
+  const maxDim = Math.max(CANVAS_SIZE, canvasH);
   const textScale = maxDim <= 1080 ? 1 : Math.max(0.5, 1080 / maxDim);
+  const scale = Math.max(1080 / 1080, canvasH / 1080);
+  const scaledSize = 1080 * scale;
+  const slideTranslateX = (1080 - scaledSize) / 2;
+  const slideTranslateY = (canvasH - scaledSize) / 2;
 
   const slideData: SlideData = {
     headline: slide.headline,
@@ -228,7 +234,8 @@ export function SlidePreview({
     brandKit,
     slide.slide_index,
     totalSlides,
-    hasZoneOverrides ? mergedZoneOverrides : undefined
+    hasZoneOverrides ? mergedZoneOverrides : undefined,
+    textScale
   );
 
   const backgroundColor =
@@ -268,11 +275,30 @@ export function SlidePreview({
     <div
       className={`relative overflow-hidden bg-black ${className}`}
       style={{
-        width: CANVAS_SIZE,
-        height: CANVAS_SIZE,
+        width: 1080,
+        height: canvasH,
         transformOrigin: "top left",
       }}
     >
+      {/* Wrapper uses scaled size so layout box fills root (avoids empty strip at bottom in portrait). Inner 1080x1080 scaled to cover. */}
+      <div
+        className="absolute overflow-hidden"
+        style={{
+          left: slideTranslateX,
+          top: slideTranslateY,
+          width: scaledSize,
+          height: scaledSize,
+        }}
+      >
+        <div
+          className="absolute overflow-hidden"
+          style={{
+            width: CANVAS_SIZE,
+            height: CANVAS_SIZE,
+            transform: `scale(${scale})`,
+            transformOrigin: "top left",
+          }}
+        >
       {/* Background: solid or image */}
       <div
         className="absolute inset-0"
@@ -845,6 +871,8 @@ export function SlidePreview({
           </div>
         );
       })()}
+        </div>
+      </div>
     </div>
   );
 }

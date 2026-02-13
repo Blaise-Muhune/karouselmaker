@@ -102,7 +102,9 @@ export async function POST(
    >();
 
     const browser = await launchChromium();
+    let page: Awaited<ReturnType<typeof browser.newPage>> | null = null;
     try {
+      page = await browser.newPage();
       for (let i = 0; i < slides.length; i++) {
         const slide = slides[i];
         if (!slide) continue;
@@ -326,29 +328,36 @@ export async function POST(
           dimensions
         );
 
-        const page = await browser.newPage();
-        try {
-          await page.setViewportSize({ width: dimensions.w, height: dimensions.h });
-          await page.setContent(html, { waitUntil: "load" });
-          await page.waitForSelector(".slide", { state: "visible", timeout: 15000 });
-          await new Promise((r) => setTimeout(r, 300));
-          const buffer = await page.screenshot({ type: format });
-          const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
-          const { error: uploadError } = await supabase.storage
-            .from(BUCKET)
-            .upload(paths.slidePath(i), buf, {
-              contentType: format === "jpeg" ? "image/jpeg" : "image/png",
-              upsert: true,
-            });
-          if (uploadError) {
-            throw new Error(`Upload slide ${i + 1} failed: ${uploadError.message}`);
-          }
-        } finally {
-          await page.close();
+        if (!page) throw new Error("Browser page unavailable");
+        await page.setViewportSize({ width: dimensions.w, height: dimensions.h });
+        await page.setContent(html, { waitUntil: "load" });
+        await page.waitForSelector(".slide", { state: "visible", timeout: 15000 });
+        await new Promise((r) => setTimeout(r, 300));
+        const buffer = await page.screenshot({ type: format });
+        const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+        const { error: uploadError } = await supabase.storage
+          .from(BUCKET)
+          .upload(paths.slidePath(i), buf, {
+            contentType: format === "jpeg" ? "image/jpeg" : "image/png",
+            upsert: true,
+          });
+        if (uploadError) {
+          throw new Error(`Upload slide ${i + 1} failed: ${uploadError.message}`);
         }
       }
     } finally {
-      await browser.close();
+      if (page) {
+        try {
+          await page.close();
+        } catch {
+          // ignore
+        }
+      }
+      try {
+        await browser.close();
+      } catch {
+        // ignore
+      }
     }
 
     const captionVariants = (carousel.caption_variants ?? {}) as {

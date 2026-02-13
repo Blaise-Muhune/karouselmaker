@@ -4,6 +4,7 @@ import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 /**
  * Apply template config to slide data and produce a render model.
  * Thin wrapper around buildSlideRenderModel for consistent naming.
+ * @param textScale When set (e.g. for 4:5 or 9:16), line wrapping uses scaled font so breaks match rendered size.
  */
 export function applyTemplate(
   templateConfig: TemplateConfig,
@@ -11,7 +12,8 @@ export function applyTemplate(
   brandKit: BrandKit,
   slideIndex: number,
   totalSlides: number,
-  zoneOverrides?: TextZoneOverrides | null
+  zoneOverrides?: TextZoneOverrides | null,
+  textScale?: number
 ): SlideRenderModel {
   return buildSlideRenderModel(
     templateConfig,
@@ -19,6 +21,7 @@ export function applyTemplate(
     brandKit,
     slideIndex,
     totalSlides,
-    zoneOverrides
+    zoneOverrides,
+    textScale
   );
 }

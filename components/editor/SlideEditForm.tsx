@@ -114,8 +114,8 @@ export type SlideBackgroundState = SlideBackgroundOverride & {
 const PREVIEW_MAX = 380;
 const PREVIEW_MAX_LARGE = 560;
 
-/** Preview dimensions and scale. Scale to cover so template fills the frame (centered crop at 4:5 / 9:16). */
-function getPreviewDimensions(size: "1080x1080" | "1080x1350" | "1080x1920", maxSize = PREVIEW_MAX): { w: number; h: number; scale: number; offsetX: number; offsetY: number } {
+/** Preview dimensions and scale. Content is 1080 x exportH; scale to cover so it fills the frame (matches export). */
+function getPreviewDimensions(size: "1080x1080" | "1080x1350" | "1080x1920", maxSize = PREVIEW_MAX): { w: number; h: number; contentW: number; contentH: number; scale: number; offsetX: number; offsetY: number } {
   const exportW = 1080;
   const exportH = size === "1080x1080" ? 1080 : size === "1080x1350" ? 1350 : 1920;
   const aspect = exportW / exportH;
@@ -128,13 +128,15 @@ function getPreviewDimensions(size: "1080x1080" | "1080x1350" | "1080x1920", max
     h = maxSize;
     w = Math.round(maxSize * aspect);
   }
-  const scale = Math.max(w / 1080, h / 1080);
+  const scale = Math.max(w / 1080, h / exportH);
   return {
     w,
     h,
+    contentW: 1080,
+    contentH: exportH,
     scale,
     offsetX: (w - 1080 * scale) / 2,
-    offsetY: (h - 1080 * scale) / 2,
+    offsetY: (h - exportH * scale) / 2,
   };
 }
 
@@ -1176,8 +1178,8 @@ export function SlideEditForm({
               position: "absolute",
               left: getPreviewDimensions(exportSize).offsetX,
               top: getPreviewDimensions(exportSize).offsetY,
-              width: 1080,
-              height: 1080,
+              width: getPreviewDimensions(exportSize).contentW,
+              height: getPreviewDimensions(exportSize).contentH,
               transform: `scale(${getPreviewDimensions(exportSize).scale})`,
               transformOrigin: "top left",
             }}
@@ -1431,8 +1433,8 @@ export function SlideEditForm({
                         position: "relative",
                         left: dims.offsetX,
                         top: dims.offsetY,
-                        width: 1080,
-                        height: 1080,
+                        width: dims.contentW,
+                        height: dims.contentH,
                       }}
                     >
                       <SlidePreview

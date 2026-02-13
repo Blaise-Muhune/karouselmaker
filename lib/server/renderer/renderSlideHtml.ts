@@ -154,7 +154,8 @@ export function renderSlideHtml(
     brandKit,
     slideData.slide_index,
     totalSlides,
-    hasZoneOverrides ? mergedZoneOverrides : undefined
+    hasZoneOverrides ? mergedZoneOverrides : undefined,
+    textScale
   );
 
   const backgroundColor =
@@ -202,7 +203,7 @@ export function renderSlideHtml(
       const zoneColor = block.zone.color ?? textColor;
       const fontSize = Math.round(block.zone.fontSize * textScale);
       const lineHeight = block.zone.lineHeight;
-      return `<div class="text-block" style="left:${block.zone.x}px;top:${block.zone.y}px;width:${block.zone.w}px;height:${block.zone.h}px;font-size:${fontSize}px;font-weight:${block.zone.fontWeight};line-height:${lineHeight};text-align:${block.zone.align};color:${escapeHtml(zoneColor)}">${block.lines.map((line) => `<span>${lineToHtml(line, zoneHighlightStyle)}</span>`).join("")}</div>`;
+      return `<div class="text-block" style="left:${block.zone.x}px;top:${block.zone.y}px;width:${block.zone.w}px;height:${block.zone.h}px;font-size:${fontSize}px;font-weight:${block.zone.fontWeight};line-height:${lineHeight};text-align:${block.zone.align};color:${escapeHtml(zoneColor)};z-index:5">${block.lines.map((line) => `<span>${lineToHtml(line, zoneHighlightStyle)}</span>`).join("")}</div>`;
     })
     .join("");
 
@@ -350,9 +351,10 @@ export function renderSlideHtml(
     : "";
 
   const resolvedBgUrl = backgroundImageUrl ?? model.background.backgroundImageUrl;
-  const singleFrame = disp.frame ?? (borderedFrame ? "medium" : "none");
-  const singleFrameW = FRAME_WIDTHS[singleFrame] ?? 0;
-  const singleRadius = disp.frameRadius ?? (singleFrameW > 0 ? 24 : 0);
+  const isSingleImage = !!resolvedBgUrl && !multiUrls;
+  const singleFrame = isSingleImage ? "none" : (disp.frame ?? (borderedFrame ? "medium" : "none"));
+  const singleFrameW = isSingleImage ? 0 : (FRAME_WIDTHS[singleFrame] ?? 0);
+  const singleRadius = isSingleImage ? 0 : (disp.frameRadius ?? (singleFrameW > 0 ? 24 : 0));
   const singleShapeCss = getShapeCss(disp.frameShape ?? "squircle", singleRadius);
   const singleFrameColor = disp.frameColor ?? "rgba(255,255,255,0.9)";
   const bgImageStyle =
@@ -398,7 +400,7 @@ export function renderSlideHtml(
     .slide { position: absolute; width: 1080px; height: 1080px; left: ${slideTranslateX}px; top: ${slideTranslateY}px; transform: scale(${scale}); transform-origin: top left; background-color: ${escapeHtml(backgroundColor)}; }
     .slide-bg-image { position: absolute; inset: 0; ${bgImageStyle} }
     .slide-gradient { position: absolute; inset: 0; background: ${gradientStyle}; pointer-events: none; z-index: 1; }
-    .text-block { position: absolute; display: flex; flex-direction: column; justify-content: center; }
+    .text-block { position: absolute; display: flex; flex-direction: column; justify-content: center; z-index: 5; }
     .text-block span { display: block; }
     .chrome-swipe { position: absolute; display: flex; align-items: center; justify-content: center; padding: 12px 0; opacity: 0.9; font-size: 24px; font-weight: 600; letter-spacing: 0.1em; z-index: 5; }
     .chrome-counter { position: absolute; top: 20px; right: 20px; padding: 6px 12px; border-radius: 9999px; background: rgba(255,255,255,0.08); font-size: 20px; font-weight: 500; letter-spacing: 0.02em; opacity: 0.85; z-index: 5; }

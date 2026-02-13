@@ -68,6 +68,7 @@ export type TextZoneOverrides = {
 /**
  * Build a structured render model for one slide from template config, slide data, and brand kit.
  * Deterministic: same inputs produce same model.
+ * @param textScale When set (e.g. for 4:5 or 9:16), line wrapping uses zone.fontSize * textScale so breaks match rendered font size.
  */
 export function buildSlideRenderModel(
   templateConfig: TemplateConfig,
@@ -75,7 +76,8 @@ export function buildSlideRenderModel(
   brandKit: BrandKit,
   slideIndex: number,
   totalSlides: number,
-  zoneOverrides?: TextZoneOverrides | null
+  zoneOverrides?: TextZoneOverrides | null,
+  textScale?: number
 ): SlideRenderModel {
   const textBlocks: TextBlock[] = [];
 
@@ -88,7 +90,11 @@ export function buildSlideRenderModel(
         : zone.id === "body"
           ? slideData.body ?? ""
           : "";
-    const lines = fitTextToZone(text, mergedZone);
+    const zoneForWrap =
+      textScale != null && textScale !== 1
+        ? { ...mergedZone, fontSize: Math.round(mergedZone.fontSize * textScale) }
+        : mergedZone;
+    const lines = fitTextToZone(text, zoneForWrap);
     textBlocks.push({ zone: mergedZone, lines });
   }
 

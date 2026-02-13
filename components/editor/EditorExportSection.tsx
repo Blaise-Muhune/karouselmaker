@@ -290,7 +290,17 @@ export function EditorExportSection({
         )
       )}
       {error && (
-        <p className="text-destructive mt-2 text-sm">{error}</p>
+        <div className="mt-2 space-y-1">
+          <p className="text-destructive text-sm">{error}</p>
+          <p className="text-muted-foreground text-sm">
+            You can download each slide as an image using the Download button under each slide below.
+          </p>
+        </div>
+      )}
+      {!error && recentExports.some((ex) => ex.status === "failed") && (
+        <p className="text-muted-foreground mt-2 text-sm">
+          A recent export failed. You can download each slide individually using the Download button under each slide below.
+        </p>
       )}
       {recentExports.length > 0 && (
         <ul className="mt-3 space-y-1">

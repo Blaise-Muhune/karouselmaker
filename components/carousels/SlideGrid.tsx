@@ -18,11 +18,11 @@ import type { BrandKit } from "@/lib/renderer/renderModel";
 import type { SlideBackgroundOverride } from "@/components/renderer/SlidePreview";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import type { Slide, Template } from "@/lib/server/db/types";
-import { GripVerticalIcon, Images, PencilIcon } from "lucide-react";
+import { DownloadIcon, GripVerticalIcon, Images, PencilIcon } from "lucide-react";
 
 const PREVIEW_SCALE = 0.25;
 
-function getPreviewDimensions(exportSize: string): { w: number; h: number; scale: number; translateX: number; translateY: number } {
+function getPreviewDimensions(exportSize: string): { w: number; h: number; contentW: number; contentH: number; scale: number; translateX: number; translateY: number } {
   const dims = exportSize === "1080x1350"
     ? { w: 1080, h: 1350 }
     : exportSize === "1080x1920"
@@ -30,12 +30,12 @@ function getPreviewDimensions(exportSize: string): { w: number; h: number; scale
       : { w: 1080, h: 1080 };
   const containerW = dims.w * PREVIEW_SCALE;
   const containerH = dims.h * PREVIEW_SCALE;
-  const scale = Math.max(containerW / 1080, containerH / 1080);
+  const scale = Math.min(containerW / 1080, containerH / dims.h);
   const scaledW = 1080 * scale;
-  const scaledH = 1080 * scale;
+  const scaledH = dims.h * scale;
   const translateX = (containerW - scaledW) / 2;
   const translateY = (containerH - scaledH) / 2;
-  return { w: containerW, h: containerH, scale, translateX, translateY };
+  return { w: containerW, h: containerH, contentW: 1080, contentH: dims.h, scale, translateX, translateY };
 }
 
 export type TemplateWithConfig = Template & { parsedConfig: TemplateConfig };
@@ -48,6 +48,7 @@ type SlideGridProps = {
   carouselId: string;
   slideBackgroundImageUrls?: Record<string, string | string[]>;
   exportSize?: "1080x1080" | "1080x1350" | "1080x1920";
+  exportFormat?: "png" | "jpeg";
   isPro?: boolean;
 };
 
@@ -156,6 +157,7 @@ export function SlideGrid({
   carouselId,
   slideBackgroundImageUrls = {},
   exportSize = "1080x1350",
+  exportFormat = "png",
   isPro = true,
 }: SlideGridProps) {
   const canEdit = isPro;
@@ -264,8 +266,8 @@ export function SlideGrid({
                           style={{
                             transform: `translate(${previewDims.translateX}px, ${previewDims.translateY}px) scale(${previewDims.scale})`,
                             transformOrigin: "top left",
-                            width: 1080,
-                            height: 1080,
+                            width: previewDims.contentW,
+                            height: previewDims.contentH,
                           }}
                         >
                           <SlidePreview
@@ -312,8 +314,8 @@ export function SlideGrid({
                           style={{
                             transform: `translate(${previewDims.translateX}px, ${previewDims.translateY}px) scale(${previewDims.scale})`,
                             transformOrigin: "top left",
-                            width: 1080,
-                            height: 1080,
+                            width: previewDims.contentW,
+                            height: previewDims.contentH,
                           }}
                         >
                           <SlidePreview
@@ -379,6 +381,16 @@ export function SlideGrid({
                         {getImageCount(slide)}
                       </span>
                     )}
+                    <Button variant="outline" size="icon-sm" asChild title="Download this slide">
+                      <a
+                        href={`/api/export/slide/${slide.id}?format=${exportFormat}&size=${exportSize ?? "1080x1350"}`}
+                        download={`slide-${slide.slide_index}.${exportFormat === "jpeg" ? "jpg" : "png"}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <DownloadIcon className="size-4" />
+                      </a>
+                    </Button>
                     {canEdit ? (
                       <Button variant="outline" size="icon-sm" asChild title="Edit slide">
                         <Link href={`/p/${projectId}/c/${carouselId}/s/${slide.id}`}>
