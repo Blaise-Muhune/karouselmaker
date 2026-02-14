@@ -26,6 +26,7 @@ import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { updateSlide } from "@/app/actions/slides/updateSlide";
 import { updateExportSettings } from "@/app/actions/carousels/updateExportFormat";
+import { updateApplyScope } from "@/app/actions/carousels/updateApplyScope";
 import { applyToAllSlides, applyOverlayToAllSlides, applyImageDisplayToAllSlides, applyImageCountToAllSlides, applyFontSizeToAllSlides, clearTextFromSlides, type ApplyScope } from "@/app/actions/slides/applyToAllSlides";
 import { shortenToFit } from "@/app/actions/slides/shortenToFit";
 import { rewriteHook } from "@/app/actions/slides/rewriteHook";
@@ -62,7 +63,7 @@ import {
 } from "lucide-react";
 import { ColorPicker } from "@/components/ui/color-picker";
 import { OVERLAY_PRESETS, PRESET_CUSTOM_ID, type OverlayPreset } from "@/lib/editor/overlayPresets";
-import { HIGHLIGHT_COLORS } from "@/lib/editor/inlineFormat";
+import { HIGHLIGHT_COLORS, type HighlightSpan } from "@/lib/editor/inlineFormat";
 
 export type ImageDisplayState = {
   position?: "center" | "top" | "bottom" | "left" | "right" | "top-left" | "top-right" | "bottom-left" | "bottom-right";
@@ -143,7 +144,7 @@ function getPreviewDimensions(size: "1080x1080" | "1080x1350" | "1080x1920", max
 const SECTION_INFO: Record<string, { title: string; body: string }> = {
   content: {
     title: "Content",
-    body: "Type your headline and optional body here. For bold, wrap a word in **like this**. For colored highlights, click a color (e.g. Yellow), type the word, then click {{/}} to close. The Highlight row applies to whichever field (headline or body) you’re editing. Size sliders set font size per zone. Highlight style toggles between colored text only or a highlighter (colored background + dark text).",
+    body: "Type your headline and optional body here. For bold, wrap a word in **like this**. For colored highlights, select the text you want to color, then click a preset (e.g. Yellow) or use the color picker—like in Word. The Highlight row applies to whichever field (headline or body) you’re editing. Size sliders set font size per zone. Highlight style toggles between colored text only or a highlighter (colored background + dark text).",
   },
   layout: {
     title: "Slide layout",
@@ -189,6 +190,9 @@ type SlideEditFormProps = {
   /** Export format and size (apply to all slides). */
   initialExportFormat?: ExportFormat | null;
   initialExportSize?: ExportSize | null;
+  /** Apply-to-all scope: include first/last slide (saved on carousel; default true). */
+  initialIncludeFirstSlide?: boolean;
+  initialIncludeLastSlide?: boolean;
   initialBackgroundImageUrl?: string | null;
   /** Multiple images (2–4) for content slides: grid layout. */
   initialBackgroundImageUrls?: string[] | null;
@@ -223,6 +227,8 @@ export function SlideEditForm({
   carouselId,
   initialExportFormat = "png",
   initialExportSize = "1080x1350",
+  initialIncludeFirstSlide = true,
+  initialIncludeLastSlide = true,
   initialBackgroundImageUrl,
   initialBackgroundImageUrls,
   initialImageSource,
@@ -369,10 +375,20 @@ export function SlideEditForm({
     const m = slide.meta as { body_zone_override?: ZoneOverride } | null;
     return m?.body_zone_override && Object.keys(m.body_zone_override).length > 0 ? m.body_zone_override : undefined;
   });
+  const [headlineHighlights, setHeadlineHighlights] = useState<HighlightSpan[]>(() => {
+    const m = slide.meta as { headline_highlights?: HighlightSpan[] } | null;
+    return Array.isArray(m?.headline_highlights) ? m.headline_highlights : [];
+  });
+  const [bodyHighlights, setBodyHighlights] = useState<HighlightSpan[]>(() => {
+    const m = slide.meta as { body_highlights?: HighlightSpan[] } | null;
+    return Array.isArray(m?.body_highlights) ? m.body_highlights : [];
+  });
   const [headlineEditMoreOpen, setHeadlineEditMoreOpen] = useState(false);
   const [bodyEditMoreOpen, setBodyEditMoreOpen] = useState(false);
   const headlineRef = useRef<HTMLTextAreaElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
+  /** When user opens color picker we lose focus; save selection so we can apply on pick */
+  const savedHighlightSelectionRef = useRef<{ field: "headline" | "body"; start: number; end: number } | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerForSecondary, setPickerForSecondary] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -395,8 +411,8 @@ export function SlideEditForm({
   const [templateName, setTemplateName] = useState("");
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [infoSection, setInfoSection] = useState<string | null>(null);
-  const [includeFirstSlide, setIncludeFirstSlide] = useState(false);
-  const [includeLastSlide, setIncludeLastSlide] = useState(false);
+  const [includeFirstSlide, setIncludeFirstSlide] = useState(initialIncludeFirstSlide);
+  const [includeLastSlide, setIncludeLastSlide] = useState(initialIncludeLastSlide);
   const [exportFormat] = useState<ExportFormat>(() =>
     (initialExportFormat === "png" || initialExportFormat === "jpeg" ? initialExportFormat : "png") as ExportFormat
   );
@@ -428,51 +444,55 @@ export function SlideEditForm({
   const multiImageDefaults: ImageDisplayState = { position: "center", fit: "cover", frame: "none", frameRadius: 0, frameColor: "#ffffff", frameShape: "squircle", layout: "auto", gap: 8, dividerStyle: "wave", dividerColor: "#ffffff", dividerWidth: 48 };
   const effectiveImageDisplay = validImageCount >= 2 ? { ...multiImageDefaults, ...imageDisplay } : imageDisplay;
 
-  const insertAtCursor = useCallback(
-    (ref: React.RefObject<HTMLTextAreaElement | null>, setValue: (v: string) => void, getValue: () => string, toInsert: string) => {
-      const el = ref.current;
-      if (!el) return;
-      const start = el.selectionStart;
-      const end = el.selectionEnd;
-      const text = getValue();
-      const before = text.slice(0, start);
-      const after = text.slice(end);
-      setValue(before + toInsert + after);
+  /** Word-style: apply color to selection by storing a span (no brackets in text). Color is preset name or hex. */
+  const applyHighlightToSelection = useCallback(
+    (color: string, target: "headline" | "body", useSavedSelection?: boolean) => {
+      const hex = color.startsWith("#") ? color : (HIGHLIGHT_COLORS[color] ?? "#facc15");
+
+      const ref = target === "headline" ? headlineRef : bodyRef;
+      const getValue = target === "headline" ? () => headline : () => body;
+
+      let start: number;
+      let end: number;
+      if (useSavedSelection && savedHighlightSelectionRef.current?.field === target) {
+        const saved = savedHighlightSelectionRef.current;
+        start = saved.start;
+        end = saved.end;
+        savedHighlightSelectionRef.current = null;
+      } else {
+        const el = ref.current;
+        if (!el || document.activeElement !== el) return;
+        start = el.selectionStart;
+        end = el.selectionEnd;
+      }
+      if (start === end) return;
+
+      const setSpans = target === "headline" ? setHeadlineHighlights : setBodyHighlights;
+      const getSpans = target === "headline" ? () => headlineHighlights : () => bodyHighlights;
+      setSpans((prev) => {
+        const next = prev.filter((s) => s.end <= start || s.start >= end);
+        next.push({ start, end, color: hex });
+        next.sort((a, b) => a.start - b.start);
+        return next;
+      });
       setTimeout(() => {
-        el.focus();
-        const newPos = start + toInsert.length;
-        el.setSelectionRange(newPos, newPos);
+        ref.current?.focus();
+        ref.current?.setSelectionRange(end, end);
       }, 0);
     },
-    []
+    [headline, body, headlineHighlights, bodyHighlights]
   );
 
-  const insertHighlight = useCallback(
-    (preset: string, target: "headline" | "body") => {
-      const tag = `{{${preset}}}`;
-      if (target === "headline") {
-        if (document.activeElement !== headlineRef.current) headlineRef.current?.focus();
-        setTimeout(() => insertAtCursor(headlineRef, setHeadline, () => headline, tag), 0);
-      } else {
-        if (document.activeElement !== bodyRef.current) bodyRef.current?.focus();
-        setTimeout(() => insertAtCursor(bodyRef, setBody, () => body, tag), 0);
-      }
-    },
-    [headline, body, insertAtCursor]
-  );
-  const insertCloseHighlight = useCallback(
-    (target: "headline" | "body") => {
-      const tag = "{{/}}";
-      if (target === "headline") {
-        if (document.activeElement !== headlineRef.current) headlineRef.current?.focus();
-        setTimeout(() => insertAtCursor(headlineRef, setHeadline, () => headline, tag), 0);
-      } else {
-        if (document.activeElement !== bodyRef.current) bodyRef.current?.focus();
-        setTimeout(() => insertAtCursor(bodyRef, setBody, () => body, tag), 0);
-      }
-    },
-    [headline, body, insertAtCursor]
-  );
+  /** Save selection when user mousedowns on color picker (before blur). */
+  const saveHighlightSelectionForPicker = useCallback((target: "headline" | "body") => {
+    const ref = target === "headline" ? headlineRef : bodyRef;
+    const el = ref.current;
+    if (el && typeof el.selectionStart === "number" && typeof el.selectionEnd === "number") {
+      const start = el.selectionStart;
+      const end = el.selectionEnd;
+      if (start !== end) savedHighlightSelectionRef.current = { field: target, start, end };
+    }
+  }, []);
 
   const buildImageDisplayPayload = (): Record<string, unknown> | undefined => {
     const source = validImageCount >= 2 ? effectiveImageDisplay : imageDisplay;
@@ -554,6 +574,8 @@ export function SlideEditForm({
           ...(bodyZoneOverride && Object.keys(bodyZoneOverride).length > 0 && { body_zone_override: bodyZoneOverride }),
           headline_highlight_style: headlineHighlightStyle,
           body_highlight_style: bodyHighlightStyle,
+          ...(headlineHighlights.length > 0 && { headline_highlights: headlineHighlights }),
+          ...(bodyHighlights.length > 0 && { body_highlights: bodyHighlights }),
         },
       },
       editorPath
@@ -655,6 +677,14 @@ export function SlideEditForm({
   const handleApplyTemplateToAll = async () => {
     setApplyingTemplate(true);
     const result = await applyToAllSlides(slide.carousel_id, { template_id: templateId }, editorPath, applyScope);
+    setApplyingTemplate(false);
+    if (result.ok) router.refresh();
+  };
+
+  const handleTemplateChange = async (newTemplateId: string | null) => {
+    setTemplateId(newTemplateId);
+    setApplyingTemplate(true);
+    const result = await applyToAllSlides(slide.carousel_id, { template_id: newTemplateId }, editorPath, applyScope);
     setApplyingTemplate(false);
     if (result.ok) router.refresh();
   };
@@ -816,8 +846,11 @@ export function SlideEditForm({
     const result = await createTemplateAction({ name, category: "generic", config });
     setSavingTemplate(false);
     if (result.ok) {
+      const newTemplateId = result.templateId;
       setSaveTemplateOpen(false);
       setTemplateName("");
+      setTemplateId(newTemplateId);
+      await applyToAllSlides(slide.carousel_id, { template_id: newTemplateId }, editorPath, applyScope);
       router.refresh();
     }
   };
@@ -1033,16 +1066,6 @@ export function SlideEditForm({
               </span>
             </div>
           </div>
-          <div className="space-y-1.5">
-            <span className="text-muted-foreground text-xs font-medium">Text</span>
-            <input
-              type="color"
-              value={getContrastingTextColor(background.overlay?.color ?? "#000000")}
-              readOnly
-              className="h-10 w-12 cursor-not-allowed rounded-lg border border-input/80 bg-background opacity-70"
-              title="Text color is auto-set for contrast with overlay"
-            />
-          </div>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-border/60">
           <div className="space-y-2">
@@ -1213,6 +1236,8 @@ export function SlideEditForm({
               }
               headlineHighlightStyle={headlineHighlightStyle}
               bodyHighlightStyle={bodyHighlightStyle}
+              headline_highlights={headlineHighlights.length > 0 ? headlineHighlights : undefined}
+              body_highlights={bodyHighlights.length > 0 ? bodyHighlights : undefined}
               borderedFrame={!!(previewBackgroundImageUrl || previewBackgroundImageUrls?.length)}
               imageDisplay={isImageMode ? effectiveImageDisplay : undefined}
               exportSize={exportSize}
@@ -1466,6 +1491,8 @@ export function SlideEditForm({
                         }
                         headlineHighlightStyle={headlineHighlightStyle}
                         bodyHighlightStyle={bodyHighlightStyle}
+                        headline_highlights={headlineHighlights.length > 0 ? headlineHighlights : undefined}
+                        body_highlights={bodyHighlights.length > 0 ? bodyHighlights : undefined}
                         borderedFrame={!!(previewBackgroundImageUrl || previewBackgroundImageUrls?.length)}
                         imageDisplay={isImageMode ? effectiveImageDisplay : undefined}
                         exportSize={exportSize}
@@ -1491,7 +1518,7 @@ export function SlideEditForm({
               <div>
                 <h3 className="text-sm font-medium text-foreground">Apply to all scope</h3>
                 <p className="text-muted-foreground text-xs mt-0.5">
-                  When you click &quot;Apply to all&quot; on template, overlay, background, or other controls, these checkboxes decide which slides are affected. By default, first and last slides are excluded so you can keep them different (e.g. title and CTA).
+                  When you click &quot;Apply to all&quot; on template, overlay, background, or other controls, these checkboxes decide which slides are affected. Your choice is saved for this carousel and applies on every slide.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-4">
@@ -1499,7 +1526,14 @@ export function SlideEditForm({
                   <input
                     type="checkbox"
                     checked={includeFirstSlide}
-                    onChange={(e) => setIncludeFirstSlide(e.target.checked)}
+                    onChange={async (e) => {
+                      const next = e.target.checked;
+                      setIncludeFirstSlide(next);
+                      await updateApplyScope(
+                        { carousel_id: carouselId, include_first_slide: next, include_last_slide: includeLastSlide },
+                        editorPath
+                      );
+                    }}
                     className="rounded border-input accent-primary"
                   />
                   Include first slide
@@ -1508,7 +1542,14 @@ export function SlideEditForm({
                   <input
                     type="checkbox"
                     checked={includeLastSlide}
-                    onChange={(e) => setIncludeLastSlide(e.target.checked)}
+                    onChange={async (e) => {
+                      const next = e.target.checked;
+                      setIncludeLastSlide(next);
+                      await updateApplyScope(
+                        { carousel_id: carouselId, include_first_slide: includeFirstSlide, include_last_slide: next },
+                        editorPath
+                      );
+                    }}
                     className="rounded border-input accent-primary"
                   />
                   Include last slide
@@ -1525,7 +1566,7 @@ export function SlideEditForm({
               </button>
             </div>
             <div className="space-y-4">
-              <Select value={templateId ?? ""} onValueChange={(v) => setTemplateId(v || null)}>
+              <Select value={templateId ?? ""} onValueChange={(v) => handleTemplateChange(v || null)} disabled={applyingTemplate}>
                 <SelectTrigger className="h-10 w-full rounded-lg border-input/80 bg-background text-sm">
                   <SelectValue placeholder="Template" />
                 </SelectTrigger>
@@ -1581,7 +1622,7 @@ export function SlideEditForm({
                 <div className="flex flex-wrap items-center gap-1.5">
                   <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-foreground" onClick={() => setHeadlineEditMoreOpen((o) => !o)} disabled={!isPro} title="Position, size, max lines, align">
                     {headlineEditMoreOpen ? <ChevronUpIcon className="size-3.5" /> : <ChevronDownIcon className="size-3.5" />}
-                    Edit more
+                    Edit position
                   </Button>
                   <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-foreground" onClick={handleClearHeadline} disabled={!isPro} title="Clear headline text">
                     <Trash2 className="size-3.5 mr-1" />
@@ -1601,49 +1642,8 @@ export function SlideEditForm({
                   )}
                 </div>
               </div>
-            <Textarea
-              ref={headlineRef}
-              id="headline"
-              value={headline}
-              onChange={(e) => setHeadline(e.target.value)}
-              placeholder="Enter your headline..."
-              className="min-h-[96px] resize-none rounded-lg border-input/80 text-base field-sizing-content px-3 py-2.5"
-              rows={2}
-            />
-            {isPro && (
-            <div className="space-y-1.5">
-              <span className="text-muted-foreground text-xs font-medium">Highlight colors</span>
-              <div className="flex flex-wrap items-center gap-1.5">
-              {Object.keys(HIGHLIGHT_COLORS).slice(0, 6).map((preset) => (
-                <button key={preset} type="button" onClick={() => insertHighlight(preset, "headline")} className="rounded px-1.5 py-0.5 text-xs font-medium capitalize hover:bg-muted" style={{ color: HIGHLIGHT_COLORS[preset] as string }} title={`{{${preset}}}`}>
-                  {preset}
-                </button>
-              ))}
-              <button type="button" onClick={() => insertCloseHighlight("headline")} className="text-muted-foreground rounded px-1.5 py-0.5 text-xs hover:bg-muted" title="{{/}}">{"{{/}}"}</button>
-              </div>
-            </div>
-            )}
-            {isPro && (
-            <div className="space-y-2 pt-1">
-              <span className="text-muted-foreground text-xs font-medium">Font size</span>
-              <div className="flex flex-wrap items-center gap-2">
-              <input
-                type="range"
-                min={24}
-                max={160}
-                value={headlineFontSize ?? defaultHeadlineSize}
-                onChange={(e) => setHeadlineFontSize(Number(e.target.value))}
-                className="h-2 flex-1 min-w-0 cursor-pointer appearance-none rounded-full bg-muted accent-primary"
-              />
-              <span className="text-muted-foreground min-w-8 text-xs tabular-nums">{headlineFontSize ?? defaultHeadlineSize}px</span>
-              <Button type="button" variant={headlineHighlightStyle === "background" ? "secondary" : "ghost"} size="sm" className="h-8 text-xs" onClick={() => setHeadlineHighlightStyle((s) => (s === "text" ? "background" : "text"))} title={headlineHighlightStyle === "text" ? "Bg highlight" : "Text color"}>
-                {headlineHighlightStyle === "text" ? "Text" : "Bg"}
-              </Button>
-              </div>
-            </div>
-            )}
             {isPro && headlineEditMoreOpen && templateConfig?.textZones?.find((z) => z.id === "headline") && (
-              <div className="rounded-lg border border-border/50 bg-muted/10 p-4 space-y-4 mt-3">
+              <div className="rounded-lg border border-border/50 bg-muted/10 p-4 space-y-4 mb-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-muted-foreground text-xs font-medium">Headline position & layout</span>
                   {totalSlides > 1 && (
@@ -1740,6 +1740,67 @@ export function SlideEditForm({
                 </div>
               </div>
             )}
+            <Textarea
+              ref={headlineRef}
+              id="headline"
+              value={headline}
+              onChange={(e) => setHeadline(e.target.value)}
+              placeholder="Enter your headline..."
+              className="min-h-[96px] resize-none rounded-lg border-input/80 text-base field-sizing-content px-3 py-2.5"
+              rows={2}
+            />
+            {isPro && (
+            <div className="space-y-1.5">
+              <span className="text-muted-foreground text-xs font-medium">Highlight</span>
+              <p className="text-muted-foreground text-xs">Select text above, then pick a color.</p>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {Object.keys(HIGHLIGHT_COLORS).map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => applyHighlightToSelection(preset, "headline")}
+                    className="rounded px-1.5 py-0.5 text-xs font-medium capitalize hover:bg-muted border border-transparent hover:border-border"
+                    style={{ color: HIGHLIGHT_COLORS[preset] as string }}
+                    title={`Apply ${preset} to selection`}
+                  >
+                    {preset}
+                  </button>
+                ))}
+                <span className="text-muted-foreground text-xs mx-0.5">|</span>
+                <input
+                  type="color"
+                  className="h-7 w-9 cursor-pointer rounded border border-input/80 bg-background"
+                  defaultValue="#facc15"
+                  onMouseDown={() => saveHighlightSelectionForPicker("headline")}
+                  onChange={(e) => {
+                    const hex = e.target.value;
+                    applyHighlightToSelection(hex, "headline", true);
+                  }}
+                  title="Select text, then pick a color"
+                />
+              </div>
+            </div>
+            )}
+            {isPro && (
+            <div className="space-y-2 pt-1">
+              <span className="text-muted-foreground text-xs font-medium">Font size</span>
+              <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="range"
+                min={24}
+                max={160}
+                value={headlineFontSize ?? defaultHeadlineSize}
+                onChange={(e) => setHeadlineFontSize(Number(e.target.value))}
+                className="h-2 flex-1 min-w-0 cursor-pointer appearance-none rounded-full bg-muted accent-primary"
+              />
+              <span className="text-muted-foreground min-w-8 text-xs tabular-nums">{headlineFontSize ?? defaultHeadlineSize}px</span>
+              <Button type="button" variant={headlineHighlightStyle === "background" ? "secondary" : "ghost"} size="sm" className="h-8 text-xs" onClick={() => setHeadlineHighlightStyle((s) => (s === "text" ? "background" : "text"))} title={headlineHighlightStyle === "text" ? "Bg highlight" : "Text color"}>
+                {headlineHighlightStyle === "text" ? "Text" : "Bg"}
+              </Button>
+              </div>
+            </div>
+            )}
             </div>
             <div className="border-t border-border/60 pt-6 mt-6 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1747,7 +1808,7 @@ export function SlideEditForm({
                 <div className="flex flex-wrap items-center gap-1.5">
                   <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-foreground" onClick={() => setBodyEditMoreOpen((o) => !o)} disabled={!isPro} title="Position, size, max lines, align">
                     {bodyEditMoreOpen ? <ChevronUpIcon className="size-3.5" /> : <ChevronDownIcon className="size-3.5" />}
-                    Edit more
+                    Edit position
                   </Button>
                   <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-foreground" onClick={handleClearBody} disabled={!isPro} title="Clear body text">
                     <Trash2 className="size-3.5 mr-1" />
@@ -1767,47 +1828,8 @@ export function SlideEditForm({
                   )}
                 </div>
               </div>
-            <Textarea
-              ref={bodyRef}
-              id="body"
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              placeholder="Optional body text..."
-              className="min-h-[80px] resize-none rounded-lg border-input/80 text-base field-sizing-content px-3 py-2.5"
-              rows={2}
-            />
-            <div className="space-y-1.5">
-              <span className="text-muted-foreground text-xs font-medium">Highlight colors</span>
-              <div className="flex flex-wrap items-center gap-1.5">
-              {Object.keys(HIGHLIGHT_COLORS).slice(0, 6).map((preset) => (
-                <button key={preset} type="button" onClick={() => insertHighlight(preset, "body")} className="rounded px-1.5 py-0.5 text-xs font-medium capitalize hover:bg-muted" style={{ color: HIGHLIGHT_COLORS[preset] as string }} title={`{{${preset}}}`}>
-                  {preset}
-                </button>
-              ))}
-              <button type="button" onClick={() => insertCloseHighlight("body")} className="text-muted-foreground rounded px-1.5 py-0.5 text-xs hover:bg-muted" title="{{/}}">{"{{/}}"}</button>
-              </div>
-            </div>
-            {isPro && (
-            <div className="space-y-2 pt-1">
-              <span className="text-muted-foreground text-xs font-medium">Font size</span>
-              <div className="flex flex-wrap items-center gap-2">
-              <input
-                type="range"
-                min={18}
-                max={120}
-                value={bodyFontSize ?? defaultBodySize}
-                onChange={(e) => setBodyFontSize(Number(e.target.value))}
-                className="h-2 flex-1 min-w-0 cursor-pointer appearance-none rounded-full bg-muted accent-primary"
-              />
-              <span className="text-muted-foreground min-w-8 text-xs tabular-nums">{bodyFontSize ?? defaultBodySize}px</span>
-              <Button type="button" variant={bodyHighlightStyle === "background" ? "secondary" : "ghost"} size="sm" className="h-8 text-xs" onClick={() => setBodyHighlightStyle((s) => (s === "text" ? "background" : "text"))} title={bodyHighlightStyle === "text" ? "Bg highlight" : "Text color"}>
-                {bodyHighlightStyle === "text" ? "Text" : "Bg"}
-              </Button>
-              </div>
-            </div>
-            )}
             {isPro && bodyEditMoreOpen && templateConfig?.textZones?.find((z) => z.id === "body") && (
-              <div className="rounded-lg border border-border/50 bg-muted/10 p-4 space-y-4 mt-3">
+              <div className="rounded-lg border border-border/50 bg-muted/10 p-4 space-y-4 mb-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-muted-foreground text-xs font-medium">Body position & layout</span>
                   {totalSlides > 1 && (
@@ -1903,6 +1925,65 @@ export function SlideEditForm({
                   />
                 </div>
               </div>
+            )}
+            <Textarea
+              ref={bodyRef}
+              id="body"
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              placeholder="Optional body text..."
+              className="min-h-[80px] resize-none rounded-lg border-input/80 text-base field-sizing-content px-3 py-2.5"
+              rows={2}
+            />
+            <div className="space-y-1.5">
+              <span className="text-muted-foreground text-xs font-medium">Highlight</span>
+              <p className="text-muted-foreground text-xs">Select text above, then pick a color.</p>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {Object.keys(HIGHLIGHT_COLORS).map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => applyHighlightToSelection(preset, "body")}
+                    className="rounded px-1.5 py-0.5 text-xs font-medium capitalize hover:bg-muted border border-transparent hover:border-border"
+                    style={{ color: HIGHLIGHT_COLORS[preset] as string }}
+                    title={`Apply ${preset} to selection`}
+                  >
+                    {preset}
+                  </button>
+                ))}
+                <span className="text-muted-foreground text-xs mx-0.5">|</span>
+                <input
+                  type="color"
+                  className="h-7 w-9 cursor-pointer rounded border border-input/80 bg-background"
+                  defaultValue="#facc15"
+                  onMouseDown={() => saveHighlightSelectionForPicker("body")}
+                  onChange={(e) => {
+                    const hex = e.target.value;
+                    applyHighlightToSelection(hex, "body", true);
+                  }}
+                  title="Select text, then pick a color"
+                />
+              </div>
+            </div>
+            {isPro && (
+            <div className="space-y-2 pt-1">
+              <span className="text-muted-foreground text-xs font-medium">Font size</span>
+              <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="range"
+                min={18}
+                max={120}
+                value={bodyFontSize ?? defaultBodySize}
+                onChange={(e) => setBodyFontSize(Number(e.target.value))}
+                className="h-2 flex-1 min-w-0 cursor-pointer appearance-none rounded-full bg-muted accent-primary"
+              />
+              <span className="text-muted-foreground min-w-8 text-xs tabular-nums">{bodyFontSize ?? defaultBodySize}px</span>
+              <Button type="button" variant={bodyHighlightStyle === "background" ? "secondary" : "ghost"} size="sm" className="h-8 text-xs" onClick={() => setBodyHighlightStyle((s) => (s === "text" ? "background" : "text"))} title={bodyHighlightStyle === "text" ? "Bg highlight" : "Text color"}>
+                {bodyHighlightStyle === "text" ? "Text" : "Bg"}
+              </Button>
+              </div>
+            </div>
             )}
             </div>
           </section>

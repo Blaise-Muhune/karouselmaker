@@ -108,6 +108,8 @@ export default async function EditSlidePage({
 
   const carouselExportFormat = (carousel as { export_format?: string }).export_format;
   const carouselExportSize = (carousel as { export_size?: string }).export_size;
+  const carouselIncludeFirst = (carousel as { include_first_slide?: boolean }).include_first_slide;
+  const carouselIncludeLast = (carousel as { include_last_slide?: boolean }).include_last_slide;
 
   return (
     <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">
@@ -130,6 +132,8 @@ export default async function EditSlidePage({
           carouselId={carouselId}
           initialExportFormat={carouselExportFormat === "png" || carouselExportFormat === "jpeg" ? carouselExportFormat : "png"}
           initialExportSize={carouselExportSize === "1080x1080" || carouselExportSize === "1080x1350" || carouselExportSize === "1080x1920" ? carouselExportSize : "1080x1350"}
+          initialIncludeFirstSlide={carouselIncludeFirst !== false}
+          initialIncludeLastSlide={carouselIncludeLast !== false}
           initialBackgroundImageUrl={initialBackgroundImageUrl}
           initialBackgroundImageUrls={initialBackgroundImageUrls}
           initialImageSource={initialImageSource}

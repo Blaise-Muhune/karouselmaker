@@ -271,6 +271,8 @@ export async function POST(
           body_zone_override?: Record<string, unknown>;
           headline_highlight_style?: "text" | "background";
           body_highlight_style?: "text" | "background";
+          headline_highlights?: { start: number; end: number; color: string }[];
+          body_highlights?: { start: number; end: number; color: string }[];
         } | null;
         const defaultShowWatermark =
           slide.slide_index === 1 || slide.slide_index === slides.length;
@@ -309,6 +311,8 @@ export async function POST(
             body: slide.body ?? null,
             slide_index: slide.slide_index,
             slide_type: slide.slide_type,
+            ...(slideMeta?.headline_highlights?.length && { headline_highlights: slideMeta.headline_highlights }),
+            ...(slideMeta?.body_highlights?.length && { body_highlights: slideMeta.body_highlights }),
           },
           config.data,
           brandKit,

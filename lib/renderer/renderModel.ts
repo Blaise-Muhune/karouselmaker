@@ -1,11 +1,16 @@
 import type { TemplateConfig, TextZone } from "@/lib/server/renderer/templateSchema";
 import { fitTextToZone } from "./fitText";
+import { injectHighlightMarkers, stripHighlightMarkers, type HighlightSpan } from "@/lib/editor/inlineFormat";
 
 export type SlideData = {
   headline: string;
   body: string | null;
   slide_index: number;
   slide_type: string;
+  /** When set, headline is plain text and we inject {{#hex}}...{{/}} from these spans for rendering. */
+  headline_highlights?: HighlightSpan[];
+  /** When set, body is plain text and we inject markers from these spans. */
+  body_highlights?: HighlightSpan[];
 };
 
 export type BrandKit = {
@@ -84,12 +89,14 @@ export function buildSlideRenderModel(
   for (const zone of templateConfig.textZones) {
     const overrides = zoneOverrides?.[zone.id as "headline" | "body"];
     const mergedZone = overrides ? { ...zone, ...overrides } : zone;
-    const text =
+    let text =
       zone.id === "headline"
         ? slideData.headline
         : zone.id === "body"
           ? slideData.body ?? ""
           : "";
+    const highlights = zone.id === "headline" ? slideData.headline_highlights : slideData.body_highlights;
+    if (highlights?.length) text = injectHighlightMarkers(stripHighlightMarkers(text), highlights);
     const zoneForWrap =
       textScale != null && textScale !== 1
         ? { ...mergedZone, fontSize: Math.round(mergedZone.fontSize * textScale) }

@@ -23,6 +23,21 @@ import { generateCarouselInputSchema } from "@/lib/validations/carousel";
 
 const MAX_RETRIES = 2;
 
+/** Remove URLs and markdown links from slide text so web-search generations stay link-free. */
+function stripLinksFromText(text: string): string {
+  if (!text?.trim()) return text;
+  let s = text
+    // Markdown links [label](url) -> keep label only
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    // Bare URLs (http/https)
+    .replace(/https?:\/\/[^\s\]\)"'<>]+\b/gi, "")
+    // Leftover "source:", "read more at", trailing colons/spaces before where URL was
+    .replace(/\s*(?:source|read more|see|link|via):\s*$/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return s;
+}
+
 function stripJson(raw: string): string {
   let s = raw.trim();
   const codeFence = s.match(/^```(?:json)?\s*([\s\S]*?)```/);
@@ -134,6 +149,7 @@ export async function generateCarousel(formData: FormData): Promise<
   const brandKit = project.brand_kit as { watermark_text?: string; primary_color?: string; secondary_color?: string } | null;
   const creatorHandle = brandKit?.watermark_text?.trim() || undefined;
 
+  const useUnsplashOnly = !!parsed.data.use_unsplash_only;
   const ctx = {
     tone_preset: project.tone_preset,
     do_rules: voiceRules?.do_rules ?? "",
@@ -142,6 +158,7 @@ export async function generateCarousel(formData: FormData): Promise<
     input_type: data.input_type as "topic" | "url" | "text",
     input_value: data.input_value,
     use_ai_backgrounds: isPro ? (data.use_ai_backgrounds ?? false) : false,
+    use_unsplash_only: useUnsplashOnly,
     use_web_search: isPro ? (data.use_web_search ?? false) : false,
     creator_handle: creatorHandle,
     project_niche: project.niche?.trim() || undefined,
@@ -237,8 +254,8 @@ export async function generateCarousel(formData: FormData): Promise<
     carousel_id: carousel.id,
     slide_index: s.slide_index,
     slide_type: s.slide_type,
-    headline: s.headline,
-    body: s.body || null,
+    headline: stripLinksFromText(s.headline),
+    body: s.body ? stripLinksFromText(s.body) : null,
     template_id: defaultTemplateId,
     background: {},
     meta: { show_counter: false },
@@ -280,7 +297,6 @@ export async function generateCarousel(formData: FormData): Promise<
     }
   }
 
-  const useUnsplashOnly = !!parsed.data.use_unsplash_only;
   if (parsed.data.use_ai_backgrounds && validated.slides.some((s) => (s.unsplash_queries?.length ?? 0) > 0 || s.unsplash_query?.trim())) {
     const aiSlideByIndex = new Map(
       validated.slides.map((s) => [s.slide_index, s])

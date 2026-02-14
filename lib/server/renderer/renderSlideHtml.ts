@@ -386,6 +386,8 @@ export function renderSlideHtml(
   const scaledSize = 1080 * scale;
   const slideTranslateX = (dimW - scaledSize) / 2;
   const slideTranslateY = (dimH - scaledSize) / 2;
+  /** Chrome (counter, logo, made with) scaled with height so they stay proportional in 4:5 and 9:16. */
+  const chromeScale = dimH / 1080;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -403,12 +405,6 @@ export function renderSlideHtml(
     .text-block { position: absolute; display: flex; flex-direction: column; justify-content: center; z-index: 5; }
     .text-block span { display: block; }
     .chrome-swipe { position: absolute; display: flex; align-items: center; justify-content: center; padding: 12px 0; opacity: 0.9; font-size: 24px; font-weight: 600; letter-spacing: 0.1em; z-index: 5; }
-    .chrome-counter { position: absolute; top: 20px; right: 20px; padding: 6px 12px; border-radius: 9999px; background: rgba(255,255,255,0.08); font-size: 20px; font-weight: 500; letter-spacing: 0.02em; opacity: 0.85; z-index: 5; }
-    .chrome-watermark { position: absolute; opacity: 0.7; font-size: 20px; font-weight: 500; z-index: 5; }
-    .chrome-watermark.tl { top: 24px; left: 24px; }
-    .chrome-watermark.tr { top: 24px; right: 24px; }
-    .chrome-watermark.bl { bottom: 80px; left: 24px; }
-    .chrome-watermark.br { bottom: 80px; right: 24px; }
   </style>
 </head>
 <body>
@@ -459,23 +455,34 @@ export function renderSlideHtml(
         `<span style="letter-spacing:6px;font-size:18px">• • •</span>`;
       return `<div class="chrome-swipe" style="color:${c};${posStyle};display:flex;align-items:center;justify-content:center;gap:4px">${inner}</div>`;
     })() : ""}
-    ${showCounter ? `<div class="chrome-counter" style="color:${escapeHtml(textColor)}">${escapeHtml(model.chrome.counterText)}</div>` : ""}
-    ${(model.chrome.watermark.text || model.chrome.watermark.logoUrl) && (showWatermarkOverride === undefined ? model.chrome.watermark.enabled : showWatermarkOverride) ? (() => {
-      const wm = model.chrome.watermark as { logoX?: number; logoY?: number; position: string };
-      const useCustom = wm.position === "custom" || (wm.logoX != null && wm.logoY != null);
-      const posStyle = useCustom ? `left:${wm.logoX ?? 24}px;top:${wm.logoY ?? 24}px` : "";
-      const posClass = useCustom ? "" : ` ${wm.position === "top_left" ? "tl" : wm.position === "top_right" ? "tr" : wm.position === "bottom_right" ? "br" : "bl"}`;
-      return `<div class="chrome-watermark${posClass}" style="color:${escapeHtml(textColor)}${posStyle ? ";" + posStyle : ""}">${model.chrome.watermark.logoUrl ? `<img src="${escapeHtml(model.chrome.watermark.logoUrl)}" alt="" style="max-height:48px;max-width:120px;width:auto;height:auto;object-fit:contain" />` : escapeHtml(model.chrome.watermark.text)}</div>`;
-    })() : ""}
-    ${showMadeWithOverride !== false ? (() => {
-      const headlineZone = model.textBlocks.find((b) => b.zone.id === "headline")?.zone;
-      if (headlineZone) {
-        const top = headlineZone.y + headlineZone.h + 16;
-        return `<div style="position:absolute;left:${headlineZone.x}px;top:${top}px;width:${headlineZone.w}px;font-size:30px;font-weight:500;letter-spacing:0.02em;opacity:0.65;z-index:5;color:${escapeHtml(textColor)};text-shadow:0 1px 2px rgba(0,0,0,0.3);text-align:${headlineZone.align}">Made with KarouselMaker.com</div>`;
-      }
-      return `<div style="position:absolute;bottom:16px;left:50%;transform:translateX(-50%);font-size:30px;font-weight:500;letter-spacing:0.02em;opacity:0.65;z-index:5;color:${escapeHtml(textColor)};text-shadow:0 1px 2px rgba(0,0,0,0.3)">Made with KarouselMaker.com</div>`;
-    })() : ""}
   </div>
+  ${showCounter ? `<div style="position:absolute;top:${24 * chromeScale}px;right:24px;padding:${6 * chromeScale}px ${12 * chromeScale}px;border-radius:9999px;background:rgba(255,255,255,0.08);font-size:${20 * chromeScale}px;font-weight:500;letter-spacing:0.02em;opacity:0.85;z-index:10;color:${escapeHtml(textColor)}">${escapeHtml(model.chrome.counterText)}</div>` : ""}
+  ${(model.chrome.watermark.text || model.chrome.watermark.logoUrl) && (showWatermarkOverride === undefined ? model.chrome.watermark.enabled : showWatermarkOverride) ? (() => {
+    const wm = model.chrome.watermark as { logoX?: number; logoY?: number; position: string };
+    const useCustom = wm.position === "custom" || (wm.logoX != null && wm.logoY != null);
+    const topPx = 24 * chromeScale;
+    const bottomPx = 80 * chromeScale;
+    const posStyle = useCustom
+      ? `left:${wm.logoX ?? 24}px;top:${(wm.logoY ?? 24) * chromeScale}px`
+      : wm.position === "top_left"
+        ? `top:${topPx}px;left:24px`
+        : wm.position === "top_right"
+          ? `top:${topPx}px;right:24px`
+          : wm.position === "bottom_right"
+            ? `bottom:${bottomPx}px;right:24px`
+            : `bottom:${bottomPx}px;left:24px`;
+    return `<div style="position:absolute;opacity:0.7;font-size:${20 * chromeScale}px;font-weight:500;z-index:10;color:${escapeHtml(textColor)};${posStyle}">${model.chrome.watermark.logoUrl ? `<img src="${escapeHtml(model.chrome.watermark.logoUrl)}" alt="" style="max-height:${48 * chromeScale}px;max-width:120px;width:auto;height:auto;object-fit:contain" />` : escapeHtml(model.chrome.watermark.text)}</div>`;
+  })() : ""}
+  ${showMadeWithOverride !== false ? (() => {
+    const headlineZone = model.textBlocks.find((b) => b.zone.id === "headline")?.zone;
+    if (headlineZone) {
+      const viewportLeft = headlineZone.x * scale + slideTranslateX;
+      const viewportTop = (headlineZone.y + headlineZone.h) * scale + slideTranslateY + 16 * chromeScale;
+      const viewportWidth = headlineZone.w * scale;
+      return `<div style="position:absolute;left:${viewportLeft}px;top:${viewportTop}px;width:${viewportWidth}px;font-size:${30 * chromeScale}px;font-weight:500;letter-spacing:0.02em;opacity:0.65;z-index:10;color:${escapeHtml(textColor)};text-shadow:0 1px 2px rgba(0,0,0,0.3);text-align:${headlineZone.align}">Made with KarouselMaker.com</div>`;
+    }
+    return `<div style="position:absolute;bottom:${16 * chromeScale}px;left:50%;transform:translateX(-50%);font-size:${30 * chromeScale}px;font-weight:500;letter-spacing:0.02em;opacity:0.65;z-index:10;color:${escapeHtml(textColor)};text-shadow:0 1px 2px rgba(0,0,0,0.3)">Made with KarouselMaker.com</div>`;
+  })() : ""}
   </div>
 </body>
 </html>`;

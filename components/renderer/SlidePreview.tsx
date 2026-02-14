@@ -4,7 +4,7 @@ import { applyTemplate } from "@/lib/renderer/applyTemplate";
 import type { BrandKit, SlideData, TextZoneOverrides } from "@/lib/renderer/renderModel";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { getContrastingTextColor, hexToRgba } from "@/lib/editor/colorUtils";
-import { parseInlineFormatting } from "@/lib/editor/inlineFormat";
+import { parseInlineFormatting, type HighlightSpan } from "@/lib/editor/inlineFormat";
 import { Hand, ChevronsLeft, ChevronsRight, MoveHorizontal } from "lucide-react";
 
 /** Base design size (slide content is laid out in 1080x1080, then scaled to cover export dimensions). */
@@ -51,6 +51,10 @@ const HOOK_CIRCLE_INSET = 56;
 
 export type SlidePreviewProps = {
   slide: { headline: string; body: string | null; slide_index: number; slide_type: string };
+  /** When set, headline is plain and we inject color from these spans (no {{}} in text). */
+  headline_highlights?: HighlightSpan[];
+  /** When set, body is plain and we inject color from these spans. */
+  body_highlights?: HighlightSpan[];
   templateConfig: TemplateConfig;
   brandKit: BrandKit;
   totalSlides: number;
@@ -195,6 +199,8 @@ export function SlidePreview({
   borderedFrame = false,
   imageDisplay,
   exportSize,
+  headline_highlights,
+  body_highlights,
   className = "",
 }: SlidePreviewProps) {
   const canvasH = exportSize === "1080x1920" ? 1920 : exportSize === "1080x1350" ? 1350 : 1080;
@@ -210,6 +216,8 @@ export function SlidePreview({
     body: slide.body ?? null,
     slide_index: slide.slide_index,
     slide_type: slide.slide_type,
+    ...(headline_highlights?.length && { headline_highlights }),
+    ...(body_highlights?.length && { body_highlights }),
   };
 
   const mergedZoneOverrides =
@@ -271,12 +279,17 @@ export function SlidePreview({
 
   const showCounter = showCounterOverride ?? model.chrome.showCounter;
 
+  /** Scale chrome (counter, logo, made with) with canvas height so they stay proportional in 4:5 and 9:16. */
+  const chromeScale = canvasH / CANVAS_SIZE;
+
   return (
     <div
-      className={`relative overflow-hidden bg-black ${className}`}
+      className={`relative overflow-hidden bg-black shrink-0 ${className}`}
       style={{
         width: 1080,
         height: canvasH,
+        minWidth: 1080,
+        minHeight: canvasH,
         transformOrigin: "top left",
       }}
     >
@@ -633,22 +646,25 @@ export function SlidePreview({
         return (
         <div
           key={block.zone.id}
-          className="absolute flex flex-col justify-center"
+          className="absolute flex flex-col justify-center shrink-0"
           style={{
             color: zoneColor,
             left: block.zone.x,
             top: block.zone.y,
             width: block.zone.w,
+            minWidth: block.zone.w,
+            maxWidth: block.zone.w,
             height: block.zone.h,
             fontSize,
             fontWeight: block.zone.fontWeight,
             lineHeight: block.zone.lineHeight,
             textAlign: block.zone.align,
             zIndex: 5,
+            boxSizing: "border-box",
           }}
         >
           {block.lines.map((line, i) => (
-            <span key={i}>
+            <span key={i} className="block">
               {parseInlineFormatting(line).map((seg, j) =>
                 seg.type === "bold" ? (
                   <strong key={j}>{seg.text}</strong>
@@ -775,52 +791,56 @@ export function SlidePreview({
           </div>
         );
       })()}
+        </div>
+      </div>
 
-      {/* Chrome: counter (optional; user can hide via slide meta) */}
+      {/* Chrome (counter, watermark, made with): rendered in root so they stay visible and proportional in 4:5 and 9:16 */}
       {showCounter && (
         <div
-          className="absolute right-5 top-5 rounded-full px-3 py-1.5"
+          className="absolute rounded-full"
           style={{
-            fontSize: 20,
+            top: 24 * chromeScale,
+            right: 24,
+            padding: `${6 * chromeScale}px ${12 * chromeScale}px`,
+            fontSize: 20 * chromeScale,
             fontWeight: 500,
             letterSpacing: "0.02em",
             color: textColor,
             opacity: 0.85,
             backgroundColor: "rgba(255,255,255,0.08)",
-            zIndex: 5,
+            zIndex: 10,
           }}
         >
           {model.chrome.counterText}
         </div>
       )}
 
-      {/* Chrome: watermark (text or logo) */}
       {((model.chrome.watermark.text || model.chrome.watermark.logoUrl) && (showWatermarkOverride === undefined ? model.chrome.watermark.enabled : showWatermarkOverride)) && (
         <div
           className="absolute"
           style={{
             color: textColor,
             opacity: 0.7,
-            fontSize: 20,
+            fontSize: 20 * chromeScale,
             fontWeight: 500,
-            zIndex: 5,
+            zIndex: 10,
             ...(model.chrome.watermark.position === "custom" || (model.chrome.watermark.logoX != null && model.chrome.watermark.logoY != null)
-              ? { left: model.chrome.watermark.logoX ?? 24, top: model.chrome.watermark.logoY ?? 24 }
+              ? { left: model.chrome.watermark.logoX ?? 24, top: (model.chrome.watermark.logoY ?? 24) * chromeScale }
               : model.chrome.watermark.position === "top_left"
-                ? { top: 24, left: 24 }
+                ? { top: 24 * chromeScale, left: 24 }
                 : model.chrome.watermark.position === "top_right"
-                  ? { top: 24, right: 24 }
+                  ? { top: 24 * chromeScale, right: 24 }
                   : model.chrome.watermark.position === "bottom_right"
-                    ? { bottom: 80, right: 24 }
-                    : { bottom: 80, left: 24 }),
+                    ? { bottom: 80 * chromeScale, right: 24 }
+                    : { bottom: 80 * chromeScale, left: 24 }),
           }}
         >
           {model.chrome.watermark.logoUrl ? (
             <img
               src={model.chrome.watermark.logoUrl}
               alt=""
-              className="max-h-12 w-auto object-contain"
-              style={{ maxWidth: 120 }}
+              className="w-auto object-contain"
+              style={{ maxWidth: 120, maxHeight: 48 * chromeScale }}
             />
           ) : (
             model.chrome.watermark.text
@@ -828,24 +848,26 @@ export function SlidePreview({
         </div>
       )}
 
-      {/* Made with KarouselMaker.com - Pro users can hide via showMadeWithOverride */}
       {showMadeWithOverride !== false && (() => {
         const headlineBlock = model.textBlocks.find((b) => b.zone.id === "headline");
         const zone = headlineBlock?.zone;
         if (zone) {
+          const viewportLeft = zone.x * scale + slideTranslateX;
+          const viewportTop = (zone.y + zone.h) * scale + slideTranslateY + 16 * chromeScale;
+          const viewportWidth = zone.w * scale;
           return (
             <div
               className="absolute"
               style={{
-                left: zone.x,
-                top: zone.y + zone.h + 16,
-                width: zone.w,
-                fontSize: 30,
+                left: viewportLeft,
+                top: viewportTop,
+                width: viewportWidth,
+                fontSize: 30 * chromeScale,
                 fontWeight: 500,
                 letterSpacing: "0.02em",
                 color: textColor,
                 opacity: 0.65,
-                zIndex: 5,
+                zIndex: 10,
                 textAlign: zone.align,
                 textShadow: "0 1px 2px rgba(0,0,0,0.3)",
               }}
@@ -856,14 +878,15 @@ export function SlidePreview({
         }
         return (
           <div
-            className="absolute left-1/2 bottom-4 -translate-x-1/2"
+            className="absolute left-1/2 -translate-x-1/2"
             style={{
-              fontSize: 30,
+              bottom: 16 * chromeScale,
+              fontSize: 30 * chromeScale,
               fontWeight: 500,
               letterSpacing: "0.02em",
               color: textColor,
               opacity: 0.65,
-              zIndex: 5,
+              zIndex: 10,
               textShadow: "0 1px 2px rgba(0,0,0,0.3)",
             }}
           >
@@ -871,8 +894,6 @@ export function SlidePreview({
           </div>
         );
       })()}
-        </div>
-      </div>
     </div>
   );
 }

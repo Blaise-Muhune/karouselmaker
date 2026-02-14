@@ -105,6 +105,8 @@ export async function updateCarousel(
     export_format?: string;
     export_size?: string;
     is_favorite?: boolean;
+    include_first_slide?: boolean;
+    include_last_slide?: boolean;
   }
 ): Promise<Carousel> {
   const supabase = await createClient();

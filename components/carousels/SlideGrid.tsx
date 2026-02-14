@@ -126,6 +126,42 @@ function getFontOverrides(slide: Slide): { headline_font_size?: number; body_fon
   return { headline_font_size: m.headline_font_size, body_font_size: m.body_font_size };
 }
 
+type SlideMeta = {
+  headline_zone_override?: Record<string, unknown>;
+  body_zone_override?: Record<string, unknown>;
+  headline_highlight_style?: "text" | "background";
+  body_highlight_style?: "text" | "background";
+  headline_highlights?: { start: number; end: number; color: string }[];
+  body_highlights?: { start: number; end: number; color: string }[];
+};
+
+function getZoneOverrides(slide: Slide): { headline?: Record<string, unknown>; body?: Record<string, unknown> } | undefined {
+  const m = slide.meta as SlideMeta | null;
+  if (m == null) return undefined;
+  if (!m.headline_zone_override && !m.body_zone_override) return undefined;
+  return {
+    headline: m.headline_zone_override && Object.keys(m.headline_zone_override).length > 0 ? m.headline_zone_override : undefined,
+    body: m.body_zone_override && Object.keys(m.body_zone_override).length > 0 ? m.body_zone_override : undefined,
+  };
+}
+
+function getHighlightStyles(slide: Slide): { headline: "text" | "background"; body: "text" | "background" } {
+  const m = slide.meta as SlideMeta | null;
+  return {
+    headline: m?.headline_highlight_style === "background" ? "background" : "text",
+    body: m?.body_highlight_style === "background" ? "background" : "text",
+  };
+}
+
+function getHighlightSpans(slide: Slide): { headline_highlights?: SlideMeta["headline_highlights"]; body_highlights?: SlideMeta["body_highlights"] } {
+  const m = slide.meta as SlideMeta | null;
+  if (!m?.headline_highlights?.length && !m?.body_highlights?.length) return {};
+  return {
+    headline_highlights: m.headline_highlights?.length ? m.headline_highlights : undefined,
+    body_highlights: m.body_highlights?.length ? m.body_highlights : undefined,
+  };
+}
+
 function getImageCount(slide: Slide): number {
   const bg = slide.background as {
     mode?: string;
@@ -255,7 +291,7 @@ export function SlideGrid({
                   {canEdit ? (
                     <Link
                       href={`/p/${projectId}/c/${carouselId}/s/${slide.id}`}
-                      className="overflow-hidden rounded-lg border border-border bg-muted/30 text-left transition-colors hover:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/50 block"
+                      className="relative overflow-hidden rounded-lg border border-border bg-muted/30 text-left transition-colors hover:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/50 block"
                       style={{
                         width: previewDims.w,
                         height: previewDims.h,
@@ -263,11 +299,14 @@ export function SlideGrid({
                     >
                       {templateConfig ? (
                         <div
+                          className="absolute left-0 top-0 shrink-0"
                           style={{
                             transform: `translate(${previewDims.translateX}px, ${previewDims.translateY}px) scale(${previewDims.scale})`,
                             transformOrigin: "top left",
                             width: previewDims.contentW,
                             height: previewDims.contentH,
+                            minWidth: previewDims.contentW,
+                            minHeight: previewDims.contentH,
                           }}
                         >
                           <SlidePreview
@@ -287,6 +326,11 @@ export function SlideGrid({
                             showWatermarkOverride={getShowWatermarkOverride(slide, slidesOrder.length)}
                             showMadeWithOverride={getShowMadeWithOverride(slide, isPro)}
                             fontOverrides={getFontOverrides(slide)}
+                            zoneOverrides={getZoneOverrides(slide)}
+                            headlineHighlightStyle={getHighlightStyles(slide).headline}
+                            bodyHighlightStyle={getHighlightStyles(slide).body}
+                            headline_highlights={getHighlightSpans(slide).headline_highlights}
+                            body_highlights={getHighlightSpans(slide).body_highlights}
                             imageDisplay={getImageDisplay(slide)}
                             exportSize={exportSize}
                           />
@@ -303,7 +347,7 @@ export function SlideGrid({
                   ) : (
                     <Link
                       href={`/p/${projectId}/c/${carouselId}/s/${slide.id}`}
-                      className="overflow-hidden rounded-lg border border-border bg-muted/30 text-left block transition-colors hover:border-primary/30 focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      className="relative overflow-hidden rounded-lg border border-border bg-muted/30 text-left block transition-colors hover:border-primary/30 focus:outline-none focus:ring-2 focus:ring-primary/50"
                       style={{
                         width: previewDims.w,
                         height: previewDims.h,
@@ -311,11 +355,14 @@ export function SlideGrid({
                     >
                       {templateConfig ? (
                         <div
+                          className="absolute left-0 top-0 shrink-0"
                           style={{
                             transform: `translate(${previewDims.translateX}px, ${previewDims.translateY}px) scale(${previewDims.scale})`,
                             transformOrigin: "top left",
                             width: previewDims.contentW,
                             height: previewDims.contentH,
+                            minWidth: previewDims.contentW,
+                            minHeight: previewDims.contentH,
                           }}
                         >
                           <SlidePreview
@@ -335,6 +382,11 @@ export function SlideGrid({
                             showWatermarkOverride={getShowWatermarkOverride(slide, slidesOrder.length)}
                             showMadeWithOverride={getShowMadeWithOverride(slide, isPro)}
                             fontOverrides={getFontOverrides(slide)}
+                            zoneOverrides={getZoneOverrides(slide)}
+                            headlineHighlightStyle={getHighlightStyles(slide).headline}
+                            bodyHighlightStyle={getHighlightStyles(slide).body}
+                            headline_highlights={getHighlightSpans(slide).headline_highlights}
+                            body_highlights={getHighlightSpans(slide).body_highlights}
                             imageDisplay={getImageDisplay(slide)}
                             exportSize={exportSize}
                           />

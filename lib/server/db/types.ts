@@ -57,6 +57,10 @@ export interface Carousel {
   export_format?: ExportFormat;
   export_size?: ExportSize;
   is_favorite?: boolean;
+  /** When true, "Apply to all" includes the first slide. Default true. */
+  include_first_slide?: boolean;
+  /** When true, "Apply to all" includes the last slide. Default true. */
+  include_last_slide?: boolean;
   created_at: string;
   updated_at: string;
 }

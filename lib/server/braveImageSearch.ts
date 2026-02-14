@@ -20,15 +20,9 @@ export async function searchBraveImage(
     return null;
   }
 
-  // Append quality + orientation: professional photography, portrait/vertical for carousel
-  const baseQuery = query.trim().slice(0, 55);
-  const hasQualityTerms = /high res|resolution|professional|photography|portrait|vertical/i.test(baseQuery);
-  const enhancedQuery = hasQualityTerms
-    ? baseQuery
-    : `${baseQuery} high resolution`;
-
+  const q = query.trim().slice(0, 200);
   const params = new URLSearchParams({
-    q: enhancedQuery,
+    q,
     count: "10",
     safesearch: "strict",
   });
@@ -53,35 +47,19 @@ export async function searchBraveImage(
   };
 
   const results = data.results ?? [];
-  const skipPattern = /\.gif(\?|$)|giphy|tenor|clipart|\.svg(\?|$)/i;
-  const skipDomains = /pinimg|tumblr|imgur|reddit|redd\.it|wikipedia|wikimedia|wallpapers|wallpaperaccess|sftcdn|alphacoders|quora|wallpapercave|blogspot|blogger|etsy|amazonaws|ebay|ebayimg|amazon\.com|knowyourmeme|deviantart|flickr/i;
-
-  const suitable: string[] = [];
+  const urls: string[] = [];
   for (const item of results) {
     const imageUrl = item.properties?.url ?? item.url ?? item.thumbnail?.src;
     if (!imageUrl || !/^https?:\/\//i.test(imageUrl)) continue;
-    if (skipPattern.test(imageUrl)) {
-      if (DEBUG) console.log("[braveImageSearch] skip GIF/clipart:", imageUrl.slice(0, 50) + "...");
-      continue;
-    }
-    try {
-      const host = new URL(imageUrl).hostname.toLowerCase();
-      if (skipDomains.test(host)) {
-        if (DEBUG) console.log("[braveImageSearch] skip low-quality domain:", host);
-        continue;
-      }
-    } catch {
-      continue;
-    }
-    suitable.push(imageUrl);
+    urls.push(imageUrl);
   }
 
-  if (suitable.length === 0) {
-    if (DEBUG) console.log("[braveImageSearch] no suitable results (all GIF/clipart?)");
+  if (urls.length === 0) {
+    if (DEBUG) console.log("[braveImageSearch] no results");
     return null;
   }
-  const idx = Math.floor(Math.random() * suitable.length);
-  return { url: suitable[idx]! };
+  const idx = Math.floor(Math.random() * urls.length);
+  return { url: urls[idx]! };
 }
 
 export function isBraveImageSearchConfigured(): boolean {

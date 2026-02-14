@@ -78,3 +78,42 @@ export function parseInlineFormatting(text: string): InlineSegment[] {
 
   return segments;
 }
+
+export type HighlightSpan = { start: number; end: number; color: string };
+
+/**
+ * Inject {{#hex}}...{{/}} into plain text from stored highlight spans.
+ * Spans are clamped to text length; overlapping spans are merged (last wins for overlap).
+ * Use this when headline/body are stored without brackets and highlights are in meta.
+ */
+/**
+ * Remove {{name}}, {{#hex}}, and {{/}} from text, leaving only the inner content.
+ * Use when loading text that has brackets but we now store highlights in spans.
+ */
+export function stripHighlightMarkers(text: string): string {
+  return text
+    .replace(/\{\{(?:#[\da-fA-F]{6}|[a-z]+)\}\}/g, "")
+    .replace(/\{\{\/\}\}/g, "");
+}
+
+export function injectHighlightMarkers(text: string, spans: HighlightSpan[]): string {
+  if (!spans.length) return text;
+  const len = text.length;
+  const clamped = spans
+    .map((s) => ({ start: Math.max(0, Math.min(s.start, len)), end: Math.max(0, Math.min(s.end, len)), color: s.color }))
+    .filter((s) => s.end > s.start)
+    .sort((a, b) => a.start - b.start);
+  if (!clamped.length) return text;
+  let out = "";
+  let lastEnd = 0;
+  for (const s of clamped) {
+    const start = Math.max(s.start, lastEnd);
+    if (start >= s.end) continue;
+    if (start > lastEnd) out += text.slice(lastEnd, start);
+    const hex = s.color.startsWith("#") ? s.color : `#${s.color}`;
+    out += `{{${hex}}}${text.slice(start, s.end)}{{/}}`;
+    lastEnd = s.end;
+  }
+  if (lastEnd < len) out += text.slice(lastEnd, len);
+  return out;
+}

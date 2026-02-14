@@ -144,6 +144,10 @@ export const slideMetaSchema = z.object({
   headline_highlight_style: highlightStyleSchema.optional(),
   /** How body {{color}} highlights render. */
   body_highlight_style: highlightStyleSchema.optional(),
+  /** Headline highlight spans (plain text, no brackets). Each { start, end, color } with color as hex. */
+  headline_highlights: z.array(z.object({ start: z.number().int().min(0), end: z.number().int().min(0), color: z.string() })).optional(),
+  /** Body highlight spans. */
+  body_highlights: z.array(z.object({ start: z.number().int().min(0), end: z.number().int().min(0), color: z.string() })).optional(),
 });
 
 export const updateSlideInputSchema = z.object({
