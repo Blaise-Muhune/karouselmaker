@@ -63,3 +63,18 @@ export async function updateProject(
   if (error) throw new Error(error.message);
   return data as Project;
 }
+
+export async function deleteProject(
+  userId: string,
+  projectId: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("projects")
+    .delete()
+    .eq("id", projectId)
+    .eq("user_id", userId);
+
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}

@@ -35,7 +35,8 @@ Rules:
 - NEVER include URLs, links, or web addresses in headline or body. No markdown links like [text](url) or (url). No "source:", "read more at", or citations. Summarize in plain text only—slide text must be link-free.
 - slide_index starts at 1 and increments.
 - slide_type must be exactly one of: hook, point, context, cta, generic.
-- The FIRST slide must ALWAYS be slide_type "hook"—an intro that hooks visually and textually. Punchy headline, compelling image. Never skip the hook.
+- The FIRST slide must ALWAYS be slide_type "hook"—an intro that hooks visually and textually. Never skip the hook.
+  • Hook rules: (1) NON-SPOILER—do NOT give away what the rest of the carousel says. Tease the topic and the payoff; make people want to swipe. (2) ON-TOPIC—the hook must feel like the user's topic (same vibe, same world). Don't go generic or unrelated. (3) VIRAL-ABLE—punchy, scroll-stopping, shareable. One strong idea; curiosity gap; no spoilers of the content ahead.
 - Use ranking or "top X" structure ONLY when the topic clearly asks for it (e.g. "top 10 duos", "best 5 apps", "ranking of X"). Then: hook first, then order from least to best (slide 2 = lowest rank, last content slide = #1). When numbering ranked items, pick ONE style and use it consistently for the whole carousel—e.g. all "1." or all "#1" or all "1)" or all "1/". Do NOT mix styles (no "1." on one slide and "#1" on another).
 - For everything else—how-to, explain, why, tips, story, breakdown, general topic—do NOT force a ranked list. Expand on the topic in the best format: explanation, key points, steps, narrative, or a simple list without "top N" framing. Match the format to what the user asked for.
 - If the carousel has 6+ slides, the last slide must be slide_type "cta".
@@ -64,7 +65,7 @@ ${ctx.use_ai_backgrounds ? (ctx.use_unsplash_only
   (4) Press/official: "press kit" subject, "official photos" subject.
   (5) Full resolution: subject "full resolution" photo, subject "DSLR" photo.
   (6) Universal: subject 3000x2000 filetype:jpg, subject "press kit" images.
-  • SLIDE 1 (hook): Famous person or well-known thing from the topic—e.g. [topic-relevant person] 3000x2000 photo or "press kit" [topic]. Stops the scroll; not generic.
+  • SLIDE 1 (hook): Topic-relevant person or thing—on-topic, scroll-stopping, no spoiler of later slides. E.g. [topic-relevant person] 3000x2000 photo or "press kit" [topic]. Viral-able; not generic.
   • EVERY SLIDE: The query subject must be the topic or a topic-relevant person/thing—e.g. for a slide about "film, trim, post" use "video editing setup 3000x2000" or "content creator filming press kit"; for "calm face" use a person with calm expression in that topic context. No stadiums, abstract gradients, or decorative art unless the topic is literally about that.
   • 2 IMAGES: only when the slide compares two distinct things; same pattern, both topic-relevant.`) : ""}
 
@@ -104,7 +105,7 @@ ${urlNote}${creatorHandleNote}${projectNicheNote}${notesSection}
 
 ${ctx.use_ai_backgrounds ? (ctx.use_unsplash_only
   ? "CRITICAL: Every slide MUST have unsplash_queries with at least 1 string. Use simple, common search terms: 'peaceful nature landscape', 'mountain sunrise', 'calm ocean', 'productivity workspace', 'Lionel Messi 4k'. Avoid obscure or very niche phrases—they may return no images."
-  : "CRITICAL: Every slide MUST have unsplash_queries. Images must be about the CAROUSEL TOPIC and the slide—never generic. Prefer a person relevant to the topic. When the subject is a person (especially first name or common name), add disambiguating details: full name, team, country, role, or sport (e.g. rodri man city spain 3000x2000 photo, not just rodri 3000x2000). Use Brave patterns: subject + (1) 3000x2000 photo, (2) filetype:jpg 3000, (3) site or press kit, (4) \"press kit\" or \"official photos\", (5) \"full resolution\" or \"DSLR\" photo. Hook: famous person/thing from topic. Film/editing slides: filming or video editing imagery. No stadiums, abstract gradients, or random stock.") : ""}
+  : "CRITICAL: Every slide MUST have unsplash_queries. Images must be about the CAROUSEL TOPIC and the slide—never generic. Prefer a person relevant to the topic. When the subject is a person (especially first name or common name), add disambiguating details: full name, team, country, role, or sport (e.g. rodri man city spain 3000x2000 photo, not just rodri 3000x2000). Use Brave patterns: subject + (1) 3000x2000 photo, (2) filetype:jpg 3000, (3) site or press kit, (4) \"press kit\" or \"official photos\", (5) \"full resolution\" or \"DSLR\" photo. Hook (slide 1): on-topic, viral-able image—no spoiler of rest of carousel; famous person/thing from topic. Film/editing slides: filming or video editing imagery. No stadiums, abstract gradients, or random stock.") : ""}
 
 ${ctx.use_web_search ? "CRITICAL: After any web search, your response must be ONLY the raw JSON object. No markdown, no code fences, no text before or after. Start with { and end with }. Do NOT include any URLs or links (e.g. [site](url)) in headline or body—plain text only." : "Respond with valid JSON only."}`;
 

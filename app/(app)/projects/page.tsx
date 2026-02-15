@@ -9,6 +9,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { SubscriptionStatusBanner } from "@/components/subscription/SubscriptionStatusBanner";
+import { ProjectMenuDropdown } from "@/components/projects/ProjectMenuDropdown";
 import { PlusCircleIcon } from "lucide-react";
 
 export default async function ProjectsPage({
@@ -66,18 +67,16 @@ export default async function ProjectsPage({
           <ul className="space-y-2">
             {projects.map((p) => (
               <li key={p.id}>
-                <Link
-                  href={`/p/${p.id}`}
-                  className="bg-card hover:bg-accent/30 border-border flex items-center justify-between rounded-xl border p-4 transition-all duration-200 hover:shadow-md hover:shadow-primary/5 hover:border-primary/20 hover:-translate-y-0.5"
-                >
-                  <div>
+                <div className="bg-card hover:bg-accent/30 border-border flex items-center justify-between gap-2 rounded-xl border p-4 transition-all duration-200 hover:shadow-md hover:shadow-primary/5 hover:border-primary/20 hover:-translate-y-0.5">
+                  <Link href={`/p/${p.id}`} className="min-w-0 flex-1">
                     <p className="font-medium">{p.name}</p>
                     <p className="text-muted-foreground text-sm">
                       {p.niche ? `${p.niche} · ` : ""}
                       Tone: {p.tone_preset}
                     </p>
-                  </div>
-                </Link>
+                  </Link>
+                  <ProjectMenuDropdown projectId={p.id} projectName={p.name} />
+                </div>
               </li>
             ))}
           </ul>

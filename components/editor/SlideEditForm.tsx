@@ -426,6 +426,8 @@ export function SlideEditForm({
   const [isMobile, setIsMobile] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [pendingDownload, setPendingDownload] = useState<{ url: string; filename: string } | null>(null);
+  const previewWrapRef = useRef<HTMLDivElement>(null);
+  const [previewWrapWidth, setPreviewWrapWidth] = useState<number | null>(null);
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 1023px)");
     const handler = () => setIsMobile(mq.matches);
@@ -433,6 +435,14 @@ export function SlideEditForm({
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);
   }, []);
+  useEffect(() => {
+    const el = previewWrapRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setPreviewWrapWidth(el.clientWidth));
+    ro.observe(el);
+    setPreviewWrapWidth(el.clientWidth);
+    return () => ro.disconnect();
+  }, [exportSize]);
 
   const templateConfig = getTemplateConfig(templateId, templates);
   const isHook = slide.slide_type === "hook";
@@ -623,9 +633,11 @@ export function SlideEditForm({
   const prevHref = prevSlide ? `/p/${projectId}/c/${carouselId}/s/${prevSlide.id}` : null;
   const nextHref = nextSlide ? `/p/${projectId}/c/${carouselId}/s/${nextSlide.id}` : null;
 
-  const handlePrevNext = async (direction: "prev" | "next") => {
+  const handlePrevNext = async (e: React.MouseEvent, direction: "prev" | "next") => {
+    e.preventDefault();
     const targetHref = direction === "prev" ? prevHref : nextHref;
     if (!targetHref) return;
+    if (saving) return;
     const result = await performSave(false);
     if (result.ok) {
       router.push(targetHref);
@@ -689,9 +701,14 @@ export function SlideEditForm({
     const payload: Parameters<typeof applyToAllSlides>[1] = { template_id: newTemplateId };
     if (d?.headline !== undefined) payload.headline = d.headline;
     if (d?.body !== undefined) payload.body = d.body;
-    if (d?.background && Object.keys(d.background).length > 0) payload.background = d.background as Record<string, unknown>;
-    if (d?.meta && Object.keys(d.meta).length > 0) payload.meta = d.meta as Record<string, unknown>;
-    const result = await applyToAllSlides(slide.carousel_id, payload, editorPath, applyScope);
+    if (d?.background != null && typeof d.background === "object" && Object.keys(d.background).length > 0) {
+      payload.background = d.background as Record<string, unknown>;
+    }
+    if (d?.meta != null && typeof d.meta === "object" && Object.keys(d.meta).length > 0) {
+      payload.meta = d.meta as Record<string, unknown>;
+    }
+    const allSlidesScope = { includeFirstSlide: true, includeLastSlide: true };
+    const result = await applyToAllSlides(slide.carousel_id, payload, editorPath, allSlidesScope);
     setApplyingTemplate(false);
     if (result.ok) router.refresh();
   };
@@ -878,7 +895,18 @@ export function SlideEditForm({
       setSaveTemplateOpen(false);
       setTemplateName("");
       setTemplateId(newTemplateId);
-      await applyToAllSlides(slide.carousel_id, { template_id: newTemplateId }, editorPath, applyScope);
+      // Apply the new template and its full defaults to all slides (same as applying a template)
+      const applyPayload: Parameters<typeof applyToAllSlides>[1] = { template_id: newTemplateId };
+      if (defaults.headline !== undefined) applyPayload.headline = defaults.headline;
+      if (defaults.body !== undefined) applyPayload.body = defaults.body;
+      if (defaults.background != null && typeof defaults.background === "object" && Object.keys(defaults.background).length > 0) {
+        applyPayload.background = defaults.background as Record<string, unknown>;
+      }
+      if (defaults.meta != null && typeof defaults.meta === "object" && Object.keys(defaults.meta).length > 0) {
+        applyPayload.meta = defaults.meta as Record<string, unknown>;
+      }
+      const allSlidesScope = { includeFirstSlide: true, includeLastSlide: true };
+      await applyToAllSlides(slide.carousel_id, applyPayload, editorPath, allSlidesScope);
       router.refresh();
     }
   };
@@ -1206,12 +1234,12 @@ export function SlideEditForm({
         </div>
       </div>
       <div
-        className="rounded-lg border border-border/80 shrink-0 max-w-full mx-auto"
+        ref={previewWrapRef}
+        className="rounded-lg border border-border/80 shrink-0 max-w-full min-w-0 mx-auto overflow-hidden relative"
         style={{
-          width: getPreviewDimensions(exportSize).w,
-          height: getPreviewDimensions(exportSize).h,
-          overflow: "hidden",
-          position: "relative",
+          width: "100%",
+          maxWidth: getPreviewDimensions(exportSize).w,
+          aspectRatio: `${1080}/${exportSize === "1080x1080" ? 1080 : exportSize === "1080x1350" ? 1350 : 1920}`,
           backgroundColor: isImageMode && background.overlay?.gradient !== false
             ? (background.overlay?.color ?? "#000000")
             : (background.color ?? brandKit.primary_color ?? "#0a0a0a"),
@@ -1221,11 +1249,11 @@ export function SlideEditForm({
           <div
             style={{
               position: "absolute",
-              left: getPreviewDimensions(exportSize).offsetX,
-              top: getPreviewDimensions(exportSize).offsetY,
-              width: getPreviewDimensions(exportSize).contentW,
-              height: getPreviewDimensions(exportSize).contentH,
-              transform: `scale(${getPreviewDimensions(exportSize).scale})`,
+              left: 0,
+              top: 0,
+              width: 1080,
+              height: exportSize === "1080x1080" ? 1080 : exportSize === "1080x1350" ? 1350 : 1920,
+              transform: `scale(${previewWrapWidth != null && previewWrapWidth > 0 ? previewWrapWidth / 1080 : getPreviewDimensions(exportSize).scale})`,
               transformOrigin: "top left",
             }}
           >
@@ -1266,10 +1294,7 @@ export function SlideEditForm({
             />
           </div>
         ) : (
-          <div
-            className="flex h-full items-center justify-center text-muted-foreground text-sm"
-            style={{ width: getPreviewDimensions(exportSize).w, height: getPreviewDimensions(exportSize).h, overflow: "hidden" }}
-          >
+          <div className="flex h-full w-full items-center justify-center text-muted-foreground text-sm">
             No template
           </div>
         )}
@@ -1315,11 +1340,12 @@ export function SlideEditForm({
         {totalSlides > 1 && (
           <div className="flex items-center gap-2">
             <Button
+              type="button"
               variant="outline"
               size="sm"
               className="flex-1"
-              disabled={!prevHref}
-              onClick={() => handlePrevNext("prev")}
+              disabled={!prevHref || saving}
+              onClick={(e) => handlePrevNext(e, "prev")}
               title="Previous slide (saves first)"
             >
               <ChevronLeftIcon className="size-4" />
@@ -1329,11 +1355,12 @@ export function SlideEditForm({
               {slide.slide_index} / {totalSlides}
             </span>
             <Button
+              type="button"
               variant="outline"
               size="sm"
               className="flex-1"
-              disabled={!nextHref}
-              onClick={() => handlePrevNext("next")}
+              disabled={!nextHref || saving}
+              onClick={(e) => handlePrevNext(e, "next")}
               title="Next slide (saves first)"
             >
               Next
