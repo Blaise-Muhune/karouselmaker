@@ -3,6 +3,7 @@
 import { getUser } from "@/lib/server/auth/getUser";
 import { getSubscription, getPlanLimits } from "@/lib/server/subscription";
 import { getTemplate, createTemplate, countUserTemplates } from "@/lib/server/db";
+import type { Json } from "@/lib/server/db/types";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 
@@ -48,7 +49,7 @@ export async function createTemplateAction(
     name: trimmed,
     category: payload.category || "generic",
     aspect_ratio: "1:1",
-    config,
+    config: config as Json,
     is_locked: true,
   });
 

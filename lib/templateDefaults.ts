@@ -8,7 +8,7 @@ export const DEFAULT_TEMPLATE_CONFIG: TemplateConfig = {
     { id: "headline", x: 80, y: 720, w: 920, h: 260, fontSize: 68, fontWeight: 800, lineHeight: 1.05, maxLines: 3, align: "center" },
     { id: "body", x: 80, y: 560, w: 920, h: 140, fontSize: 32, fontWeight: 600, lineHeight: 1.2, maxLines: 2, align: "center" },
   ],
-  overlays: { gradient: { enabled: true, direction: "bottom", strength: 0.5, extent: 100, color: "#000000", solidSize: 0 }, vignette: { enabled: false, strength: 0.2 } },
+  overlays: { gradient: { enabled: true, direction: "bottom", strength: 0.5, extent: 50, color: "#000000", solidSize: 25 }, vignette: { enabled: false, strength: 0.2 } },
   chrome: {
     showSwipe: true,
     swipeType: "chevrons",

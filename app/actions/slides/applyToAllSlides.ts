@@ -38,6 +38,8 @@ export async function applyToAllSlides(
     template_id?: string | null;
     background?: Record<string, unknown>;
     meta?: Record<string, unknown>;
+    headline?: string;
+    body?: string | null;
   },
   revalidatePathname?: string,
   scope?: ApplyScope
@@ -54,10 +56,12 @@ export async function applyToAllSlides(
   const slides = filterSlidesByScope(await listSlides(user.id, carouselId), scope);
   if (slides.length === 0) return { ok: true, updated: 0 };
 
-  const patch: { template_id?: string | null; background?: Json; meta?: Json } = {};
+  const patch: { template_id?: string | null; background?: Json; meta?: Json; headline?: string; body?: string | null } = {};
   if (payload.template_id !== undefined) patch.template_id = payload.template_id;
   if (payload.background !== undefined) patch.background = payload.background as Json;
   if (payload.meta !== undefined) patch.meta = payload.meta as Json;
+  if (payload.headline !== undefined) patch.headline = payload.headline;
+  if (payload.body !== undefined) patch.body = payload.body;
 
   if (Object.keys(patch).length === 0) return { ok: true, updated: 0 };
 

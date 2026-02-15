@@ -105,6 +105,31 @@ const backgroundRulesSchema = z.object({
   defaultStyle: z.enum(["darken", "blur", "none"]),
 });
 
+/** Optional preset content/background/meta saved with the template (e.g. from "Save as template"). */
+const templateDefaultsSchema = z
+  .object({
+    headline: z.string().optional(),
+    body: z.string().nullable().optional(),
+    /** Serialized slide background (solid color, gradient, or image refs/URLs). */
+    background: z.record(z.string(), z.unknown()).optional(),
+    meta: z
+      .object({
+        show_counter: z.boolean().optional(),
+        show_watermark: z.boolean().optional(),
+        show_made_with: z.boolean().optional(),
+        headline_font_size: z.number().optional(),
+        body_font_size: z.number().optional(),
+        headline_zone_override: z.record(z.string(), z.unknown()).optional(),
+        body_zone_override: z.record(z.string(), z.unknown()).optional(),
+        headline_highlight_style: z.enum(["text", "background"]).optional(),
+        body_highlight_style: z.enum(["text", "background"]).optional(),
+        headline_highlights: z.array(z.object({ start: z.number(), end: z.number(), color: z.string() })).optional(),
+        body_highlights: z.array(z.object({ start: z.number(), end: z.number(), color: z.string() })).optional(),
+      })
+      .optional(),
+  })
+  .optional();
+
 export const templateConfigSchema = z.object({
   layout: layoutEnum,
   safeArea: safeAreaSchema,
@@ -112,9 +137,11 @@ export const templateConfigSchema = z.object({
   overlays: overlaysSchema,
   chrome: chromeSchema,
   backgroundRules: backgroundRulesSchema,
+  defaults: templateDefaultsSchema,
 });
 
 export type TemplateConfig = z.output<typeof templateConfigSchema>;
+export type TemplateDefaults = z.output<typeof templateDefaultsSchema>;
 export type TextZone = z.output<typeof textZoneSchema>;
 export type SafeArea = z.output<typeof safeAreaSchema>;
 export type TemplateOverlays = z.output<typeof overlaysSchema>;

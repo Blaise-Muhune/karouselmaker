@@ -177,16 +177,10 @@ export async function POST(
           slideBg?.overlay?.darken != null && slideBg.overlay.darken !== 0.5
             ? slideBg.overlay.darken
             : templateStrength;
-        const templateExtent = templateCfg?.overlays?.gradient?.extent ?? 100;
-        const templateSolidSize = templateCfg?.overlays?.gradient?.solidSize ?? 0;
-        const gradientExtent =
-          slideBg?.overlay?.extent != null && slideBg.overlay.extent !== 100
-            ? slideBg.overlay.extent
-            : templateExtent;
-        const gradientSolidSize =
-          slideBg?.overlay?.solidSize != null && slideBg.overlay.solidSize !== 0
-            ? slideBg.overlay.solidSize
-            : templateSolidSize;
+        const templateExtent = templateCfg?.overlays?.gradient?.extent ?? 50;
+        const templateSolidSize = templateCfg?.overlays?.gradient?.solidSize ?? 25;
+        const gradientExtent = slideBg?.overlay?.extent != null ? slideBg.overlay.extent : templateExtent;
+        const gradientSolidSize = slideBg?.overlay?.solidSize != null ? slideBg.overlay.solidSize : templateSolidSize;
         const overlayFields = {
           gradientStrength,
           gradientColor,

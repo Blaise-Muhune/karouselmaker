@@ -614,8 +614,8 @@ export function SlidePreview({
 
       {/* Gradient overlay */}
       {useGradient && (() => {
-        const extent = backgroundOverride?.gradientExtent ?? (model.background as { gradientExtent?: number }).gradientExtent ?? 100;
-        const solidSize = backgroundOverride?.gradientSolidSize ?? (model.background as { gradientSolidSize?: number }).gradientSolidSize ?? 0;
+        const extent = backgroundOverride?.gradientExtent ?? (model.background as { gradientExtent?: number }).gradientExtent ?? 50;
+        const solidSize = backgroundOverride?.gradientSolidSize ?? (model.background as { gradientSolidSize?: number }).gradientSolidSize ?? 25;
         const transitionEnd = 100 - extent + (extent * (100 - solidSize)) / 100;
         const gradientStyle =
           solidSize >= 100

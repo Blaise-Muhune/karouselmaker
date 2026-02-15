@@ -856,15 +856,15 @@ export function TemplateBuilderForm({
                 <div className="space-y-2">
                   <div className="flex justify-between">
                     <Label className="text-xs">Extent (0–100%)</Label>
-                    <span className="text-muted-foreground text-xs">{config.overlays.gradient.extent ?? 100}%</span>
+                    <span className="text-muted-foreground text-xs">{config.overlays.gradient.extent ?? 50}%</span>
                   </div>
                   <Slider
-                    value={[config.overlays.gradient.extent ?? 100]}
+                    value={[config.overlays.gradient.extent ?? 50]}
                     onValueChange={([v]) =>
                       updateConfig((prev) => ({
                         overlays: {
                           ...prev.overlays,
-                          gradient: { ...prev.overlays.gradient, extent: v ?? 100 },
+                          gradient: { ...prev.overlays.gradient, extent: v ?? 50 },
                         },
                       }))
                     }
@@ -876,15 +876,15 @@ export function TemplateBuilderForm({
                 <div className="space-y-2">
                   <div className="flex justify-between">
                     <Label className="text-xs">Solid overlay (0–100%)</Label>
-                    <span className="text-muted-foreground text-xs">{config.overlays.gradient.solidSize ?? 0}%</span>
+                    <span className="text-muted-foreground text-xs">{config.overlays.gradient.solidSize ?? 25}%</span>
                   </div>
                   <Slider
-                    value={[config.overlays.gradient.solidSize ?? 0]}
+                    value={[config.overlays.gradient.solidSize ?? 25]}
                     onValueChange={([v]) =>
                       updateConfig((prev) => ({
                         overlays: {
                           ...prev.overlays,
-                          gradient: { ...prev.overlays.gradient, solidSize: v ?? 0 },
+                          gradient: { ...prev.overlays.gradient, solidSize: v ?? 25 },
                         },
                       }))
                     }

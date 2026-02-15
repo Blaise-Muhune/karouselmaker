@@ -251,10 +251,10 @@ export function SlideEditForm({
         const darken = bg.overlay.darken ?? templateOverlayStrength;
         const effectiveDarken = darken === 0.5 ? templateOverlayStrength : darken;
         const grad = initTemplateConfig?.overlays?.gradient;
-        const extent = bg.overlay.extent ?? grad?.extent ?? 100;
-        const effectiveExtent = extent === 100 ? (grad?.extent ?? 100) : extent;
-        const solidSize = bg.overlay.solidSize ?? grad?.solidSize ?? 0;
-        const effectiveSolidSize = solidSize === 0 ? (grad?.solidSize ?? 0) : solidSize;
+        const extent = bg.overlay.extent ?? grad?.extent ?? 50;
+        const effectiveExtent = extent === 50 ? (grad?.extent ?? 50) : extent;
+        const solidSize = bg.overlay.solidSize ?? grad?.solidSize ?? 25;
+        const effectiveSolidSize = solidSize === 25 ? (grad?.solidSize ?? 25) : solidSize;
         base.overlay = { ...bg.overlay, darken: effectiveDarken, extent: effectiveExtent, solidSize: effectiveSolidSize, color: overlayColor, textColor: getContrastingTextColor(overlayColor) };
       } else {
         const defaultOverlayColor = brandKit.primary_color?.trim() || "#000000";
@@ -265,8 +265,8 @@ export function SlideEditForm({
           color: grad?.color ?? defaultOverlayColor,
           textColor: getContrastingTextColor(grad?.color ?? defaultOverlayColor),
           direction: grad?.direction ?? "bottom",
-          extent: grad?.extent ?? 100,
-          solidSize: grad?.solidSize ?? 0,
+          extent: grad?.extent ?? 50,
+          solidSize: grad?.solidSize ?? 25,
         };
       }
       if (bg.image_display) base.image_display = { ...bg.image_display };
@@ -684,7 +684,14 @@ export function SlideEditForm({
   const handleTemplateChange = async (newTemplateId: string | null) => {
     setTemplateId(newTemplateId);
     setApplyingTemplate(true);
-    const result = await applyToAllSlides(slide.carousel_id, { template_id: newTemplateId }, editorPath, applyScope);
+    const chosen = newTemplateId ? templates.find((t) => t.id === newTemplateId) : null;
+    const d = chosen?.parsedConfig?.defaults;
+    const payload: Parameters<typeof applyToAllSlides>[1] = { template_id: newTemplateId };
+    if (d?.headline !== undefined) payload.headline = d.headline;
+    if (d?.body !== undefined) payload.body = d.body;
+    if (d?.background && Object.keys(d.background).length > 0) payload.background = d.background as Record<string, unknown>;
+    if (d?.meta && Object.keys(d.meta).length > 0) payload.meta = d.meta as Record<string, unknown>;
+    const result = await applyToAllSlides(slide.carousel_id, payload, editorPath, applyScope);
     setApplyingTemplate(false);
     if (result.ok) router.refresh();
   };
@@ -831,6 +838,25 @@ export function SlideEditForm({
       color: overlayColor,
       solidSize: ov?.solidSize,
     };
+    const backgroundPayload = buildBackgroundPayload();
+    const defaults = {
+      headline,
+      body: body.trim() || null,
+      background: Object.keys(backgroundPayload).length > 0 ? backgroundPayload : undefined,
+      meta: {
+        show_counter: showCounter,
+        show_watermark: showWatermark,
+        show_made_with: showMadeWith,
+        ...(headlineFontSize != null && { headline_font_size: headlineFontSize }),
+        ...(bodyFontSize != null && { body_font_size: bodyFontSize }),
+        ...(headlineZoneOverride && Object.keys(headlineZoneOverride).length > 0 && { headline_zone_override: headlineZoneOverride }),
+        ...(bodyZoneOverride && Object.keys(bodyZoneOverride).length > 0 && { body_zone_override: bodyZoneOverride }),
+        headline_highlight_style: headlineHighlightStyle,
+        body_highlight_style: bodyHighlightStyle,
+        ...(headlineHighlights.length > 0 && { headline_highlights: headlineHighlights }),
+        ...(bodyHighlights.length > 0 && { body_highlights: bodyHighlights }),
+      },
+    };
     const config: TemplateConfig = {
       ...templateConfig,
       overlays: {
@@ -842,6 +868,7 @@ export function SlideEditForm({
         showCounter,
         watermark: { ...templateConfig.chrome.watermark, enabled: showWatermark },
       },
+      defaults,
     };
     const result = await createTemplateAction({ name, category: "generic", config });
     setSavingTemplate(false);
@@ -920,16 +947,10 @@ export function SlideEditForm({
     background.overlay?.darken != null && background.overlay.darken !== 0.5
       ? background.overlay.darken
       : templateOverlayStrength;
-  const templateExtent = templateConfig?.overlays?.gradient?.extent ?? 100;
-  const templateSolidSize = templateConfig?.overlays?.gradient?.solidSize ?? 0;
-  const effectiveExtent =
-    background.overlay?.extent != null && background.overlay.extent !== 100
-      ? background.overlay.extent
-      : templateExtent;
-  const effectiveSolidSize =
-    background.overlay?.solidSize != null && background.overlay.solidSize !== 0
-      ? background.overlay.solidSize
-      : templateSolidSize;
+  const templateExtent = templateConfig?.overlays?.gradient?.extent ?? 50;
+  const templateSolidSize = templateConfig?.overlays?.gradient?.solidSize ?? 25;
+  const effectiveExtent = background.overlay?.extent != null ? background.overlay.extent : templateExtent;
+  const effectiveSolidSize = background.overlay?.solidSize != null ? background.overlay.solidSize : templateSolidSize;
 
   const currentPresetId =
     OVERLAY_PRESETS.find(
@@ -1078,7 +1099,7 @@ export function SlideEditForm({
               onValueChange={([v]) =>
                 setBackground((b) => ({
                   ...b,
-                  overlay: { ...b.overlay, gradient: true, extent: v ?? 100 },
+                  overlay: { ...b.overlay, gradient: true, extent: v ?? 50 },
                 }))
               }
               min={0}
@@ -1096,7 +1117,7 @@ export function SlideEditForm({
               onValueChange={([v]) =>
                 setBackground((b) => ({
                   ...b,
-                  overlay: { ...b.overlay, gradient: true, solidSize: v ?? 0 },
+                  overlay: { ...b.overlay, gradient: true, solidSize: v ?? 25 },
                 }))
               }
               min={0}

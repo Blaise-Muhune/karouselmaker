@@ -76,12 +76,10 @@ function getBackgroundOverride(slide: Slide, templateConfig: TemplateConfig | nu
   const templateStrength = templateConfig?.overlays?.gradient?.strength ?? 0.5;
   const gradientStrength =
     bg.overlay?.darken != null && bg.overlay.darken !== 0.5 ? bg.overlay.darken : templateStrength;
-  const templateExtent = templateConfig?.overlays?.gradient?.extent ?? 100;
-  const templateSolidSize = templateConfig?.overlays?.gradient?.solidSize ?? 0;
-  const gradientExtent =
-    bg.overlay?.extent != null && bg.overlay.extent !== 100 ? bg.overlay.extent : templateExtent;
-  const gradientSolidSize =
-    bg.overlay?.solidSize != null && bg.overlay.solidSize !== 0 ? bg.overlay.solidSize : templateSolidSize;
+  const templateExtent = templateConfig?.overlays?.gradient?.extent ?? 50;
+  const templateSolidSize = templateConfig?.overlays?.gradient?.solidSize ?? 25;
+  const gradientExtent = bg.overlay?.extent != null ? bg.overlay.extent : templateExtent;
+  const gradientSolidSize = bg.overlay?.solidSize != null ? bg.overlay.solidSize : templateSolidSize;
   const overlayFields = {
     gradientStrength,
     gradientColor,
