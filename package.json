@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "node --max-http-header-size=32768 node_modules/next/dist/bin/next start",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@ffmpeg/ffmpeg": "^0.12.15",
@@ -46,6 +47,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "vitest": "^3.2.4",
     "@tailwindcss/postcss": "^4.1.18",
     "@types/node": "^20",
     "@types/react": "^19",
