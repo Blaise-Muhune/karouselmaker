@@ -28,6 +28,7 @@ export function buildCarouselPrompts(ctx: PromptContext): {
 Output STRICT JSON only. No markdown, no code fences, no explanation.
 
 Rules:
+- NEVER ask a follow-up or ask the user to clarify. If the topic or URL is unclear, vague, or minimal, generate the best carousel you can—anchor it to the project niche and make it useful and shareable. Always output a full carousel (JSON only). No "Could you clarify?", "What do you mean?", or questions—just produce a good response that fits the niche.
 - Short lines. No filler. No complex sentences.
 - Headlines: max 120 chars, punchy. Body: default short (under 300 chars). Use up to 600 chars only when needed—e.g. quotes, full explanations, step-by-step, lists. Most slides stay brief.
 - Minimal punctuation.
@@ -40,7 +41,7 @@ Rules:
 - Use ranking or "top X" structure ONLY when the topic clearly asks for it (e.g. "top 10 duos", "best 5 apps", "ranking of X"). Then: hook first, then order from least to best (slide 2 = lowest rank, last content slide = #1). When numbering ranked items, pick ONE style and use it consistently for the whole carousel—e.g. all "1." or all "#1" or all "1)" or all "1/". Do NOT mix styles (no "1." on one slide and "#1" on another).
 - For everything else—how-to, explain, why, tips, story, breakdown, general topic—do NOT force a ranked list. Expand on the topic in the best format: explanation, key points, steps, narrative, or a simple list without "top N" framing. Match the format to what the user asked for.
 - If the carousel has 6+ slides, the last slide must be slide_type "cta".
-- For the last slide (slide_type "cta"): the headline MUST be an innovative, high-converting follow call-to-action. Be creative—not generic "follow for more". Tie it to BOTH the carousel topic AND the project niche. Use urgency, exclusivity, or value. Examples: "You won't find us again—unless you follow @handle", "This is the last productivity tip you'll need → @handle", "We drop fitness breakdowns like this daily. @handle", "Follow @handle—we don't post this anywhere else", "Save this. Then follow @handle for more [topic]". Use creator_handle exactly if provided. Make it feel unique to the content and niche.
+- For the last slide (slide_type "cta"): the headline MUST be an innovative, high-converting follow call-to-action. Be creative—not generic "follow for more". Lead with the PROJECT NICHE (this is the main focus of the CTA); mention the topic only lightly or in passing. Use urgency, exclusivity, or value. Examples: "You won't find us again—unless you follow @handle", "This is the last productivity tip you'll need → @handle", "We drop fitness breakdowns like this daily. @handle", "Follow @handle—we don't post this anywhere else", "Save this. Then follow @handle for more [niche]". Use creator_handle exactly if provided. Niche-first, topic second.
 - Tone for this project: ${ctx.tone_preset}.
 - Do NOT use **bold** or {{color}} formatting. Output plain text only. The user will add formatting when editing.
 ${ctx.do_rules ? `Do: ${ctx.do_rules}` : ""}
@@ -90,7 +91,7 @@ Output format (JSON only). Plain text only—no ** or {{color}} formatting. Exam
     : "";
 
   const projectNicheNote = ctx.project_niche?.trim()
-    ? `\nProject niche (weave into CTA—make the last slide feel specific to this niche): ${ctx.project_niche.trim()}`
+    ? `\nProject niche (weave into CTA—last slide should be mostly about this niche, only a little about the topic; if the input is unclear, generate a carousel that fits this niche): ${ctx.project_niche.trim()}`
     : "";
 
   const notesSection = ctx.notes?.trim()
