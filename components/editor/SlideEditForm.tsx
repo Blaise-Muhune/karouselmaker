@@ -839,10 +839,11 @@ export function SlideEditForm({
       solidSize: ov?.solidSize,
     };
     const backgroundPayload = buildBackgroundPayload();
+    const isBackgroundImage = (backgroundPayload as { mode?: string }).mode === "image";
     const defaults = {
       headline,
       body: body.trim() || null,
-      background: Object.keys(backgroundPayload).length > 0 ? backgroundPayload : undefined,
+      background: Object.keys(backgroundPayload).length > 0 && !isBackgroundImage ? backgroundPayload : undefined,
       meta: {
         show_counter: showCounter,
         show_watermark: showWatermark,
