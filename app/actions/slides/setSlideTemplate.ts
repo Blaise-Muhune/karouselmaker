@@ -3,7 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { getUser } from "@/lib/server/auth/getUser";
 import { requirePro } from "@/lib/server/subscription";
-import { getTemplate, updateSlide } from "@/lib/server/db";
+import { getTemplate, getSlide, updateSlide } from "@/lib/server/db";
+import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
+import type { Json } from "@/lib/server/db/types";
 
 export type SetSlideTemplateResult = { ok: true } | { ok: false; error: string };
 
@@ -23,7 +25,16 @@ export async function setSlideTemplate(
     return { ok: false, error: "Template not found" };
   }
 
-  await updateSlide(user.id, slideId, { template_id: templateId });
+  const patch: { template_id: string; meta?: Json } = { template_id: templateId };
+  const parsed = templateConfigSchema.safeParse(template.config);
+  const defaultsMeta = parsed.data?.defaults?.meta;
+  if (defaultsMeta != null && typeof defaultsMeta === "object" && Object.keys(defaultsMeta).length > 0) {
+    const slide = await getSlide(user.id, slideId);
+    const existingMeta = (slide?.meta as Record<string, unknown>) ?? {};
+    patch.meta = { ...existingMeta, ...defaultsMeta } as Json;
+  }
+
+  await updateSlide(user.id, slideId, patch);
   if (revalidatePathname) revalidatePath(revalidatePathname);
   return { ok: true };
 }

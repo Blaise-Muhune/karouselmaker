@@ -23,6 +23,17 @@ import { generateCarouselInputSchema } from "@/lib/validations/carousel";
 
 const MAX_RETRIES = 2;
 
+/** Heuristic: true when input looks like news or time-sensitive so we auto-enable web search for current facts. */
+function looksLikeNewsOrTimeSensitive(inputValue: string, inputType: string): boolean {
+  const lower = inputValue.trim().toLowerCase();
+  if (!lower) return false;
+  const newsKeywords =
+    /\b(news|breaking|headlines?|today|recent|latest|current|election|update|announcement|just in|this week|this month|2024|2025)\b/;
+  if (newsKeywords.test(lower)) return true;
+  if (inputType === "url") return true;
+  return false;
+}
+
 /** Remove URLs and markdown links from slide text so web-search generations stay link-free. */
 function stripLinksFromText(text: string): string {
   if (!text?.trim()) return text;
@@ -150,6 +161,9 @@ export async function generateCarousel(formData: FormData): Promise<
   const creatorHandle = brandKit?.watermark_text?.trim() || undefined;
 
   const useUnsplashOnly = !!parsed.data.use_unsplash_only;
+  const userAskedWebSearch = !!data.use_web_search;
+  const autoNewsWebSearch = isPro && looksLikeNewsOrTimeSensitive(data.input_value, data.input_type);
+  const useWebSearch = isPro && (userAskedWebSearch || autoNewsWebSearch);
   const ctx = {
     tone_preset: project.tone_preset,
     do_rules: voiceRules?.do_rules ?? "",
@@ -159,7 +173,7 @@ export async function generateCarousel(formData: FormData): Promise<
     input_value: data.input_value,
     use_ai_backgrounds: isPro ? (data.use_ai_backgrounds ?? false) : false,
     use_unsplash_only: useUnsplashOnly,
-    use_web_search: isPro ? (data.use_web_search ?? false) : false,
+    use_web_search: useWebSearch,
     creator_handle: creatorHandle,
     project_niche: project.niche?.trim() || undefined,
     notes: data.notes,
@@ -169,12 +183,10 @@ export async function generateCarousel(formData: FormData): Promise<
   let lastError = "";
   let validated: CarouselOutput | null = null;
 
-  const useWebSearch = isPro ? (data.use_web_search ?? false) : false;
-
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     const prompts =
       attempt === 0
-        ? buildCarouselPrompts({ ...ctx, use_web_search: useWebSearch })
+        ? buildCarouselPrompts(ctx)
         : buildValidationRetryPrompt(lastRaw, lastError);
 
     let content: string;
@@ -239,12 +251,28 @@ export async function generateCarousel(formData: FormData): Promise<
     }
   }
 
-  await updateCarousel(user.id, carousel.id, {
+  const carouselUpdate: Parameters<typeof updateCarousel>[2] = {
     title: validated.title,
     status: "generated",
     caption_variants: validated.caption_variants,
     hashtags: validated.hashtags,
-  });
+    generation_options: {
+      use_ai_backgrounds: !!data.use_ai_backgrounds,
+      use_unsplash_only: !!data.use_unsplash_only,
+      use_web_search: useWebSearch,
+    },
+  };
+  try {
+    await updateCarousel(user.id, carousel.id, carouselUpdate);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("generation_options") || msg.includes("column")) {
+      const { generation_options: _go, ...fallback } = carouselUpdate;
+      await updateCarousel(user.id, carousel.id, fallback);
+    } else {
+      throw err;
+    }
+  }
 
   const defaultTemplate = await getDefaultTemplateForNewCarousel(user.id);
   const defaultTemplateId = defaultTemplate?.templateId ?? null;
@@ -254,7 +282,7 @@ export async function generateCarousel(formData: FormData): Promise<
     carousel_id: carousel.id,
     slide_index: s.slide_index,
     slide_type: s.slide_type,
-    headline: stripLinksFromText(s.headline),
+    headline: s.slide_index === 1 ? stripLinksFromText(validated.title) : stripLinksFromText(s.headline),
     body: s.body ? stripLinksFromText(s.body) : null,
     template_id: defaultTemplateId,
     background: {},

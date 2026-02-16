@@ -53,7 +53,9 @@ import {
   LayoutTemplateIcon,
   Loader2Icon,
   Maximize2Icon,
+  MinusIcon,
   MonitorIcon,
+  PlusIcon,
   PaletteIcon,
   ScissorsIcon,
   ShuffleIcon,
@@ -65,7 +67,7 @@ import {
 } from "lucide-react";
 import { ColorPicker } from "@/components/ui/color-picker";
 import { OVERLAY_PRESETS, PRESET_CUSTOM_ID, type OverlayPreset } from "@/lib/editor/overlayPresets";
-import { HIGHLIGHT_COLORS, type HighlightSpan } from "@/lib/editor/inlineFormat";
+import { HIGHLIGHT_COLORS, expandSelectionToWordBoundaries, normalizeHighlightSpansToWords, type HighlightSpan } from "@/lib/editor/inlineFormat";
 
 export type ImageDisplayState = {
   position?: "center" | "top" | "bottom" | "left" | "right" | "top-left" | "top-right" | "bottom-left" | "bottom-right";
@@ -146,7 +148,7 @@ function getPreviewDimensions(size: "1080x1080" | "1080x1350" | "1080x1920", max
 const SECTION_INFO: Record<string, { title: string; body: string }> = {
   content: {
     title: "Content",
-    body: "Type your headline and optional body here. For bold, wrap a word in **like this**. For colored highlights, select the text you want to color, then click a preset (e.g. Yellow) or use the color picker—like in Word. The Highlight row applies to whichever field (headline or body) you’re editing. Size sliders set font size per zone. Highlight style toggles between colored text only or a highlighter (colored background + dark text).",
+    body: "Type your headline and optional body here. For bold, wrap a word in **like this**. For colored highlights, select the text you want to color, then click a preset (e.g. Yellow) or use the color picker—like in Word. The Highlight row applies to whichever field (headline or body) you’re editing. Font size (+ / −) sets size per zone. Highlight style toggles between colored text only or a highlighter (colored background + dark text).",
   },
   layout: {
     title: "Slide layout",
@@ -511,8 +513,13 @@ export function SlideEditForm({
       }
       if (start === end) return;
 
+      const text = target === "headline" ? headline : body;
+      const expanded = expandSelectionToWordBoundaries(text, start, end);
+      if (!expanded) return;
+      start = expanded.start;
+      end = expanded.end;
+
       const setSpans = target === "headline" ? setHeadlineHighlights : setBodyHighlights;
-      const getSpans = target === "headline" ? () => headlineHighlights : () => bodyHighlights;
       setSpans((prev) => {
         const next = prev.filter((s) => s.end <= start || s.start >= end);
         next.push({ start, end, color: hex });
@@ -524,7 +531,7 @@ export function SlideEditForm({
         ref.current?.setSelectionRange(end, end);
       }, 0);
     },
-    [headline, body, headlineHighlights, bodyHighlights]
+    [headline, body]
   );
 
   /** Save selection when user mousedowns on color picker (before blur). */
@@ -619,8 +626,14 @@ export function SlideEditForm({
           ...(bodyZoneOverride && Object.keys(bodyZoneOverride).length > 0 && { body_zone_override: bodyZoneOverride }),
           headline_highlight_style: headlineHighlightStyle,
           body_highlight_style: bodyHighlightStyle,
-          ...(headlineHighlights.length > 0 && { headline_highlights: headlineHighlights }),
-          ...(bodyHighlights.length > 0 && { body_highlights: bodyHighlights }),
+          ...(() => {
+            const norm = normalizeHighlightSpansToWords(headline, headlineHighlights);
+            return norm.length > 0 ? { headline_highlights: norm } : {};
+          })(),
+          ...(() => {
+            const norm = normalizeHighlightSpansToWords(body, bodyHighlights);
+            return norm.length > 0 ? { body_highlights: norm } : {};
+          })(),
         },
       },
       editorPath
@@ -893,7 +906,9 @@ export function SlideEditForm({
     };
     const backgroundPayload = buildBackgroundPayload();
     const isBackgroundImage = (backgroundPayload as { mode?: string }).mode === "image";
-    // Save positioning/layout/styling only — not headline or body content.
+    const hasHeadlineZone = headlineZoneOverride != null && Object.keys(headlineZoneOverride).length > 0;
+    const hasBodyZone = bodyZoneOverride != null && Object.keys(bodyZoneOverride).length > 0;
+    // Save positioning/layout/styling only — not headline or body content. Include Edit position (zone overrides) so template preserves them.
     const defaults = {
       background: Object.keys(backgroundPayload).length > 0 && !isBackgroundImage ? backgroundPayload : undefined,
       meta: {
@@ -902,12 +917,18 @@ export function SlideEditForm({
         show_made_with: showMadeWith,
         ...(headlineFontSize != null && { headline_font_size: headlineFontSize }),
         ...(bodyFontSize != null && { body_font_size: bodyFontSize }),
-        ...(headlineZoneOverride && Object.keys(headlineZoneOverride).length > 0 && { headline_zone_override: headlineZoneOverride }),
-        ...(bodyZoneOverride && Object.keys(bodyZoneOverride).length > 0 && { body_zone_override: bodyZoneOverride }),
+        ...(hasHeadlineZone && { headline_zone_override: { ...headlineZoneOverride } }),
+        ...(hasBodyZone && { body_zone_override: { ...bodyZoneOverride } }),
         headline_highlight_style: headlineHighlightStyle,
         body_highlight_style: bodyHighlightStyle,
-        ...(headlineHighlights.length > 0 && { headline_highlights: headlineHighlights }),
-        ...(bodyHighlights.length > 0 && { body_highlights: bodyHighlights }),
+        ...(() => {
+          const n = normalizeHighlightSpansToWords(headline, headlineHighlights);
+          return n.length > 0 ? { headline_highlights: n } : {};
+        })(),
+        ...(() => {
+          const n = normalizeHighlightSpansToWords(body, bodyHighlights);
+          return n.length > 0 ? { body_highlights: n } : {};
+        })(),
       },
     };
     const config: TemplateConfig = {
@@ -1868,15 +1889,31 @@ export function SlideEditForm({
             <div className="space-y-2 pt-1">
               <span className="text-muted-foreground text-xs font-medium">Font size</span>
               <div className="flex flex-wrap items-center gap-2">
-              <input
-                type="range"
-                min={24}
-                max={160}
-                value={headlineFontSize ?? defaultHeadlineSize}
-                onChange={(e) => setHeadlineFontSize(Number(e.target.value))}
-                className="h-2 flex-1 min-w-0 cursor-pointer appearance-none rounded-full bg-muted accent-primary"
-              />
-              <span className="text-muted-foreground min-w-8 text-xs tabular-nums">{headlineFontSize ?? defaultHeadlineSize}px</span>
+              <div className="flex items-center gap-0.5 rounded-lg border border-input bg-background">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="h-8 w-8 rounded-r-none"
+                  onClick={() => setHeadlineFontSize((v) => Math.max(24, (v ?? defaultHeadlineSize) - 4))}
+                  title="Decrease size"
+                  aria-label="Decrease headline font size"
+                >
+                  <MinusIcon className="size-3.5" />
+                </Button>
+                <span className="min-w-10 text-center text-xs tabular-nums">{headlineFontSize ?? defaultHeadlineSize}px</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="h-8 w-8 rounded-l-none"
+                  onClick={() => setHeadlineFontSize((v) => Math.min(160, (v ?? defaultHeadlineSize) + 4))}
+                  title="Increase size"
+                  aria-label="Increase headline font size"
+                >
+                  <PlusIcon className="size-3.5" />
+                </Button>
+              </div>
               <Button type="button" variant={headlineHighlightStyle === "background" ? "secondary" : "ghost"} size="sm" className="h-8 text-xs" onClick={() => setHeadlineHighlightStyle((s) => (s === "text" ? "background" : "text"))} title={headlineHighlightStyle === "text" ? "Bg highlight" : "Text color"}>
                 {headlineHighlightStyle === "text" ? "Text" : "Bg"}
               </Button>
@@ -2052,15 +2089,31 @@ export function SlideEditForm({
             <div className="space-y-2 pt-1">
               <span className="text-muted-foreground text-xs font-medium">Font size</span>
               <div className="flex flex-wrap items-center gap-2">
-              <input
-                type="range"
-                min={18}
-                max={120}
-                value={bodyFontSize ?? defaultBodySize}
-                onChange={(e) => setBodyFontSize(Number(e.target.value))}
-                className="h-2 flex-1 min-w-0 cursor-pointer appearance-none rounded-full bg-muted accent-primary"
-              />
-              <span className="text-muted-foreground min-w-8 text-xs tabular-nums">{bodyFontSize ?? defaultBodySize}px</span>
+              <div className="flex items-center gap-0.5 rounded-lg border border-input bg-background">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="h-8 w-8 rounded-r-none"
+                  onClick={() => setBodyFontSize((v) => Math.max(18, (v ?? defaultBodySize) - 4))}
+                  title="Decrease size"
+                  aria-label="Decrease body font size"
+                >
+                  <MinusIcon className="size-3.5" />
+                </Button>
+                <span className="min-w-10 text-center text-xs tabular-nums">{bodyFontSize ?? defaultBodySize}px</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="h-8 w-8 rounded-l-none"
+                  onClick={() => setBodyFontSize((v) => Math.min(120, (v ?? defaultBodySize) + 4))}
+                  title="Increase size"
+                  aria-label="Increase body font size"
+                >
+                  <PlusIcon className="size-3.5" />
+                </Button>
+              </div>
               <Button type="button" variant={bodyHighlightStyle === "background" ? "secondary" : "ghost"} size="sm" className="h-8 text-xs" onClick={() => setBodyHighlightStyle((s) => (s === "text" ? "background" : "text"))} title={bodyHighlightStyle === "text" ? "Bg highlight" : "Text color"}>
                 {bodyHighlightStyle === "text" ? "Text" : "Bg"}
               </Button>

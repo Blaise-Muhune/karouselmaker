@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getUser } from "@/lib/server/auth/getUser";
 import { getSubscription, getPlanLimits } from "@/lib/server/subscription";
-import { getProject, countCarouselsThisMonth } from "@/lib/server/db";
+import { getProject, getCarousel, countCarouselsThisMonth } from "@/lib/server/db";
 import { PLAN_LIMITS } from "@/lib/constants";
 import { NewCarouselForm } from "./NewCarouselForm";
 import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
@@ -11,17 +11,24 @@ import { ArrowLeftIcon } from "lucide-react";
 
 export default async function NewCarouselPage({
   params,
-}: Readonly<{ params: Promise<{ projectId: string }> }>) {
+  searchParams,
+}: Readonly<{
+  params: Promise<{ projectId: string }>;
+  searchParams: Promise<{ regenerate?: string }>;
+}>) {
   const { user } = await getUser();
   const { projectId } = await params;
-  const [project, subscription, limits, carouselCount] = await Promise.all([
+  const { regenerate: regenerateCarouselId } = await searchParams;
+  const [project, subscription, limits, carouselCount, regenerateCarousel] = await Promise.all([
     getProject(user.id, projectId),
     getSubscription(user.id, user.email),
     getPlanLimits(user.id, user.email),
     countCarouselsThisMonth(user.id),
+    regenerateCarouselId ? getCarousel(user.id, regenerateCarouselId) : Promise.resolve(null),
   ]);
 
   if (!project) notFound();
+  if (regenerateCarouselId && (!regenerateCarousel || regenerateCarousel.project_id !== projectId)) notFound();
 
   const carouselLimit = limits.carouselsPerMonth;
 
@@ -39,13 +46,24 @@ export default async function NewCarouselPage({
             </Link>
           </Button>
           <div>
-            <h1 className="text-xl font-semibold tracking-tight">New carousel</h1>
+            <h1 className="text-xl font-semibold tracking-tight">{regenerateCarousel ? "Regenerate carousel" : "New carousel"}</h1>
             <p className="mt-1 text-muted-foreground text-sm">
               {carouselCount}/{carouselLimit} this month
             </p>
           </div>
         </header>
-        <NewCarouselForm projectId={projectId} isPro={subscription.isPro} carouselCount={carouselCount} carouselLimit={carouselLimit} />
+        <NewCarouselForm
+          projectId={projectId}
+          isPro={subscription.isPro}
+          carouselCount={carouselCount}
+          carouselLimit={carouselLimit}
+          regenerateCarouselId={regenerateCarousel?.id}
+          initialInputType={regenerateCarousel && (regenerateCarousel.input_type === "url" || regenerateCarousel.input_type === "text") ? regenerateCarousel.input_type : regenerateCarousel ? "topic" : undefined}
+          initialInputValue={regenerateCarousel?.input_value}
+          initialUseAiBackgrounds={regenerateCarousel?.generation_options?.use_ai_backgrounds}
+          initialUseUnsplashOnly={regenerateCarousel?.generation_options?.use_unsplash_only}
+          initialUseWebSearch={regenerateCarousel?.generation_options?.use_web_search}
+        />
       </div>
     </div>
   );

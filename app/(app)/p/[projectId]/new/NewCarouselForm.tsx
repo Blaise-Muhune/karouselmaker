@@ -31,20 +31,34 @@ export function NewCarouselForm({
   isPro = true,
   carouselCount = 0,
   carouselLimit = 50,
+  regenerateCarouselId,
+  initialInputType,
+  initialInputValue,
+  initialUseAiBackgrounds,
+  initialUseUnsplashOnly,
+  initialUseWebSearch,
 }: {
   projectId: string;
   isPro?: boolean;
   carouselCount?: number;
   carouselLimit?: number;
+  /** When set, form pre-fills from this carousel and submit regenerates it in place. */
+  regenerateCarouselId?: string;
+  initialInputType?: "topic" | "url" | "text";
+  initialInputValue?: string;
+  /** Pre-fill from carousel.generation_options so regenerate matches original checkboxes. */
+  initialUseAiBackgrounds?: boolean;
+  initialUseUnsplashOnly?: boolean;
+  initialUseWebSearch?: boolean;
 }) {
   const router = useRouter();
-  const [inputType, setInputType] = useState<"topic" | "url" | "text">("topic");
-  const [inputValue, setInputValue] = useState("");
+  const [inputType, setInputType] = useState<"topic" | "url" | "text">(initialInputType ?? "topic");
+  const [inputValue, setInputValue] = useState(initialInputValue ?? "");
   const [numberOfSlides, setNumberOfSlides] = useState<string>("");
   const [backgroundAssetIds, setBackgroundAssetIds] = useState<string[]>([]);
-  const [useAiBackgrounds, setUseAiBackgrounds] = useState(false);
-  const [useUnsplashOnly, setUseUnsplashOnly] = useState(false);
-  const [useWebSearch, setUseWebSearch] = useState(false);
+  const [useAiBackgrounds, setUseAiBackgrounds] = useState(initialUseAiBackgrounds ?? (!!regenerateCarouselId));
+  const [useUnsplashOnly, setUseUnsplashOnly] = useState(initialUseUnsplashOnly ?? false);
+  const [useWebSearch, setUseWebSearch] = useState(initialUseWebSearch ?? false);
   const [notes, setNotes] = useState("");
   const [backgroundPickerOpen, setBackgroundPickerOpen] = useState(false);
   const [isPending, setIsPending] = useState(false);
@@ -93,6 +107,7 @@ export function NewCarouselForm({
     try {
       const formData = new FormData();
       formData.set("project_id", projectId);
+      if (regenerateCarouselId) formData.set("carousel_id", regenerateCarouselId);
       formData.set("input_type", inputType);
       formData.set("input_value", trimmed);
       const numSlides = numberOfSlides.trim() ? parseInt(numberOfSlides, 10) : NaN;
@@ -100,7 +115,7 @@ export function NewCarouselForm({
         formData.set("number_of_slides", String(numSlides));
       }
       if (backgroundAssetIds.length) formData.set("background_asset_ids", JSON.stringify(backgroundAssetIds));
-      if (useAiBackgrounds) formData.set("use_ai_backgrounds", "true");
+      if (useAiBackgrounds || regenerateCarouselId) formData.set("use_ai_backgrounds", "true");
       if (useUnsplashOnly) formData.set("use_unsplash_only", "true");
       if (useWebSearch) formData.set("use_web_search", "true");
       if (notes.trim()) formData.set("notes", notes.trim());

@@ -61,6 +61,8 @@ export interface Carousel {
   include_first_slide?: boolean;
   /** When true, "Apply to all" includes the last slide. Default true. */
   include_last_slide?: boolean;
+  /** Options from the generate form (use_ai_backgrounds, use_unsplash_only, use_web_search). Pre-fill regenerate form. */
+  generation_options?: { use_ai_backgrounds?: boolean; use_unsplash_only?: boolean; use_web_search?: boolean };
   created_at: string;
   updated_at: string;
 }

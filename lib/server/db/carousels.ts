@@ -63,18 +63,40 @@ export async function countCarouselsThisMonth(userId: string): Promise<number> {
   return count ?? 0;
 }
 
-export async function listCarousels(
+export async function countCarousels(
   userId: string,
   projectId: string
+): Promise<number> {
+  const supabase = await createClient();
+  const { count, error } = await supabase
+    .from("carousels")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq("project_id", projectId);
+
+  if (error) return 0;
+  return count ?? 0;
+}
+
+export async function listCarousels(
+  userId: string,
+  projectId: string,
+  options?: { limit?: number; offset?: number }
 ): Promise<Carousel[]> {
   const supabase = await createClient();
-  const { data, error } = await supabase
+  let query = supabase
     .from("carousels")
     .select("*")
     .eq("user_id", userId)
     .eq("project_id", projectId)
     .order("created_at", { ascending: false });
 
+  if (options?.limit != null) {
+    const offset = options.offset ?? 0;
+    query = query.range(offset, offset + options.limit - 1);
+  }
+
+  const { data, error } = await query;
   if (error) throw new Error(error.message);
   return (data ?? []) as Carousel[];
 }
@@ -107,6 +129,7 @@ export async function updateCarousel(
     is_favorite?: boolean;
     include_first_slide?: boolean;
     include_last_slide?: boolean;
+    generation_options?: { use_ai_backgrounds?: boolean; use_unsplash_only?: boolean; use_web_search?: boolean };
   }
 ): Promise<Carousel> {
   const supabase = await createClient();

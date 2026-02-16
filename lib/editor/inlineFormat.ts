@@ -81,6 +81,46 @@ export function parseInlineFormatting(text: string): InlineSegment[] {
 
 export type HighlightSpan = { start: number; end: number; color: string };
 
+/** Word character for boundary expansion (letters, digits, apostrophe for contractions). */
+const WORD_CHAR = /[\p{L}\p{N}']/u;
+
+/**
+ * Expand selection to full word boundaries. Never allow a single character inside a word.
+ * Returns the expanded range or null if the selection is only whitespace/punctuation (drop highlight).
+ */
+export function expandSelectionToWordBoundaries(
+  text: string,
+  start: number,
+  end: number
+): { start: number; end: number } | null {
+  const len = text.length;
+  if (len === 0 || start >= end) return null;
+  start = Math.max(0, Math.min(start, len));
+  end = Math.max(0, Math.min(end, len));
+  if (start >= end) return null;
+  while (start > 0 && WORD_CHAR.test(text[start - 1]!)) start--;
+  while (end < len && WORD_CHAR.test(text[end]!)) end++;
+  if (start >= end) return null;
+  const slice = text.slice(start, end);
+  if (!slice || !WORD_CHAR.test(slice)) return null;
+  return { start, end };
+}
+
+/**
+ * Normalize highlight spans so each is on full words only. Drops spans that are only whitespace/punctuation.
+ * Use before persisting (save, apply to all) so we never store single-character or partial-word highlights.
+ */
+export function normalizeHighlightSpansToWords(text: string, spans: HighlightSpan[]): HighlightSpan[] {
+  if (!text || !spans.length) return [];
+  const out: HighlightSpan[] = [];
+  for (const s of spans) {
+    const expanded = expandSelectionToWordBoundaries(text, s.start, s.end);
+    if (expanded) out.push({ start: expanded.start, end: expanded.end, color: s.color });
+  }
+  out.sort((a, b) => a.start - b.start);
+  return out;
+}
+
 /**
  * Inject {{#hex}}...{{/}} into plain text from stored highlight spans.
  * Spans are clamped to text length; overlapping spans are merged (last wins for overlap).

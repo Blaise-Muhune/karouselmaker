@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getUser } from "@/lib/server/auth/getUser";
-import { getProject, listCarousels } from "@/lib/server/db";
+import { getProject, listCarousels, countCarousels } from "@/lib/server/db";
 import { Button } from "@/components/ui/button";
+import { PaginationNav } from "@/components/ui/pagination-nav";
 import { ChevronRightIcon, PencilIcon, PlusCircleIcon } from "lucide-react";
 
 function formatDate(date: Date) {
@@ -15,17 +16,29 @@ function formatDate(date: Date) {
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+const CAROUSELS_PAGE_SIZE = 10;
+
 export default async function ProjectDashboardPage({
   params,
-}: Readonly<{ params: Promise<{ projectId: string }> }>) {
+  searchParams,
+}: Readonly<{
+  params: Promise<{ projectId: string }>;
+  searchParams: Promise<{ page?: string }>;
+}>) {
   const { user } = await getUser();
   const { projectId } = await params;
+  const { page: pageParam } = await searchParams;
   const project = await getProject(user.id, projectId);
 
   if (!project) notFound();
 
-  const carousels = await listCarousels(user.id, projectId);
-  const recentCarousels = carousels.slice(0, 10);
+  const page = Math.max(1, parseInt(pageParam ?? "1", 10) || 1);
+  const offset = (page - 1) * CAROUSELS_PAGE_SIZE;
+  const [carousels, total] = await Promise.all([
+    listCarousels(user.id, projectId, { limit: CAROUSELS_PAGE_SIZE, offset }),
+    countCarousels(user.id, projectId),
+  ]);
+  const totalPages = Math.max(1, Math.ceil(total / CAROUSELS_PAGE_SIZE));
 
   return (
     <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">
@@ -56,14 +69,14 @@ export default async function ProjectDashboardPage({
           </Button>
         </div>
 
-        {/* Recent carousels */}
+        {/* Carousels */}
         <section>
           <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
-            Recent
+            {totalPages > 1 ? "Carousels" : "Recent"}
           </p>
-          {recentCarousels.length > 0 ? (
+          {carousels.length > 0 ? (
             <ul className="divide-y divide-border/50">
-              {recentCarousels.map((c) => (
+              {carousels.map((c) => (
                 <li key={c.id}>
                   <Link
                     href={`/p/${projectId}/c/${c.id}`}
@@ -87,6 +100,14 @@ export default async function ProjectDashboardPage({
                 Paste a topic or URL and we&apos;ll draft the slides.
               </p>
             </div>
+          )}
+          {totalPages > 1 && (
+            <PaginationNav
+              currentPage={page}
+              totalPages={totalPages}
+              basePath={`/p/${projectId}`}
+              className="mt-6"
+            />
           )}
         </section>
       </div>

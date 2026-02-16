@@ -3,14 +3,34 @@
 import { createClient } from "@/lib/supabase/server";
 import type { Project, ProjectInsert, ProjectUpdate } from "./types";
 
-export async function listProjects(userId: string): Promise<Project[]> {
+export async function countProjects(userId: string): Promise<number> {
   const supabase = await createClient();
-  const { data, error } = await supabase
+  const { count, error } = await supabase
+    .from("projects")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", userId);
+
+  if (error) return 0;
+  return count ?? 0;
+}
+
+export async function listProjects(
+  userId: string,
+  options?: { limit?: number; offset?: number }
+): Promise<Project[]> {
+  const supabase = await createClient();
+  let query = supabase
     .from("projects")
     .select("*")
     .eq("user_id", userId)
     .order("updated_at", { ascending: false });
 
+  if (options?.limit != null) {
+    const offset = options.offset ?? 0;
+    query = query.range(offset, offset + options.limit - 1);
+  }
+
+  const { data, error } = await query;
   if (error) throw new Error(error.message);
   return (data ?? []) as Project[];
 }

@@ -25,7 +25,8 @@ const MIN_DIM_HARD_REJECT = 400;
 
 /** Blacklist only (no whitelist). Store/e-commerce and low-value domains. */
 const BLACKLIST_DOMAINS =
-  /ebay\.|bidsquare\.|etsy\.|amazon\.|sideshow\.|thehorrordome\.?walmartimages\.|pinimg\.|images-wixmp\.|etsystatic\.|gettyimages\.|.foxsports\.|alamy\.|ebayimg\.com/i;
+// /sideshow\.com/i;
+  /ebay\.|bidsquare\.|etsy\.|amazon\.|sideshow\.|shuttersstock\.|thehorrordome\.?walmartimages\.|pinimg\.|images-wixmp\.|redbubble\.|etsy\.|static\.|gettyimages\.|.foxsports\.|alamy\.|ebayimg\.com/i;
   // /amazon\.|ebay\.|ebayimg\.|etsy\.|alibaba|alamy|aliexpress|walmart\.|target\.|bestbuy\.|shopify\.|overstock\.|wayfair\.|homedepot\.|lowes\.|costco\.|newegg\.|bhphotovideo\.|adorama\.|buzzfeed\.com\/shopping|rakuten\.|wish\.|shein\.|zalando\.|asos\.|pinterest\.|pinimg\./i;
 
 /** Only keep URLs whose path ends with a common image extension. Ignores links that don't look like direct image files. */
