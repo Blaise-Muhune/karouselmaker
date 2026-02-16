@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   DropdownMenu,
@@ -48,6 +48,27 @@ export function CarouselMenuDropdown({
   const [deleting, setDeleting] = useState(false);
   const [togglingFavorite, setTogglingFavorite] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  const [regenStep, setRegenStep] = useState(0);
+
+  const REGEN_STEPS = [
+    "Analyzing your input…",
+    "Outlining the structure…",
+    "Writing headlines…",
+    "Formatting slides…",
+    "Applying templates…",
+    "Almost there…",
+  ] as const;
+
+  useEffect(() => {
+    if (!regenerating) {
+      setRegenStep(0);
+      return;
+    }
+    const interval = setInterval(() => {
+      setRegenStep((prev) => (prev >= REGEN_STEPS.length - 1 ? prev : prev + 1));
+    }, 2200);
+    return () => clearInterval(interval);
+  }, [regenerating]);
 
   async function handleToggleFavorite() {
     setTogglingFavorite(true);
@@ -87,10 +108,35 @@ export function CarouselMenuDropdown({
         <div
           className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-background/95 backdrop-blur-sm"
           aria-live="polite"
+          aria-busy="true"
         >
-          <div className="flex flex-col items-center gap-3">
-            <Loader2Icon className="size-8 animate-spin text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">Regenerating slides…</p>
+          <div className="mx-auto max-w-sm space-y-8 px-6 text-center">
+            <div className="flex flex-col items-center gap-6">
+              <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 shadow-lg shadow-primary/5">
+                <Loader2Icon className="size-12 animate-spin text-primary" />
+              </div>
+              <div className="space-y-4">
+                <h3 className="font-semibold text-foreground text-lg">
+                  Regenerating your carousel
+                </h3>
+                <div className="flex justify-center">
+                  <div className="h-2 w-full max-w-xs overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full bg-primary transition-all duration-500 ease-out"
+                      style={{
+                        width: `${((regenStep + 1) / REGEN_STEPS.length) * 100}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+                <p className="text-sm text-muted-foreground transition-opacity duration-300">
+                  {REGEN_STEPS[regenStep]}
+                </p>
+                <p className="text-xs text-muted-foreground/80">
+                  Usually 15–30 seconds
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       )}

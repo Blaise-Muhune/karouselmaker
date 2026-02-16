@@ -45,6 +45,7 @@ import {
   ChevronUpIcon,
   CopyIcon,
   DownloadIcon,
+  ExternalLinkIcon,
   HashIcon,
   ImageIcon,
   ImageOffIcon,
@@ -55,6 +56,7 @@ import {
   MonitorIcon,
   PaletteIcon,
   ScissorsIcon,
+  ShuffleIcon,
   SparklesIcon,
   Trash2,
   Type,
@@ -296,22 +298,47 @@ export function SlideEditForm({
     if (Object.keys(d).length === 0 && hasMultiImages) {
       const fc = brandKit.primary_color?.trim() || "#ffffff";
       const dc = brandKit.secondary_color?.trim() || "#ffffff";
-      return { position: "center", fit: "cover", frame: "none", frameRadius: 16, frameColor: fc, frameShape: "squircle", layout: "auto", gap: 8, dividerStyle: "wave", dividerColor: dc, dividerWidth: 48 };
+      return { position: "top", fit: "cover", frame: "none", frameRadius: 16, frameColor: fc, frameShape: "squircle", layout: "auto", gap: 8, dividerStyle: "wave", dividerColor: dc, dividerWidth: 48 };
     }
     if (Object.keys(d).length === 0) {
       const fc = brandKit.primary_color?.trim() || "#ffffff";
-      return { position: "center", fit: "cover", frame: "none", frameRadius: 16, frameColor: fc, frameShape: "squircle" };
+      return { position: "top", fit: "cover", frame: "none", frameRadius: 16, frameColor: fc, frameShape: "squircle" };
     }
     return d;
   });
   const [backgroundImageUrlForPreview, setBackgroundImageUrlForPreview] = useState<string | null>(() => initialBackgroundImageUrl ?? null);
   const [secondaryBackgroundImageUrlForPreview, setSecondaryBackgroundImageUrlForPreview] = useState<string | null>(() => initialSecondaryBackgroundImageUrl ?? null);
-  type ImageUrlItem = { url: string; source?: "brave" | "unsplash" | "google"; unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string } };
+  type ImageUrlItem = { url: string; source?: "brave" | "unsplash" | "google"; unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string }; /** Other approved URLs from the same search (per-slot shuffle). */ alternates?: string[]; /** Stable order for count display (not persisted). */ _pool?: string[]; /** Index in _pool of current image (not persisted). */ _index?: number };
   const [imageUrls, setImageUrls] = useState<ImageUrlItem[]>(() => {
-    const bg = slide.background as { asset_id?: string; image_url?: string; image_source?: string; unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string }; images?: { image_url?: string; source?: "brave" | "google" | "unsplash"; unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string } }[] } | null;
+    const bg = slide.background as { asset_id?: string; image_url?: string; image_source?: string; unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string }; images?: { image_url?: string; source?: "brave" | "google" | "unsplash"; unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string }; alternates?: string[] }[] } | null;
     if (bg?.asset_id) return [{ url: "", source: undefined }];
+    // Prefer slide.background.images so we show one input per slot (e.g. 2 pics → 2 rows). Shuffle cycles that slot’s alternates only.
+    if (bg?.images?.length) {
+      const images = bg.images;
+      const hasAnyAlternates = images.some((img) => ((img as { alternates?: string[] }).alternates?.length ?? 0) > 0);
+      if (!hasAnyAlternates && images.length > 1) {
+        // Legacy: one search stored as flat list [url1, url2, ...]. Coalesce into one slot.
+        const first = images[0]!;
+        const pool = [first.image_url ?? "", ...images.slice(1).map((img) => img.image_url ?? "").filter((u) => u.trim() && /^https?:\/\//i.test(u))];
+        return [{ url: pool[0] ?? "", source: (first.source === "brave" || first.source === "unsplash" || first.source === "google" ? first.source : undefined) as ImageUrlItem["source"], unsplash_attribution: first.unsplash_attribution, alternates: pool.slice(1), _pool: pool.length > 0 ? pool : undefined, _index: 0 }];
+      }
+      return images.map((img) => {
+        const url = img.image_url ?? "";
+        const alts = (img as { alternates?: string[] }).alternates ?? [];
+        const pool = [url, ...alts].filter((u) => u.trim() && /^https?:\/\//i.test(u));
+        return { url, source: (img.source === "brave" || img.source === "unsplash" || img.source === "google" ? img.source : undefined) as ImageUrlItem["source"], unsplash_attribution: img.unsplash_attribution, alternates: alts, _pool: pool.length > 0 ? pool : undefined, _index: 0 };
+      });
+    }
     if (initialBackgroundImageUrls?.length) {
-      return initialBackgroundImageUrls.map((url, i): ImageUrlItem => {
+      const urls = initialBackgroundImageUrls;
+      // Page passed flat URL list (no bg.images): one slot with rest as alternates so Shuffle works.
+      if (urls.length > 1) {
+        const firstSource = initialImageSources?.[0];
+        const source = firstSource === "brave" || firstSource === "unsplash" || firstSource === "google" ? firstSource : undefined;
+        const pool = urls.filter((u) => u.trim() && /^https?:\/\//i.test(u));
+        return [{ url: pool[0] ?? "", source, unsplash_attribution: bg?.images?.[0]?.unsplash_attribution, alternates: pool.slice(1), _pool: pool.length > 0 ? pool : undefined, _index: 0 }];
+      }
+      return urls.map((url, i): ImageUrlItem => {
         const src = initialImageSources?.[i];
         const source = src === "brave" || src === "unsplash" || src === "google" ? src : undefined;
         return { url, source, unsplash_attribution: bg?.images?.[i]?.unsplash_attribution };
@@ -321,13 +348,6 @@ export function SlideEditForm({
       const src = initialImageSource ?? undefined;
       const source = src === "brave" || src === "unsplash" || src === "google" ? src : undefined;
       return [{ url: initialBackgroundImageUrl, source, unsplash_attribution: bg?.unsplash_attribution }];
-    }
-    if (bg?.images?.length) {
-      return bg.images.map((img) => ({
-        url: img.image_url ?? "",
-        source: (img.source === "brave" || img.source === "unsplash" || img.source === "google" ? img.source : undefined) as ImageUrlItem["source"],
-        unsplash_attribution: img.unsplash_attribution,
-      }));
     }
     if (bg?.image_url) {
       const src = bg.image_source;
@@ -444,6 +464,20 @@ export function SlideEditForm({
     return () => ro.disconnect();
   }, [exportSize]);
 
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "development") return;
+    const slots = imageUrls.map((item, i) => {
+      const pool = [item.url, ...(item.alternates ?? [])].filter((u) => u.trim() && /^https?:\/\//i.test(u));
+      return { slot: i, count: pool.length, urls: pool, shuffleEnabled: pool.length > 1 };
+    });
+    if (slots.some((s) => s.count > 0)) {
+      console.debug("[SlideEdit] Image slots (approved for shuffle):", slots.map((s) => `${s.slot}: ${s.count} link(s)${s.shuffleEnabled ? " — shuffle on" : ""}`).join(" | "));
+      slots.forEach((s) => {
+        if (s.count > 0) console.debug(`  slot ${s.slot} links:`, s.urls.map((u) => u.slice(0, 60) + (u.length > 60 ? "..." : "")));
+      });
+    }
+  }, [imageUrls]);
+
   const templateConfig = getTemplateConfig(templateId, templates);
   const isHook = slide.slide_type === "hook";
   const defaultHeadlineSize = templateConfig?.textZones?.find((z) => z.id === "headline")?.fontSize ?? 72;
@@ -451,7 +485,7 @@ export function SlideEditForm({
   const defaultBodySize = templateConfig?.textZones?.find((z) => z.id === "body")?.fontSize ?? 48;
 
   const validImageCount = imageUrls.filter((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim())).length;
-  const multiImageDefaults: ImageDisplayState = { position: "center", fit: "cover", frame: "none", frameRadius: 0, frameColor: "#ffffff", frameShape: "squircle", layout: "auto", gap: 8, dividerStyle: "wave", dividerColor: "#ffffff", dividerWidth: 48 };
+  const multiImageDefaults: ImageDisplayState = { position: "top", fit: "cover", frame: "none", frameRadius: 0, frameColor: "#ffffff", frameShape: "squircle", layout: "auto", gap: 8, dividerStyle: "wave", dividerColor: "#ffffff", dividerWidth: 48 };
   const effectiveImageDisplay = validImageCount >= 2 ? { ...multiImageDefaults, ...imageDisplay } : imageDisplay;
 
   /** Word-style: apply color to selection by storing a span (no brackets in text). Color is preset name or hex. */
@@ -558,12 +592,13 @@ export function SlideEditForm({
     const overlayPayload = background.overlay ?? { gradient: true, darken: 0.5, color: "#000000", textColor: "#ffffff" };
     const validUrls = imageUrls.filter((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim()));
     const imageDisplayPayload = buildImageDisplayPayload();
+    const useImagesArray = validUrls.length >= 2 || (validUrls.length === 1 && (validUrls[0]?.alternates?.length ?? 0) > 0);
     const bgPayload =
       background.mode === "image" || validUrls.length > 0
-        ? validUrls.length >= 2
-          ? { mode: "image", images: validUrls.map((i) => ({ image_url: i.url, source: i.source })), fit: background.fit ?? "cover", overlay: overlayPayload, ...(imageDisplayPayload && { image_display: imageDisplayPayload }) }
+        ? useImagesArray
+          ? { mode: "image", images: validUrls.map((i) => ({ image_url: i.url, source: i.source, unsplash_attribution: i.unsplash_attribution, alternates: i.alternates ?? [] })), fit: background.fit ?? "cover", overlay: overlayPayload, ...(imageDisplayPayload && { image_display: imageDisplayPayload }) }
           : validUrls.length === 1
-            ? { mode: "image", image_url: validUrls[0]!.url, image_source: validUrls[0]!.source, fit: background.fit ?? "cover", overlay: overlayPayload, ...(imageDisplayPayload && { image_display: imageDisplayPayload }) }
+            ? { mode: "image", image_url: validUrls[0]!.url, image_source: validUrls[0]!.source, unsplash_attribution: validUrls[0]!.unsplash_attribution, fit: background.fit ?? "cover", overlay: overlayPayload, ...(imageDisplayPayload && { image_display: imageDisplayPayload }) }
             : { mode: "image", asset_id: background.asset_id, storage_path: background.storage_path, image_url: background.image_url || undefined, fit: background.fit ?? "cover", overlay: overlayPayload, ...(imageDisplayPayload && { image_display: imageDisplayPayload }) }
         : { style: background.style, color: background.color, gradientOn: background.gradientOn, overlay: overlayPayload };
     const result = await updateSlide(
@@ -667,9 +702,10 @@ export function SlideEditForm({
   const buildBackgroundPayload = (): Record<string, unknown> => {
     const overlayPayload = background.overlay ?? { gradient: true, darken: 0.5, color: "#000000", textColor: "#ffffff" };
     const validUrls = imageUrls.filter((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim()));
+    const useImagesArray = validUrls.length >= 2 || (validUrls.length === 1 && (validUrls[0]?.alternates?.length ?? 0) > 0);
     return background.mode === "image" || validUrls.length > 0
-      ? validUrls.length >= 2
-        ? { mode: "image", images: validUrls.map((i) => ({ image_url: i.url, source: i.source, unsplash_attribution: i.unsplash_attribution })), fit: background.fit ?? "cover", overlay: overlayPayload }
+      ? useImagesArray
+        ? { mode: "image", images: validUrls.map((i) => ({ image_url: i.url, source: i.source, unsplash_attribution: i.unsplash_attribution, alternates: i.alternates ?? [] })), fit: background.fit ?? "cover", overlay: overlayPayload }
         : validUrls.length === 1
           ? { mode: "image", image_url: validUrls[0]!.url, image_source: validUrls[0]!.source, unsplash_attribution: validUrls[0]!.unsplash_attribution, fit: background.fit ?? "cover", overlay: overlayPayload }
           : {
@@ -733,7 +769,7 @@ export function SlideEditForm({
     setApplyingImageDisplay(true);
     const payload = buildImageDisplayPayload();
     const fullPayload = payload ?? {
-      position: imageDisplay.position ?? "center",
+      position: imageDisplay.position ?? "top",
       fit: imageDisplay.fit ?? "cover",
       frame: imageDisplay.frame ?? "medium",
       frameRadius: imageDisplay.frameRadius ?? 16,
@@ -857,9 +893,8 @@ export function SlideEditForm({
     };
     const backgroundPayload = buildBackgroundPayload();
     const isBackgroundImage = (backgroundPayload as { mode?: string }).mode === "image";
+    // Save positioning/layout/styling only — not headline or body content.
     const defaults = {
-      headline,
-      body: body.trim() || null,
       background: Object.keys(backgroundPayload).length > 0 && !isBackgroundImage ? backgroundPayload : undefined,
       meta: {
         show_counter: showCounter,
@@ -895,10 +930,8 @@ export function SlideEditForm({
       setSaveTemplateOpen(false);
       setTemplateName("");
       setTemplateId(newTemplateId);
-      // Apply the new template and its full defaults to all slides (same as applying a template)
+      // Apply the new template and its defaults to all slides (positioning/layout only — no headline/body content)
       const applyPayload: Parameters<typeof applyToAllSlides>[1] = { template_id: newTemplateId };
-      if (defaults.headline !== undefined) applyPayload.headline = defaults.headline;
-      if (defaults.body !== undefined) applyPayload.body = defaults.body;
       if (defaults.background != null && typeof defaults.background === "object" && Object.keys(defaults.background).length > 0) {
         applyPayload.background = defaults.background as Record<string, unknown>;
       }
@@ -2084,7 +2117,12 @@ export function SlideEditForm({
               <div className={!isPro ? "pointer-events-none opacity-60" : ""}>
                 <div className="space-y-2">
                   <Label className="text-muted-foreground text-xs font-medium">Image URLs</Label>
-                  {imageUrls.map((item, i) => (
+                  {imageUrls.map((item, i) => {
+                    const slotPool = item._pool ?? [item.url, ...(item.alternates ?? [])].filter((u) => u.trim() && /^https?:\/\//i.test(u));
+                    const slotHasMultiple = slotPool.length > 1;
+                    const currentIndex = item._index ?? (slotPool.length > 0 ? slotPool.findIndex((u) => u === item.url) : -1);
+                    const oneBased = currentIndex >= 0 ? currentIndex + 1 : 0;
+                    return (
                     <div key={i} className="space-y-1">
                       <div className="flex gap-2 items-start">
                         <Input
@@ -2101,6 +2139,47 @@ export function SlideEditForm({
                           placeholder="https://..."
                           className="h-10 flex-1 rounded-lg border-input/80 bg-background text-sm"
                         />
+                        {item.url.trim() && /^https?:\/\//i.test(item.url) && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            className="shrink-0 h-10 w-10 text-muted-foreground hover:text-foreground"
+                            title="Open image in new tab"
+                            onClick={() => window.open(item.url, "_blank", "noopener,noreferrer")}
+                          >
+                            <ExternalLinkIcon className="size-4" />
+                            <span className="sr-only">Link</span>
+                          </Button>
+                        )}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          className="shrink-0 h-10 w-10 text-muted-foreground hover:text-foreground disabled:opacity-50"
+                          title={slotHasMultiple ? `Shuffle through ${slotPool.length} images for this search` : "Only one image — add more to shuffle"}
+                          disabled={!slotHasMultiple}
+                          onClick={() => {
+                              setImageUrls((prev) => {
+                                const next = [...prev];
+                                const it = next[i]!;
+                                const pool = it._pool ?? [it.url, ...(it.alternates ?? [])].filter((u) => u.trim() && /^https?:\/\//i.test(u));
+                                if (pool.length < 2) return prev;
+                                const newIndex = ((it._index ?? 0) + 1) % pool.length;
+                                const newUrl = pool[newIndex]!;
+                                next[i] = { ...it, _pool: pool, _index: newIndex, url: newUrl, alternates: pool.filter((_, j) => j !== newIndex) };
+                                return next;
+                              });
+                            }}
+                          >
+                            <ShuffleIcon className="size-4" />
+                            <span className="sr-only">Shuffle</span>
+                          </Button>
+                        {slotPool.length > 1 && (
+                          <span className="shrink-0 self-center text-xs text-muted-foreground" title={`Showing image ${oneBased} of ${slotPool.length}`}>
+                            {oneBased} / {slotPool.length}
+                          </span>
+                        )}
                         {item.source && (
                           <span
                             className={`shrink-0 self-center inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium ${
@@ -2148,7 +2227,8 @@ export function SlideEditForm({
                         </p>
                       )}
                     </div>
-                  ))}
+                    );
+                  })}
                   {imageUrls.length < 4 && (
                     <Button
                       type="button"
@@ -2203,9 +2283,9 @@ export function SlideEditForm({
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="space-y-1.5">
-                      <span className="text-muted-foreground text-xs">Position</span>
+                      <span className="text-muted-foreground text-xs">Position (anchor & crop)</span>
                       <Select
-                        value={effectiveImageDisplay.position ?? "center"}
+                        value={effectiveImageDisplay.position ?? "top"}
                         onValueChange={(v) => setImageDisplay((d) => ({ ...d, position: v as ImageDisplayState["position"] }))}
                       >
                         <SelectTrigger className="h-9 rounded-lg border-input/80 bg-background text-sm">

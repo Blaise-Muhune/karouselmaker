@@ -3,14 +3,22 @@
  * - Generic/atmospheric (nature, landscape, peaceful, etc.) → Unsplash first (curated, great for backgrounds)
  * - Specific (celebrities, niche topics, people) → Brave first (broader coverage)
  * - People/public-figure intent is treated as specific even when query contains generic words.
- * Rate-limited for Brave Free tier (1 req/sec). In-memory cache (24h TTL) reduces repeated API calls.
+ *
+ * Brave: we get one result set per query from Brave's index. We filter out store domains and low-quality
+ * URLs from that set; we cannot ask Brave for "only non-store sites." If a query returns only store URLs,
+ * we discard them all and fall back to Unsplash. We try several query variants (refiners) to improve odds.
+ *
+ * Rate limit: Brave Search free tier allows 1 request per second. We wait BRAVE_MIN_INTERVAL_MS (~1.1s)
+ * between each Brave call to avoid 429. When you see "rate limit: waiting X ms" in logs, we're pausing
+ * before the next request. 429 = we exceeded the limit (e.g. many slides × refiners in one carousel).
  */
 
 import { searchBraveImage, isBraveImageSearchConfigured } from "@/lib/server/braveImageSearch";
 import { searchUnsplashPhotoRandom } from "@/lib/server/unsplash";
 
 const DEBUG = process.env.IMAGE_SEARCH_DEBUG === "true" || process.env.IMAGE_SEARCH_DEBUG === "1";
-const BRAVE_MIN_INTERVAL_MS = 1100; // Free tier: 1 req/sec; add small buffer
+/** Brave free tier: 1 request per second. We wait this long between Brave calls to avoid 429. */
+const BRAVE_MIN_INTERVAL_MS = 1100;
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const CACHE_MAX_ENTRIES = 500;
@@ -137,20 +145,18 @@ export function getProviderPreference(query: string): "unsplash" | "brave" {
   return preferUnsplashForQuery(query) ? "unsplash" : "brave";
 }
 
-/** Brave refiners for people/celebrity queries: run after original query if results are poor. */
+/** Brave refiners for people/celebrity: original first, then these in order. Stop once good candidates exist. */
 const BRAVE_PEOPLE_REFINERS = [
   (q: string) => `${q} official photo`,
   (q: string) => `${q} press photo`,
-  (q: string) => `${q} press kit photos`,
   (q: string) => `${q} site:commons.wikimedia.org`,
 ];
 
-/** Brave refiners for fictional characters. */
+/** Brave refiners for fictional characters (no "press photo"—there is no such thing for comics/characters). */
 const BRAVE_FICTIONAL_REFINERS = [
   (q: string) => `${q} key art`,
   (q: string) => `${q} official artwork`,
   (q: string) => `${q} concept art`,
-  (q: string) => `${q} press kit`,
 ];
 
 export type ImageSearchSource = "brave" | "unsplash";
@@ -170,6 +176,8 @@ export type ImageSearchResult = {
   unsplashAttribution?: UnsplashAttribution;
   /** When true, image may be copyrighted (e.g. fictional character art). For internal/metadata use. TODO: persist in slide background metadata when schema supports it. */
   license_hint?: "likely_copyrighted";
+  /** Other approved URLs from the same search (e.g. Brave filtering). Enables shuffle in editor. */
+  alternates?: string[];
 };
 
 /**
@@ -184,7 +192,7 @@ async function tryBraveWithRefiners(query: string): Promise<ImageSearchResult | 
       ? BRAVE_PEOPLE_REFINERS
       : [];
 
-  const queriesToTry = [query, ...refiners.slice(0, 3).map((fn) => fn(query))];
+  const queriesToTry = [query, ...refiners.map((fn) => fn(query))];
 
   for (const q of queriesToTry) {
     await waitForBraveRateLimit();
@@ -192,10 +200,16 @@ async function tryBraveWithRefiners(query: string): Promise<ImageSearchResult | 
     log("trying Brave Search:", q.slice(0, 50) + (q.length > 50 ? "..." : ""));
     const result = await searchBraveImage(q);
     if (result?.url) {
-      log("Brave OK:", result.url.slice(0, 60) + "...");
+      const altCount = result.alternates?.length ?? 0;
+      log("Brave OK:", result.url.slice(0, 60) + "...", "| approved for shuffle:", altCount + 1);
+      if (altCount > 0) {
+        log("  primary:", result.url);
+        result.alternates!.forEach((u, i) => log("  alternate", i + 1, u.slice(0, 70) + (u.length > 70 ? "..." : "")));
+      }
       const searchResult: ImageSearchResult = {
         url: result.url,
         source: "brave",
+        ...(result.alternates?.length ? { alternates: result.alternates } : {}),
         ...(hasFictionalCharacterIntent(query) ? { license_hint: "likely_copyrighted" as const } : {}),
       };
       return searchResult;

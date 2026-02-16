@@ -297,14 +297,16 @@ export async function generateCarousel(formData: FormData): Promise<
     }
   }
 
-  if (parsed.data.use_ai_backgrounds && validated.slides.some((s) => (s.unsplash_queries?.length ?? 0) > 0 || s.unsplash_query?.trim())) {
+  const hasImageQueries = (s: { image_queries?: string[]; unsplash_queries?: string[]; image_query?: string; unsplash_query?: string }) =>
+    (s.image_queries?.length ?? s.unsplash_queries?.length ?? 0) > 0 || !!(s.image_query?.trim() || s.unsplash_query?.trim());
+  if (parsed.data.use_ai_backgrounds && validated.slides.some(hasImageQueries)) {
     const aiSlideByIndex = new Map(
       validated.slides.map((s) => [s.slide_index, s])
     );
     for (const slide of createdSlides) {
       if (slidesWithImage.has(slide.id)) continue;
       const aiSlide = aiSlideByIndex.get(slide.slide_index);
-      const queries = aiSlide?.unsplash_queries?.filter((q) => q?.trim()) ?? (aiSlide?.unsplash_query?.trim() ? [aiSlide.unsplash_query.trim()] : []);
+      const queries = aiSlide?.image_queries?.filter((q) => q?.trim()) ?? aiSlide?.unsplash_queries?.filter((q) => q?.trim()) ?? (aiSlide?.image_query?.trim() ? [aiSlide.image_query.trim()] : aiSlide?.unsplash_query?.trim() ? [aiSlide.unsplash_query.trim()] : []);
       if (queries.length === 0) continue;
       const imageResults: Awaited<ReturnType<typeof searchImage>>[] = [];
       for (const query of queries.slice(0, 4)) {
@@ -352,7 +354,8 @@ export async function generateCarousel(formData: FormData): Promise<
           trackUnsplashDownload(r.unsplashDownloadLocation).catch(() => {});
         }
       }
-      if (imageResults.length === 1 && firstResult) {
+      const hasAlternates = firstResult?.alternates?.length;
+      if (imageResults.length === 1 && firstResult && !hasAlternates) {
         await updateSlide(user.id, slide.id, {
           background: {
             mode: "image",
@@ -364,17 +367,30 @@ export async function generateCarousel(formData: FormData): Promise<
           },
         });
       } else {
+        // One result with alternates, or multiple queries: store one item per slot, each with its own alternates for per-slot shuffle.
+        const imageItems =
+          imageResults.length > 1
+            ? imageResults.map((r) => ({
+                image_url: r!.url,
+                source: r!.source,
+                unsplash_attribution: r!.unsplashAttribution,
+                alternates: r!.alternates ?? [],
+              }))
+            : [
+                {
+                  image_url: firstResult!.url,
+                  source: firstResult!.source,
+                  unsplash_attribution: firstResult!.unsplashAttribution,
+                  alternates: firstResult!.alternates ?? [],
+                },
+              ];
         await updateSlide(user.id, slide.id, {
           background: {
             mode: "image",
-            images: imageResults.map((r) => ({
-              image_url: r!.url,
-              source: r!.source,
-              unsplash_attribution: r!.unsplashAttribution,
-            })),
+            images: imageItems,
             overlay: defaultOverlay,
             image_display: {
-              position: "center",
+              position: "top",
               fit: "cover",
               frame: "none",
               frameRadius: 0,

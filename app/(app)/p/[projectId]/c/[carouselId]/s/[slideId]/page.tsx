@@ -56,7 +56,7 @@ export default async function EditSlidePage({
     unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string };
     secondary_storage_path?: string;
     secondary_image_url?: string;
-    images?: { image_url?: string; storage_path?: string; source?: "brave" | "google" | "unsplash"; unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string } }[];
+    images?: { image_url?: string; storage_path?: string; source?: "brave" | "google" | "unsplash"; unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string }; alternates?: string[] }[];
   } | null;
   if (bg?.mode === "image") {
     if (bg.images?.length) {
@@ -65,7 +65,14 @@ export default async function EditSlidePage({
       for (const img of bg.images) {
         if (img.image_url) {
           urls.push(img.image_url);
-          if (img.source) sources.push(img.source);
+          sources.push(img.source ?? "brave");
+          // One slot with alternates: pass all so the form can show Shuffle
+          const alt = (img as { alternates?: string[] }).alternates;
+          if (alt?.length) {
+            const validAlt = alt.filter((u) => u?.trim() && /^https?:\/\//i.test(u));
+            urls.push(...validAlt);
+            validAlt.forEach(() => sources.push(img.source ?? "brave"));
+          }
         } else if (img.storage_path) {
           try {
             urls.push(await getSignedImageUrl(BUCKET, img.storage_path, 600));
@@ -79,7 +86,7 @@ export default async function EditSlidePage({
         if (sources[0]) initialImageSource = sources[0];
       } else if (urls.length >= 2) {
         initialBackgroundImageUrls = urls;
-        if (sources.length === urls.length) initialImageSources = sources;
+        initialImageSources = sources.length === urls.length ? sources : urls.map((_, i) => sources[i] ?? sources[0] ?? "brave");
       }
     } else {
       if (bg.image_url) {

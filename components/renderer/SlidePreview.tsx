@@ -115,7 +115,6 @@ const POSITION_TO_CSS: Record<string, string> = {
   "bottom-left": "left bottom",
   "bottom-right": "right bottom",
 };
-
 const FRAME_WIDTHS: Record<string, number> = { none: 0, thin: 2, medium: 5, thick: 10, chunky: 16, heavy: 20 };
 
 /** Zigzag clip-paths for 2 images – shared boundary at 50%, zigzagging between 35% and 65%. */
@@ -328,7 +327,7 @@ export function SlidePreview({
           const frameColor = imageDisplay?.frameColor ?? "#ffffff";
           const frameShape = imageDisplay?.frameShape ?? "squircle";
           const shapeStyles = getShapeStyles(frameShape, radius);
-          const pos = imageDisplay?.position ?? "center";
+          const pos = imageDisplay?.position ?? "top";
           const fit = imageDisplay?.fit ?? "cover";
           const layout = imageDisplay?.layout ?? "auto";
           const rawDivider = imageDisplay?.dividerStyle as string | undefined;
@@ -360,12 +359,14 @@ export function SlidePreview({
             };
             return (
               <>
-                <div
-                  className="absolute inset-0 bg-no-repeat bg-cover"
+                <img
+                  src={bgUrl}
+                  alt=""
+                  referrerPolicy="no-referrer"
+                  className="absolute inset-0 w-full h-full"
                   style={{
-                    backgroundImage: `url(${bgUrl})`,
-                    backgroundSize: fit,
-                    backgroundPosition: POSITION_TO_CSS[pos],
+                    objectFit: fit,
+                    objectPosition: POSITION_TO_CSS[pos],
                     ...(useBlur ? { filter: "blur(24px)", transform: "scale(1.1)" } : {}),
                   }}
                 />
@@ -384,9 +385,12 @@ export function SlidePreview({
                         boxShadow: "0 8px 40px rgba(0,0,0,0.4)",
                       }}
                     >
-                      <div
-                        className="absolute inset-0 bg-cover bg-center"
-                        style={{ backgroundImage: `url(${url})` }}
+                      <img
+                        src={url}
+                        alt=""
+                        referrerPolicy="no-referrer"
+                        className="absolute inset-0 w-full h-full object-cover"
+                        style={{ objectPosition: POSITION_TO_CSS[pos] }}
                       />
                     </div>
                   );
@@ -414,14 +418,22 @@ export function SlidePreview({
                 {multiImages.map((url, i) => (
                   <div
                     key={i}
-                    className="absolute inset-0 bg-no-repeat bg-cover"
+                    className="absolute inset-0 overflow-hidden"
                     style={{
-                      backgroundImage: `url(${url})`,
-                      backgroundSize: fit,
-                      backgroundPosition: POSITION_TO_CSS[pos],
                       clipPath: isDiagonal ? (i === 0 ? DIAGONAL_TOP : DIAGONAL_BOTTOM) : (i === 0 ? ZIGZAG_LEFT : ZIGZAG_RIGHT),
                     }}
-                  />
+                  >
+                    <img
+                      src={url}
+                      alt=""
+                      referrerPolicy="no-referrer"
+                      className="absolute inset-0 w-full h-full"
+                      style={{
+                        objectFit: fit,
+                        objectPosition: POSITION_TO_CSS[pos],
+                      }}
+                    />
+                  </div>
                 ))}
                 {isDiagonal ? (
                   <div
@@ -551,12 +563,14 @@ export function SlidePreview({
                       boxShadow: frameW > 0 ? "0 8px 32px rgba(0,0,0,0.3)" : undefined,
                     }}
                   >
-                    <div
-                      className="w-full h-full bg-no-repeat"
+                    <img
+                      src={url}
+                      alt=""
+                      referrerPolicy="no-referrer"
+                      className="w-full h-full"
                       style={{
-                        backgroundImage: `url(${url})`,
-                        backgroundSize: fit,
-                        backgroundPosition: POSITION_TO_CSS[pos],
+                        objectFit: fit,
+                        objectPosition: POSITION_TO_CSS[pos],
                       }}
                     />
                   </div>
@@ -574,22 +588,30 @@ export function SlidePreview({
           const frameColor = imageDisplay?.frameColor ?? "rgba(255,255,255,0.9)";
           const frameShape = imageDisplay?.frameShape ?? "squircle";
           const shapeStyles = getShapeStyles(frameShape, radius);
-          const pos = imageDisplay?.position ?? "center";
+          const pos = imageDisplay?.position ?? "top";
           const fit = imageDisplay?.fit ?? "cover";
           const inset = frameW > 0 ? 16 : 0;
           return (
             <div
-              className="absolute bg-no-repeat overflow-hidden"
+              className="absolute overflow-hidden"
               style={{
-                backgroundImage: `url(${bgImageUrl})`,
-                backgroundSize: fit,
-                backgroundPosition: POSITION_TO_CSS[pos],
                 ...(useBlur ? { filter: "blur(24px)", transform: "scale(1.1)" } : {}),
                 ...(frameW > 0
                   ? { left: inset, top: inset, width: CANVAS_SIZE - inset * 2, height: CANVAS_SIZE - inset * 2, ...shapeStyles, border: `${frameW}px solid ${frameColor}`, boxShadow: "0 8px 32px rgba(0,0,0,0.3)" }
                   : { inset: 0 }),
               }}
-            />
+            >
+              <img
+                src={bgImageUrl}
+                alt=""
+                referrerPolicy="no-referrer"
+                className="absolute inset-0 w-full h-full"
+                style={{
+                  objectFit: fit,
+                  objectPosition: POSITION_TO_CSS[pos],
+                }}
+              />
+            </div>
           );
         })()
       )}
@@ -605,9 +627,12 @@ export function SlidePreview({
             borderWidth: HOOK_CIRCLE_BORDER,
           }}
         >
-          <div
-            className="absolute inset-0 bg-cover bg-center bg-no-repeat"
-            style={{ backgroundImage: `url(${secondaryBackgroundImageUrl})` }}
+          <img
+            src={secondaryBackgroundImageUrl}
+            alt=""
+            referrerPolicy="no-referrer"
+            className="absolute inset-0 w-full h-full object-cover"
+            style={{ objectPosition: POSITION_TO_CSS[imageDisplay?.position ?? "top"] }}
           />
         </div>
       )}

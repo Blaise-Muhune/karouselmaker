@@ -4,28 +4,32 @@
  *
  * Setup: https://api-dashboard.search.brave.com/
  * - Create account, get API key
- * - Free tier: 2,000 queries/month
+ * - Free tier: 2,000 queries/month, 1 request per second (rate_limit: 1). Caller must throttle;
+ *   imageSearch.ts waits ~1.1s between calls. 429 = rate limit exceeded.
+ *
+ * We get one result set per query; we filter store domains and low-quality URLs. We cannot request
+ * "only from these sites"—if Brave returns only store URLs, we end up with zero after filtering.
  *
  * Quality: Brave often returns low-res thumbnails. We prefer properties.url (original/full-size)
- * over thumbnail.src, and filter by max(width,height) so vertical portraits (e.g. 1600x2400)
- * are kept when MIN_DIM=2400 (max preserves portrait).
+ * over thumbnail.src, and filter by max(width,height) so vertical portraits are preserved.
+ * SOFT FILTERING: Prefer high-quality but never return empty. Only hard-reject: maxDim known and < 1200, or blacklisted domains. Missing dimensions => keep. Portrait preserved via max(width, height).
  */
 
 const BRAVE_IMAGE_URL = "https://api.search.brave.com/res/v1/images/search";
 
 const DEBUG = process.env.IMAGE_SEARCH_DEBUG === "true" || process.env.IMAGE_SEARCH_DEBUG === "1";
+const isDev = process.env.NODE_ENV === "development";
 
-/** Min dimension (max of width/height) for quality. Using max() preserves vertical portraits (e.g. 1600x2400 passes). */
-const MIN_DIM_STRICT = 2400;
-/** Relax to this if fewer than MIN_CANDIDATES pass strict. */
-const MIN_DIM_RELAXED = 1600;
-/** Always discard below this (thumbnails / icons). */
-const MIN_DIM_ABSOLUTE = 1200;
-const MIN_CANDIDATES_BEFORE_RELAX = 3;
+/** Only discard when maxDim is known and below this (icon-sized). Brave often returns thumbnail dimensions (200–600) for full-size URLs; use 400 so we keep those and only drop real icons. */
+const MIN_DIM_HARD_REJECT = 400;
 
-/** Skip image URLs from store/e-commerce domains unless the user explicitly wants product images. */
-const STORE_DOMAINS =
-  /amazon\.|ebay\.|ebayimg\.|etsy\.|alibaba|alamy|aliexpress|walmart\.|target\.|bestbuy\.|shopify\.|overstock\.|wayfair\.|homedepot\.|lowes\.|costco\.|newegg\.|bhphotovideo\.|adorama\.|buzzfeed\.com\/shopping|rakuten\.|wish\.|shein\.|zalando\.|asos\./i;
+/** Blacklist only (no whitelist). Store/e-commerce and low-value domains. */
+const BLACKLIST_DOMAINS =
+  /ebay\.|bidsquare\.|etsy\.|amazon\.|sideshow\.|thehorrordome\.?walmartimages\.|pinimg\.|images-wixmp\.|etsystatic\.|gettyimages\.|.foxsports\.|alamy\.|ebayimg\.com/i;
+  // /amazon\.|ebay\.|ebayimg\.|etsy\.|alibaba|alamy|aliexpress|walmart\.|target\.|bestbuy\.|shopify\.|overstock\.|wayfair\.|homedepot\.|lowes\.|costco\.|newegg\.|bhphotovideo\.|adorama\.|buzzfeed\.com\/shopping|rakuten\.|wish\.|shein\.|zalando\.|asos\.|pinterest\.|pinimg\./i;
+
+/** Only keep URLs whose path ends with a common image extension. Ignores links that don't look like direct image files. */
+const IMAGE_EXT_REGEX = /\.(png|jpe?g|webp|gif|bmp|avif|svg|ico)(\?|$)/i;
 
 /** URL path/query patterns that usually indicate low-res or junk (thumbnails, avatars, icons). */
 const LOW_QUALITY_URL_PATTERNS =
@@ -46,13 +50,13 @@ const REPUTABLE_DOMAINS = [
 
 /** Domains to penalize (aggregators, wallpapers, often lower quality or licensing issues). */
 const PENALTY_DOMAINS = [
-  "pinterest.",
-  "pinimg.com",
-  "wallpaper",
-  "wallpapers.",
-  "hdwallpapers",
-  "wallpapercave",
-  "imgflip",
+  // "pinterest.",
+  // "pinimg.com",
+  // "wallpaper",
+  // "wallpapers.",
+  // "hdwallpapers",
+  // "wallpapercave",
+  // "imgflip",
   "memes.",
 ];
 
@@ -83,6 +87,16 @@ function urlHostPath(url: string): string {
     return `${u.hostname.toLowerCase()}${u.pathname}`;
   } catch {
     return url;
+  }
+}
+
+/** True if URL path has a common image extension (png, jpg, jpeg, webp, gif, bmp, avif, svg, ico). Skips links without an image extension. */
+function hasImageExtension(url: string): boolean {
+  try {
+    const pathname = new URL(url).pathname;
+    return IMAGE_EXT_REGEX.test(pathname);
+  } catch {
+    return false;
   }
 }
 
@@ -132,10 +146,10 @@ type BraveResultItem = {
   height?: number;
 };
 
+/** Never require properties.url—use fallback order. Only discard if no URL at all. */
 function extractImageUrl(item: BraveResultItem): { url: string; maxDim: number | null } | null {
-  // Prefer original/full-size: properties.url first, then url; thumbnail.src is often low-res.
-  const rawUrl = item.properties?.url ?? item.url ?? item.thumbnail?.src;
-  if (!rawUrl || !/^https?:\/\//i.test(rawUrl)) return null;
+  const rawUrl = item.properties?.url ?? item.url ?? item.thumbnail?.src ?? null;
+  if (rawUrl == null || !/^https?:\/\//i.test(rawUrl)) return null;
 
   const width = item.width ?? item.thumbnail?.width ?? null;
   const height = item.height ?? item.thumbnail?.height ?? null;
@@ -173,6 +187,7 @@ async function fetchBraveResults(query: string): Promise<BraveResultItem[]> {
 /**
  * Run one Brave image search, apply quality filters and ranking, return best URL and alternates.
  * Caller is responsible for rate limiting (BRAVE_MIN_INTERVAL_MS).
+ * Store/e-commerce domains are always filtered out—we want high-quality backgrounds, not product thumbnails.
  */
 export async function searchBraveImage(query: string): Promise<{ url: string; alternates?: string[] } | null> {
   const cacheKey = `brave:${normalizeQueryForCache(query)}`;
@@ -189,62 +204,73 @@ export async function searchBraveImage(query: string): Promise<{ url: string; al
   }
 
   const results = await fetchBraveResults(query);
+  if (DEBUG || isDev) console.debug("[braveImageSearch] Brave raw results:", results.length);
+
   const seenNormalized = new Set<string>();
   const seenHostPath = new Set<string>();
   type Candidate = { url: string; maxDim: number | null; host: string };
   const candidates: Candidate[] = [];
+  /** Last-resort: when every result is blacklisted, keep one so we don't return empty. */
+  let fallbackBlacklisted: Candidate | null = null;
 
   for (const item of results) {
     const extracted = extractImageUrl(item);
     if (!extracted) continue;
 
     const { url, maxDim } = extracted;
-    if (isLowQualityImageUrl(url)) continue;
+
+    if (!hasImageExtension(url)) continue;
 
     try {
       const u = new URL(url);
       const host = u.hostname.toLowerCase();
-      if (STORE_DOMAINS.test(host)) {
-        if (DEBUG) console.log("[braveImageSearch] skip store domain:", host);
-        continue;
-      }
       const norm = normalizeUrl(url);
       const hp = urlHostPath(url);
       if (seenNormalized.has(norm) || seenHostPath.has(hp)) continue;
       seenNormalized.add(norm);
       seenHostPath.add(hp);
 
-      if (!passesMinDimension(maxDim, MIN_DIM_ABSOLUTE)) continue;
-      candidates.push({ url, maxDim, host });
+      // Soft dimension filter: only discard when we have a known dimension and it's icon-sized (< 400). Missing dims => keep.
+      const maxDimVal = maxDim ?? 0;
+      if (maxDimVal > 0 && maxDimVal < MIN_DIM_HARD_REJECT) continue;
+
+      const c = { url, maxDim, host };
+      if (BLACKLIST_DOMAINS.test(host)) {
+        if (DEBUG) console.log("[braveImageSearch] skip blacklisted domain:", host);
+        if (!fallbackBlacklisted) fallbackBlacklisted = c;
+        continue;
+      }
+
+      candidates.push(c);
     } catch {
       continue;
     }
   }
+
+  if (candidates.length === 0 && fallbackBlacklisted) {
+    candidates.push(fallbackBlacklisted);
+    if (DEBUG || isDev) console.debug("[braveImageSearch] Using last-resort blacklisted result to avoid empty");
+  }
+
+  if (DEBUG || isDev) console.debug("[braveImageSearch] After filtering:", candidates.length);
 
   if (candidates.length === 0) {
     if (DEBUG) console.log("[braveImageSearch] no results (all skipped or none returned)");
     return null;
   }
 
-  const minDim = candidates.filter((c) => passesMinDimension(c.maxDim, MIN_DIM_STRICT)).length >= MIN_CANDIDATES_BEFORE_RELAX
-    ? MIN_DIM_STRICT
-    : MIN_DIM_RELAXED;
-
-  const passing = candidates.filter((c) => passesMinDimension(c.maxDim, minDim));
-  if (passing.length === 0) {
-    if (DEBUG) console.log("[braveImageSearch] no candidates passed min dimension", minDim);
-    return null;
-  }
-
-  const scored = passing.map((c) => ({
+  // Ranking: prefer high-res and reputable, penalize thumb-like URLs. No hard filter—score and pick best.
+  const urlPenalty = (url: string) => (isLowQualityImageUrl(url) ? -1.5 : 0);
+  const scored = candidates.map((c) => ({
     ...c,
-    score: resolutionScore(c.maxDim) + domainScore(c.host),
+    score: resolutionScore(c.maxDim) + domainScore(c.host) + urlPenalty(c.url),
   }));
   scored.sort((a, b) => b.score - a.score);
   const top3 = scored.slice(0, 3);
   const idx = Math.floor(Math.random() * top3.length);
   const picked = top3[idx]!;
-  const alternates = top3.map((c) => c.url).filter((u) => u !== picked.url);
+  // Return all approved URLs so the editor can shuffle through them (not just top 3).
+  const alternates = scored.map((c) => c.url).filter((u) => u !== picked.url);
 
   if (resultCache.size >= CACHE_MAX_ENTRIES) {
     const firstKey = resultCache.keys().next().value;

@@ -217,7 +217,7 @@ export function renderSlideHtml(
   const frameShape = disp.frameShape ?? "squircle";
   const shapeCss = getShapeCss(frameShape, radius);
   const frameColor = disp.frameColor ?? "#ffffff";
-  const pos = disp.position ?? "center";
+  const pos = disp.position ?? "top";
   const posCss = POSITION_TO_CSS[pos] ?? "center center";
   const fit = disp.fit ?? "cover";
   const layout = disp.layout ?? "auto";
@@ -256,7 +256,8 @@ export function renderSlideHtml(
             const { left, top } = getCirclePos(i);
             return `<div style="position:absolute;left:${left}px;top:${top}px;width:${CIRCLE_SIZE}px;height:${CIRCLE_SIZE}px;border-radius:50%;overflow:hidden;border:${CIRCLE_BORDER}px solid ${borderColorCss};box-shadow:0 8px 40px rgba(0,0,0,0.4);"><div style="position:absolute;inset:0;background-image:url(${escapeHtml(url)});background-size:cover;background-position:center;"></div></div>`;
           }).join("");
-          return `<div class="slide-bg-image" style="position:absolute;inset:0;background-image:url(${escapeHtml(bgUrl!)});background-size:${fit};background-position:${posCss};"></div>${circlesHtml}`;
+          const coverPos = posCss;
+          return `<div class="slide-bg-image" style="position:absolute;inset:0;background-image:url(${escapeHtml(bgUrl!)});background-size:${fit};background-position:${coverPos};"></div>${circlesHtml}`;
         }
         const useStacked = layout === "stacked";
         const useGrid = layout === "grid" || (layout === "auto" && count === 4);
@@ -270,8 +271,9 @@ export function renderSlideHtml(
           const isDiagonal = dividerStyle === "diagonal";
           const clip0 = isDiagonal ? DIAGONAL_TOP : ZIGZAG_LEFT;
           const clip1 = isDiagonal ? DIAGONAL_BOTTOM : ZIGZAG_RIGHT;
+          const coverPos = posCss;
           const imgs = multiUrls.map((url, i) =>
-            `<div style="position:absolute;inset:0;background-size:${fit};background-position:${posCss};background-image:url(${escapeHtml(url)});clip-path:${i === 0 ? clip0 : clip1}"></div>`
+            `<div style="position:absolute;inset:0;background-size:${fit};background-position:${coverPos};background-image:url(${escapeHtml(url)});clip-path:${i === 0 ? clip0 : clip1}"></div>`
           ).join("");
           const divOverlay = isDiagonal
             ? `<div style="position:absolute;inset:0;background:linear-gradient(135deg, transparent calc(50% - ${dividerWidth}px), ${escapeHtml(dividerColor)} calc(50% - ${dividerWidth}px), ${escapeHtml(dividerColor)} calc(50% + ${dividerWidth}px), transparent calc(50% + ${dividerWidth}px));pointer-events:none"></div>`
@@ -343,8 +345,9 @@ export function renderSlideHtml(
           return "";
         }).join("") : "";
 
+        const multiCoverPos = posCss;
         const itemsHtml = multiUrls.map((url) =>
-          `<div style="overflow:hidden;${shapeCss};${frameW > 0 ? `border:${frameW}px solid ${escapeHtml(frameColor)};box-shadow:0 8px 32px rgba(0,0,0,0.3);` : ""}width:${itemW}px;height:${itemH}px;flex-shrink:0"><div style="width:100%;height:100%;background-size:${fit};background-position:${posCss};background-image:url(${escapeHtml(url)})"></div></div>`
+          `<div style="overflow:hidden;${shapeCss};${frameW > 0 ? `border:${frameW}px solid ${escapeHtml(frameColor)};box-shadow:0 8px 32px rgba(0,0,0,0.3);` : ""}width:${itemW}px;height:${itemH}px;flex-shrink:0"><div style="width:100%;height:100%;background-size:${fit};background-position:${multiCoverPos};background-image:url(${escapeHtml(url)})"></div></div>`
         ).join("");
         return `<div style="position:absolute;left:${pad}px;top:${pad}px;width:${inner}px;height:${inner}px;display:flex;flex-wrap:wrap;flex-direction:${flexDir};gap:${effectiveGap}px;box-sizing:border-box">${itemsHtml}</div>${segsHtml}`;
       })()
@@ -357,9 +360,11 @@ export function renderSlideHtml(
   const singleRadius = isSingleImage ? 0 : (disp.frameRadius ?? (singleFrameW > 0 ? 24 : 0));
   const singleShapeCss = getShapeCss(disp.frameShape ?? "squircle", singleRadius);
   const singleFrameColor = disp.frameColor ?? "rgba(255,255,255,0.9)";
+  /** Position controls where image is anchored (cover and contain). */
+  const singleBgPosition = posCss;
   const bgImageStyle =
     resolvedBgUrl
-      ? `background-image:url(${escapeHtml(resolvedBgUrl)});background-size:${fit};background-position:${posCss};`
+      ? `background-image:url(${escapeHtml(resolvedBgUrl)});background-size:${fit};background-position:${singleBgPosition};`
       : "";
   const bgFrameStyle =
     singleFrameW > 0 && resolvedBgUrl

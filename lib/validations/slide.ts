@@ -86,7 +86,7 @@ export const slideBackgroundSchema = z.object({
   secondary_storage_path: z.string().optional(),
   /** Hook only: second image URL (pasted). */
   secondary_image_url: z.string().url().optional(),
-  /** Multiple images per slide (2–4). Each: { image_url, source?, unsplash_attribution? } or { asset_id, storage_path }. */
+  /** Multiple images per slide (2–4). Each: { image_url, source?, unsplash_attribution?, alternates? } or { asset_id, storage_path }. */
   images: z.array(z.object({
     image_url: z.string().url().optional(),
     asset_id: z.string().uuid().optional(),
@@ -100,6 +100,8 @@ export const slideBackgroundSchema = z.object({
       profileUrl: z.string(),
       unsplashUrl: z.string(),
     }).optional(),
+    /** Other approved URLs from the same search (per-slot shuffle). Must be preserved on save. */
+    alternates: z.array(z.string()).optional(),
   })).max(4).optional(),
   fit: z.enum(["cover", "contain"]).optional(),
   /** Display options: position, frame, layout, gap. */

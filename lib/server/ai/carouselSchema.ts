@@ -7,9 +7,12 @@ export const aiSlideSchema = z.object({
   slide_type: slideTypeEnum,
   headline: z.string().max(120),
   body: z.string().max(600).optional().default(""),
-  /** Optional Unsplash search query for AI-suggested background (legacy, single image). */
+  /** Optional image search query for AI-suggested background (legacy, single image). Fetched via Brave or Unsplash. */
+  image_query: z.string().max(80).optional(),
+  /** Optional array of image search phrases (one per image). E.g. ["Elon Musk portrait", "Jeff Bezos portrait"] for 2 images. Max 4 per slide. Fetched via Brave or Unsplash. */
+  image_queries: z.array(z.string().max(80)).max(4).optional(),
+  // Legacy: accept old field names from cached or older AI output
   unsplash_query: z.string().max(80).optional(),
-  /** Optional array of Unsplash search phrases (one per image). E.g. ["Elon Musk portrait", "Jeff Bezos portrait"] for 2 images. Max 4 per slide. */
   unsplash_queries: z.array(z.string().max(80)).max(4).optional(),
 });
 
