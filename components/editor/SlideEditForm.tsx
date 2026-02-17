@@ -457,7 +457,7 @@ export function SlideEditForm({
   const [exportingFull, setExportingFull] = useState(false);
   const [exportFullError, setExportFullError] = useState<string | null>(null);
   const [mobileBannerDismissed, setMobileBannerDismissed] = useState(false);
-  const [editorTab, setEditorTab] = useState<"text" | "layout" | "background" | "more">(initialEditorTab ?? "text");
+  const [editorTab, setEditorTab] = useState<"text" | "layout" | "background" | "more">(initialEditorTab ?? "layout");
   const [previewExpanded, setPreviewExpanded] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -1776,7 +1776,7 @@ export function SlideEditForm({
       <section className="shrink-0 border-t border-border md:flex md:flex-col md:items-center md:px-4">
         <div className="w-full md:max-w-xl md:rounded-t-xl md:border md:border-b-0 md:border-border md:bg-card md:shadow-sm">
           <div className="flex border-b border-border bg-muted/20 md:bg-muted/20" role="tablist" aria-label="Editor sections">
-            {(["text", "layout", "background", "more"] as const).map((tab) => {
+            {(["layout", "text", "background", "more"] as const).map((tab) => {
             const Icon = tab === "text" ? Type : tab === "layout" ? LayoutTemplateIcon : tab === "background" ? PaletteIcon : MoreHorizontal;
             const label = tab === "text" ? "Text" : tab === "layout" ? "Layout" : tab === "background" ? "Background" : "More";
             const tabId = `editor-tab-${tab}`;

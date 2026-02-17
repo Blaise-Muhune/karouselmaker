@@ -5,7 +5,7 @@
  * Setup: https://api-dashboard.search.brave.com/
  * - Create account, get API key
  * - Free tier: 2,000 queries/month, 1 request per second (rate_limit: 1). Caller must throttle;
- *   imageSearch.ts waits ~1.1s between calls. 429 = rate limit exceeded.
+ *   imageSearch.ts waits ~1.1s between calls. 429 = rate limit (slow down) or quota exceeded (monthly limit).
  *
  * We get one result set per query; we filter store domains and low-quality URLs. We cannot request
  * "only from these sites"—if Brave returns only store URLs, we end up with zero after filtering.
@@ -26,7 +26,7 @@ const MIN_DIM_HARD_REJECT = 400;
 /** Blacklist only (no whitelist). Store/e-commerce and low-value domains. */
 const BLACKLIST_DOMAINS =
 // /sideshow\.com/i;
-  /ebay\.|bidsquare\.|etsy\.|amazon\.|sideshow\.|shuttersstock\.|thehorrordome\.?walmartimages\.|pinimg\.|images-wixmp\.|redbubble\.|etsy\.|static\.|gettyimages\.|.foxsports\.|alamy\.|ebayimg\.com/i;
+  /ebay\.|bidsquare\.|etsy\.|amazon\.|sideshow\.|shuttersstock\.|thehorrordome\.?walmartimages\.|pinimg\.|images-wixmp\.|redbubble\.|etsy\.|static\.|.foxsports\.|alamy\.|ebayimg\.com/i;
   // /amazon\.|ebay\.|ebayimg\.|etsy\.|alibaba|alamy|aliexpress|walmart\.|target\.|bestbuy\.|shopify\.|overstock\.|wayfair\.|homedepot\.|lowes\.|costco\.|newegg\.|bhphotovideo\.|adorama\.|buzzfeed\.com\/shopping|rakuten\.|wish\.|shein\.|zalando\.|asos\.|pinterest\.|pinimg\./i;
 
 /** Only keep URLs whose path ends with a common image extension. Ignores links that don't look like direct image files. */
@@ -177,7 +177,44 @@ async function fetchBraveResults(query: string): Promise<BraveResultItem[]> {
   });
 
   if (!res.ok) {
-    if (DEBUG) console.log("[braveImageSearch] HTTP", res.status, res.statusText, await res.text().catch(() => ""));
+    const bodyText = await res.text().catch(() => "");
+    if (res.status === 429) {
+      try {
+        const err = JSON.parse(bodyText) as { error?: { code?: string; detail?: string; meta?: { quota_limit?: number; plan?: string } } };
+        const code = err?.error?.code;
+        const detail = err?.error?.detail ?? "";
+        const meta = err?.error?.meta;
+        if (code === "QUOTA_LIMITED" || /quota.*exceeded|limit exceeded/i.test(detail)) {
+          console.warn(
+            "[braveImageSearch] Brave Search monthly quota exceeded.",
+            meta?.quota_limit != null ? `Limit: ${meta.quota_limit}/month (${meta?.plan ?? "Free"} plan).` : "",
+            "Image search will use Unsplash fallback. To get Brave again: wait for next month or upgrade at https://api-dashboard.search.brave.com/"
+          );
+        } else {
+          console.warn("[braveImageSearch] HTTP 429 Too Many Requests.", detail || bodyText.slice(0, 200));
+        }
+      } catch {
+        console.warn("[braveImageSearch] HTTP 429 Too Many Requests.", bodyText.slice(0, 200));
+      }
+    } else if (res.status === 422) {
+      try {
+        const err = JSON.parse(bodyText) as { error?: { code?: string; detail?: string } };
+        const code = err?.error?.code;
+        const detail = err?.error?.detail ?? "";
+        if (code === "SUBSCRIPTION_TOKEN_INVALID" || /subscription token|invalid.*token/i.test(detail)) {
+          console.warn(
+            "[braveImageSearch] Brave Search API key invalid or wrong product.",
+            "Check BRAVE_SEARCH_API_KEY in .env: use the key from the Search plan at https://api-dashboard.search.brave.com/ (not Answers). No extra spaces. Restart the dev server after changing .env."
+          );
+        } else {
+          console.warn("[braveImageSearch] HTTP 422", detail || bodyText.slice(0, 200));
+        }
+      } catch {
+        console.warn("[braveImageSearch] HTTP 422 Unprocessable Entity.", bodyText.slice(0, 200));
+      }
+    } else if (DEBUG) {
+      console.log("[braveImageSearch] HTTP", res.status, res.statusText, bodyText);
+    }
     return [];
   }
 
