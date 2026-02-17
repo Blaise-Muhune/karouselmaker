@@ -60,6 +60,8 @@ type ColorPickerProps = {
   onChange: (value: string) => void;
   placeholder?: string;
   className?: string;
+  /** Compact layout: circular swatch + narrow hex input, no extract button. */
+  compact?: boolean;
   /** When set, show "Extract from logo" button. */
   onExtractFromLogo?: (primary: string, secondary: string) => void;
   /** When set, upload logo file to storage and return path. Called before onExtractFromLogo. */
@@ -71,6 +73,7 @@ export function ColorPicker({
   onChange,
   placeholder = "#000000",
   className,
+  compact,
   onExtractFromLogo,
   onLogoUpload,
 }: ColorPickerProps) {
@@ -99,20 +102,28 @@ export function ColorPicker({
   const hexValue = value && /^#[0-9A-Fa-f]{6}$/.test(value) ? value : "#000000";
 
   return (
-    <div className={`flex items-center gap-2 ${className ?? ""}`}>
+    <div className={`flex items-center ${compact ? "gap-1" : "gap-2"} ${className ?? ""}`}>
       <input
         type="color"
         value={hexValue}
         onChange={(e) => onChange(e.target.value)}
-        className="h-10 w-12 cursor-pointer rounded-lg border border-input/80 bg-background p-0"
+        className={
+          compact
+            ? "h-7 w-7 shrink-0 cursor-pointer rounded-full border border-input/80 bg-background p-0"
+            : "h-10 w-12 cursor-pointer rounded-lg border border-input/80 bg-background p-0"
+        }
       />
       <Input
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="flex-1 font-mono text-sm"
+        className={
+          compact
+            ? "h-7 w-16 shrink-0 font-mono text-xs"
+            : "flex-1 font-mono text-sm"
+        }
       />
-      {onExtractFromLogo && (
+      {!compact && onExtractFromLogo && (
         <>
           <input
             ref={fileRef}

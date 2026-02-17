@@ -119,3 +119,25 @@ export async function listSlides(
   if (error) throw new Error(error.message);
   return (data ?? []) as Slide[];
 }
+
+/** Returns slide count per carousel. Only includes carousels the user owns (call with ids from listCarousels). */
+export async function getSlideCountsForCarousels(
+  userId: string,
+  carouselIds: string[]
+): Promise<Record<string, number>> {
+  if (carouselIds.length === 0) return {};
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("slides")
+    .select("carousel_id")
+    .in("carousel_id", carouselIds);
+
+  if (error) return {};
+  const countByCarousel: Record<string, number> = {};
+  for (const id of carouselIds) countByCarousel[id] = 0;
+  for (const row of data ?? []) {
+    const cid = (row as { carousel_id: string }).carousel_id;
+    if (cid in countByCarousel) countByCarousel[cid] = (countByCarousel[cid] ?? 0) + 1;
+  }
+  return countByCarousel;
+}

@@ -84,8 +84,14 @@ export type HighlightSpan = { start: number; end: number; color: string };
 /** Word character for boundary expansion (letters, digits, apostrophe for contractions). */
 const WORD_CHAR = /[\p{L}\p{N}']/u;
 
+/** Whitespace (space, newline, tab) — used to avoid expanding into the next word. */
+const WHITESPACE = /\s/;
+
 /**
  * Expand selection to full word boundaries. Never allow a single character inside a word.
+ * Does not expand into an adjacent word (stops at spaces/newlines). Trims leading/trailing whitespace.
+ * If the selection already spans multiple words (e.g. browser double-click selected "word1 word2"),
+ * we keep only the first word so one click = one word.
  * Returns the expanded range or null if the selection is only whitespace/punctuation (drop highlight).
  */
 export function expandSelectionToWordBoundaries(
@@ -98,8 +104,18 @@ export function expandSelectionToWordBoundaries(
   start = Math.max(0, Math.min(start, len));
   end = Math.max(0, Math.min(end, len));
   if (start >= end) return null;
+  // Expand start backward to start of word
   while (start > 0 && WORD_CHAR.test(text[start - 1]!)) start--;
-  while (end < len && WORD_CHAR.test(text[end]!)) end++;
+  // Expand end forward only within the same word — stop at space/newline so we never include the next word
+  while (end < len && WORD_CHAR.test(text[end]!) && !WHITESPACE.test(text[end]!)) end++;
+  if (start >= end) return null;
+  // If selection spans multiple words (e.g. double-click gave "word1 word2"), keep only the first word
+  const firstSpace = text.slice(start, end).search(WHITESPACE);
+  if (firstSpace >= 0) end = start + firstSpace;
+  if (start >= end) return null;
+  // Trim leading/trailing whitespace so we only highlight the word, not spaces (avoids layout/newline issues)
+  while (start < end && WHITESPACE.test(text[start]!)) start++;
+  while (end > start && WHITESPACE.test(text[end - 1]!)) end--;
   if (start >= end) return null;
   const slice = text.slice(start, end);
   if (!slice || !WORD_CHAR.test(slice)) return null;

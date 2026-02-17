@@ -15,6 +15,15 @@ function isCompleteHighlight(token: string): boolean {
 }
 
 /**
+ * Visible character count for wrap decisions. Strips {{#hex}}...{{/}} markers and counts only the inner text
+ * so highlighted words don't get isolated (markup was being counted and made lines appear "full" too early).
+ */
+function displayLength(s: string): number {
+  const stripped = s.replace(/\{\{(?:#[\da-fA-F]{6}|[a-z]+)\}\}/g, "").replace(/\{\{\/\}\}/g, "");
+  return stripped.length;
+}
+
+/**
  * Split text into tokens for line wrapping. Highlight spans {{x}}...{{/}} are kept as single tokens.
  */
 function tokens(text: string): string[] {
@@ -49,21 +58,24 @@ function wrapParagraph(paragraph: string, zone: TextZone, maxLines: number): str
 
   for (const token of tokenList) {
     const candidate = currentLine ? `${currentLine} ${token}` : token;
-    if (candidate.length <= maxCharsPerLine) {
+    const candidateDisplayLen = displayLength(candidate);
+    const tokenDisplayLen = displayLength(token);
+    if (candidateDisplayLen <= maxCharsPerLine) {
       currentLine = candidate;
     } else {
       if (currentLine) {
         lines.push(currentLine);
         if (lines.length >= maxLines) return lines;
       }
-      if (token.length > maxCharsPerLine) {
+      if (tokenDisplayLen > maxCharsPerLine) {
         if (isCompleteHighlight(token)) {
           lines.push(token);
           if (lines.length >= maxLines) return lines;
           currentLine = "";
         } else {
-          for (let i = 0; i < token.length; i += maxCharsPerLine) {
-            lines.push(token.slice(i, i + maxCharsPerLine));
+          const plain = token.replace(/\{\{(?:#[\da-fA-F]{6}|[a-z]+)\}\}/g, "").replace(/\{\{\/\}\}/g, "");
+          for (let i = 0; i < plain.length; i += maxCharsPerLine) {
+            lines.push(plain.slice(i, i + maxCharsPerLine));
             if (lines.length >= maxLines) return lines;
           }
           currentLine = "";

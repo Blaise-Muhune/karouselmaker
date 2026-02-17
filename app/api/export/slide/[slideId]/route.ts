@@ -228,24 +228,41 @@ export async function GET(
   );
 
   const browser = await launchChromium();
+  const CONTENT_TIMEOUT_MS = 20000;
+  const SELECTOR_TIMEOUT_MS = 15000;
   try {
     const page = await browser.newPage();
-    await page.setViewportSize({ width: dimensions.w, height: dimensions.h });
-    await page.setContent(html, { waitUntil: "load" });
-    await page.waitForSelector(".slide", { state: "visible", timeout: 15000 });
-    await new Promise((r) => setTimeout(r, 300));
-    const buffer = await page.screenshot({ type: format });
-    const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
-    const ext = format === "jpeg" ? "jpg" : "png";
-    const filename = `slide-${slide.slide_index}.${ext}`;
-    // Use application/octet-stream so iOS Safari triggers download prompt instead of opening image for preview
-    return new NextResponse(new Uint8Array(buf), {
-      status: 200,
-      headers: {
-        "Content-Type": "application/octet-stream",
-        "Content-Disposition": `attachment; filename="${filename}"`,
-      },
-    });
+    try {
+      await page.setViewportSize({ width: dimensions.w, height: dimensions.h });
+      // waitUntil: "load" ensures all images (including CSS background-image) are fully loaded before screenshot
+      await page.setContent(html, { waitUntil: "load", timeout: CONTENT_TIMEOUT_MS });
+      await page.waitForSelector(".slide", { state: "visible", timeout: SELECTOR_TIMEOUT_MS });
+      // Brief delay so decoded images are painted (avoids half-loaded background in export)
+      await new Promise((r) => setTimeout(r, 500));
+      const buffer = await page.screenshot({ type: format });
+      const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+      const ext = format === "jpeg" ? "jpg" : "png";
+      const filename = `slide-${slide.slide_index}.${ext}`;
+      return new NextResponse(new Uint8Array(buf), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "Content-Disposition": `attachment; filename="${filename}"`,
+        },
+      });
+    } finally {
+      await page.close();
+    }
+  } catch (e) {
+    const raw = e instanceof Error ? e.message : "Export failed";
+    const isBrowserClosed =
+      /Target page, context or browser has been closed/i.test(raw) ||
+      /browser has been closed/i.test(raw) ||
+      /Protocol error/i.test(raw);
+    const msg = isBrowserClosed
+      ? "Download failed: the browser closed unexpectedly. Try again in a moment."
+      : raw;
+    return NextResponse.json({ error: msg }, { status: 500 });
   } finally {
     await browser.close();
   }

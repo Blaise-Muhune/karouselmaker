@@ -90,7 +90,7 @@ export default function NewProjectPage() {
               <span className="sr-only">Back</span>
             </Link>
           </Button>
-          <h1 className="text-2xl font-semibold">New project</h1>
+          <h1 className="text-xl font-semibold tracking-tight">New project</h1>
         </div>
 
         <Form {...form}>

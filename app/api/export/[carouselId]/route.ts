@@ -102,9 +102,9 @@ export async function POST(
    >();
 
     const browser = await launchChromium();
-    let page: Awaited<ReturnType<typeof browser.newPage>> | null = null;
+    const CONTENT_TIMEOUT_MS = 20000;
+    const SELECTOR_TIMEOUT_MS = 15000;
     try {
-      page = await browser.newPage();
       for (let i = 0; i < slides.length; i++) {
         const slide = slides[i];
         if (!slide) continue;
@@ -326,31 +326,34 @@ export async function POST(
           dimensions
         );
 
-        if (!page) throw new Error("Browser page unavailable");
-        await page.setViewportSize({ width: dimensions.w, height: dimensions.h });
-        await page.setContent(html, { waitUntil: "load" });
-        await page.waitForSelector(".slide", { state: "visible", timeout: 15000 });
-        await new Promise((r) => setTimeout(r, 300));
-        const buffer = await page.screenshot({ type: format });
-        const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
-        const { error: uploadError } = await supabase.storage
-          .from(BUCKET)
-          .upload(paths.slidePath(i), buf, {
-            contentType: format === "jpeg" ? "image/jpeg" : "image/png",
-            upsert: true,
-          });
-        if (uploadError) {
-          throw new Error(`Upload slide ${i + 1} failed: ${uploadError.message}`);
+        const page = await browser.newPage();
+        try {
+          await page.setViewportSize({ width: dimensions.w, height: dimensions.h });
+          // waitUntil: "load" ensures all images (including CSS background-image) are fully loaded before screenshot
+          await page.setContent(html, { waitUntil: "load", timeout: CONTENT_TIMEOUT_MS });
+          await page.waitForSelector(".slide", { state: "visible", timeout: SELECTOR_TIMEOUT_MS });
+          // Brief delay so decoded images are painted (avoids half-loaded background in export)
+          await new Promise((r) => setTimeout(r, 500));
+          const buffer = await page.screenshot({ type: format });
+          const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+          const { error: uploadError } = await supabase.storage
+            .from(BUCKET)
+            .upload(paths.slidePath(i), buf, {
+              contentType: format === "jpeg" ? "image/jpeg" : "image/png",
+              upsert: true,
+            });
+          if (uploadError) {
+            throw new Error(`Upload slide ${i + 1} failed: ${uploadError.message}`);
+          }
+        } finally {
+          try {
+            await page.close();
+          } catch {
+            // ignore
+          }
         }
       }
     } finally {
-      if (page) {
-        try {
-          await page.close();
-        } catch {
-          // ignore
-        }
-      }
       try {
         await browser.close();
       } catch {
@@ -364,8 +367,6 @@ export async function POST(
       spicy?: string;
     };
     const hashtags = (carousel.hashtags ?? []) as string[];
-    const captionLine =
-      captionVariants?.medium ?? captionVariants?.short ?? captionVariants?.spicy ?? "";
     const hashtagLine =
       hashtags.length > 0
         ? hashtags.map((h) => (h.startsWith("#") ? h : `#${h}`)).join(" ")
@@ -377,8 +378,16 @@ export async function POST(
             ...Array.from(unsplashAttributions.values()).map(formatUnsplashAttributionLine),
           ]
         : [];
-    const captionParts = [captionLine, hashtagLine, ...creditsLines].filter(Boolean);
-    const captionText = captionParts.join("\n\n");
+    const shortBlock = captionVariants?.short?.trim();
+    const mediumBlock = captionVariants?.medium?.trim();
+    const longBlock = captionVariants?.spicy?.trim();
+    const captionSections: string[] = [];
+    if (shortBlock) captionSections.push(`--- Short ---\n${shortBlock}`);
+    if (mediumBlock) captionSections.push(`--- Medium ---\n${mediumBlock}`);
+    if (longBlock) captionSections.push(`--- Long ---\n${longBlock}`);
+    if (hashtagLine) captionSections.push(hashtagLine);
+    captionSections.push(...creditsLines);
+    const captionText = captionSections.filter(Boolean).join("\n\n");
 
     const zip = new JSZip();
     for (let i = 0; i < slides.length; i++) {
@@ -427,7 +436,14 @@ export async function POST(
       slideUrls,
     });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "Export failed";
+    const raw = e instanceof Error ? e.message : "Export failed";
+    const isBrowserClosed =
+      /Target page, context or browser has been closed/i.test(raw) ||
+      /browser has been closed/i.test(raw) ||
+      /Protocol error/i.test(raw);
+    const msg = isBrowserClosed
+      ? "Export failed: the browser closed unexpectedly. Try again in a moment or download each slide individually below."
+      : raw;
     try {
       await updateExport(userId, exportId, { status: "failed" });
     } catch {

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getUser } from "@/lib/server/auth/getUser";
-import { getProject, listCarousels, countCarousels } from "@/lib/server/db";
+import { getProject, listCarousels, countCarousels, getSlideCountsForCarousels } from "@/lib/server/db";
 import { Button } from "@/components/ui/button";
 import { PaginationNav } from "@/components/ui/pagination-nav";
 import { ChevronRightIcon, PencilIcon, PlusCircleIcon } from "lucide-react";
@@ -39,6 +39,8 @@ export default async function ProjectDashboardPage({
     countCarousels(user.id, projectId),
   ]);
   const totalPages = Math.max(1, Math.ceil(total / CAROUSELS_PAGE_SIZE));
+  const slideCounts =
+    carousels.length > 0 ? await getSlideCountsForCarousels(user.id, carousels.map((c) => c.id)) : {};
 
   return (
     <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">
@@ -72,7 +74,7 @@ export default async function ProjectDashboardPage({
         {/* Carousels */}
         <section>
           <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
-            {totalPages > 1 ? "Carousels" : "Recent"}
+            Carousels
           </p>
           {carousels.length > 0 ? (
             <ul className="divide-y divide-border/50">
@@ -83,7 +85,10 @@ export default async function ProjectDashboardPage({
                     className="flex items-center justify-between gap-3 py-3.5 transition-colors hover:bg-accent/30 -mx-2 px-2 rounded-lg"
                   >
                     <span className="font-medium truncate">{c.title}</span>
-                    <span className="text-muted-foreground flex shrink-0 items-center gap-1 text-xs">
+                    <span className="text-muted-foreground flex shrink-0 items-center gap-2 text-xs">
+                      {slideCounts[c.id] != null && (
+                        <span>{slideCounts[c.id]} slide{slideCounts[c.id] !== 1 ? "s" : ""}</span>
+                      )}
                       {formatDate(new Date(c.created_at))}
                       <ChevronRightIcon className="size-3.5 opacity-40" />
                     </span>
@@ -98,6 +103,9 @@ export default async function ProjectDashboardPage({
               </p>
               <p className="text-muted-foreground/80 mt-1 text-xs">
                 Paste a topic or URL and we&apos;ll draft the slides.
+              </p>
+              <p className="text-muted-foreground/80 mt-1 text-xs">
+                Create your first carousel above.
               </p>
             </div>
           )}

@@ -11,11 +11,24 @@ import type { BrandKit } from "@/lib/renderer/renderModel";
 
 const BUCKET = "carousel-assets";
 
+const EDIT_TABS = ["text", "layout", "background", "more"] as const;
+type EditTab = (typeof EDIT_TABS)[number];
+function parseTab(tab: string | null): EditTab | undefined {
+  if (tab && EDIT_TABS.includes(tab as EditTab)) return tab as EditTab;
+  return undefined;
+}
+
 export default async function EditSlidePage({
   params,
-}: Readonly<{ params: Promise<{ projectId: string; carouselId: string; slideId: string }> }>) {
+  searchParams,
+}: Readonly<{
+  params: Promise<{ projectId: string; carouselId: string; slideId: string }>;
+  searchParams: Promise<{ tab?: string }>;
+}>) {
   const { user } = await getUser();
   const { projectId, carouselId, slideId } = await params;
+  const { tab: tabParam } = await searchParams;
+  const initialTab = parseTab(tabParam ?? null);
 
   const { isPro } = await getSubscription(user.id, user.email);
 
@@ -119,14 +132,16 @@ export default async function EditSlidePage({
   const carouselIncludeLast = (carousel as { include_last_slide?: boolean }).include_last_slide;
 
   return (
-    <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">
-      <div className="mx-auto max-w-5xl space-y-10">
-        {!isPro && (
+    <div className="min-h-[calc(100vh-8rem)] flex flex-col p-0 md:p-2">
+      {!isPro && (
+        <div className="shrink-0 px-4 py-2">
           <UpgradeBanner
             message="Free plan: Edit headline and text only. Upgrade to Pro to change template, background, and more."
             variant="inline"
           />
-        )}
+        </div>
+      )}
+      <div className="flex-1 min-h-0 flex flex-col">
         <SlideEditForm
           isPro={isPro}
           slide={slide}
@@ -137,6 +152,9 @@ export default async function EditSlidePage({
           backHref={backHref}
           editorPath={editorPath}
           carouselId={carouselId}
+          projectName={project.name}
+          carouselTitle={carousel.title}
+          initialEditorTab={initialTab}
           initialExportFormat={carouselExportFormat === "png" || carouselExportFormat === "jpeg" ? carouselExportFormat : "png"}
           initialExportSize={carouselExportSize === "1080x1080" || carouselExportSize === "1080x1350" || carouselExportSize === "1080x1920" ? carouselExportSize : "1080x1350"}
           initialIncludeFirstSlide={carouselIncludeFirst !== false}

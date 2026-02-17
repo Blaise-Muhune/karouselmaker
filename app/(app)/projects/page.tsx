@@ -33,13 +33,13 @@ export default async function ProjectsPage({
   const totalPages = Math.max(1, Math.ceil(total / PROJECTS_PAGE_SIZE));
 
   return (
-    <div className="p-4 md:p-6">
+    <div className="p-6 md:p-8">
       <div className="mx-auto max-w-2xl space-y-6">
         <Suspense fallback={null}>
           <SubscriptionStatusBanner />
         </Suspense>
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-semibold">Projects</h1>
+          <h1 className="text-xl font-semibold tracking-tight">Projects</h1>
           <Button asChild>
             <Link href="/projects/new">
               <PlusCircleIcon className="mr-2 size-4" />

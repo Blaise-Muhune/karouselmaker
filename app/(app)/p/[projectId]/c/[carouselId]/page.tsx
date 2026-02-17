@@ -7,8 +7,10 @@ import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { resolveBrandKitLogo } from "@/lib/server/brandKit";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
 import { Button } from "@/components/ui/button";
+import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { SlideGrid, type TemplateWithConfig } from "@/components/carousels/SlideGrid";
 import { CarouselMenuDropdown } from "@/components/carousels/CarouselMenuDropdown";
+import { ShuffleCarouselBackgroundsButton } from "@/components/carousels/ShuffleCarouselBackgroundsButton";
 import { EditorCaptionSection } from "@/components/editor/EditorCaptionSection";
 import { EditorExportSection } from "@/components/editor/EditorExportSection";
 import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
@@ -123,6 +125,20 @@ export default async function CarouselEditorPage({
   }
   const unsplashAttributions = Array.from(unsplashAttributionsMap.values());
 
+  const hasShuffleableSlides = slides.some((s) => {
+    const bg = s.background as { mode?: string; images?: { image_url?: string; alternates?: string[] }[] } | null;
+    if (bg?.mode !== "image" || !Array.isArray(bg.images)) return false;
+    return bg.images.some((slot) => {
+      const url = slot.image_url?.trim();
+      const alts = slot.alternates ?? [];
+      const pool = url ? [url, ...alts] : [...alts];
+      const valid = pool.filter((u) => typeof u === "string" && u.trim() && /^https?:\/\//i.test(u));
+      return valid.length > 1;
+    });
+  });
+
+  const editorPath = `/p/${projectId}/c/${carouselId}`;
+
   return (
     <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">
       <div className="mx-auto max-w-4xl space-y-10">
@@ -132,26 +148,42 @@ export default async function CarouselEditorPage({
 
         {/* Header */}
         <header className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon-sm" className="-ml-1" asChild>
-              <Link href={`/p/${projectId}`}>
-                <ArrowLeftIcon className="size-4" />
-                <span className="sr-only">Back to project</span>
-              </Link>
-            </Button>
-            <div>
-              <h1 className="text-xl font-semibold tracking-tight">{carousel.title}</h1>
-              <p className="text-muted-foreground text-sm">
-                {getExportSize(carousel).replace("x", "×")}
-                <span className="mx-1.5 opacity-50">·</span>
-                {carousel.status}
-              </p>
-            </div>
-            <CarouselMenuDropdown
-              carouselId={carouselId}
-              projectId={projectId}
-              isFavorite={!!carousel.is_favorite}
+          <div className="flex flex-col gap-2 min-w-0">
+            <Breadcrumbs
+              items={[
+                { label: project.name, href: `/p/${projectId}` },
+                { label: carousel.title },
+              ]}
+              className="mb-0.5"
             />
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button variant="ghost" size="icon-sm" className="-ml-1 shrink-0" asChild>
+                <Link href={`/p/${projectId}`}>
+                  <ArrowLeftIcon className="size-4" />
+                  <span className="sr-only">Back to project</span>
+                </Link>
+              </Button>
+              <div className="min-w-0">
+                <h1 className="text-xl font-semibold tracking-tight truncate">{carousel.title}</h1>
+                <p className="text-muted-foreground text-sm">
+                  {getExportSize(carousel).replace("x", "×")}
+                  <span className="mx-1.5 opacity-50">·</span>
+                  {carousel.status}
+                </p>
+              </div>
+              <ShuffleCarouselBackgroundsButton
+                carouselId={carouselId}
+                projectId={projectId}
+                pathname={editorPath}
+                hasShuffleableSlides={hasShuffleableSlides}
+                disabled={!subscription.isPro}
+              />
+              <CarouselMenuDropdown
+                carouselId={carouselId}
+                projectId={projectId}
+                isFavorite={!!carousel.is_favorite}
+              />
+            </div>
           </div>
         </header>
 
@@ -194,7 +226,7 @@ export default async function CarouselEditorPage({
           captionVariants={captionVariants}
           hashtags={hashtags}
           unsplashAttributions={unsplashAttributions}
-          editorPath={`/p/${projectId}/c/${carouselId}`}
+          editorPath={editorPath}
         />
       </div>
     </div>

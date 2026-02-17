@@ -13,12 +13,14 @@ import {
 } from "@/components/ui/select";
 import { setSlideTemplate } from "@/app/actions/slides/setSlideTemplate";
 import { reorderSlides } from "@/app/actions/slides/reorderSlides";
+import { shuffleSlideBackgrounds } from "@/app/actions/slides/shuffleCarouselBackgrounds";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
 import type { BrandKit } from "@/lib/renderer/renderModel";
 import type { SlideBackgroundOverride } from "@/components/renderer/SlidePreview";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import type { Slide, Template } from "@/lib/server/db/types";
-import { DownloadIcon, GripVerticalIcon, Images, PencilIcon } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { DownloadIcon, GripVerticalIcon, Images, Loader2Icon, PencilIcon, Shuffle } from "lucide-react";
 
 const PREVIEW_SCALE = 0.25;
 
@@ -183,6 +185,18 @@ function getImageDisplay(slide: Slide): React.ComponentProps<typeof SlidePreview
   return (bg?.image_display ?? undefined) as React.ComponentProps<typeof SlidePreview>["imageDisplay"];
 }
 
+function slideHasShuffleableImages(slide: Slide): boolean {
+  const bg = slide.background as { mode?: string; images?: { image_url?: string; alternates?: string[] }[] } | null;
+  if (bg?.mode !== "image" || !Array.isArray(bg.images)) return false;
+  return bg.images.some((slot) => {
+    const url = slot.image_url?.trim();
+    const alts = slot.alternates ?? [];
+    const pool = url ? [url, ...alts] : [...alts];
+    const valid = pool.filter((u) => typeof u === "string" && u.trim() && /^https?:\/\//i.test(u));
+    return valid.length > 1;
+  });
+}
+
 export function SlideGrid({
   slides,
   templates,
@@ -201,6 +215,8 @@ export function SlideGrid({
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [reorderPending, setReorderPending] = useState(false);
+  const [shufflingSlideId, setShufflingSlideId] = useState<string | null>(null);
+  const router = useRouter();
   const editorPath = `/p/${projectId}/c/${carouselId}`;
 
   useEffect(() => {
@@ -404,8 +420,9 @@ export function SlideGrid({
                       value={currentTemplateId ?? ""}
                       onValueChange={(templateId) => {
                         if (!templateId || templateId === currentTemplateId) return;
-                        startTransition(() => {
-                          setSlideTemplate(slide.id, templateId, editorPath);
+                        startTransition(async () => {
+                          const result = await setSlideTemplate(slide.id, templateId, editorPath);
+                          if (result.ok) router.refresh();
                         });
                       }}
                       disabled={!canEdit || isPending || reorderPending || templates.length === 0}
@@ -441,6 +458,29 @@ export function SlideGrid({
                         <DownloadIcon className="size-4" />
                       </a>
                     </Button>
+                    {canEdit && slideHasShuffleableImages(slide) && (
+                      <Button
+                        variant="outline"
+                        size="icon-sm"
+                        title="Shuffle background images for this slide"
+                        disabled={shufflingSlideId === slide.id}
+                        onClick={() => {
+                          setShufflingSlideId(slide.id);
+                          startTransition(async () => {
+                            const result = await shuffleSlideBackgrounds(slide.id, editorPath);
+                            setShufflingSlideId(null);
+                            if (result.ok) router.refresh();
+                          });
+                        }}
+                      >
+                        {shufflingSlideId === slide.id ? (
+                          <Loader2Icon className="size-4 animate-spin" aria-hidden />
+                        ) : (
+                          <Shuffle className="size-4" />
+                        )}
+                        <span className="sr-only">Shuffle images</span>
+                      </Button>
+                    )}
                     {canEdit ? (
                       <Button variant="outline" size="icon-sm" asChild title="Edit slide">
                         <Link href={`/p/${projectId}/c/${carouselId}/s/${slide.id}`}>

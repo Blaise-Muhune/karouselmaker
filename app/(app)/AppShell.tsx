@@ -56,6 +56,10 @@ function getCurrentProjectId(pathname: string): string | undefined {
   return match?.[1];
 }
 
+function isSlideEditPage(pathname: string): boolean {
+  return /^\/p\/[^/]+\/c\/[^/]+\/s\/[^/]+$/.test(pathname);
+}
+
 function NavLink({
   href,
   children,
@@ -284,23 +288,25 @@ export function AppShell({
         </div>
       </header>
       <main className="flex-1 pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">{children}</main>
-      <footer className="border-t border-border/60 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-        <div className="flex flex-col items-center gap-2 px-4 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]">
-          <a
-            href="https://karouselmaker.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-muted-foreground text-sm hover:text-foreground transition-colors"
-          >
-            Made with KarouselMaker.com
-          </a>
-          <div className="flex flex-wrap items-center justify-center gap-4 text-sm text-muted-foreground">
-            <Link href="/terms" className="hover:text-foreground">Terms</Link>
-            <Link href="/privacy" className="hover:text-foreground">Privacy</Link>
-            <ContactUsModal userEmail={userEmail} userName={userName} />
+      {!isSlideEditPage(pathname) && (
+        <footer className="border-t border-border/60 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          <div className="flex flex-col items-center gap-2 px-4 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]">
+            <a
+              href="https://karouselmaker.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-muted-foreground text-sm hover:text-foreground transition-colors"
+            >
+              Watermark KarouselMaker.com
+            </a>
+            <div className="flex flex-wrap items-center justify-center gap-4 text-sm text-muted-foreground">
+              <Link href="/terms" className="hover:text-foreground">Terms</Link>
+              <Link href="/privacy" className="hover:text-foreground">Privacy</Link>
+              <ContactUsModal userEmail={userEmail} userName={userName} />
+            </div>
           </div>
-        </div>
-      </footer>
+        </footer>
+      )}
     </div>
   );
 }

@@ -1,7 +1,11 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getUser } from "@/lib/server/auth/getUser";
 import { getProject } from "@/lib/server/db";
+import { Button } from "@/components/ui/button";
+import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { ProjectEditForm } from "./ProjectEditForm";
+import { ArrowLeftIcon } from "lucide-react";
 
 export default async function EditProjectPage({
   params,
@@ -39,9 +43,24 @@ export default async function EditProjectPage({
   };
 
   return (
-    <div className="p-4 md:p-6">
+    <div className="p-6 md:p-8">
       <div className="mx-auto max-w-xl space-y-6">
-        <h1 className="text-2xl font-semibold">Edit project</h1>
+        <Breadcrumbs
+          items={[
+            { label: project.name, href: `/p/${project.id}` },
+            { label: "Edit project" },
+          ]}
+          className="mb-2"
+        />
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="icon-sm" className="-ml-1 shrink-0" asChild>
+            <Link href={`/p/${project.id}`}>
+              <ArrowLeftIcon className="size-4" />
+              <span className="sr-only">Back to project</span>
+            </Link>
+          </Button>
+          <h1 className="text-xl font-semibold tracking-tight">Edit project</h1>
+        </div>
         <ProjectEditForm projectId={project.id} defaultValues={defaultValues} />
       </div>
     </div>

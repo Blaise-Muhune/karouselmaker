@@ -181,6 +181,29 @@
   }
 }
 
+/* Global thin scrollbars – small and match app theme */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--muted-foreground) transparent;
+}
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 9999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+}
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 /* Thin scrollbar for horizontal carousels (desktop) - matches brand primary teal */
 .scrollbar-thin {
   scrollbar-width: thin;

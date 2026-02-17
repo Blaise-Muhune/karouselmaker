@@ -68,7 +68,7 @@ export type SlidePreviewProps = {
   showCounterOverride?: boolean;
   /** Override template: show/hide watermark. Undefined = use template default (model.chrome.watermark.enabled). */
   showWatermarkOverride?: boolean;
-  /** When false, hide "Made with KarouselMaker.com" attribution. Pro only. Undefined = show. */
+  /** When false, hide "Watermark KarouselMaker.com" attribution. Pro only. Undefined = show. */
   showMadeWithOverride?: boolean;
   /** Override font sizes per zone (headline_font_size, body_font_size in px). */
   fontOverrides?: FontSizeOverrides | null;
@@ -278,7 +278,7 @@ export function SlidePreview({
 
   const showCounter = showCounterOverride ?? model.chrome.showCounter;
 
-  /** Scale chrome (counter, logo, made with) with canvas height so they stay proportional in 4:5 and 9:16. */
+  /** Scale chrome (counter, logo, watermark text) with canvas height so they stay proportional in 4:5 and 9:16. */
   const chromeScale = canvasH / CANVAS_SIZE;
 
   return (
@@ -702,10 +702,12 @@ export function SlidePreview({
                             backgroundColor: seg.color,
                             color: "#0a0a0a",
                             padding: "0.02em 0.04em",
-                            margin: "0.04em 0.02em 0.04em 0",
-                            lineHeight: 1,
-                            display: "inline-block",
+                            margin: 0,
+                            lineHeight: "inherit",
+                            display: "inline",
                             borderRadius: 1,
+                            boxDecorationBreak: "clone",
+                            WebkitBoxDecorationBreak: "clone",
                           }
                         : { color: seg.color }
                     }
@@ -819,7 +821,7 @@ export function SlidePreview({
         </div>
       </div>
 
-      {/* Chrome (counter, watermark, made with): rendered in root so they stay visible and proportional in 4:5 and 9:16 */}
+      {/* Chrome (counter, watermark logo, watermark text): rendered in root so they stay visible and proportional in 4:5 and 9:16 */}
       {showCounter && (
         <div
           className="absolute rounded-full"
@@ -897,7 +899,7 @@ export function SlidePreview({
                 textShadow: "0 1px 2px rgba(0,0,0,0.3)",
               }}
             >
-              Made with KarouselMaker.com
+              Watermark KarouselMaker.com
             </div>
           );
         }
@@ -915,7 +917,7 @@ export function SlidePreview({
               textShadow: "0 1px 2px rgba(0,0,0,0.3)",
             }}
           >
-            Made with KarouselMaker.com
+            Watermark KarouselMaker.com
           </div>
         );
       })()}

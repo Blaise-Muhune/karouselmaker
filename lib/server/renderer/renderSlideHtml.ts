@@ -96,7 +96,7 @@ export function renderSlideHtml(
   secondaryBackgroundImageUrl?: string | null,
   showCounterOverride?: boolean,
   showWatermarkOverride?: boolean,
-  /** When false, hide "Made with KarouselMaker.com". Pro only. Undefined = show. */
+  /** When false, hide "Watermark KarouselMaker.com". Pro only. Undefined = show. */
   showMadeWithOverride?: boolean,
   fontOverrides?: FontSizeOverrides | null,
   /** Per-slide text zone overrides (x, y, w, h, maxLines, align, etc.). Merged with fontOverrides. */
@@ -185,7 +185,7 @@ export function renderSlideHtml(
         if (seg.type === "bold") return `<strong>${escaped}</strong>`;
         if (seg.type === "color" && seg.color) {
           if (zoneHighlightStyle === "background") {
-            return `<span style="background-color:${escapeHtml(seg.color)};color:#0a0a0a;padding:0.02em 0.04em;margin:0.04em 0.02em 0.04em 0;line-height:1;display:inline-block;border-radius:1px">${escaped}</span>`;
+            return `<span style="background-color:${escapeHtml(seg.color)};color:#0a0a0a;padding:0.02em 0.04em;margin:0;line-height:inherit;display:inline;border-radius:1px;box-decoration-break:clone;-webkit-box-decoration-break:clone">${escaped}</span>`;
           }
           return `<span style="color:${escapeHtml(seg.color)}">${escaped}</span>`;
         }
@@ -391,7 +391,7 @@ export function renderSlideHtml(
   const scaledSize = 1080 * scale;
   const slideTranslateX = (dimW - scaledSize) / 2;
   const slideTranslateY = (dimH - scaledSize) / 2;
-  /** Chrome (counter, logo, made with) scaled with height so they stay proportional in 4:5 and 9:16. */
+  /** Chrome (counter, logo, watermark text) scaled with height so they stay proportional in 4:5 and 9:16. */
   const chromeScale = dimH / 1080;
 
   return `<!DOCTYPE html>
@@ -407,8 +407,8 @@ export function renderSlideHtml(
     .slide { position: absolute; width: 1080px; height: 1080px; left: ${slideTranslateX}px; top: ${slideTranslateY}px; transform: scale(${scale}); transform-origin: top left; background-color: ${escapeHtml(backgroundColor)}; }
     .slide-bg-image { position: absolute; inset: 0; ${bgImageStyle} }
     .slide-gradient { position: absolute; inset: 0; background: ${gradientStyle}; pointer-events: none; z-index: 1; }
-    .text-block { position: absolute; display: flex; flex-direction: column; justify-content: center; z-index: 5; }
-    .text-block span { display: block; }
+    .text-block { position: absolute; display: flex; flex-direction: column; justify-content: center; z-index: 5; box-sizing: border-box; }
+    .text-block > span { display: block; }
     .chrome-swipe { position: absolute; display: flex; align-items: center; justify-content: center; padding: 12px 0; opacity: 0.9; font-size: 24px; font-weight: 600; letter-spacing: 0.1em; z-index: 5; }
   </style>
 </head>
@@ -484,9 +484,9 @@ export function renderSlideHtml(
       const viewportLeft = headlineZone.x * scale + slideTranslateX;
       const viewportTop = (headlineZone.y + headlineZone.h) * scale + slideTranslateY + 16 * chromeScale;
       const viewportWidth = headlineZone.w * scale;
-      return `<div style="position:absolute;left:${viewportLeft}px;top:${viewportTop}px;width:${viewportWidth}px;font-size:${30 * chromeScale}px;font-weight:500;letter-spacing:0.02em;opacity:0.65;z-index:10;color:${escapeHtml(textColor)};text-shadow:0 1px 2px rgba(0,0,0,0.3);text-align:${headlineZone.align}">Made with KarouselMaker.com</div>`;
+      return `<div style="position:absolute;left:${viewportLeft}px;top:${viewportTop}px;width:${viewportWidth}px;font-size:${30 * chromeScale}px;font-weight:500;letter-spacing:0.02em;opacity:0.65;z-index:10;color:${escapeHtml(textColor)};text-shadow:0 1px 2px rgba(0,0,0,0.3);text-align:${headlineZone.align}">Watermark KarouselMaker.com</div>`;
     }
-    return `<div style="position:absolute;bottom:${16 * chromeScale}px;left:50%;transform:translateX(-50%);font-size:${30 * chromeScale}px;font-weight:500;letter-spacing:0.02em;opacity:0.65;z-index:10;color:${escapeHtml(textColor)};text-shadow:0 1px 2px rgba(0,0,0,0.3)">Made with KarouselMaker.com</div>`;
+    return `<div style="position:absolute;bottom:${16 * chromeScale}px;left:50%;transform:translateX(-50%);font-size:${30 * chromeScale}px;font-weight:500;letter-spacing:0.02em;opacity:0.65;z-index:10;color:${escapeHtml(textColor)};text-shadow:0 1px 2px rgba(0,0,0,0.3)">Watermark KarouselMaker.com</div>`;
   })() : ""}
   </div>
 </body>

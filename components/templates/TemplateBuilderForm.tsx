@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -27,14 +27,14 @@ import { updateTemplateAction } from "@/app/actions/templates/updateTemplate";
 import { DEFAULT_TEMPLATE_CONFIG, LAYOUT_PRESETS } from "@/lib/templateDefaults";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import type { Template } from "@/lib/server/db/types";
-import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, Maximize2Icon } from "lucide-react";
+import { ArrowLeftIcon, LayoutTemplateIcon, Maximize2Icon, MinusIcon, MoreHorizontal, PaletteIcon, PlusIcon, Type } from "lucide-react";
 
 const CATEGORIES = ["hook", "point", "context", "cta", "generic"] as const;
 const DEFAULT_BRAND_KIT = { primary_color: "#0a0a0a" };
 
 type PreviewSize = "1080x1080" | "1080x1350" | "1080x1920";
 const PREVIEW_SIZE_LABELS: Record<PreviewSize, string> = {
-  "1080x1080": "Square",
+  "1080x1080": "1:1",
   "1080x1350": "4:5",
   "1080x1920": "9:16",
 };
@@ -78,6 +78,8 @@ type TemplateBuilderFormProps = {
   initialConfig?: TemplateConfig;
   templateId?: string;
   baseOptions?: BaseOption[];
+  /** When true, do not render the form header (back + title). Used when the page provides its own header. */
+  hideHeader?: boolean;
 };
 
 export function TemplateBuilderForm({
@@ -87,6 +89,7 @@ export function TemplateBuilderForm({
   initialConfig,
   templateId,
   baseOptions = [],
+  hideHeader = false,
 }: TemplateBuilderFormProps) {
   const router = useRouter();
   const [name, setName] = useState(initialName);
@@ -105,16 +108,8 @@ export function TemplateBuilderForm({
   const [previewSlideIndex, setPreviewSlideIndex] = useState(1);
   const [previewTotalSlides] = useState(10);
   const [previewExpanded, setPreviewExpanded] = useState(false);
-  const [mobilePreviewOpen, setMobilePreviewOpen] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
-
-  useEffect(() => {
-    const mq = window.matchMedia("(max-width: 1023px)");
-    const handler = () => setIsMobile(mq.matches);
-    handler();
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
-  }, []);
+  type TemplateTab = "text" | "layout" | "background" | "more";
+  const [templateTab, setTemplateTab] = useState<TemplateTab>("layout");
 
   const updateConfig = useCallback((updates: Partial<TemplateConfig> | ((prev: TemplateConfig) => Partial<TemplateConfig>)) => {
     setConfig((prev) => {
@@ -172,104 +167,61 @@ export function TemplateBuilderForm({
   const bodyZone = config.textZones.find((z) => z.id === "body");
 
   const templatePreviewContent = (
-    <>
-      <section>
-        <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
-          Preview content
-        </p>
-        <div className="space-y-3">
-          <div className="space-y-1">
-            <Label className="text-xs">Headline</Label>
-            <Input
-              value={previewHeadline}
-              onChange={(e) => setPreviewHeadline(e.target.value)}
-              placeholder="Sample headline"
-            />
-          </div>
-          {config.textZones.some((z) => z.id === "body") && (
-            <div className="space-y-1">
-              <Label className="text-xs">Body</Label>
-              <Input
-                value={previewBody}
-                onChange={(e) => setPreviewBody(e.target.value)}
-                placeholder="Sample body text"
-              />
-            </div>
-          )}
-          <div className="space-y-1">
-            <Label className="text-xs">Background image URL</Label>
-            <Input
-              type="url"
-              value={previewImageUrl}
-              onChange={(e) => setPreviewImageUrl(e.target.value)}
-              placeholder="https://example.com/image.jpg"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Background color (for testing)</Label>
-            <ColorPicker
-              value={previewBackgroundColor}
-              onChange={setPreviewBackgroundColor}
-              placeholder="#0a0a0a"
-            />
-          </div>
-        </div>
-      </section>
-      <div className="rounded-lg border border-border/60 bg-muted/20 p-4">
-        <div className="flex items-center justify-between gap-2 mb-2">
-          <p className="text-muted-foreground text-xs font-medium">Live preview</p>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
-            onClick={() => setPreviewExpanded(true)}
-            title="Expand preview"
-            aria-label="Expand preview"
+    <div className="flex flex-col rounded-xl border border-border/50 bg-muted/5 overflow-hidden">
+      {/* Top bar: Live preview + Slide + Size + Expand (match slide edit) */}
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 border-b border-border/40 bg-card/30">
+        <div className="flex items-center gap-2 min-w-0">
+          <h2 className="text-sm font-semibold text-foreground shrink-0">Live preview</h2>
+          <Select
+            value={String(previewSlideIndex)}
+            onValueChange={(v) => setPreviewSlideIndex(parseInt(v, 10))}
           >
-            <Maximize2Icon className="size-4" />
-          </Button>
+            <SelectTrigger className="h-8 w-[72px] rounded-md text-xs border-0 bg-transparent shadow-none focus-visible:ring-0">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {Array.from({ length: previewTotalSlides }, (_, i) => (
+                <SelectItem key={i} value={String(i + 1)}>
+                  {i + 1} of {previewTotalSlides}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={previewSize} onValueChange={(v) => setPreviewSize(v as PreviewSize)}>
+            <SelectTrigger className="h-8 w-auto min-w-[100px] rounded-md text-xs border-0 bg-transparent shadow-none focus-visible:ring-0">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="1080x1080">{PREVIEW_SIZE_LABELS["1080x1080"]}</SelectItem>
+              <SelectItem value="1080x1350">{PREVIEW_SIZE_LABELS["1080x1350"]}</SelectItem>
+              <SelectItem value="1080x1920">{PREVIEW_SIZE_LABELS["1080x1920"]}</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
-        <div className="flex flex-wrap gap-2 mb-3">
-          <div className="flex-1 min-w-[80px]">
-            <Label className="text-xs text-muted-foreground mb-1 block">Slide</Label>
-            <Select
-              value={String(previewSlideIndex)}
-              onValueChange={(v) => setPreviewSlideIndex(parseInt(v, 10))}
-            >
-              <SelectTrigger className="h-8 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {Array.from({ length: previewTotalSlides }, (_, i) => (
-                  <SelectItem key={i} value={String(i + 1)}>
-                    {i + 1} of {previewTotalSlides}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex-1 min-w-[80px]">
-            <Label className="text-xs text-muted-foreground mb-1 block">Size</Label>
-            <Select value={previewSize} onValueChange={(v) => setPreviewSize(v as PreviewSize)}>
-              <SelectTrigger className="h-8 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="1080x1080">{PREVIEW_SIZE_LABELS["1080x1080"]}</SelectItem>
-                <SelectItem value="1080x1350">{PREVIEW_SIZE_LABELS["1080x1350"]}</SelectItem>
-                <SelectItem value="1080x1920">{PREVIEW_SIZE_LABELS["1080x1920"]}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-        <div className="flex justify-center">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+          onClick={() => setPreviewExpanded(true)}
+          title="Expand preview (Esc to close)"
+          aria-label="Expand preview"
+        >
+          <Maximize2Icon className="size-4" />
+        </Button>
+      </div>
+      <p className="text-muted-foreground text-[11px] px-3 pt-1.5 pb-2">Preview and export size (applies to template).</p>
+      {/* Canvas (centered like slide edit) */}
+      <div className="flex justify-center items-center min-w-0 p-3">
+        <div className="flex flex-1 min-w-0 justify-center items-center">
           {(() => {
             const dims = getPreviewDimensions(previewSize, PREVIEW_MAX);
             return (
               <div
-                className="overflow-hidden rounded-lg shrink-0"
+                className="overflow-hidden rounded-xl shadow-sm shrink-0 border border-border/40 max-w-full"
                 style={{ width: dims.w, height: dims.h }}
+                role="img"
+                aria-label="Template preview"
               >
                 <div
                   className="origin-top-left"
@@ -307,6 +259,15 @@ export function TemplateBuilderForm({
           })()}
         </div>
       </div>
+      <p className="text-center text-muted-foreground text-[11px] pb-2">
+        {previewSlideIndex} of {previewTotalSlides}
+      </p>
+    </div>
+  );
+
+  const templatePreviewWithDialog = (
+    <>
+      {templatePreviewContent}
       <Dialog open={previewExpanded} onOpenChange={setPreviewExpanded}>
         <DialogContent className="max-w-[95vw] max-h-[95vh] w-auto p-4 sm:p-6" showCloseButton>
           <DialogHeader>
@@ -377,10 +338,17 @@ export function TemplateBuilderForm({
     </>
   );
 
+  const templateTabs: { id: TemplateTab; label: string; Icon: React.ComponentType<{ className?: string }> }[] = [
+    { id: "text", label: "Text", Icon: Type },
+    { id: "layout", label: "Layout", Icon: LayoutTemplateIcon },
+    { id: "background", label: "Background", Icon: PaletteIcon },
+    { id: "more", label: "More", Icon: MoreHorizontal },
+  ];
+
   return (
-    <div className="flex flex-col gap-10 lg:flex-row lg:items-start">
-      <form onSubmit={handleSubmit} className="min-w-0 flex-1 space-y-8">
-        <header className="flex items-start gap-2">
+    <form onSubmit={handleSubmit} className="flex flex-col min-h-[calc(100vh-8rem)]">
+      {!hideHeader && (
+        <header className="flex items-start gap-2 shrink-0 px-2 py-2 border-b border-border/60 bg-card/50">
           <Button variant="ghost" size="icon-sm" className="-ml-1 shrink-0" asChild>
             <Link href="/templates" aria-label="Back to templates">
               <ArrowLeftIcon className="size-4" />
@@ -395,18 +363,102 @@ export function TemplateBuilderForm({
             </p>
           </div>
         </header>
+      )}
 
-        {error && (
+      {error && (
+        <div className="shrink-0 px-4 py-2">
           <p className="text-destructive rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm">
             {error}
           </p>
-        )}
+        </div>
+      )}
 
+      <main className="flex-1 min-h-0 flex items-center justify-center p-4 bg-muted/20 overflow-auto">
+        <div className="w-full max-w-[560px]">{templatePreviewWithDialog}</div>
+      </main>
+
+      <section className="shrink-0 border-t border-border md:flex md:flex-col md:items-center md:px-4">
+        <div className="w-full md:max-w-xl md:rounded-t-xl md:border md:border-b-0 md:border-border md:bg-card md:shadow-sm">
+          <div className="flex border-b border-border bg-muted/20 md:bg-muted/20" role="tablist" aria-label="Editor sections">
+            {templateTabs.map(({ id, label, Icon }) => {
+              const tabId = `template-tab-${id}`;
+              const panelId = `template-panel-${id}`;
+              return (
+                <button
+                  key={id}
+                  id={tabId}
+                  type="button"
+                  role="tab"
+                  aria-selected={templateTab === id}
+                  aria-controls={panelId}
+                  onClick={() => setTemplateTab(id)}
+                  className={`flex flex-1 min-w-0 items-center justify-center gap-1.5 py-2 px-2 text-xs capitalize transition-colors border-b-2 -mb-px ${
+                    templateTab === id
+                      ? "border-primary text-primary bg-background/80 font-semibold"
+                      : "border-transparent text-muted-foreground font-medium hover:text-foreground hover:bg-muted/30"
+                  }`}
+                >
+                  <Icon className="size-3.5 shrink-0" aria-hidden />
+                  <span className="truncate">{label}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div
+            id={`template-panel-${templateTab}`}
+            role="tabpanel"
+            aria-labelledby={`template-tab-${templateTab}`}
+            className="max-h-[min(40vh,400px)] overflow-y-auto p-4 bg-card"
+          >
+            {templateTab === "layout" && (
+          <section className="space-y-4" aria-label="Layout">
+                <div className="rounded-lg border border-border/50 bg-muted/5 p-3">
+                  <h3 className="text-xs font-semibold text-foreground mb-1.5">Preview content</h3>
+                  <p className="text-muted-foreground text-[11px] mb-2">Sample text and background for the live preview above.</p>
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Headline</Label>
+                      <Input
+                        value={previewHeadline}
+                        onChange={(e) => setPreviewHeadline(e.target.value)}
+                        placeholder="Sample headline"
+                        className="text-sm"
+                      />
+                    </div>
+                    {config.textZones.some((z) => z.id === "body") && (
+                      <div className="space-y-1">
+                        <Label className="text-xs">Body</Label>
+                        <Input
+                          value={previewBody}
+                          onChange={(e) => setPreviewBody(e.target.value)}
+                          placeholder="Sample body text"
+                          className="text-sm"
+                        />
+                      </div>
+                    )}
+                    <div className="space-y-1">
+                      <Label className="text-xs">Background image URL</Label>
+                      <Input
+                        type="url"
+                        value={previewImageUrl}
+                        onChange={(e) => setPreviewImageUrl(e.target.value)}
+                        placeholder="https://example.com/image.jpg"
+                        className="text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Background color</Label>
+                      <ColorPicker
+                        value={previewBackgroundColor}
+                        onChange={setPreviewBackgroundColor}
+                        placeholder="#0a0a0a"
+                      />
+                    </div>
+                  </div>
+                </div>
         {mode === "create" && baseOptions.length > 0 && (
-          <section>
-            <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
-              Start from
-            </p>
+          <div className="rounded-lg border border-border/50 bg-muted/5 p-3">
+            <h3 className="text-xs font-semibold text-foreground mb-2">Start from</h3>
               <Select
                 value={baseId}
                 onValueChange={(id) => {
@@ -436,13 +488,12 @@ export function TemplateBuilderForm({
                   ))}
                 </SelectContent>
               </Select>
-          </section>
+          </div>
         )}
 
-        <section>
-          <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
-            Basic
-          </p>
+        <div className="rounded-lg border border-border/50 bg-muted/5 p-3">
+          <h3 className="text-xs font-semibold text-foreground mb-1.5">Template</h3>
+          <p className="text-muted-foreground text-[11px] mb-2">Name, category, and layout for this template.</p>
           <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="name">Template name</Label>
@@ -471,14 +522,12 @@ export function TemplateBuilderForm({
               </Select>
             </div>
           </div>
-        </section>
+        </div>
 
-        <section>
-          <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
-            Layout
-          </p>
+        <div className="rounded-lg border border-border/50 bg-muted/5 p-3">
+          <h3 className="text-xs font-semibold text-foreground mb-2">Layout type</h3>
             <Select value={config.layout} onValueChange={(v) => setLayout(v as TemplateConfig["layout"])}>
-              <SelectTrigger className="w-full">
+              <SelectTrigger className="h-9 w-full rounded-md border-input/80 bg-background text-sm">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -488,247 +537,239 @@ export function TemplateBuilderForm({
                 <SelectItem value="headline_only">Headline only</SelectItem>
               </SelectContent>
             </Select>
-        </section>
-
-        <section>
-          <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
-            Safe area
-          </p>
+        </div>
+          </section>
+            )}
+            {templateTab === "text" && (
+          <section className="space-y-4" aria-label="Text">
+        <div className="rounded-lg border border-border/50 bg-muted/5 p-3">
+          <h3 className="text-xs font-semibold text-foreground mb-2">Safe area</h3>
+            <p className="text-muted-foreground text-[11px] mb-2">Padding (px) from each edge.</p>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
               {(["top", "right", "bottom", "left"] as const).map((side) => (
-                <div key={side} className="space-y-2">
-                  <div className="flex justify-between">
-                    <Label className="text-xs capitalize">{side}</Label>
-                    <span className="text-muted-foreground text-xs">{config.safeArea[side]}px</span>
+                <div key={side} className="space-y-1.5">
+                  <Label className="text-xs capitalize">{side}</Label>
+                  <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background w-full max-w-[100px]">
+                    <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-r-none" onClick={() => updateConfig((prev) => ({ safeArea: { ...prev.safeArea, [side]: Math.max(0, config.safeArea[side] - 4) } }))} aria-label={`Decrease ${side}`}>
+                      <MinusIcon className="size-3" />
+                    </Button>
+                    <span className="min-w-8 flex-1 text-center text-xs tabular-nums">{config.safeArea[side]}</span>
+                    <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-l-none" onClick={() => updateConfig((prev) => ({ safeArea: { ...prev.safeArea, [side]: Math.min(200, config.safeArea[side] + 4) } }))} aria-label={`Increase ${side}`}>
+                      <PlusIcon className="size-3" />
+                    </Button>
                   </div>
-                  <Slider
-                    value={[config.safeArea[side]]}
-                    onValueChange={([v]) =>
-                      updateConfig((prev) => ({
-                        safeArea: { ...prev.safeArea, [side]: v ?? 0 },
-                      }))
-                    }
-                    min={0}
-                    max={200}
-                    step={4}
-                  />
                 </div>
               ))}
             </div>
-        </section>
+        </div>
 
         {headlineZone && (
-          <section>
-            <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
-              Headline zone
-            </p>
+          <div className="rounded-lg border border-border/50 bg-muted/5 p-3">
+            <h3 className="text-xs font-semibold text-foreground mb-2">Headline zone</h3>
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                {(["x", "y", "w", "h"] as const).map((key) => (
-                  <div key={key} className="space-y-2">
-                    <div className="flex justify-between">
-                      <Label className="text-xs capitalize">{key}</Label>
-                      <span className="text-muted-foreground text-xs">{headlineZone[key]}</span>
-                    </div>
-                    <Slider
-                      value={[headlineZone[key]]}
-                      onValueChange={([v]) => updateTextZone("headline", { [key]: v ?? (key === "x" || key === "y" ? 0 : 1) })}
-                      min={key === "w" || key === "h" ? 1 : 0}
-                      max={1080}
-                      step={8}
-                    />
-                  </div>
-                ))}
+              <div>
+                <p className="text-muted-foreground text-[11px] mb-2">Position & size (px)</p>
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                  {(["x", "y", "w", "h"] as const).map((key) => {
+                    const min = key === "w" || key === "h" ? 1 : 0;
+                    const step = 8;
+                    const label = key === "x" ? "X" : key === "y" ? "Y" : key === "w" ? "Width" : "Height";
+                    return (
+                      <div key={key} className="space-y-1.5">
+                        <Label className="text-xs">{label}</Label>
+                        <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background w-full max-w-[140px]">
+                          <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-r-none" onClick={() => updateTextZone("headline", { [key]: Math.max(min, headlineZone[key] - step) })} aria-label={`Decrease ${key}`}>
+                            <MinusIcon className="size-3" />
+                          </Button>
+                          <span className="min-w-8 flex-1 text-center text-xs tabular-nums">{headlineZone[key]}</span>
+                          <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-l-none" onClick={() => updateTextZone("headline", { [key]: Math.min(1080, headlineZone[key] + step) })} aria-label={`Increase ${key}`}>
+                            <PlusIcon className="size-3" />
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                <div className="space-y-2">
-                  <div className="flex justify-between">
+              <div>
+                <p className="text-muted-foreground text-[11px] mb-2">Typography</p>
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                  <div className="space-y-1.5">
                     <Label className="text-xs">Font size</Label>
-                    <span className="text-muted-foreground text-xs">{headlineZone.fontSize}px</span>
+                    <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background w-full max-w-[100px]">
+                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-r-none" onClick={() => updateTextZone("headline", { fontSize: Math.max(8, headlineZone.fontSize - 2) })} aria-label="Decrease font size">
+                        <MinusIcon className="size-3" />
+                      </Button>
+                      <span className="min-w-8 flex-1 text-center text-xs tabular-nums">{headlineZone.fontSize}</span>
+                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-l-none" onClick={() => updateTextZone("headline", { fontSize: Math.min(120, headlineZone.fontSize + 2) })} aria-label="Increase font size">
+                        <PlusIcon className="size-3" />
+                      </Button>
+                    </div>
                   </div>
-                  <Slider
-                    value={[headlineZone.fontSize]}
-                    onValueChange={([v]) => updateTextZone("headline", { fontSize: v ?? 8 })}
-                    min={8}
-                    max={120}
-                    step={2}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <div className="flex justify-between">
+                  <div className="space-y-1.5">
                     <Label className="text-xs">Font weight</Label>
-                    <span className="text-muted-foreground text-xs">{headlineZone.fontWeight}</span>
+                    <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background w-full max-w-[100px]">
+                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-r-none" onClick={() => updateTextZone("headline", { fontWeight: Math.max(100, headlineZone.fontWeight - 100) })} aria-label="Decrease font weight">
+                        <MinusIcon className="size-3" />
+                      </Button>
+                      <span className="min-w-8 flex-1 text-center text-xs tabular-nums">{headlineZone.fontWeight}</span>
+                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-l-none" onClick={() => updateTextZone("headline", { fontWeight: Math.min(900, headlineZone.fontWeight + 100) })} aria-label="Increase font weight">
+                        <PlusIcon className="size-3" />
+                      </Button>
+                    </div>
                   </div>
-                  <Slider
-                    value={[headlineZone.fontWeight]}
-                    onValueChange={([v]) => updateTextZone("headline", { fontWeight: v ?? 400 })}
-                    min={100}
-                    max={900}
-                    step={100}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <div className="flex justify-between">
+                  <div className="space-y-1.5">
                     <Label className="text-xs">Line height</Label>
-                    <span className="text-muted-foreground text-xs">{headlineZone.lineHeight.toFixed(1)}</span>
+                    <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background w-full max-w-[100px]">
+                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-r-none" onClick={() => updateTextZone("headline", { lineHeight: Math.max(0.5, Math.round((headlineZone.lineHeight - 0.05) * 100) / 100) })} aria-label="Decrease line height">
+                        <MinusIcon className="size-3" />
+                      </Button>
+                      <span className="min-w-8 flex-1 text-center text-xs tabular-nums">{headlineZone.lineHeight.toFixed(1)}</span>
+                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-l-none" onClick={() => updateTextZone("headline", { lineHeight: Math.min(3, Math.round((headlineZone.lineHeight + 0.05) * 100) / 100) })} aria-label="Increase line height">
+                        <PlusIcon className="size-3" />
+                      </Button>
+                    </div>
                   </div>
-                  <Slider
-                    value={[headlineZone.lineHeight]}
-                    onValueChange={([v]) => updateTextZone("headline", { lineHeight: v ?? 1 })}
-                    min={0.5}
-                    max={3}
-                    step={0.05}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <div className="flex justify-between">
+                  <div className="space-y-1.5">
                     <Label className="text-xs">Max lines</Label>
-                    <span className="text-muted-foreground text-xs">{headlineZone.maxLines}</span>
+                    <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background w-full max-w-[100px]">
+                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-r-none" onClick={() => updateTextZone("headline", { maxLines: Math.max(1, headlineZone.maxLines - 1) })} aria-label="Decrease max lines">
+                        <MinusIcon className="size-3" />
+                      </Button>
+                      <span className="min-w-6 flex-1 text-center text-xs tabular-nums">{headlineZone.maxLines}</span>
+                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-l-none" onClick={() => updateTextZone("headline", { maxLines: Math.min(20, headlineZone.maxLines + 1) })} aria-label="Increase max lines">
+                        <PlusIcon className="size-3" />
+                      </Button>
+                    </div>
                   </div>
-                  <Slider
-                    value={[headlineZone.maxLines]}
-                    onValueChange={([v]) => updateTextZone("headline", { maxLines: v ?? 1 })}
-                    min={1}
-                    max={20}
-                    step={1}
-                  />
                 </div>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Align</Label>
-                <Select
-                  value={headlineZone.align}
-                  onValueChange={(v) => updateTextZone("headline", { align: v as "left" | "center" })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="left">Left</SelectItem>
-                    <SelectItem value="center">Center</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Text color</Label>
-                <ColorPicker
-                  value={headlineZone.color ?? ""}
-                  onChange={(v) => updateTextZone("headline", { color: v.trim() || undefined })}
-                  placeholder="Auto (contrast)"
-                />
+                <div className="space-y-1 mt-4">
+                  <Label className="text-xs">Align</Label>
+                  <Select value={headlineZone.align} onValueChange={(v) => updateTextZone("headline", { align: v as "left" | "center" })}>
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="left">Left</SelectItem>
+                      <SelectItem value="center">Center</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="mt-4">
+                  <Label className="text-xs block mb-1.5">Text color</Label>
+                  <ColorPicker value={headlineZone.color ?? ""} onChange={(v) => updateTextZone("headline", { color: v.trim() || undefined })} placeholder="Auto (contrast)" />
+                </div>
               </div>
             </div>
-          </section>
+          </div>
         )}
 
         {bodyZone && (
-          <section>
-            <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
-              Body zone
-            </p>
+          <div className="rounded-lg border border-border/50 bg-muted/5 p-3">
+            <h3 className="text-xs font-semibold text-foreground mb-2">Body zone</h3>
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                {(["x", "y", "w", "h"] as const).map((key) => (
-                  <div key={key} className="space-y-2">
-                    <div className="flex justify-between">
-                      <Label className="text-xs capitalize">{key}</Label>
-                      <span className="text-muted-foreground text-xs">{bodyZone[key]}</span>
-                    </div>
-                    <Slider
-                      value={[bodyZone[key]]}
-                      onValueChange={([v]) => updateTextZone("body", { [key]: v ?? (key === "x" || key === "y" ? 0 : 1) })}
-                      min={key === "w" || key === "h" ? 1 : 0}
-                      max={1080}
-                      step={8}
-                    />
-                  </div>
-                ))}
+              <div>
+                <p className="text-muted-foreground text-[11px] mb-2">Position & size (px)</p>
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                  {(["x", "y", "w", "h"] as const).map((key) => {
+                    const min = key === "w" || key === "h" ? 1 : 0;
+                    const step = 8;
+                    const label = key === "x" ? "X" : key === "y" ? "Y" : key === "w" ? "Width" : "Height";
+                    return (
+                      <div key={key} className="space-y-1.5">
+                        <Label className="text-xs">{label}</Label>
+                        <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background w-full max-w-[140px]">
+                          <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-r-none" onClick={() => updateTextZone("body", { [key]: Math.max(min, bodyZone[key] - step) })} aria-label={`Decrease ${key}`}>
+                            <MinusIcon className="size-3" />
+                          </Button>
+                          <span className="min-w-8 flex-1 text-center text-xs tabular-nums">{bodyZone[key]}</span>
+                          <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-l-none" onClick={() => updateTextZone("body", { [key]: Math.min(1080, bodyZone[key] + step) })} aria-label={`Increase ${key}`}>
+                            <PlusIcon className="size-3" />
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                <div className="space-y-2">
-                  <div className="flex justify-between">
+              <div>
+                <p className="text-muted-foreground text-[11px] mb-2">Typography</p>
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                  <div className="space-y-1.5">
                     <Label className="text-xs">Font size</Label>
-                    <span className="text-muted-foreground text-xs">{bodyZone.fontSize}px</span>
+                    <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background w-full max-w-[100px]">
+                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-r-none" onClick={() => updateTextZone("body", { fontSize: Math.max(8, bodyZone.fontSize - 2) })} aria-label="Decrease font size">
+                        <MinusIcon className="size-3" />
+                      </Button>
+                      <span className="min-w-8 flex-1 text-center text-xs tabular-nums">{bodyZone.fontSize}</span>
+                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-l-none" onClick={() => updateTextZone("body", { fontSize: Math.min(120, bodyZone.fontSize + 2) })} aria-label="Increase font size">
+                        <PlusIcon className="size-3" />
+                      </Button>
+                    </div>
                   </div>
-                  <Slider
-                    value={[bodyZone.fontSize]}
-                    onValueChange={([v]) => updateTextZone("body", { fontSize: v ?? 8 })}
-                    min={8}
-                    max={120}
-                    step={2}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <div className="flex justify-between">
+                  <div className="space-y-1.5">
                     <Label className="text-xs">Font weight</Label>
-                    <span className="text-muted-foreground text-xs">{bodyZone.fontWeight}</span>
+                    <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background w-full max-w-[100px]">
+                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-r-none" onClick={() => updateTextZone("body", { fontWeight: Math.max(100, bodyZone.fontWeight - 100) })} aria-label="Decrease font weight">
+                        <MinusIcon className="size-3" />
+                      </Button>
+                      <span className="min-w-8 flex-1 text-center text-xs tabular-nums">{bodyZone.fontWeight}</span>
+                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-l-none" onClick={() => updateTextZone("body", { fontWeight: Math.min(900, bodyZone.fontWeight + 100) })} aria-label="Increase font weight">
+                        <PlusIcon className="size-3" />
+                      </Button>
+                    </div>
                   </div>
-                  <Slider
-                    value={[bodyZone.fontWeight]}
-                    onValueChange={([v]) => updateTextZone("body", { fontWeight: v ?? 400 })}
-                    min={100}
-                    max={900}
-                    step={100}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <div className="flex justify-between">
+                  <div className="space-y-1.5">
                     <Label className="text-xs">Line height</Label>
-                    <span className="text-muted-foreground text-xs">{bodyZone.lineHeight.toFixed(1)}</span>
+                    <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background w-full max-w-[100px]">
+                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-r-none" onClick={() => updateTextZone("body", { lineHeight: Math.max(0.5, Math.round((bodyZone.lineHeight - 0.05) * 100) / 100) })} aria-label="Decrease line height">
+                        <MinusIcon className="size-3" />
+                      </Button>
+                      <span className="min-w-8 flex-1 text-center text-xs tabular-nums">{bodyZone.lineHeight.toFixed(1)}</span>
+                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-l-none" onClick={() => updateTextZone("body", { lineHeight: Math.min(3, Math.round((bodyZone.lineHeight + 0.05) * 100) / 100) })} aria-label="Increase line height">
+                        <PlusIcon className="size-3" />
+                      </Button>
+                    </div>
                   </div>
-                  <Slider
-                    value={[bodyZone.lineHeight]}
-                    onValueChange={([v]) => updateTextZone("body", { lineHeight: v ?? 1 })}
-                    min={0.5}
-                    max={3}
-                    step={0.05}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <div className="flex justify-between">
+                  <div className="space-y-1.5">
                     <Label className="text-xs">Max lines</Label>
-                    <span className="text-muted-foreground text-xs">{bodyZone.maxLines}</span>
+                    <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background w-full max-w-[100px]">
+                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-r-none" onClick={() => updateTextZone("body", { maxLines: Math.max(1, bodyZone.maxLines - 1) })} aria-label="Decrease max lines">
+                        <MinusIcon className="size-3" />
+                      </Button>
+                      <span className="min-w-6 flex-1 text-center text-xs tabular-nums">{bodyZone.maxLines}</span>
+                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-l-none" onClick={() => updateTextZone("body", { maxLines: Math.min(20, bodyZone.maxLines + 1) })} aria-label="Increase max lines">
+                        <PlusIcon className="size-3" />
+                      </Button>
+                    </div>
                   </div>
-                  <Slider
-                    value={[bodyZone.maxLines]}
-                    onValueChange={([v]) => updateTextZone("body", { maxLines: v ?? 1 })}
-                    min={1}
-                    max={20}
-                    step={1}
-                  />
                 </div>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Align</Label>
-                <Select
-                  value={bodyZone.align}
-                  onValueChange={(v) => updateTextZone("body", { align: v as "left" | "center" })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="left">Left</SelectItem>
-                    <SelectItem value="center">Center</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Text color</Label>
-                <ColorPicker
-                  value={bodyZone.color ?? ""}
-                  onChange={(v) => updateTextZone("body", { color: v.trim() || undefined })}
-                  placeholder="Auto (contrast)"
-                />
+                <div className="space-y-1 mt-4">
+                  <Label className="text-xs">Align</Label>
+                  <Select value={bodyZone.align} onValueChange={(v) => updateTextZone("body", { align: v as "left" | "center" })}>
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="left">Left</SelectItem>
+                      <SelectItem value="center">Center</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="mt-4">
+                  <Label className="text-xs block mb-1.5">Text color</Label>
+                  <ColorPicker value={bodyZone.color ?? ""} onChange={(v) => updateTextZone("body", { color: v.trim() || undefined })} placeholder="Auto (contrast)" />
+                </div>
               </div>
             </div>
-          </section>
+          </div>
         )}
-
-        <section>
-          <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
-            Background
-          </p>
+          </section>
+            )}
+            {templateTab === "background" && (
+          <section className="space-y-4" aria-label="Background">
+        <div className="rounded-lg border border-border/50 bg-muted/5 p-3">
+          <h3 className="text-xs font-semibold text-foreground mb-2">Background</h3>
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <Label>Allow background image</Label>
@@ -752,7 +793,7 @@ export function TemplateBuilderForm({
                   }))
                 }
               >
-                <SelectTrigger>
+                <SelectTrigger className="h-9 rounded-md border-input/80 bg-background text-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -763,12 +804,10 @@ export function TemplateBuilderForm({
               </Select>
             </div>
           </div>
-        </section>
+        </div>
 
-        <section className={config.backgroundRules.defaultStyle !== "darken" ? "opacity-70" : undefined}>
-          <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
-            Overlays
-          </p>
+        <div className={config.backgroundRules.defaultStyle !== "darken" ? "opacity-70" : undefined}>
+          <p className="text-xs font-semibold text-foreground mb-2 mt-4">Overlays</p>
           <div className="space-y-4">
             {config.backgroundRules.defaultStyle !== "darken" ? (
               <p className="text-muted-foreground text-sm">Default overlay must be gradient.</p>
@@ -795,7 +834,7 @@ export function TemplateBuilderForm({
             {config.overlays.gradient.enabled && (
               <div className="space-y-4">
                 <div className="space-y-1">
-                  <Label className="text-xs">Direction</Label>
+                  <Label className="text-xs">Gradient position</Label>
                   <Select
                     value={config.overlays.gradient.direction}
                     onValueChange={(v) =>
@@ -807,7 +846,7 @@ export function TemplateBuilderForm({
                       }))
                     }
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="h-9 rounded-md border-input/80 bg-background text-sm">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -855,7 +894,7 @@ export function TemplateBuilderForm({
                 </div>
                 <div className="space-y-2">
                   <div className="flex justify-between">
-                    <Label className="text-xs">Extent (0–100%)</Label>
+                    <Label className="text-xs">Gradient spread (0–100%)</Label>
                     <span className="text-muted-foreground text-xs">{config.overlays.gradient.extent ?? 50}%</span>
                   </div>
                   <Slider
@@ -872,10 +911,11 @@ export function TemplateBuilderForm({
                     max={100}
                     step={5}
                   />
+                  <p className="text-muted-foreground text-[11px]">How far the gradient reaches from the dark side.</p>
                 </div>
                 <div className="space-y-2">
                   <div className="flex justify-between">
-                    <Label className="text-xs">Solid overlay (0–100%)</Label>
+                    <Label className="text-xs">Solid block (0–100%)</Label>
                     <span className="text-muted-foreground text-xs">{config.overlays.gradient.solidSize ?? 25}%</span>
                   </div>
                   <Slider
@@ -892,8 +932,8 @@ export function TemplateBuilderForm({
                     max={100}
                     step={5}
                   />
-                  <p className="text-muted-foreground text-xs">
-                    0% = full gradient transition. 100% = solid overlay. Extent 100 + Solid 100 = full solid color.
+                  <p className="text-muted-foreground text-[11px]">
+                    0% = soft gradient fade. 100% = solid color block. Spread 100% + Solid 100% = full solid.
                   </p>
                 </div>
               </div>
@@ -901,12 +941,13 @@ export function TemplateBuilderForm({
             </>
             )}
           </div>
-        </section>
-
-        <section>
-          <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
-            Chrome
-          </p>
+        </div>
+          </section>
+            )}
+            {templateTab === "more" && (
+          <section className="space-y-4" aria-label="More">
+        <div className="rounded-lg border border-border/50 bg-muted/5 p-3">
+          <h3 className="text-xs font-semibold text-foreground mb-2">Watermark & chrome</h3>
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <Label>Show swipe hint</Label>
@@ -1117,62 +1158,24 @@ export function TemplateBuilderForm({
               </div>
             )}
           </div>
-        </section>
-
-        <div className="flex gap-2 pt-2">
-          <Button type="submit" disabled={loading} loading={loading}>
-            {loading ? "Saving…" : mode === "create" ? "Create template" : "Save changes"}
-          </Button>
-          <Button variant="outline" type="button" asChild>
-            <Link href="/templates">Cancel</Link>
-          </Button>
         </div>
-      </form>
 
-        {/* Mobile: tab to open preview (hidden when panel is open) */}
-        {isMobile && !mobilePreviewOpen && (
-          <button
-            type="button"
-            onClick={() => setMobilePreviewOpen(true)}
-            className="fixed right-0 top-1/2 -translate-y-1/2 z-40 flex items-center justify-center w-10 h-16 rounded-l-lg border border-r-0 border-border/80 bg-card shadow-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-            aria-label="Show preview"
-          >
-            <ChevronLeftIcon className="size-5" aria-hidden />
-          </button>
-        )}
-
-        {/* Mobile: slide-out overlay panel with close tab on left edge */}
-        {isMobile && (
-          <>
-            <div
-              className={`fixed inset-0 z-50 bg-black/40 transition-opacity duration-200 ${mobilePreviewOpen ? "opacity-100" : "opacity-0 pointer-events-none"}`}
-              onClick={() => setMobilePreviewOpen(false)}
-              aria-hidden="true"
-            />
-            <div
-              className={`fixed right-0 top-0 bottom-0 z-50 w-[min(100vw,580px)] bg-background shadow-xl transition-transform duration-200 ease-out overflow-y-auto ${mobilePreviewOpen ? "translate-x-0" : "translate-x-full"}`}
-            >
-              <button
-                type="button"
-                onClick={() => setMobilePreviewOpen(false)}
-                className="absolute left-0 top-1/2 -translate-y-1/2 z-10 flex items-center justify-center w-10 h-16 rounded-r-lg border border-l-0 border-border/80 bg-card shadow-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-                aria-label="Hide preview"
-              >
-                <ChevronRightIcon className="size-5" aria-hidden />
-              </button>
-              <div className="pl-14 pr-4 py-4 space-y-4">
-                {templatePreviewContent}
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* Desktop: sticky sidebar */}
-        {!isMobile && (
-          <div className="lg:sticky lg:top-6 lg:w-80 lg:shrink-0 space-y-4">
-            {templatePreviewContent}
+        <div className="border-t border-border/40 pt-4">
+          <h3 className="text-xs font-semibold text-foreground mb-2">Actions</h3>
+          <div className="flex gap-2">
+            <Button type="submit" disabled={loading} loading={loading}>
+              {loading ? "Saving…" : mode === "create" ? "Create template" : "Save changes"}
+            </Button>
+            <Button variant="outline" type="button" asChild>
+              <Link href="/templates">Cancel</Link>
+            </Button>
           </div>
-        )}
-    </div>
+        </div>
+          </section>
+            )}
+          </div>
+        </div>
+      </section>
+    </form>
   );
 }

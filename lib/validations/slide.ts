@@ -132,7 +132,7 @@ export const slideMetaSchema = z.object({
   show_counter: z.boolean().optional(),
   /** Override watermark/logo visibility. First, second, last = on by default; middle = off. */
   show_watermark: z.boolean().optional(),
-  /** When false, hide "Made with KarouselMaker.com" attribution. Pro only. Default true. */
+  /** When false, hide "Watermark KarouselMaker.com" attribution. Pro only. Default true. */
   show_made_with: z.boolean().optional(),
   /** Override headline font size (px). 8–200. */
   headline_font_size: z.number().int().min(8).max(200).optional(),

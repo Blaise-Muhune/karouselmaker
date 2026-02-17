@@ -69,7 +69,12 @@ export async function applyToAllSlides(
     const slidePatch = { ...patch };
     if (patch.meta !== undefined) {
       const existingMeta = (slide.meta as Record<string, unknown>) ?? {};
-      slidePatch.meta = { ...existingMeta, ...(patch.meta as Record<string, unknown>) } as Json;
+      const incomingMeta = { ...(patch.meta as Record<string, unknown>) };
+      // Never copy highlight spans to other slides: indices are for the source slide's text only.
+      // Applying them to different headline/body text causes wrong characters highlighted and layout issues.
+      delete incomingMeta.headline_highlights;
+      delete incomingMeta.body_highlights;
+      slidePatch.meta = { ...existingMeta, ...incomingMeta } as Json;
     }
     await updateSlide(user.id, slide.id, slidePatch);
   }

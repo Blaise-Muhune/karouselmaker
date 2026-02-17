@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useLayoutEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { SlidePreview, type SlideBackgroundOverride } from "@/components/renderer/SlidePreview";
@@ -55,6 +55,7 @@ import {
   Maximize2Icon,
   MinusIcon,
   MonitorIcon,
+  MoreHorizontal,
   PlusIcon,
   PaletteIcon,
   ScissorsIcon,
@@ -65,6 +66,7 @@ import {
   UploadIcon,
   XIcon,
 } from "lucide-react";
+import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { ColorPicker } from "@/components/ui/color-picker";
 import { OVERLAY_PRESETS, PRESET_CUSTOM_ID, type OverlayPreset } from "@/lib/editor/overlayPresets";
 import { HIGHLIGHT_COLORS, expandSelectionToWordBoundaries, normalizeHighlightSpansToWords, type HighlightSpan } from "@/lib/editor/inlineFormat";
@@ -174,9 +176,9 @@ export type ExportFormat = "png" | "jpeg";
 export type ExportSize = "1080x1080" | "1080x1350" | "1080x1920";
 
 const EXPORT_SIZE_LABELS: Record<ExportSize, string> = {
-  "1080x1080": "1080×1080 (square)",
-  "1080x1350": "1080×1350 (4:5)",
-  "1080x1920": "1080×1920 (9:16)",
+  "1080x1080": "1:1",
+  "1080x1350": "4:5",
+  "1080x1920": "9:16",
 };
 
 type SlideEditFormProps = {
@@ -191,6 +193,9 @@ type SlideEditFormProps = {
   backHref: string;
   editorPath: string;
   carouselId: string;
+  /** For breadcrumbs: project and carousel names */
+  projectName?: string;
+  carouselTitle?: string;
   /** Export format and size (apply to all slides). */
   initialExportFormat?: ExportFormat | null;
   initialExportSize?: ExportSize | null;
@@ -206,6 +211,8 @@ type SlideEditFormProps = {
   initialImageSources?: ("brave" | "unsplash" | "google")[] | null;
   /** Hook only: resolved URL for second image (circle). */
   initialSecondaryBackgroundImageUrl?: string | null;
+  /** Initial editor tab (from URL ?tab=). Preserved when using Prev/Next. */
+  initialEditorTab?: "text" | "layout" | "background" | "more";
 };
 
 function getTemplateConfig(
@@ -229,6 +236,8 @@ export function SlideEditForm({
   backHref,
   editorPath,
   carouselId,
+  projectName,
+  carouselTitle,
   initialExportFormat = "png",
   initialExportSize = "1080x1350",
   initialIncludeFirstSlide = true,
@@ -238,6 +247,7 @@ export function SlideEditForm({
   initialImageSource,
   initialImageSources,
   initialSecondaryBackgroundImageUrl,
+  initialEditorTab,
 }: SlideEditFormProps) {
   const router = useRouter();
   const [headline, setHeadline] = useState(() => slide.headline);
@@ -407,6 +417,8 @@ export function SlideEditForm({
   });
   const [headlineEditMoreOpen, setHeadlineEditMoreOpen] = useState(false);
   const [bodyEditMoreOpen, setBodyEditMoreOpen] = useState(false);
+  const [headlineHighlightOpen, setHeadlineHighlightOpen] = useState(false);
+  const [bodyHighlightOpen, setBodyHighlightOpen] = useState(false);
   const headlineRef = useRef<HTMLTextAreaElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   /** When user opens color picker we lose focus; save selection so we can apply on pick */
@@ -442,14 +454,51 @@ export function SlideEditForm({
     (initialExportSize && ["1080x1080", "1080x1350", "1080x1920"].includes(initialExportSize) ? initialExportSize : "1080x1350") as ExportSize
   );
   const [updatingExportSettings, setUpdatingExportSettings] = useState(false);
+  const [exportingFull, setExportingFull] = useState(false);
+  const [exportFullError, setExportFullError] = useState<string | null>(null);
   const [mobileBannerDismissed, setMobileBannerDismissed] = useState(false);
-  const [mobilePreviewOpen, setMobilePreviewOpen] = useState(false);
+  const [editorTab, setEditorTab] = useState<"text" | "layout" | "background" | "more">(initialEditorTab ?? "text");
   const [previewExpanded, setPreviewExpanded] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [pendingDownload, setPendingDownload] = useState<{ url: string; filename: string } | null>(null);
+  const [savedFeedback, setSavedFeedback] = useState(false);
+  const lastSavedRef = useRef<string>(
+    JSON.stringify({
+      headline: slide.headline,
+      body: slide.body ?? "",
+      templateId: slide.template_id ?? null,
+      showCounter: (slide.meta as { show_counter?: boolean } | null)?.show_counter ?? false,
+      showWatermark: (slide.meta as { show_watermark?: boolean } | null)?.show_watermark ?? false,
+      showMadeWith: (slide.meta as { show_made_with?: boolean } | null)?.show_made_with ?? !isPro,
+    })
+  );
   const previewWrapRef = useRef<HTMLDivElement>(null);
   const [previewWrapWidth, setPreviewWrapWidth] = useState<number | null>(null);
+  const headerRef = useRef<HTMLElement>(null);
+  const mainScrollRef = useRef<HTMLDivElement>(null);
+  const lastScrollTopRef = useRef(0);
+  const [headerVisible, setHeaderVisible] = useState(true);
+  const [headerHeight, setHeaderHeight] = useState(56);
+
+  const currentSnapshot = JSON.stringify({
+    headline,
+    body,
+    templateId,
+    showCounter,
+    showWatermark,
+    showMadeWith,
+  });
+  const hasUnsavedChanges = currentSnapshot !== lastSavedRef.current;
+
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) e.preventDefault();
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [hasUnsavedChanges]);
+
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 1023px)");
     const handler = () => setIsMobile(mq.matches);
@@ -457,6 +506,33 @@ export function SlideEditForm({
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);
   }, []);
+
+  useLayoutEffect(() => {
+    if (!isMobile) {
+      setHeaderVisible(true);
+      return;
+    }
+    if (headerRef.current && headerVisible) setHeaderHeight(headerRef.current.offsetHeight);
+  }, [isMobile, headerVisible]);
+
+  const handleMainScroll = useCallback(() => {
+    if (!isMobile) return;
+    const main = mainScrollRef.current;
+    if (!main) return;
+    const st = main.scrollTop;
+    const last = lastScrollTopRef.current;
+    lastScrollTopRef.current = st;
+    if (st > last && st > 50) setHeaderVisible(false);
+    else if (st < last || st <= 30) setHeaderVisible(true);
+  }, [isMobile]);
+
+  useEffect(() => {
+    const main = mainScrollRef.current;
+    if (!isMobile || !main) return;
+    main.addEventListener("scroll", handleMainScroll, { passive: true });
+    return () => main.removeEventListener("scroll", handleMainScroll);
+  }, [isMobile, handleMainScroll]);
+
   useEffect(() => {
     const el = previewWrapRef.current;
     if (!el) return;
@@ -496,7 +572,6 @@ export function SlideEditForm({
       const hex = color.startsWith("#") ? color : (HIGHLIGHT_COLORS[color] ?? "#facc15");
 
       const ref = target === "headline" ? headlineRef : bodyRef;
-      const getValue = target === "headline" ? () => headline : () => body;
 
       let start: number;
       let end: number;
@@ -590,6 +665,16 @@ export function SlideEditForm({
       );
       setSaving(false);
       if (result.ok) {
+        lastSavedRef.current = JSON.stringify({
+          headline,
+          body,
+          templateId,
+          showCounter,
+          showWatermark,
+          showMadeWith,
+        });
+        setSavedFeedback(true);
+        setTimeout(() => setSavedFeedback(false), 1500);
         if (navigateBack) router.push(backHref);
       } else {
         setSaveError("error" in result ? result.error : "Save failed");
@@ -640,14 +725,22 @@ export function SlideEditForm({
     );
     setSaving(false);
     if (result.ok) {
+      lastSavedRef.current = JSON.stringify({
+        headline,
+        body,
+        templateId,
+        showCounter,
+        showWatermark,
+        showMadeWith,
+      });
+      setSavedFeedback(true);
+      setTimeout(() => setSavedFeedback(false), 1500);
       if (navigateBack) router.push(backHref);
     } else {
       setSaveError("error" in result ? result.error : "Save failed");
     }
     return result;
   };
-
-  const handleSave = () => performSave(true);
 
   const handleDownloadSlide = async () => {
     setDownloading(true);
@@ -678,8 +771,9 @@ export function SlideEditForm({
   const prevSlide = currentSlideIndex > 0 ? slidesList[currentSlideIndex - 1] : null;
   const nextSlide = currentSlideIndex >= 0 && currentSlideIndex < slidesList.length - 1 ? slidesList[currentSlideIndex + 1] ?? null : null;
   const projectId = backHref.split("/")[2];
-  const prevHref = prevSlide ? `/p/${projectId}/c/${carouselId}/s/${prevSlide.id}` : null;
-  const nextHref = nextSlide ? `/p/${projectId}/c/${carouselId}/s/${nextSlide.id}` : null;
+  const tabParam = `tab=${editorTab}`;
+  const prevHref = prevSlide ? `/p/${projectId}/c/${carouselId}/s/${prevSlide.id}?${tabParam}` : null;
+  const nextHref = nextSlide ? `/p/${projectId}/c/${carouselId}/s/${nextSlide.id}?${tabParam}` : null;
 
   const handlePrevNext = async (e: React.MouseEvent, direction: "prev" | "next") => {
     e.preventDefault();
@@ -807,6 +901,33 @@ export function SlideEditForm({
     if (result.ok) router.refresh();
   };
 
+  const handleDownloadFullExport = async () => {
+    setExportingFull(true);
+    setExportFullError(null);
+    try {
+      const res = await fetch(`/api/export/${carouselId}`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setExportFullError(data.error ?? "Export failed");
+        return;
+      }
+      if (data.downloadUrl) {
+        const url = data.downloadUrl as string;
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "carousel.zip";
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        a.click();
+        router.refresh();
+      }
+    } catch {
+      setExportFullError("Export failed");
+    } finally {
+      setExportingFull(false);
+    }
+  };
+
   const handleApplyImageCountToAll = async () => {
     if (validImageCount < 1) return;
     setApplyingImageCount(true);
@@ -845,18 +966,6 @@ export function SlideEditForm({
     const meta = { body_font_size: bodyFontSize ?? defaultBodySize };
     const result = await applyFontSizeToAllSlides(slide.carousel_id, meta, editorPath, applyScope);
     setApplyingFontSize(false);
-    if (result.ok) router.refresh();
-  };
-
-  const handleClearHeadline = async () => {
-    setHeadline("");
-    const result = await updateSlide({ slide_id: slide.id, headline: "" }, editorPath);
-    if (result.ok) router.refresh();
-  };
-
-  const handleClearBody = async () => {
-    setBody("");
-    const result = await updateSlide({ slide_id: slide.id, body: null }, editorPath);
     if (result.ok) router.refresh();
   };
 
@@ -1068,12 +1177,12 @@ export function SlideEditForm({
       };
 
   const overlaySection = (
-    <div className="space-y-3 rounded-xl border border-border/50 bg-muted/10 p-4">
+    <div className="space-y-3 rounded-lg border border-border/50 bg-muted/5 p-3">
       <div className="flex items-center justify-between gap-2">
-        <Label className="flex items-center gap-2 text-sm font-medium text-foreground">
+        <h3 className="text-xs font-semibold text-foreground flex items-center gap-2">
           <PaletteIcon className="size-4 text-muted-foreground" />
-          Overlay
-        </Label>
+          Color & overlay
+        </h3>
         {totalSlides > 1 && (
           <Button
             type="button"
@@ -1091,7 +1200,7 @@ export function SlideEditForm({
       </div>
         <div className="flex flex-wrap items-end gap-4">
         <div className="space-y-1.5">
-          <span className="text-muted-foreground text-xs font-medium">Position</span>
+          <span className="text-muted-foreground text-xs font-medium">Gradient position</span>
           <Select
             value={background.overlay?.direction ?? "bottom"}
             onValueChange={(v: "top" | "bottom" | "left" | "right") =>
@@ -1102,7 +1211,7 @@ export function SlideEditForm({
             }
           >
             <SelectTrigger className="h-10 w-[120px] rounded-lg border-input/80 bg-background">
-              <SelectValue placeholder="Position" />
+              <SelectValue placeholder="Gradient position" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="top">Top</SelectItem>
@@ -1174,7 +1283,7 @@ export function SlideEditForm({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-border/60">
           <div className="space-y-2">
             <div className="flex justify-between">
-              <Label className="text-xs">Extent (0–100%)</Label>
+              <Label className="text-xs">Gradient spread (0–100%)</Label>
               <span className="text-muted-foreground text-xs">{effectiveExtent}%</span>
             </div>
             <Slider
@@ -1189,10 +1298,11 @@ export function SlideEditForm({
               max={100}
               step={5}
             />
+            <p className="text-muted-foreground text-[11px]">How far the gradient reaches from the dark side.</p>
           </div>
           <div className="space-y-2">
             <div className="flex justify-between">
-              <Label className="text-xs">Solid overlay (0–100%)</Label>
+              <Label className="text-xs">Solid block (0–100%)</Label>
               <span className="text-muted-foreground text-xs">{effectiveSolidSize}%</span>
             </div>
             <Slider
@@ -1207,8 +1317,8 @@ export function SlideEditForm({
               max={100}
               step={5}
             />
-            <p className="text-muted-foreground text-xs">
-              0% = full gradient fade. 100% = solid block. Extent 100 + Solid 100 = full solid color.
+            <p className="text-muted-foreground text-[11px]">
+              0% = soft gradient fade. 100% = solid color block. Spread 100% + Solid 100% = full solid.
             </p>
           </div>
         </div>
@@ -1217,35 +1327,15 @@ export function SlideEditForm({
   );
 
   const previewContent = (
-    <div className="flex flex-col items-start rounded-xl border border-border/50 bg-muted/5 p-5 sm:p-6">
-      <div className="flex items-center justify-between gap-2 mb-4 w-full">
-        <div className="flex items-center gap-2">
-          <h2 className="text-base font-semibold text-foreground">Live preview</h2>
-          <button type="button" onClick={() => setInfoSection("preview")} className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors" aria-label="Help">
-            <InfoIcon className="size-4" />
+    <div className="flex flex-col rounded-xl border border-border/50 bg-muted/5 overflow-hidden">
+      {/* Top bar: Download (icon) + Save + Expand, and Slide/Size */}
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 border-b border-border/40 bg-card/30">
+        <div className="flex items-center gap-2 min-w-0">
+          <h2 className="text-sm font-semibold text-foreground shrink-0">Live preview</h2>
+          <button type="button" onClick={() => setInfoSection("preview")} className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0" aria-label="Preview help" title="Help">
+            <InfoIcon className="size-3.5" />
           </button>
-        </div>
-        <div className="flex items-center gap-1">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
-            onClick={() => setPreviewExpanded(true)}
-            title="Expand preview"
-            aria-label="Expand preview"
-          >
-            <Maximize2Icon className="size-4" />
-          </Button>
-        </div>
-      </div>
-      <p className="text-muted-foreground text-xs mb-3">
-        Export size applies to all slides in this carousel.
-      </p>
-      <div className="flex flex-wrap gap-3 mb-4 w-full">
-        {totalSlides > 1 && (
-          <div className="flex-1 min-w-[100px]">
-            <Label className="text-xs text-muted-foreground mb-1.5 block">Slide</Label>
+          {totalSlides > 1 && (
             <Select
               value={String(currentSlideIndex + 1)}
               onValueChange={async (v) => {
@@ -1253,10 +1343,10 @@ export function SlideEditForm({
                 const target = slidesList[idx];
                 if (!target || target.id === slide.id) return;
                 const result = await performSave(false);
-                if (result.ok) router.push(`/p/${projectId}/c/${carouselId}/s/${target.id}`);
+                if (result.ok) router.push(`/p/${projectId}/c/${carouselId}/s/${target.id}?tab=${editorTab}`);
               }}
             >
-              <SelectTrigger className="h-9 rounded-lg text-sm">
+              <SelectTrigger className="h-8 w-[72px] rounded-md text-xs border-0 bg-transparent shadow-none focus-visible:ring-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1267,16 +1357,13 @@ export function SlideEditForm({
                 ))}
               </SelectContent>
             </Select>
-          </div>
-        )}
-        <div className="flex-1 min-w-[120px]">
-          <Label className="text-xs text-muted-foreground mb-1.5 block">Size</Label>
+          )}
           <Select
             value={exportSize}
             onValueChange={(v) => handleExportSizeChange(v as ExportSize)}
             disabled={!isPro || updatingExportSettings}
           >
-            <SelectTrigger className="h-9 rounded-lg text-sm">
+            <SelectTrigger className="h-8 w-auto min-w-[100px] rounded-md text-xs border-0 bg-transparent shadow-none focus-visible:ring-0">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -1286,156 +1373,180 @@ export function SlideEditForm({
             </SelectContent>
           </Select>
         </div>
-      </div>
-      <div
-        ref={previewWrapRef}
-        className="rounded-lg border border-border/80 shrink-0 max-w-full min-w-0 mx-auto overflow-hidden relative"
-        style={{
-          width: "100%",
-          maxWidth: getPreviewDimensions(exportSize).w,
-          aspectRatio: `${1080}/${exportSize === "1080x1080" ? 1080 : exportSize === "1080x1350" ? 1350 : 1920}`,
-          backgroundColor: isImageMode && background.overlay?.gradient !== false
-            ? (background.overlay?.color ?? "#000000")
-            : (background.color ?? brandKit.primary_color ?? "#0a0a0a"),
-        }}
-      >
-        {templateConfig ? (
-          <div
-            style={{
-              position: "absolute",
-              left: 0,
-              top: 0,
-              width: 1080,
-              height: exportSize === "1080x1080" ? 1080 : exportSize === "1080x1350" ? 1350 : 1920,
-              transform: `scale(${previewWrapWidth != null && previewWrapWidth > 0 ? previewWrapWidth / 1080 : getPreviewDimensions(exportSize).scale})`,
-              transformOrigin: "top left",
-            }}
-          >
-            <SlidePreview
-              slide={{
-                headline,
-                body: body.trim() || null,
-                slide_index: slide.slide_index,
-                slide_type: slide.slide_type,
-              }}
-              templateConfig={templateConfig}
-              brandKit={brandKit}
-              totalSlides={totalSlides}
-              backgroundImageUrl={previewBackgroundImageUrl}
-              backgroundImageUrls={previewBackgroundImageUrls}
-              secondaryBackgroundImageUrl={secondaryBackgroundImageUrlForPreview ?? initialSecondaryBackgroundImageUrl}
-              backgroundOverride={previewBackgroundOverride}
-              showCounterOverride={showCounter}
-              showWatermarkOverride={showWatermark}
-              showMadeWithOverride={showMadeWith}
-              fontOverrides={
-                headlineFontSize != null || bodyFontSize != null
-                  ? { headline_font_size: headlineFontSize, body_font_size: bodyFontSize }
-                  : undefined
-              }
-              zoneOverrides={
-                headlineZoneOverride || bodyZoneOverride
-                  ? { headline: headlineZoneOverride, body: bodyZoneOverride }
-                  : undefined
-              }
-              headlineHighlightStyle={headlineHighlightStyle}
-              bodyHighlightStyle={bodyHighlightStyle}
-              headline_highlights={headlineHighlights.length > 0 ? headlineHighlights : undefined}
-              body_highlights={bodyHighlights.length > 0 ? bodyHighlights : undefined}
-              borderedFrame={!!(previewBackgroundImageUrl || previewBackgroundImageUrls?.length)}
-              imageDisplay={isImageMode ? effectiveImageDisplay : undefined}
-              exportSize={exportSize}
-            />
-          </div>
-        ) : (
-          <div className="flex h-full w-full items-center justify-center text-muted-foreground text-sm">
-            No template
-          </div>
-        )}
-      </div>
-      {/* Preview controls: download, prev/next, save */}
-      <div className="flex flex-col gap-3 mt-4 w-full">
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1 shrink-0">
           {pendingDownload ? (
             <a
               href={pendingDownload.url}
               download={pendingDownload.filename}
-              className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground transition-colors"
+              className="flex items-center justify-center h-8 w-8 rounded-md border border-input bg-background text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
               onClick={() => setPendingDownload(null)}
+              title="Tap to download"
+              aria-label="Download ready"
             >
               <DownloadIcon className="size-4" />
-              Tap to download
             </a>
           ) : (
             <Button
-              variant="outline"
-              size="sm"
-              className="flex-1 justify-center gap-2"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
               onClick={handleDownloadSlide}
               disabled={downloading}
-              title={`Download slide as ${exportFormat.toUpperCase()} (${exportSize})`}
+              title={`Download slide (${exportFormat.toUpperCase()}, ${exportSize})`}
+              aria-label="Download this slide"
             >
               {downloading ? <Loader2Icon className="size-4 animate-spin" /> : <DownloadIcon className="size-4" />}
-              Download
             </Button>
+          )}
+          {hasUnsavedChanges && (
+            <span className="text-muted-foreground text-[11px] px-1.5" aria-live="polite">Unsaved</span>
           )}
           <Button
             variant="default"
             size="sm"
-            className="flex-1 justify-center gap-2"
+            className="h-8 gap-1.5 px-3 text-xs font-medium"
             onClick={() => performSave(false)}
             disabled={saving}
             title="Save slide changes"
           >
-            {saving ? <Loader2Icon className="size-4 animate-spin" /> : <CheckIcon className="size-4" />}
-            Save
+            {saving ? <Loader2Icon className="size-3.5 animate-spin" /> : savedFeedback ? <CheckIcon className="size-3.5" /> : <CheckIcon className="size-3.5" />}
+            {saving ? "Saving…" : savedFeedback ? "Saved" : "Save"}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+            onClick={() => setPreviewExpanded(true)}
+            title="Expand preview (Esc to close)"
+            aria-label="Expand preview"
+          >
+            <Maximize2Icon className="size-4" />
           </Button>
         </div>
-        {totalSlides > 1 && (
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="flex-1"
-              disabled={!prevHref || saving}
-              onClick={(e) => handlePrevNext(e, "prev")}
-              title="Previous slide (saves first)"
-            >
-              <ChevronLeftIcon className="size-4" />
-              Prev
-            </Button>
-            <span className="text-muted-foreground text-xs shrink-0 px-2">
-              {slide.slide_index} / {totalSlides}
-            </span>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="flex-1"
-              disabled={!nextHref || saving}
-              onClick={(e) => handlePrevNext(e, "next")}
-              title="Next slide (saves first)"
-            >
-              Next
-              <ChevronRightIcon className="size-4" />
-            </Button>
-          </div>
+      </div>
+      {/* Canvas with Prev / Next on sides */}
+      <div className="flex items-center justify-center gap-3 p-3">
+        {totalSlides > 1 ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9 shrink-0 rounded-full border border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted/50"
+            disabled={!prevHref || saving}
+            onClick={(e) => handlePrevNext(e, "prev")}
+            title="Previous slide (saves first)"
+            aria-label="Previous slide"
+          >
+            <ChevronLeftIcon className="size-5" />
+          </Button>
+        ) : (
+          <div className="w-9 shrink-0" aria-hidden />
         )}
-        {saveError && (
-          <p className="text-destructive text-sm w-full" role="alert">
-            {saveError}
-          </p>
+        <div className="flex flex-1 min-w-0 justify-center items-center">
+          <div
+            ref={previewWrapRef}
+            className="w-full max-w-full rounded-lg border border-border bg-background/50 shadow-sm overflow-hidden relative"
+            role="img"
+            aria-label="Slide preview"
+            style={{
+              maxWidth: getPreviewDimensions(exportSize).w,
+              aspectRatio: `${1080}/${exportSize === "1080x1080" ? 1080 : exportSize === "1080x1350" ? 1350 : 1920}`,
+              backgroundColor: isImageMode && background.overlay?.gradient !== false
+                ? (background.overlay?.color ?? "#000000")
+                : (background.color ?? brandKit.primary_color ?? "#0a0a0a"),
+            }}
+          >
+          {templateConfig ? (
+            <div
+              style={{
+                position: "absolute",
+                left: 0,
+                top: 0,
+                width: 1080,
+                height: exportSize === "1080x1080" ? 1080 : exportSize === "1080x1350" ? 1350 : 1920,
+                transform: `scale(${previewWrapWidth != null && previewWrapWidth > 0 ? previewWrapWidth / 1080 : getPreviewDimensions(exportSize).scale})`,
+                transformOrigin: "top left",
+              }}
+            >
+              <SlidePreview
+                slide={{
+                  headline,
+                  body: body.trim() || null,
+                  slide_index: slide.slide_index,
+                  slide_type: slide.slide_type,
+                }}
+                templateConfig={templateConfig}
+                brandKit={brandKit}
+                totalSlides={totalSlides}
+                backgroundImageUrl={previewBackgroundImageUrl}
+                backgroundImageUrls={previewBackgroundImageUrls}
+                secondaryBackgroundImageUrl={secondaryBackgroundImageUrlForPreview ?? initialSecondaryBackgroundImageUrl}
+                backgroundOverride={previewBackgroundOverride}
+                showCounterOverride={showCounter}
+                showWatermarkOverride={showWatermark}
+                showMadeWithOverride={showMadeWith}
+                fontOverrides={
+                  headlineFontSize != null || bodyFontSize != null
+                    ? { headline_font_size: headlineFontSize, body_font_size: bodyFontSize }
+                    : undefined
+                }
+                zoneOverrides={
+                  headlineZoneOverride || bodyZoneOverride
+                    ? { headline: headlineZoneOverride, body: bodyZoneOverride }
+                    : undefined
+                }
+                headlineHighlightStyle={headlineHighlightStyle}
+                bodyHighlightStyle={bodyHighlightStyle}
+                headline_highlights={headlineHighlights.length > 0 ? headlineHighlights : undefined}
+                body_highlights={bodyHighlights.length > 0 ? bodyHighlights : undefined}
+                borderedFrame={!!(previewBackgroundImageUrl || previewBackgroundImageUrls?.length)}
+                imageDisplay={isImageMode ? effectiveImageDisplay : undefined}
+                exportSize={exportSize}
+              />
+            </div>
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-muted-foreground text-sm">
+              No template
+            </div>
+          )}
+          </div>
+        </div>
+        {totalSlides > 1 ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9 shrink-0 rounded-full border border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted/50"
+            disabled={!nextHref || saving}
+            onClick={(e) => handlePrevNext(e, "next")}
+            title="Next slide (saves first)"
+            aria-label="Next slide"
+          >
+            <ChevronRightIcon className="size-5" />
+          </Button>
+        ) : (
+          <div className="w-9 shrink-0" aria-hidden />
         )}
       </div>
+      {totalSlides > 1 && (
+        <p className="text-center text-muted-foreground text-[11px] pb-2">
+          {slide.slide_index} of {totalSlides}
+        </p>
+      )}
+      {saveError && (
+        <p className="text-destructive text-sm px-3 pb-2" role="alert">
+          {saveError}
+        </p>
+      )}
     </div>
   );
 
   return (
     <>
-    <div className="space-y-10">
+    <div className="flex flex-col min-h-[calc(100vh-8rem)]">
       {isMobile && !mobileBannerDismissed && (
-        <div className="flex items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3">
+        <div className="flex items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 shrink-0">
           <MonitorIcon className="size-5 shrink-0 text-amber-600 dark:text-amber-500" />
           <p className="text-sm text-amber-800 dark:text-amber-200 flex-1">
             For the best experience, we recommend using a computer to edit slides.
@@ -1451,20 +1562,62 @@ export function SlideEditForm({
           </Button>
         </div>
       )}
-      <header className="flex items-start gap-2">
-        <Button variant="ghost" size="icon-sm" className="-ml-1 shrink-0" asChild>
-          <Link href={backHref}>
-            <ArrowLeftIcon className="size-4" />
-            <span className="sr-only">Back to carousel</span>
-          </Link>
-        </Button>
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">Slide {slide.slide_index}</h1>
-          <p className="text-muted-foreground mt-1 text-sm">
-            {slide.slide_index} of {totalSlides}
-          </p>
+      {isMobile ? (
+        <div
+          className="shrink-0 overflow-hidden transition-[height] duration-200 ease-out"
+          style={{ height: headerVisible ? headerHeight : 0 }}
+          aria-hidden={!headerVisible}
+        >
+          <header
+            ref={headerRef}
+            className={`flex flex-col gap-1.5 px-2 py-2 border-b border-border/60 bg-card/50 transition-transform duration-200 ease-out ${!headerVisible ? "-translate-y-full" : "translate-y-0"}`}
+          >
+            {projectName != null && carouselTitle != null ? (
+              <Breadcrumbs
+                items={[
+                  { label: projectName, href: backHref.replace(/\/c\/[^/]+$/, "") },
+                  { label: carouselTitle, href: backHref },
+                ]}
+                className="text-xs"
+              />
+            ) : null}
+            <div className="flex items-center gap-3 min-w-0">
+              <Button variant="ghost" size="icon-sm" className="shrink-0" asChild>
+                <Link href={backHref}>
+                  <ArrowLeftIcon className="size-4" />
+                  <span className="sr-only">Back to carousel</span>
+                </Link>
+              </Button>
+              <h1 className="text-base font-semibold tracking-tight truncate min-w-0">
+                Slide {slide.slide_index} of {totalSlides}
+              </h1>
+            </div>
+          </header>
         </div>
-      </header>
+      ) : (
+        <header ref={headerRef} className="flex flex-col gap-1.5 shrink-0 px-2 py-2 border-b border-border/60 bg-card/50">
+          {projectName != null && carouselTitle != null ? (
+            <Breadcrumbs
+              items={[
+                { label: projectName, href: backHref.replace(/\/c\/[^/]+$/, "") },
+                { label: carouselTitle, href: backHref },
+              ]}
+              className="text-xs"
+            />
+          ) : null}
+          <div className="flex items-center gap-3 min-w-0">
+            <Button variant="ghost" size="icon-sm" className="shrink-0" asChild>
+              <Link href={backHref}>
+                <ArrowLeftIcon className="size-4" />
+                <span className="sr-only">Back to carousel</span>
+              </Link>
+            </Button>
+            <h1 className="text-base font-semibold tracking-tight truncate min-w-0">
+              Slide {slide.slide_index} of {totalSlides}
+            </h1>
+          </div>
+        </header>
+      )}
 
       <Dialog open={saveTemplateOpen} onOpenChange={setSaveTemplateOpen}>
         <DialogContent showCloseButton>
@@ -1613,65 +1766,61 @@ export function SlideEditForm({
         </DialogContent>
       </Dialog>
 
-      <div className="relative flex gap-0 lg:grid lg:grid-cols-2 lg:gap-12">
-        {/* Form column: full width on mobile, left column on lg */}
-        <div className="flex flex-col gap-6 flex-1 min-w-0 lg:order-1">
-          {totalSlides >= 2 && isPro && (
-            <section className="rounded-lg border border-border/50 bg-muted/10 p-4 space-y-3" aria-label="Apply to all scope">
-              <div>
-                <h3 className="text-sm font-medium text-foreground">Apply to all scope</h3>
-                <p className="text-muted-foreground text-xs mt-0.5">
-                  When you click &quot;Apply to all&quot; on template, overlay, background, or other controls, these checkboxes decide which slides are affected. Your choice is saved for this carousel and applies on every slide.
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-4">
-                <label className="flex cursor-pointer items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={includeFirstSlide}
-                    onChange={async (e) => {
-                      const next = e.target.checked;
-                      setIncludeFirstSlide(next);
-                      await updateApplyScope(
-                        { carousel_id: carouselId, include_first_slide: next, include_last_slide: includeLastSlide },
-                        editorPath
-                      );
-                    }}
-                    className="rounded border-input accent-primary"
-                  />
-                  Include first slide
-                </label>
-                <label className="flex cursor-pointer items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={includeLastSlide}
-                    onChange={async (e) => {
-                      const next = e.target.checked;
-                      setIncludeLastSlide(next);
-                      await updateApplyScope(
-                        { carousel_id: carouselId, include_first_slide: includeFirstSlide, include_last_slide: next },
-                        editorPath
-                      );
-                    }}
-                    className="rounded border-input accent-primary"
-                  />
-                  Include last slide
-                </label>
-              </div>
-            </section>
-          )}
-          <section className={`rounded-lg border border-border/50 bg-muted/10 p-4 space-y-3 ${!isPro ? "pointer-events-none opacity-60" : ""}`} aria-label="Layout">
-            <div className="flex items-center gap-2 mb-4">
-              <LayoutTemplateIcon className="size-4 text-muted-foreground" aria-hidden />
-              <h2 className="text-base font-semibold text-foreground">Layout</h2>
-              <button type="button" onClick={() => setInfoSection("layout")} className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors" aria-label="Help">
-                <InfoIcon className="size-4" />
+      <main
+        ref={mainScrollRef}
+        className="flex-1 min-h-0 flex items-center justify-center p-4 bg-muted/20 overflow-auto"
+      >
+        <div className="w-full max-w-[560px]">{previewContent}</div>
+      </main>
+
+      <section className="shrink-0 border-t border-border md:flex md:flex-col md:items-center md:px-4">
+        <div className="w-full md:max-w-xl md:rounded-t-xl md:border md:border-b-0 md:border-border md:bg-card md:shadow-sm">
+          <div className="flex border-b border-border bg-muted/20 md:bg-muted/20" role="tablist" aria-label="Editor sections">
+            {(["text", "layout", "background", "more"] as const).map((tab) => {
+            const Icon = tab === "text" ? Type : tab === "layout" ? LayoutTemplateIcon : tab === "background" ? PaletteIcon : MoreHorizontal;
+            const label = tab === "text" ? "Text" : tab === "layout" ? "Layout" : tab === "background" ? "Background" : "More";
+            const tabId = `editor-tab-${tab}`;
+            const panelId = `editor-panel-${tab}`;
+            return (
+              <button
+                key={tab}
+                id={tabId}
+                type="button"
+                role="tab"
+                aria-selected={editorTab === tab}
+                aria-controls={panelId}
+                onClick={() => setEditorTab(tab)}
+                className={`flex flex-1 min-w-0 items-center justify-center gap-1.5 py-2 px-2 text-xs capitalize transition-colors border-b-2 -mb-px ${
+                  editorTab === tab
+                    ? "border-primary text-primary bg-background/80 font-semibold"
+                    : "border-transparent text-muted-foreground font-medium hover:text-foreground hover:bg-muted/30"
+                }`}
+              >
+                <Icon className="size-3.5 shrink-0" aria-hidden />
+                <span className="truncate">{label}</span>
               </button>
-            </div>
-            <div className="space-y-4">
+            );
+          })}
+          </div>
+          <div
+            id={`editor-panel-${editorTab}`}
+            role="tabpanel"
+            aria-labelledby={`editor-tab-${editorTab}`}
+            className="max-h-[min(40vh,400px)] overflow-y-auto p-4 bg-card"
+          >
+          {editorTab === "layout" && (
+          <section className={`space-y-5 ${!isPro ? "pointer-events-none opacity-60" : ""}`} aria-label="Layout">
+            <div className="rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-xs font-semibold text-foreground">Template</h3>
+                <button type="button" onClick={() => setInfoSection("layout")} className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Layout help" title="Help">
+                  <InfoIcon className="size-3.5" />
+                </button>
+              </div>
+              <p className="text-muted-foreground text-[11px]">Layout for this slide.</p>
               <Select value={templateId ?? ""} onValueChange={(v) => handleTemplateChange(v || null)} disabled={applyingTemplate}>
-                <SelectTrigger className="h-10 w-full rounded-lg border-input/80 bg-background text-sm">
-                  <SelectValue placeholder="Template" />
+                <SelectTrigger className="h-9 w-full md:max-w-[260px] rounded-md border-input/80 bg-background text-sm">
+                  <SelectValue placeholder="Choose template" />
                 </SelectTrigger>
                 <SelectContent>
                   {templates.map((t) => (
@@ -1680,142 +1829,228 @@ export function SlideEditForm({
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <label className="flex cursor-pointer items-center gap-2 py-2 text-sm hover:bg-muted/50 rounded-lg" title="Show slide number (e.g. 3/10). Applies to all.">
-                <input type="checkbox" checked={showCounter} onChange={(e) => handlePositionNumberChange(e.target.checked)} disabled={applyingDisplay} className="rounded border-input accent-primary" />
-                {applyingDisplay ? <Loader2Icon className="size-4 animate-spin text-muted-foreground" /> : <HashIcon className="size-4 text-muted-foreground" />}
-                <span className="text-sm">Slide #</span>
-              </label>
-              {brandKit.watermark_text && (
-                <label className={`flex items-center gap-2 py-2 text-sm rounded-lg ${isPro ? "cursor-pointer hover:bg-muted/50" : "cursor-not-allowed opacity-60"}`} title={isPro ? "Show logo/watermark on this slide. Default off for Pro." : "Upgrade to Pro to control watermark visibility."}>
-                  <input type="checkbox" checked={showWatermark} onChange={(e) => isPro && setShowWatermark(e.target.checked)} disabled={!isPro} className="rounded border-input accent-primary" />
-                  <span className="text-sm">Logo</span>
-                </label>
-              )}
-              {isPro && (
-                <label className="flex cursor-pointer items-center gap-2 py-2 text-sm hover:bg-muted/50 rounded-lg" title="Show 'Made with KarouselMaker.com' attribution. Applies to all slides including first and last.">
-                  <input type="checkbox" checked={showMadeWith} onChange={(e) => handleMadeWithChange(e.target.checked)} disabled={applyingMadeWith} className="rounded border-input accent-primary" />
-                  {applyingMadeWith ? <Loader2Icon className="size-4 animate-spin text-muted-foreground" /> : null}
-                  <span className="text-sm">Made with</span>
-                </label>
-              )}
-              {totalSlides > 1 && (
-                <Button type="button" variant="ghost" size="sm" className="text-muted-foreground" onClick={handleApplyTemplateToAll} disabled={applyingTemplate} title="Apply template to all">
-                  {applyingTemplate ? <Loader2Icon className="size-4 animate-spin" /> : <CopyIcon className="size-4" />}
-                  Apply to all
-                </Button>
-              )}
-            </div>
-          </section>
-          <section className="rounded-xl border border-border/50 bg-muted/5 p-5 sm:p-6" aria-label="Content">
-            <div className="flex items-center justify-between gap-2 mb-4">
-              <div className="flex items-center gap-2">
-                <Type className="size-4 text-muted-foreground" />
-                <h2 className="text-base font-semibold text-foreground">Content</h2>
-                <button type="button" onClick={() => setInfoSection("content")} className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors" aria-label="Help">
-                  <InfoIcon className="size-4" />
+            <div className="rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-xs font-semibold text-foreground">Show on slide</h3>
+                <button type="button" onClick={() => setInfoSection("layout")} className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Layout help" title="Help">
+                  <InfoIcon className="size-3.5" />
                 </button>
               </div>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <label className="flex cursor-pointer items-center gap-1.5 text-xs">
+                  <input type="checkbox" checked={showCounter} onChange={(e) => handlePositionNumberChange(e.target.checked)} disabled={applyingDisplay} className="rounded border-input accent-primary" />
+                  {applyingDisplay ? <Loader2Icon className="size-3.5 animate-spin" /> : <HashIcon className="size-3.5 text-muted-foreground" />}
+                  Slide #
+                </label>
+                {brandKit.watermark_text && (
+                  <label className={`flex items-center gap-1.5 text-xs ${isPro ? "cursor-pointer" : "cursor-not-allowed opacity-60"}`}>
+                    <input type="checkbox" checked={showWatermark} onChange={(e) => isPro && setShowWatermark(e.target.checked)} disabled={!isPro} className="rounded border-input accent-primary" />
+                    Logo
+                  </label>
+                )}
+                {isPro && (
+                  <label className="flex cursor-pointer items-center gap-1.5 text-xs">
+                    <input type="checkbox" checked={showMadeWith} onChange={(e) => handleMadeWithChange(e.target.checked)} disabled={applyingMadeWith} className="rounded border-input accent-primary" />
+                    {applyingMadeWith ? <Loader2Icon className="size-3.5 animate-spin" /> : null}
+                    Watermark
+                  </label>
+                )}
+              </div>
             </div>
-            <div className="space-y-3">
+            {totalSlides >= 2 && (
+              <>
+                <div className="rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3">
+                  <h3 className="text-xs font-semibold text-foreground">When applying to all</h3>
+                  <p className="text-muted-foreground text-[11px]">Template and background apply to slides matching these options.</p>
+                  <div className="flex items-center gap-4">
+                    <label className="flex cursor-pointer items-center gap-1.5 text-xs">
+                      <input
+                        type="checkbox"
+                        checked={includeFirstSlide}
+                        onChange={async (e) => {
+                          const next = e.target.checked;
+                          setIncludeFirstSlide(next);
+                          await updateApplyScope(
+                            { carousel_id: carouselId, include_first_slide: next, include_last_slide: includeLastSlide },
+                            editorPath
+                          );
+                        }}
+                        className="rounded border-input accent-primary"
+                      />
+                      First slide
+                    </label>
+                    <label className="flex cursor-pointer items-center gap-1.5 text-xs">
+                      <input
+                        type="checkbox"
+                        checked={includeLastSlide}
+                        onChange={async (e) => {
+                          const next = e.target.checked;
+                          setIncludeLastSlide(next);
+                          await updateApplyScope(
+                            { carousel_id: carouselId, include_first_slide: includeFirstSlide, include_last_slide: next },
+                            editorPath
+                          );
+                        }}
+                        className="rounded border-input accent-primary"
+                      />
+                      Last slide
+                    </label>
+                  </div>
+                </div>
+                <Button type="button" variant="secondary" size="sm" className="w-full h-9 text-xs font-medium" onClick={handleApplyTemplateToAll} disabled={applyingTemplate} title="Use this template on every slide (respects First/Last options above)">
+                  {applyingTemplate ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
+                  Apply this template to all slides
+                </Button>
+              </>
+            )}
+          </section>
+          )}
+          {editorTab === "text" && (
+          <section className="space-y-5" aria-label="Text">
+            {/* Headline */}
+            <div className="rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <Label htmlFor="headline" className="text-sm font-medium text-foreground">
-                  Headline
-                </Label>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-foreground" onClick={() => setHeadlineEditMoreOpen((o) => !o)} disabled={!isPro} title="Position, size, max lines, align">
-                    {headlineEditMoreOpen ? <ChevronUpIcon className="size-3.5" /> : <ChevronDownIcon className="size-3.5" />}
-                    Edit position
-                  </Button>
-                  <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-foreground" onClick={handleClearHeadline} disabled={!isPro} title="Clear headline text">
-                    <Trash2 className="size-3.5 mr-1" />
-                    Clear
-                  </Button>
-                  {totalSlides > 1 && isPro && (
+                <h3 className="text-xs font-semibold text-foreground">Headline</h3>
+                <div className="flex flex-wrap items-center gap-2">
+                  {isPro && (
                     <>
-                      <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-foreground" onClick={handleApplyHeadlineFontSizeToAll} disabled={applyingFontSize} title="Apply headline font size to all slides">
-                        {applyingFontSize ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
-                        Apply size to all
-                      </Button>
-                      <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-foreground" onClick={handleApplyClearHeadlineToAll} disabled={applyingClear} title="Clear headline text on all other slides">
-                        {applyingClear ? <Loader2Icon className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
-                        Apply clear to all
-                      </Button>
+                      <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background">
+                        <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 rounded-r-none" onClick={() => setHeadlineFontSize((v) => Math.max(24, (v ?? defaultHeadlineSize) - 4))} aria-label="Decrease headline size">
+                          <MinusIcon className="size-3" />
+                        </Button>
+                        <span className="min-w-8 text-center text-xs tabular-nums" aria-hidden>{headlineFontSize ?? defaultHeadlineSize}</span>
+                        <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 rounded-l-none" onClick={() => setHeadlineFontSize((v) => Math.min(160, (v ?? defaultHeadlineSize) + 4))} aria-label="Increase headline size">
+                          <PlusIcon className="size-3" />
+                        </Button>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0 rounded-md border border-input/80 bg-background px-1.5 py-0.5">
+                        <Label className="text-[11px] text-muted-foreground whitespace-nowrap">Color</Label>
+                        <ColorPicker
+                          value={headlineZoneOverride?.color ?? ""}
+                          onChange={(v) => setHeadlineZoneOverride((o) => ({ ...o, color: v.trim() || undefined }))}
+                          placeholder="Auto"
+                          compact
+                        />
+                      </div>
                     </>
                   )}
+                  <button type="button" onClick={() => setInfoSection("content")} className="rounded p-0.5 text-muted-foreground hover:bg-muted" aria-label="Content help" title="Help">
+                    <InfoIcon className="size-3.5" />
+                  </button>
                 </div>
+              </div>
+              <Textarea
+                ref={headlineRef}
+                id="headline"
+                value={headline}
+                onChange={(e) => setHeadline(e.target.value)}
+                placeholder="Enter your headline..."
+                className="min-h-[72px] w-full md:max-w-[360px] resize-none rounded-md border-input/80 text-sm field-sizing-content px-3 py-2"
+                rows={2}
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                {isPro && (
+                  <>
+                    <Button type="button" variant="secondary" size="sm" className="h-7 text-xs" onClick={() => { setHeadlineHighlightOpen(false); setHeadlineEditMoreOpen((o) => !o); }}>
+                      {headlineEditMoreOpen ? <ChevronUpIcon className="size-3" /> : <ChevronDownIcon className="size-3" />} Layout
+                    </Button>
+                    <button
+                      type="button"
+                      onClick={() => { setHeadlineEditMoreOpen(false); setHeadlineHighlightOpen((o) => !o); }}
+                      className="flex items-center gap-1.5 rounded-md py-1.5 pr-1 text-left text-[11px] font-medium text-muted-foreground hover:text-foreground"
+                      aria-expanded={headlineHighlightOpen}
+                    >
+                      <span>Highlight</span>
+                      {headlineHighlightOpen ? <ChevronUpIcon className="size-3.5 shrink-0" /> : <ChevronDownIcon className="size-3.5 shrink-0" />}
+                    </button>
+                  </>
+                )}
+                {totalSlides > 1 && isPro && (
+                  <>
+                    <Button type="button" variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" onClick={handleApplyHeadlineFontSizeToAll} disabled={applyingFontSize}>
+                      {applyingFontSize ? <Loader2Icon className="size-3 animate-spin" /> : <CopyIcon className="size-3" />} Size to all
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" onClick={handleApplyClearHeadlineToAll} disabled={applyingClear} title="Clear headline on every slide">
+                      {applyingClear ? <Loader2Icon className="size-3 animate-spin" /> : <Trash2 className="size-3" />} Clear on all slides
+                    </Button>
+                  </>
+                )}
               </div>
             {isPro && headlineEditMoreOpen && templateConfig?.textZones?.find((z) => z.id === "headline") && (
               <div className="rounded-lg border border-border/50 bg-muted/10 p-4 space-y-4 mb-3">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground text-xs font-medium">Headline position & layout</span>
+                  <span className="text-xs font-medium text-foreground">Headline position & layout</span>
                   {totalSlides > 1 && (
-                    <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-foreground" onClick={handleApplyHeadlineZoneToAll} disabled={applyingHeadlineZone || !headlineZoneOverride || Object.keys(headlineZoneOverride).length === 0} title="Apply headline position & layout to all slides">
+                    <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={handleApplyHeadlineZoneToAll} disabled={applyingHeadlineZone || !headlineZoneOverride || Object.keys(headlineZoneOverride).length === 0} title="Apply headline position & layout to all slides">
                       {applyingHeadlineZone ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
                       Apply to all
                     </Button>
                   )}
                 </div>
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                <div>
+                  <p className="text-muted-foreground text-[11px] mb-2">Position & size (px)</p>
+                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
                   {(["x", "y", "w", "h"] as const).map((key) => {
                     const base = templateConfig!.textZones!.find((z) => z.id === "headline")!;
                     const val = headlineZoneOverride?.[key] ?? base[key];
+                    const min = key === "w" || key === "h" ? 1 : 0;
+                    const step = 8;
+                    const label = key === "x" ? "X" : key === "y" ? "Y" : key === "w" ? "Width" : "Height";
                     return (
-                      <div key={key} className="space-y-2">
-                        <div className="flex justify-between">
-                          <Label className="text-xs capitalize">{key}</Label>
-                          <span className="text-muted-foreground text-xs">{val}</span>
+                      <div key={key} className="space-y-1.5">
+                        <Label className="text-xs">{label}</Label>
+                        <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background w-full max-w-[140px]">
+                          <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-r-none" onClick={() => setHeadlineZoneOverride((o) => ({ ...o, [key]: Math.max(min, val - step) }))} aria-label={`Decrease ${key}`}>
+                            <MinusIcon className="size-3" />
+                          </Button>
+                          <span className="min-w-8 flex-1 text-center text-xs tabular-nums">{val}</span>
+                          <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-l-none" onClick={() => setHeadlineZoneOverride((o) => ({ ...o, [key]: Math.min(1080, val + step) }))} aria-label={`Increase ${key}`}>
+                            <PlusIcon className="size-3" />
+                          </Button>
                         </div>
-                        <Slider
-                          value={[val]}
-                          onValueChange={([v]) => setHeadlineZoneOverride((o) => ({ ...o, [key]: v ?? (key === "x" || key === "y" ? 0 : 1) }))}
-                          min={key === "w" || key === "h" ? 1 : 0}
-                          max={1080}
-                          step={8}
-                        />
                       </div>
                     );
                   })}
+                  </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <Label className="text-xs">Max lines</Label>
-                      <span className="text-muted-foreground text-xs">{headlineZoneOverride?.maxLines ?? templateConfig!.textZones!.find((z) => z.id === "headline")!.maxLines}</span>
+                <div>
+                  <p className="text-muted-foreground text-[11px] mb-2">Typography</p>
+                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Max lines</Label>
+                    <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background w-full max-w-[100px]">
+                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-r-none" onClick={() => setHeadlineZoneOverride((o) => ({ ...o, maxLines: Math.max(1, (headlineZoneOverride?.maxLines ?? templateConfig!.textZones!.find((z) => z.id === "headline")!.maxLines) - 1) }))} aria-label="Decrease max lines">
+                        <MinusIcon className="size-3" />
+                      </Button>
+                      <span className="min-w-6 flex-1 text-center text-xs tabular-nums">{headlineZoneOverride?.maxLines ?? templateConfig!.textZones!.find((z) => z.id === "headline")!.maxLines}</span>
+                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-l-none" onClick={() => setHeadlineZoneOverride((o) => ({ ...o, maxLines: Math.min(20, (headlineZoneOverride?.maxLines ?? templateConfig!.textZones!.find((z) => z.id === "headline")!.maxLines) + 1) }))} aria-label="Increase max lines">
+                        <PlusIcon className="size-3" />
+                      </Button>
                     </div>
-                    <Slider
-                      value={[headlineZoneOverride?.maxLines ?? templateConfig!.textZones!.find((z) => z.id === "headline")!.maxLines]}
-                      onValueChange={([v]) => setHeadlineZoneOverride((o) => ({ ...o, maxLines: v ?? 1 }))}
-                      min={1}
-                      max={20}
-                      step={1}
-                    />
                   </div>
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <Label className="text-xs">Font weight</Label>
-                      <span className="text-muted-foreground text-xs">{headlineZoneOverride?.fontWeight ?? templateConfig!.textZones!.find((z) => z.id === "headline")!.fontWeight}</span>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Font weight</Label>
+                    <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background w-full max-w-[100px]">
+                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-r-none" onClick={() => setHeadlineZoneOverride((o) => ({ ...o, fontWeight: Math.max(100, (headlineZoneOverride?.fontWeight ?? templateConfig!.textZones!.find((z) => z.id === "headline")!.fontWeight) - 100) }))} aria-label="Decrease font weight">
+                        <MinusIcon className="size-3" />
+                      </Button>
+                      <span className="min-w-8 flex-1 text-center text-xs tabular-nums">{headlineZoneOverride?.fontWeight ?? templateConfig!.textZones!.find((z) => z.id === "headline")!.fontWeight}</span>
+                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-l-none" onClick={() => setHeadlineZoneOverride((o) => ({ ...o, fontWeight: Math.min(900, (headlineZoneOverride?.fontWeight ?? templateConfig!.textZones!.find((z) => z.id === "headline")!.fontWeight) + 100) }))} aria-label="Increase font weight">
+                        <PlusIcon className="size-3" />
+                      </Button>
                     </div>
-                    <Slider
-                      value={[headlineZoneOverride?.fontWeight ?? templateConfig!.textZones!.find((z) => z.id === "headline")!.fontWeight]}
-                      onValueChange={([v]) => setHeadlineZoneOverride((o) => ({ ...o, fontWeight: v ?? 400 }))}
-                      min={100}
-                      max={900}
-                      step={100}
-                    />
                   </div>
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <Label className="text-xs">Line height</Label>
-                      <span className="text-muted-foreground text-xs">{(headlineZoneOverride?.lineHeight ?? templateConfig!.textZones!.find((z) => z.id === "headline")!.lineHeight).toFixed(1)}</span>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Line height</Label>
+                    <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background w-full max-w-[100px]">
+                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-r-none" onClick={() => setHeadlineZoneOverride((o) => ({ ...o, lineHeight: Math.max(0.5, ((headlineZoneOverride?.lineHeight ?? templateConfig!.textZones!.find((z) => z.id === "headline")!.lineHeight) - 0.05)) }))} aria-label="Decrease line height">
+                        <MinusIcon className="size-3" />
+                      </Button>
+                      <span className="min-w-8 flex-1 text-center text-xs tabular-nums">{(headlineZoneOverride?.lineHeight ?? templateConfig!.textZones!.find((z) => z.id === "headline")!.lineHeight).toFixed(1)}</span>
+                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-l-none" onClick={() => setHeadlineZoneOverride((o) => ({ ...o, lineHeight: Math.min(3, (headlineZoneOverride?.lineHeight ?? templateConfig!.textZones!.find((z) => z.id === "headline")!.lineHeight) + 0.05) }))} aria-label="Increase line height">
+                        <PlusIcon className="size-3" />
+                      </Button>
                     </div>
-                    <Slider
-                      value={[headlineZoneOverride?.lineHeight ?? templateConfig!.textZones!.find((z) => z.id === "headline")!.lineHeight]}
-                      onValueChange={([v]) => setHeadlineZoneOverride((o) => ({ ...o, lineHeight: v ?? 1 }))}
-                      min={0.5}
-                      max={3}
-                      step={0.05}
-                    />
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Align</Label>
@@ -1832,192 +2067,190 @@ export function SlideEditForm({
                       </SelectContent>
                     </Select>
                   </div>
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Text color</Label>
-                  <ColorPicker
-                    value={headlineZoneOverride?.color ?? ""}
-                    onChange={(v) => setHeadlineZoneOverride((o) => ({ ...o, color: v.trim() || undefined }))}
-                    placeholder="Auto (contrast)"
-                  />
+                  </div>
                 </div>
               </div>
             )}
-            <Textarea
-              ref={headlineRef}
-              id="headline"
-              value={headline}
-              onChange={(e) => setHeadline(e.target.value)}
-              placeholder="Enter your headline..."
-              className="min-h-[96px] resize-none rounded-lg border-input/80 text-base field-sizing-content px-3 py-2.5"
-              rows={2}
-            />
-            {isPro && (
-            <div className="space-y-1.5">
-              <span className="text-muted-foreground text-xs font-medium">Highlight</span>
-              <p className="text-muted-foreground text-xs">Select text above, then pick a color.</p>
-              <div className="flex flex-wrap items-center gap-1.5">
-                {Object.keys(HIGHLIGHT_COLORS).map((preset) => (
-                  <button
-                    key={preset}
-                    type="button"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => applyHighlightToSelection(preset, "headline")}
-                    className="rounded px-1.5 py-0.5 text-xs font-medium capitalize hover:bg-muted border border-transparent hover:border-border"
-                    style={{ color: HIGHLIGHT_COLORS[preset] as string }}
-                    title={`Apply ${preset} to selection`}
-                  >
-                    {preset}
-                  </button>
-                ))}
-                <span className="text-muted-foreground text-xs mx-0.5">|</span>
-                <input
-                  type="color"
-                  className="h-7 w-9 cursor-pointer rounded border border-input/80 bg-background"
-                  defaultValue="#facc15"
-                  onMouseDown={() => saveHighlightSelectionForPicker("headline")}
-                  onChange={(e) => {
-                    const hex = e.target.value;
-                    applyHighlightToSelection(hex, "headline", true);
-                  }}
-                  title="Select text, then pick a color"
-                />
+              {isPro && headlineHighlightOpen && (
+              <div className="border-t border-border/40 pt-3 mt-3">
+                  <div className="space-y-2">
+                    <p className="text-[11px] text-muted-foreground">Select text, then pick a color.</p>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {Object.keys(HIGHLIGHT_COLORS).map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            saveHighlightSelectionForPicker("headline");
+                          }}
+                          onClick={() => applyHighlightToSelection(preset, "headline", true)}
+                          className="rounded px-1.5 py-0.5 text-[11px] font-medium capitalize hover:bg-muted border border-transparent hover:border-border"
+                          style={{ color: HIGHLIGHT_COLORS[preset] as string }}
+                          title={`Apply ${preset} to selection`}
+                        >
+                          {preset}
+                        </button>
+                      ))}
+                      <input
+                        type="color"
+                        className="h-6 w-8 cursor-pointer rounded border border-input/80 bg-background"
+                        defaultValue="#facc15"
+                        onMouseDown={() => saveHighlightSelectionForPicker("headline")}
+                        onChange={(e) => applyHighlightToSelection(e.target.value, "headline", true)}
+                        title="Custom color"
+                        aria-label="Custom highlight"
+                      />
+                      <Button type="button" variant={headlineHighlightStyle === "background" ? "secondary" : "ghost"} size="sm" className="h-6 text-[11px]" onClick={() => setHeadlineHighlightStyle((s) => (s === "text" ? "background" : "text"))} title={headlineHighlightStyle === "text" ? "Background highlight" : "Text color only"}>
+                        {headlineHighlightStyle === "text" ? "Text" : "Bg"}
+                      </Button>
+                    </div>
+                  </div>
               </div>
+              )}
             </div>
-            )}
-            {isPro && (
-            <div className="space-y-2 pt-1">
-              <span className="text-muted-foreground text-xs font-medium">Font size</span>
-              <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center gap-0.5 rounded-lg border border-input bg-background">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  className="h-8 w-8 rounded-r-none"
-                  onClick={() => setHeadlineFontSize((v) => Math.max(24, (v ?? defaultHeadlineSize) - 4))}
-                  title="Decrease size"
-                  aria-label="Decrease headline font size"
-                >
-                  <MinusIcon className="size-3.5" />
-                </Button>
-                <span className="min-w-10 text-center text-xs tabular-nums">{headlineFontSize ?? defaultHeadlineSize}px</span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  className="h-8 w-8 rounded-l-none"
-                  onClick={() => setHeadlineFontSize((v) => Math.min(160, (v ?? defaultHeadlineSize) + 4))}
-                  title="Increase size"
-                  aria-label="Increase headline font size"
-                >
-                  <PlusIcon className="size-3.5" />
-                </Button>
-              </div>
-              <Button type="button" variant={headlineHighlightStyle === "background" ? "secondary" : "ghost"} size="sm" className="h-8 text-xs" onClick={() => setHeadlineHighlightStyle((s) => (s === "text" ? "background" : "text"))} title={headlineHighlightStyle === "text" ? "Bg highlight" : "Text color"}>
-                {headlineHighlightStyle === "text" ? "Text" : "Bg"}
-              </Button>
-              </div>
-            </div>
-            )}
-            </div>
-            <div className="border-t border-border/60 pt-6 mt-6 space-y-3">
+
+            {/* Body */}
+            <div className="rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <Label htmlFor="body" className="text-sm font-medium text-foreground">Body</Label>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-foreground" onClick={() => setBodyEditMoreOpen((o) => !o)} disabled={!isPro} title="Position, size, max lines, align">
-                    {bodyEditMoreOpen ? <ChevronUpIcon className="size-3.5" /> : <ChevronDownIcon className="size-3.5" />}
-                    Edit position
-                  </Button>
-                  <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-foreground" onClick={handleClearBody} disabled={!isPro} title="Clear body text">
-                    <Trash2 className="size-3.5 mr-1" />
-                    Clear
-                  </Button>
-                  {totalSlides > 1 && isPro && (
+                <h3 className="text-xs font-semibold text-foreground">Body</h3>
+                <div className="flex flex-wrap items-center gap-2">
+                  {isPro && (
                     <>
-                      <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-foreground" onClick={handleApplyBodyFontSizeToAll} disabled={applyingFontSize} title="Apply body font size to all slides">
-                        {applyingFontSize ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
-                        Apply size to all
-                      </Button>
-                      <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-foreground" onClick={handleApplyClearBodyToAll} disabled={applyingClear} title="Clear body text on all other slides">
-                        {applyingClear ? <Loader2Icon className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
-                        Apply clear to all
-                      </Button>
+                      <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background">
+                        <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 rounded-r-none" onClick={() => setBodyFontSize((v) => Math.max(18, (v ?? defaultBodySize) - 4))} aria-label="Decrease body size">
+                          <MinusIcon className="size-3" />
+                        </Button>
+                        <span className="min-w-8 text-center text-xs tabular-nums" aria-hidden>{bodyFontSize ?? defaultBodySize}</span>
+                        <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 rounded-l-none" onClick={() => setBodyFontSize((v) => Math.min(120, (v ?? defaultBodySize) + 4))} aria-label="Increase body size">
+                          <PlusIcon className="size-3" />
+                        </Button>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0 rounded-md border border-input/80 bg-background px-1.5 py-0.5">
+                        <Label className="text-[11px] text-muted-foreground whitespace-nowrap">Color</Label>
+                        <ColorPicker
+                          value={bodyZoneOverride?.color ?? ""}
+                          onChange={(v) => setBodyZoneOverride((o) => ({ ...o, color: v.trim() || undefined }))}
+                          placeholder="Auto"
+                          compact
+                        />
+                      </div>
                     </>
                   )}
                 </div>
               </div>
+              <Textarea
+                ref={bodyRef}
+                id="body"
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                placeholder="Optional body text..."
+                className="min-h-[60px] w-full md:max-w-[360px] resize-none rounded-md border-input/80 text-sm field-sizing-content px-3 py-2"
+                rows={2}
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                {isPro && (
+                  <>
+                    <Button type="button" variant="secondary" size="sm" className="h-7 text-xs" onClick={() => { setBodyHighlightOpen(false); setBodyEditMoreOpen((o) => !o); }}>
+                      {bodyEditMoreOpen ? <ChevronUpIcon className="size-3" /> : <ChevronDownIcon className="size-3" />} Layout
+                    </Button>
+                    <button
+                      type="button"
+                      onClick={() => { setBodyEditMoreOpen(false); setBodyHighlightOpen((o) => !o); }}
+                      className="flex items-center gap-1.5 rounded-md py-1.5 pr-1 text-left text-[11px] font-medium text-muted-foreground hover:text-foreground"
+                      aria-expanded={bodyHighlightOpen}
+                    >
+                      <span>Highlight</span>
+                      {bodyHighlightOpen ? <ChevronUpIcon className="size-3.5 shrink-0" /> : <ChevronDownIcon className="size-3.5 shrink-0" />}
+                    </button>
+                  </>
+                )}
+                {totalSlides > 1 && isPro && (
+                  <>
+                    <Button type="button" variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" onClick={handleApplyBodyFontSizeToAll} disabled={applyingFontSize}>
+                      {applyingFontSize ? <Loader2Icon className="size-3 animate-spin" /> : <CopyIcon className="size-3" />} Size to all
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" onClick={handleApplyClearBodyToAll} disabled={applyingClear} title="Clear body on every slide">
+                      {applyingClear ? <Loader2Icon className="size-3 animate-spin" /> : <Trash2 className="size-3" />} Clear on all slides
+                    </Button>
+                  </>
+                )}
+              </div>
             {isPro && bodyEditMoreOpen && templateConfig?.textZones?.find((z) => z.id === "body") && (
               <div className="rounded-lg border border-border/50 bg-muted/10 p-4 space-y-4 mb-3">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground text-xs font-medium">Body position & layout</span>
+                  <span className="text-xs font-medium text-foreground">Body position & layout</span>
                   {totalSlides > 1 && (
-                    <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-foreground" onClick={handleApplyBodyZoneToAll} disabled={applyingBodyZone || !bodyZoneOverride || Object.keys(bodyZoneOverride).length === 0} title="Apply body position & layout to all slides">
+                    <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={handleApplyBodyZoneToAll} disabled={applyingBodyZone || !bodyZoneOverride || Object.keys(bodyZoneOverride).length === 0} title="Apply body position & layout to all slides">
                       {applyingBodyZone ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
                       Apply to all
                     </Button>
                   )}
                 </div>
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                <div>
+                  <p className="text-muted-foreground text-[11px] mb-2">Position & size (px)</p>
+                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
                   {(["x", "y", "w", "h"] as const).map((key) => {
                     const base = templateConfig!.textZones!.find((z) => z.id === "body")!;
                     const val = bodyZoneOverride?.[key] ?? base[key];
+                    const min = key === "w" || key === "h" ? 1 : 0;
+                    const step = 8;
+                    const label = key === "x" ? "X" : key === "y" ? "Y" : key === "w" ? "Width" : "Height";
                     return (
-                      <div key={key} className="space-y-2">
-                        <div className="flex justify-between">
-                          <Label className="text-xs capitalize">{key}</Label>
-                          <span className="text-muted-foreground text-xs">{val}</span>
+                      <div key={key} className="space-y-1.5">
+                        <Label className="text-xs">{label}</Label>
+                        <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background w-full max-w-[140px]">
+                          <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-r-none" onClick={() => setBodyZoneOverride((o) => ({ ...o, [key]: Math.max(min, val - step) }))} aria-label={`Decrease ${key}`}>
+                            <MinusIcon className="size-3" />
+                          </Button>
+                          <span className="min-w-8 flex-1 text-center text-xs tabular-nums">{val}</span>
+                          <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-l-none" onClick={() => setBodyZoneOverride((o) => ({ ...o, [key]: Math.min(1080, val + step) }))} aria-label={`Increase ${key}`}>
+                            <PlusIcon className="size-3" />
+                          </Button>
                         </div>
-                        <Slider
-                          value={[val]}
-                          onValueChange={([v]) => setBodyZoneOverride((o) => ({ ...o, [key]: v ?? (key === "x" || key === "y" ? 0 : 1) }))}
-                          min={key === "w" || key === "h" ? 1 : 0}
-                          max={1080}
-                          step={8}
-                        />
                       </div>
                     );
                   })}
+                  </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <Label className="text-xs">Max lines</Label>
-                      <span className="text-muted-foreground text-xs">{bodyZoneOverride?.maxLines ?? templateConfig!.textZones!.find((z) => z.id === "body")!.maxLines}</span>
+                <div>
+                  <p className="text-muted-foreground text-[11px] mb-2">Typography</p>
+                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Max lines</Label>
+                    <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background w-full max-w-[100px]">
+                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-r-none" onClick={() => setBodyZoneOverride((o) => ({ ...o, maxLines: Math.max(1, (bodyZoneOverride?.maxLines ?? templateConfig!.textZones!.find((z) => z.id === "body")!.maxLines) - 1) }))} aria-label="Decrease max lines">
+                        <MinusIcon className="size-3" />
+                      </Button>
+                      <span className="min-w-6 flex-1 text-center text-xs tabular-nums">{bodyZoneOverride?.maxLines ?? templateConfig!.textZones!.find((z) => z.id === "body")!.maxLines}</span>
+                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-l-none" onClick={() => setBodyZoneOverride((o) => ({ ...o, maxLines: Math.min(20, (bodyZoneOverride?.maxLines ?? templateConfig!.textZones!.find((z) => z.id === "body")!.maxLines) + 1) }))} aria-label="Increase max lines">
+                        <PlusIcon className="size-3" />
+                      </Button>
                     </div>
-                    <Slider
-                      value={[bodyZoneOverride?.maxLines ?? templateConfig!.textZones!.find((z) => z.id === "body")!.maxLines]}
-                      onValueChange={([v]) => setBodyZoneOverride((o) => ({ ...o, maxLines: v ?? 1 }))}
-                      min={1}
-                      max={20}
-                      step={1}
-                    />
                   </div>
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <Label className="text-xs">Font weight</Label>
-                      <span className="text-muted-foreground text-xs">{bodyZoneOverride?.fontWeight ?? templateConfig!.textZones!.find((z) => z.id === "body")!.fontWeight}</span>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Font weight</Label>
+                    <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background w-full max-w-[100px]">
+                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-r-none" onClick={() => setBodyZoneOverride((o) => ({ ...o, fontWeight: Math.max(100, (bodyZoneOverride?.fontWeight ?? templateConfig!.textZones!.find((z) => z.id === "body")!.fontWeight) - 100) }))} aria-label="Decrease font weight">
+                        <MinusIcon className="size-3" />
+                      </Button>
+                      <span className="min-w-8 flex-1 text-center text-xs tabular-nums">{bodyZoneOverride?.fontWeight ?? templateConfig!.textZones!.find((z) => z.id === "body")!.fontWeight}</span>
+                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-l-none" onClick={() => setBodyZoneOverride((o) => ({ ...o, fontWeight: Math.min(900, (bodyZoneOverride?.fontWeight ?? templateConfig!.textZones!.find((z) => z.id === "body")!.fontWeight) + 100) }))} aria-label="Increase font weight">
+                        <PlusIcon className="size-3" />
+                      </Button>
                     </div>
-                    <Slider
-                      value={[bodyZoneOverride?.fontWeight ?? templateConfig!.textZones!.find((z) => z.id === "body")!.fontWeight]}
-                      onValueChange={([v]) => setBodyZoneOverride((o) => ({ ...o, fontWeight: v ?? 400 }))}
-                      min={100}
-                      max={900}
-                      step={100}
-                    />
                   </div>
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <Label className="text-xs">Line height</Label>
-                      <span className="text-muted-foreground text-xs">{(bodyZoneOverride?.lineHeight ?? templateConfig!.textZones!.find((z) => z.id === "body")!.lineHeight).toFixed(1)}</span>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Line height</Label>
+                    <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background w-full max-w-[100px]">
+                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-r-none" onClick={() => setBodyZoneOverride((o) => ({ ...o, lineHeight: Math.max(0.5, ((bodyZoneOverride?.lineHeight ?? templateConfig!.textZones!.find((z) => z.id === "body")!.lineHeight) - 0.05)) }))} aria-label="Decrease line height">
+                        <MinusIcon className="size-3" />
+                      </Button>
+                      <span className="min-w-8 flex-1 text-center text-xs tabular-nums">{(bodyZoneOverride?.lineHeight ?? templateConfig!.textZones!.find((z) => z.id === "body")!.lineHeight).toFixed(1)}</span>
+                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-l-none" onClick={() => setBodyZoneOverride((o) => ({ ...o, lineHeight: Math.min(3, (bodyZoneOverride?.lineHeight ?? templateConfig!.textZones!.find((z) => z.id === "body")!.lineHeight) + 0.05) }))} aria-label="Increase line height">
+                        <PlusIcon className="size-3" />
+                      </Button>
                     </div>
-                    <Slider
-                      value={[bodyZoneOverride?.lineHeight ?? templateConfig!.textZones!.find((z) => z.id === "body")!.lineHeight]}
-                      onValueChange={([v]) => setBodyZoneOverride((o) => ({ ...o, lineHeight: v ?? 1 }))}
-                      min={0.5}
-                      max={3}
-                      step={0.05}
-                    />
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Align</Label>
@@ -2034,142 +2267,96 @@ export function SlideEditForm({
                       </SelectContent>
                     </Select>
                   </div>
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Text color</Label>
-                  <ColorPicker
-                    value={bodyZoneOverride?.color ?? ""}
-                    onChange={(v) => setBodyZoneOverride((o) => ({ ...o, color: v.trim() || undefined }))}
-                    placeholder="Auto (contrast)"
-                  />
+                  </div>
                 </div>
               </div>
             )}
-            <Textarea
-              ref={bodyRef}
-              id="body"
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              placeholder="Optional body text..."
-              className="min-h-[80px] resize-none rounded-lg border-input/80 text-base field-sizing-content px-3 py-2.5"
-              rows={2}
-            />
-            <div className="space-y-1.5">
-              <span className="text-muted-foreground text-xs font-medium">Highlight</span>
-              <p className="text-muted-foreground text-xs">Select text above, then pick a color.</p>
-              <div className="flex flex-wrap items-center gap-1.5">
-                {Object.keys(HIGHLIGHT_COLORS).map((preset) => (
-                  <button
-                    key={preset}
-                    type="button"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => applyHighlightToSelection(preset, "body")}
-                    className="rounded px-1.5 py-0.5 text-xs font-medium capitalize hover:bg-muted border border-transparent hover:border-border"
-                    style={{ color: HIGHLIGHT_COLORS[preset] as string }}
-                    title={`Apply ${preset} to selection`}
-                  >
-                    {preset}
-                  </button>
-                ))}
-                <span className="text-muted-foreground text-xs mx-0.5">|</span>
-                <input
-                  type="color"
-                  className="h-7 w-9 cursor-pointer rounded border border-input/80 bg-background"
-                  defaultValue="#facc15"
-                  onMouseDown={() => saveHighlightSelectionForPicker("body")}
-                  onChange={(e) => {
-                    const hex = e.target.value;
-                    applyHighlightToSelection(hex, "body", true);
-                  }}
-                  title="Select text, then pick a color"
-                />
+              {isPro && bodyHighlightOpen && (
+              <div className="border-t border-border/40 pt-3 mt-3">
+                  <div className="space-y-2">
+                    <p className="text-[11px] text-muted-foreground">Select text, then pick a color.</p>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {Object.keys(HIGHLIGHT_COLORS).map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            saveHighlightSelectionForPicker("body");
+                          }}
+                          onClick={() => applyHighlightToSelection(preset, "body", true)}
+                          className="rounded px-1.5 py-0.5 text-[11px] font-medium capitalize hover:bg-muted border border-transparent hover:border-border"
+                          style={{ color: HIGHLIGHT_COLORS[preset] as string }}
+                          title={`Apply ${preset} to selection`}
+                        >
+                          {preset}
+                        </button>
+                      ))}
+                      <input
+                        type="color"
+                        className="h-6 w-8 cursor-pointer rounded border border-input/80 bg-background"
+                        defaultValue="#facc15"
+                        onMouseDown={() => saveHighlightSelectionForPicker("body")}
+                        onChange={(e) => applyHighlightToSelection(e.target.value, "body", true)}
+                        title="Custom color"
+                        aria-label="Custom highlight"
+                      />
+                      <Button type="button" variant={bodyHighlightStyle === "background" ? "secondary" : "ghost"} size="sm" className="h-6 text-[11px]" onClick={() => setBodyHighlightStyle((s) => (s === "text" ? "background" : "text"))} title={bodyHighlightStyle === "text" ? "Background highlight" : "Text color only"}>
+                        {bodyHighlightStyle === "text" ? "Text" : "Bg"}
+                      </Button>
+                    </div>
+                  </div>
               </div>
-            </div>
-            {isPro && (
-            <div className="space-y-2 pt-1">
-              <span className="text-muted-foreground text-xs font-medium">Font size</span>
-              <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center gap-0.5 rounded-lg border border-input bg-background">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  className="h-8 w-8 rounded-r-none"
-                  onClick={() => setBodyFontSize((v) => Math.max(18, (v ?? defaultBodySize) - 4))}
-                  title="Decrease size"
-                  aria-label="Decrease body font size"
-                >
-                  <MinusIcon className="size-3.5" />
-                </Button>
-                <span className="min-w-10 text-center text-xs tabular-nums">{bodyFontSize ?? defaultBodySize}px</span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  className="h-8 w-8 rounded-l-none"
-                  onClick={() => setBodyFontSize((v) => Math.min(120, (v ?? defaultBodySize) + 4))}
-                  title="Increase size"
-                  aria-label="Increase body font size"
-                >
-                  <PlusIcon className="size-3.5" />
-                </Button>
-              </div>
-              <Button type="button" variant={bodyHighlightStyle === "background" ? "secondary" : "ghost"} size="sm" className="h-8 text-xs" onClick={() => setBodyHighlightStyle((s) => (s === "text" ? "background" : "text"))} title={bodyHighlightStyle === "text" ? "Bg highlight" : "Text color"}>
-                {bodyHighlightStyle === "text" ? "Text" : "Bg"}
-              </Button>
-              </div>
-            </div>
-            )}
+              )}
             </div>
           </section>
-          <section className="rounded-xl border border-border/50 bg-muted/5 p-5 sm:p-6" aria-label="Background">
-            <div className="flex items-center justify-between gap-2 mb-4">
-              <div className="flex items-center gap-2">
-                <PaletteIcon className="size-4 text-muted-foreground" />
-                <h2 className="text-base font-semibold text-foreground">Background</h2>
-                <button type="button" onClick={() => setInfoSection("background")} className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors" aria-label="Help">
-                  <InfoIcon className="size-4" />
-                </button>
-              </div>
-              <div className="flex items-center gap-1">
-                {!isImageMode && totalSlides > 1 && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="text-muted-foreground hover:text-foreground"
-                    onClick={handleApplyBackgroundToAll}
-                    disabled={applyingBackground}
-                    title="Apply background (color, style, overlay) to all slides"
-                  >
-                    {applyingBackground ? <Loader2Icon className="size-4 animate-spin" /> : <CopyIcon className="size-4" />}
-                    Apply to all
-                  </Button>
-                )}
-                {isImageMode && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    title="Clear image"
-                    className="text-muted-foreground hover:text-foreground"
-                    onClick={() => {
-                      setBackground((b) => ({ ...b, style: "solid", color: brandKit.primary_color ?? "#0a0a0a", gradientOn: true, mode: undefined, asset_id: undefined, storage_path: undefined, image_url: undefined, image_display: undefined }));
-                      setBackgroundImageUrlForPreview(null);
-                      setImageUrls([{ url: "", source: undefined }]);
-                      setImageDisplay({});
-                    }}
-                  >
-                    <ImageOffIcon className="size-4" />
-                    Clear
-                  </Button>
-                )}
+          )}
+          {editorTab === "background" && (
+          <section className="space-y-5" aria-label="Background">
+            <div className="rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-xs font-semibold text-foreground">Source</h3>
+                <div className="flex items-center gap-1">
+                  {!isImageMode && totalSlides > 1 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs text-muted-foreground hover:text-foreground"
+                      onClick={handleApplyBackgroundToAll}
+                      disabled={applyingBackground}
+                      title="Apply background (color, style, overlay) to all slides"
+                    >
+                      {applyingBackground ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
+                      Apply to all
+                    </Button>
+                  )}
+                  {isImageMode && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      title="Clear image"
+                      className="h-7 text-xs text-muted-foreground hover:text-foreground"
+                      onClick={() => {
+                        setBackground((b) => ({ ...b, style: "solid", color: brandKit.primary_color ?? "#0a0a0a", gradientOn: true, mode: undefined, asset_id: undefined, storage_path: undefined, image_url: undefined, image_display: undefined }));
+                        setBackgroundImageUrlForPreview(null);
+                        setImageUrls([{ url: "", source: undefined }]);
+                        setImageDisplay({});
+                      }}
+                    >
+                      <ImageOffIcon className="size-3.5" />
+                      Clear
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
             {isImageMode && (
-              <div className={!isPro ? "pointer-events-none opacity-60" : ""}>
+              <div className={`rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3 ${!isPro ? "pointer-events-none opacity-60" : ""}`}>
+                <p className="text-muted-foreground text-[11px] font-medium">Background image</p>
                 <div className="space-y-2">
-                  <Label className="text-muted-foreground text-xs font-medium">Image URLs</Label>
+                  <Label className="text-muted-foreground text-xs">Image URL{imageUrls.length > 1 ? "s" : ""}</Label>
                   {imageUrls.map((item, i) => {
                     const slotPool = item._pool ?? [item.url, ...(item.alternates ?? [])].filter((u) => u.trim() && /^https?:\/\//i.test(u));
                     const slotHasMultiple = slotPool.length > 1;
@@ -2316,11 +2503,11 @@ export function SlideEditForm({
                     Apply {validImageCount} to all
                   </Button>
                 </div>
-                <div className="space-y-3 rounded-lg border border-border/50 bg-muted/10 p-3">
+                <div className="rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3">
+                  <p className="text-muted-foreground text-[11px] font-medium">Display</p>
+                <div className="space-y-2">
                   <div className="flex items-center justify-between gap-2">
-                    <Label className="text-muted-foreground text-xs font-medium flex items-center gap-1.5">
-                      <LayoutTemplateIcon className="size-3.5" /> Image display
-                    </Label>
+                    <span className="text-muted-foreground text-[11px] font-medium">Position & frame</span>
                     <Button
                       type="button"
                       variant="ghost"
@@ -2328,7 +2515,7 @@ export function SlideEditForm({
                       className="text-muted-foreground hover:text-foreground text-xs"
                       onClick={handleApplyImageDisplayToAll}
                       disabled={applyingImageDisplay || totalSlides < 2}
-                      title={totalSlides < 2 ? "Need 2+ slides to apply" : "Apply image display to all slides"}
+                      title={totalSlides < 2 ? "Need 2+ slides to apply" : "Apply position & frame to all slides"}
                     >
                       {applyingImageDisplay ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
                       Apply to all
@@ -2336,7 +2523,7 @@ export function SlideEditForm({
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="space-y-1.5">
-                      <span className="text-muted-foreground text-xs">Position (anchor & crop)</span>
+                      <span className="text-muted-foreground text-xs">Image position</span>
                       <Select
                         value={effectiveImageDisplay.position ?? "top"}
                         onValueChange={(v) => setImageDisplay((d) => ({ ...d, position: v as ImageDisplayState["position"] }))}
@@ -2623,16 +2810,19 @@ export function SlideEditForm({
                     )}
                   </div>
                 </div>
+                </div>
               </div>
             )}
             {!isImageMode && (
+              <div className="rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3">
+                <h3 className="text-xs font-semibold text-foreground">Color</h3>
               <div className="flex flex-wrap items-center gap-3">
                 {isPro && (
                   <Select
                     value={background.style ?? "solid"}
                     onValueChange={(v: "solid" | "gradient") => setBackground((b) => ({ ...b, style: v }))}
                   >
-                    <SelectTrigger className="h-10 w-[130px] rounded-lg border-input/80 bg-background">
+                    <SelectTrigger className="h-9 w-full md:w-[120px] rounded-md border-input/80 bg-background text-sm">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -2641,7 +2831,7 @@ export function SlideEditForm({
                     </SelectContent>
                   </Select>
                 )}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <input
                     type="color"
                     value={background.color ?? "#0a0a0a"}
@@ -2659,13 +2849,15 @@ export function SlideEditForm({
                   </label>
                 </div>
               </div>
+              </div>
             )}
             {!isImageMode && (
-              <div className={!isPro ? "pointer-events-none opacity-60" : ""}>
+              <div className={`rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3 ${!isPro ? "pointer-events-none opacity-60" : ""}`}>
+                <p className="text-muted-foreground text-[11px] font-medium">Add image</p>
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button type="button" variant="outline" size="sm" className="rounded-lg h-9" title="Pick image" onClick={() => { setPickerForSecondary(false); setPickerOpen(true); }}>
-                    <ImageIcon className="size-4" />
-                    <span className="sr-only">Pick</span>
+                  <Button type="button" variant="outline" size="sm" className="rounded-md h-8 text-xs" title="Pick image" onClick={() => { setPickerForSecondary(false); setPickerOpen(true); }}>
+                    <ImageIcon className="size-3.5" />
+                    Pick
                   </Button>
                   <Button type="button" variant="ghost" size="sm" className="rounded-lg h-9" asChild title="Upload">
                     <a href="/assets" target="_blank" rel="noopener noreferrer">
@@ -2717,71 +2909,66 @@ export function SlideEditForm({
             )}
             {background.gradientOn && overlaySection}
           </section>
-          <section className={`rounded-xl border border-border/50 bg-muted/5 p-5 sm:p-6 ${!isPro ? "pointer-events-none opacity-60" : ""}`} aria-label="Save as template">
-            <div className="flex items-center gap-2 mb-4">
-              <Bookmark className="size-4 text-muted-foreground" />
-              <h2 className="text-base font-semibold text-foreground">Save as template</h2>
-              <button type="button" onClick={() => setInfoSection("templates")} className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors" aria-label="Help">
-                <InfoIcon className="size-4" />
-              </button>
-            </div>
-            <p className="text-muted-foreground text-sm mb-4">
-              Save the current layout, gradient overlay, and chrome settings as a reusable template.
-            </p>
-            <Button type="button" variant="outline" size="sm" className="h-9 rounded-lg text-xs" onClick={() => setSaveTemplateOpen(true)} disabled={!templateConfig} title="Save as template">
-              <Bookmark className="size-4" />
-              Save as template
-            </Button>
-          </section>
-          <AssetPickerModal open={pickerOpen} onOpenChange={setPickerOpen} onPick={handlePickImage} />
-        </div>
-
-        {/* Preview: desktop = right column sticky; mobile = slide-out panel from right */}
-        {/* Mobile: tab toggles preview - right edge when closed, left edge of panel when open */}
-        {isMobile && !mobilePreviewOpen && (
-          <button
-            type="button"
-            onClick={() => setMobilePreviewOpen(true)}
-            className="fixed right-0 top-1/2 -translate-y-1/2 z-40 flex items-center justify-center w-10 h-16 rounded-l-lg border border-r-0 border-border/80 bg-card shadow-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-            aria-label="Show preview"
-          >
-            <ChevronLeftIcon className="size-5" aria-hidden />
-          </button>
-        )}
-
-        {/* Mobile: slide-out overlay panel with close tab on left edge */}
-        {isMobile && (
-          <>
-            <div
-              className={`fixed inset-0 z-50 bg-black/40 transition-opacity duration-200 ${mobilePreviewOpen ? "opacity-100" : "opacity-0 pointer-events-none"}`}
-              onClick={() => setMobilePreviewOpen(false)}
-              aria-hidden="true"
-            />
-            <div
-              className={`fixed right-0 top-0 bottom-0 z-50 w-[min(100vw,580px)] bg-background shadow-xl transition-transform duration-200 ease-out overflow-y-auto ${mobilePreviewOpen ? "translate-x-0" : "translate-x-full"}`}
-            >
-              <button
+          )}
+          {editorTab === "more" && (
+          <section className="space-y-5" aria-label="More">
+            <div className="rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3">
+              <h3 className="text-xs font-semibold text-foreground">Export</h3>
+              <Select value={exportSize} onValueChange={(v) => handleExportSizeChange(v as ExportSize)} disabled={!isPro || updatingExportSettings}>
+                <SelectTrigger className="h-9 w-full md:max-w-[220px] rounded-md border-input/80 bg-background text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1080x1080">{EXPORT_SIZE_LABELS["1080x1080"]}</SelectItem>
+                  <SelectItem value="1080x1350">{EXPORT_SIZE_LABELS["1080x1350"]}</SelectItem>
+                  <SelectItem value="1080x1920">{EXPORT_SIZE_LABELS["1080x1920"]}</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-muted-foreground text-[11px]">Size applies to all slides. ZIP includes images, captions (short/medium/long), and credits.</p>
+              <Button
                 type="button"
-                onClick={() => setMobilePreviewOpen(false)}
-                className="absolute left-0 top-1/2 -translate-y-1/2 z-10 flex items-center justify-center w-10 h-16 rounded-r-lg border border-l-0 border-border/80 bg-card shadow-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-                aria-label="Hide preview"
+                variant="default"
+                size="sm"
+                className="h-8 w-full md:w-auto md:min-w-[180px] rounded-md text-xs gap-1.5"
+                onClick={handleDownloadFullExport}
+                disabled={!isPro || exportingFull}
               >
-                <ChevronRightIcon className="size-5" aria-hidden />
-              </button>
-              <div className="pl-14 pr-4 py-4 pb-8">
-                {previewContent}
+                {exportingFull ? <Loader2Icon className="size-3.5 animate-spin" /> : <DownloadIcon className="size-3.5" />}
+                {exportingFull ? "Exporting…" : "Download export (ZIP)"}
+              </Button>
+              {exportFullError && (
+                <p className="text-destructive text-[11px]" role="alert">{exportFullError}</p>
+              )}
+            </div>
+            <div className="rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3">
+              <h3 className="text-xs font-semibold text-foreground">Save as template</h3>
+              <p className="text-muted-foreground text-[11px] leading-snug">Reuse this layout and overlay on other slides.</p>
+              <Button type="button" variant="outline" size="sm" className="h-8 w-full md:w-auto md:min-w-[160px] rounded-md text-xs gap-1.5" onClick={() => setSaveTemplateOpen(true)} disabled={!templateConfig}>
+                <Bookmark className="size-3.5" />
+                Save as template
+              </Button>
+            </div>
+            <div className="rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3">
+              <h3 className="text-xs font-semibold text-foreground">Actions</h3>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={handleShortenToFit} disabled={shortening || !templateId} title="Shorten to fit">
+                  {shortening ? <Loader2Icon className="size-3.5 animate-spin" /> : <ScissorsIcon className="size-3.5" />}
+                  Shorten to fit
+                </Button>
+                {isHook && isPro && (
+                  <Button type="button" variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={handleRewriteHook} disabled={rewriting} title="Rewrite hook">
+                    {rewriting ? <Loader2Icon className="size-3.5 animate-spin" /> : <SparklesIcon className="size-3.5" />}
+                    Rewrite hook
+                  </Button>
+                )}
               </div>
             </div>
-          </>
-        )}
-
-        {/* Desktop: always-visible right column */}
-        {!isMobile && (
-          <div className="lg:order-2 lg:sticky lg:top-6 lg:self-start">
-            {previewContent}
+          </section>
+          )}
+          <AssetPickerModal open={pickerOpen} onOpenChange={setPickerOpen} onPick={handlePickImage} />
           </div>
-        )}
-      </div>
+        </div>
+      </section>
 
       {hookVariants.length > 0 && (
         <div className="rounded-lg border border-border/50 bg-muted/10 p-3">
@@ -2807,29 +2994,6 @@ export function SlideEditForm({
         </div>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-4 border-t border-border/60 pt-6 mt-8 pb-4">
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-10 w-10 sm:h-9 sm:w-9 p-0"
-            title="Shorten to fit"
-            onClick={handleShortenToFit}
-            disabled={shortening || !templateId}
-          >
-            {shortening ? <Loader2Icon className="size-4 animate-spin" /> : <ScissorsIcon className="size-4" />}
-          </Button>
-          {isHook && isPro && (
-            <Button variant="outline" size="sm" className="h-9 w-9 p-0" title="Rewrite hook" onClick={handleRewriteHook} disabled={rewriting}>
-              {rewriting ? <Loader2Icon className="size-4 animate-spin" /> : <SparklesIcon className="size-4" />}
-            </Button>
-          )}
-        </div>
-        <Button onClick={handleSave} disabled={saving} title="Save slide" className="h-10 sm:h-9 min-w-[88px]">
-          {saving ? <Loader2Icon className="size-4 animate-spin" /> : <CheckIcon className="size-4" />}
-          Save
-        </Button>
-      </div>
     </div>
     </>
   );

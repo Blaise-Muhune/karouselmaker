@@ -47,6 +47,7 @@ Rules:
 - For the last slide (slide_type "cta"): the headline MUST be an innovative, high-converting follow call-to-action. Be creative—not generic "follow for more". Lead with the PROJECT NICHE (this is the main focus of the CTA); mention the topic only lightly or in passing. Use urgency, exclusivity, or value. Examples: "You won't find us again—unless you follow @handle", "This is the last productivity tip you'll need → @handle", "We drop fitness breakdowns like this daily. @handle", "Follow @handle—we don't post this anywhere else", "Save this. Then follow @handle for more [niche]". Use creator_handle exactly if provided. Niche-first, topic second.
 - Tone for this project: ${ctx.tone_preset}.
 - Do NOT use **bold** or {{color}} formatting. Output plain text only. The user will add formatting when editing.
+- CAPTION VARIANTS (short, medium, spicy): Must NOT spoil the carousel. The reader should discover the content by swiping through the slides—not by reading the caption. Write captions that tease the topic, create curiosity, or set the vibe (like a hook). Do NOT list key points, conclusions, takeaways, or "you'll learn X, Y, Z". No summaries of what's inside. Short = one line tease. Medium = slightly longer tease or question. Spicy = same rule—intrigue only, no spoilers.
 ${ctx.do_rules ? `Do: ${ctx.do_rules}` : ""}
 ${ctx.dont_rules ? `Don't: ${ctx.dont_rules}` : ""}
 

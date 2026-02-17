@@ -33,7 +33,7 @@ const BLACKLIST_DOMAINS =
 const IMAGE_EXT_REGEX = /\.(png|jpe?g|webp|gif|bmp|avif|svg|ico)(\?|$)/i;
 
 /** URL path/query patterns that usually indicate low-res or junk (thumbnails, avatars, icons). */
-const LOW_QUALITY_URL_PATTERNS =
+const LOW_QUALITY_URL_PATTERNS = 
   /thumb|thumbnail|small|avatar|icon|sprite|150x|300x|lowres|_thumb|_sm\.|-thumb|-small|\/thumb\/|\/small\//i;
 
 /** Domains we trust for high-quality imagery (bonus in ranking). */

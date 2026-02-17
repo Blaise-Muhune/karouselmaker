@@ -4,7 +4,6 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useTransition } from "react";
 import Link from "next/link";
 import { updateProject } from "@/app/actions/projects/updateProject";
 import { uploadProjectLogo } from "@/app/actions/projects/uploadProjectLogo";
@@ -49,8 +48,9 @@ export function ProjectEditForm({
   projectId: string;
   defaultValues: ProjectFormInput;
 }) {
-  const [isPending, startTransition] = useTransition();
+  const [isPending, setIsPending] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const router = useRouter();
 
   const form = useForm<ProjectFormInput>({
@@ -58,7 +58,9 @@ export function ProjectEditForm({
     defaultValues,
   });
 
-  function onSubmit(data: ProjectFormInput) {
+  async function onSubmit(data: ProjectFormInput) {
+    setSubmitError(null);
+    setIsPending(true);
     const fd = new FormData();
     fd.set("name", data.name);
     fd.set("niche", data.niche ?? "");
@@ -70,14 +72,34 @@ export function ProjectEditForm({
     fd.set("secondary_color", data.brand_kit.secondary_color ?? "");
     fd.set("watermark_text", data.brand_kit.watermark_text ?? "");
     fd.set("logo_storage_path", data.brand_kit.logo_storage_path ?? "");
-    startTransition(() => {
-      updateProject(projectId, fd);
-    });
+    try {
+      const result = await updateProject(projectId, fd);
+      if (result && "error" in result) {
+        const err = result.error;
+        setSubmitError(
+          typeof err === "string"
+            ? err
+            : typeof err === "object" && err !== null
+              ? Object.values(err)
+                  .flat()
+                  .filter(Boolean)
+                  .join(". ") || "Please fix the errors below."
+              : "Save failed."
+        );
+      }
+    } finally {
+      setIsPending(false);
+    }
   }
 
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+        {submitError && (
+          <p className="bg-destructive/10 text-destructive rounded-md px-3 py-2 text-sm" role="alert">
+            {submitError}
+          </p>
+        )}
         <FormField
           control={form.control}
           name="name"
@@ -132,6 +154,7 @@ export function ProjectEditForm({
             </FormItem>
           )}
         />
+        <p className="text-muted-foreground text-xs">Default number of slides per carousel is set when you create a new carousel.</p>
         <div className="space-y-2">
           <FormLabel>Voice rules (optional)</FormLabel>
           <p className="text-muted-foreground text-xs">
