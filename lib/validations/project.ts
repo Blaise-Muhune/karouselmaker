@@ -30,10 +30,13 @@ export const brandKitSchema = z.object({
   logo_storage_path: z.string().optional().default(""),
 });
 
+const languageCode = z.string().min(1).max(10).default("en");
+
 export const projectFormSchema = z.object({
   name: z.string().min(1, "Name is required").max(200),
   niche: z.string().max(200).optional().default(""),
   tone_preset: tonePresetEnum.default("neutral"),
+  language: languageCode,
   slide_structure: slideStructureSchema.default({ number_of_slides: 8 }),
   voice_rules: voiceRulesSchema.default({ do_rules: "", dont_rules: "" }),
   brand_kit: brandKitSchema.default({
@@ -52,6 +55,7 @@ export function projectFormToDbPayload(
   name: string;
   niche: string | null;
   tone_preset: string;
+  language: string;
   voice_rules: Record<string, unknown>;
   slide_structure: Record<string, unknown>;
   brand_kit: Record<string, unknown>;
@@ -61,6 +65,7 @@ export function projectFormToDbPayload(
     name: input.name.trim(),
     niche: input.niche?.trim() || null,
     tone_preset: input.tone_preset,
+    language: input.language ?? "en",
     voice_rules: {
       do_rules: input.voice_rules.do_rules ?? "",
       dont_rules: input.voice_rules.dont_rules ?? "",

@@ -18,6 +18,7 @@ export async function updateProject(projectId: string, formData: FormData) {
     name: formData.get("name") as string,
     niche: (formData.get("niche") as string) ?? "",
     tone_preset: formData.get("tone_preset") as string,
+    language: (formData.get("language") as string) || "en",
     number_of_slides: Number(formData.get("number_of_slides")),
     do_rules: (formData.get("do_rules") as string) ?? "",
     dont_rules: (formData.get("dont_rules") as string) ?? "",
@@ -31,6 +32,7 @@ export async function updateProject(projectId: string, formData: FormData) {
     name: raw.name,
     niche: raw.niche,
     tone_preset: raw.tone_preset,
+    language: raw.language,
     slide_structure: { number_of_slides: raw.number_of_slides },
     voice_rules: { do_rules: raw.do_rules, dont_rules: raw.dont_rules },
     brand_kit: {

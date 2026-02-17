@@ -164,6 +164,7 @@ export async function generateCarousel(formData: FormData): Promise<
   const userAskedWebSearch = !!data.use_web_search;
   const autoNewsWebSearch = isPro && looksLikeNewsOrTimeSensitive(data.input_value, data.input_type);
   const useWebSearch = isPro && (userAskedWebSearch || autoNewsWebSearch);
+  const projectLanguage = (project as { language?: string }).language?.trim() || undefined;
   const ctx = {
     tone_preset: project.tone_preset,
     do_rules: voiceRules?.do_rules ?? "",
@@ -176,6 +177,7 @@ export async function generateCarousel(formData: FormData): Promise<
     use_web_search: useWebSearch,
     creator_handle: creatorHandle,
     project_niche: project.niche?.trim() || undefined,
+    language: projectLanguage,
     notes: data.notes,
   } as const;
 

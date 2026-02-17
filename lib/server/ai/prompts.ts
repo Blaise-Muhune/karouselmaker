@@ -1,3 +1,20 @@
+/** ISO 639-1 code to display name for prompt instructions. */
+const LANGUAGE_NAMES: Record<string, string> = {
+  en: "English",
+  es: "Spanish",
+  fr: "French",
+  de: "German",
+  pt: "Portuguese",
+  it: "Italian",
+  nl: "Dutch",
+  pl: "Polish",
+  ar: "Arabic",
+  hi: "Hindi",
+  zh: "Chinese",
+  ja: "Japanese",
+  ko: "Korean",
+};
+
 type PromptContext = {
   tone_preset: string;
   do_rules: string;
@@ -14,6 +31,8 @@ type PromptContext = {
   creator_handle?: string;
   /** Project niche (e.g. productivity, fitness, marketing). Used to make CTA relevant and conversion-focused. */
   project_niche?: string;
+  /** Project language (ISO 639-1, e.g. en, es). When not en, all carousel text must be in this language. */
+  language?: string;
   /** When true, model has web search—use it for URLs, recent info, time-sensitive topics. */
   use_web_search?: boolean;
   /** Optional notes/context for the AI (e.g. "focus on beginners", "avoid jargon"). */
@@ -29,6 +48,7 @@ Output STRICT JSON only. No markdown, no code fences, no explanation.
 
 Rules:
 - NEVER ask a follow-up or ask the user to clarify. If the topic or URL is unclear, vague, or minimal, generate the best carousel you can—anchor it to the project niche and make it useful and shareable. Always output a full carousel (JSON only). No "Could you clarify?", "What do you mean?", or questions—just produce a good response that fits the niche.
+- NEVER create slides whose content asks the reader to clarify, choose, or decide something. Forbidden: "Pick what X means", "Decide your metric first", "Is it A or B?", "Choose your definition", "First you need to...", or any slide that defers the answer to the reader. The carousel must deliver the actual answer or content—not a meta-guide or a list of options for the reader to pick from. If the topic is ambiguous (e.g. "perfectly rated episodes", "best results"), make a reasonable assumption (e.g. assume widely used metrics like IMDb-style ratings or critic consensus) and generate concrete content (e.g. actual examples, a clear definition you chose, or a ranked list). Never fill slides with instructions like "search episode-level lists" or "cross-check critics"—give the substance instead.
 - Short lines. No filler. No complex sentences.
 - Headlines: max 120 chars, punchy. Body: default short (under 300 chars). Use up to 600 chars only when needed—e.g. quotes, full explanations, step-by-step, lists. Most slides stay brief.
 - Minimal punctuation.
@@ -46,7 +66,7 @@ Rules:
 - If the carousel has 6+ slides, the last slide must be slide_type "cta".
 - For the last slide (slide_type "cta"): the headline MUST be an innovative, high-converting follow call-to-action. Be creative—not generic "follow for more". Lead with the PROJECT NICHE (this is the main focus of the CTA); mention the topic only lightly or in passing. Use urgency, exclusivity, or value. Examples: "You won't find us again—unless you follow @handle", "This is the last productivity tip you'll need → @handle", "We drop fitness breakdowns like this daily. @handle", "Follow @handle—we don't post this anywhere else", "Save this. Then follow @handle for more [niche]". Use creator_handle exactly if provided. Niche-first, topic second.
 - Tone for this project: ${ctx.tone_preset}.
-- Do NOT use **bold** or {{color}} formatting. Output plain text only. The user will add formatting when editing.
+${ctx.language && ctx.language !== "en" ? `- LANGUAGE: Generate the ENTIRE carousel in ${LANGUAGE_NAMES[ctx.language] ?? ctx.language}. All title, headline, body, caption_variants, and hashtags MUST be written in ${LANGUAGE_NAMES[ctx.language] ?? ctx.language}. Do not mix languages.\n` : ""}- Do NOT use **bold** or {{color}} formatting. Output plain text only. The user will add formatting when editing.
 - CAPTION VARIANTS (short, medium, spicy): Must NOT spoil the carousel. The reader should discover the content by swiping through the slides—not by reading the caption. Write captions that tease the topic, create curiosity, or set the vibe (like a hook). Do NOT list key points, conclusions, takeaways, or "you'll learn X, Y, Z". No summaries of what's inside. Short = one line tease. Medium = slightly longer tease or question. Spicy = same rule—intrigue only, no spoilers.
 ${ctx.do_rules ? `Do: ${ctx.do_rules}` : ""}
 ${ctx.dont_rules ? `Don't: ${ctx.dont_rules}` : ""}
@@ -110,6 +130,7 @@ Output format (JSON only). Plain text only—no ** or {{color}} formatting. Exam
 Input type: ${ctx.input_type}.
 Input value:
 ${ctx.input_value}
+If the topic is vague or ambiguous, assume a reasonable interpretation and deliver a full carousel with real content (examples, a clear take, or a ranked list). Do NOT output slides that ask the reader to "pick", "decide", or "choose" anything—give the answer.
 ${urlNote}${creatorHandleNote}${projectNicheNote}${notesSection}
 
 ${ctx.use_ai_backgrounds ? (ctx.use_unsplash_only
@@ -126,7 +147,10 @@ export function buildHookRewritePrompt(ctx: {
   do_rules: string;
   dont_rules: string;
   current_headline: string;
+  /** Project language (ISO 639-1). When not en, all variants must be in this language. */
+  language?: string;
 }): { system: string; user: string } {
+  const langName = ctx.language && ctx.language !== "en" ? LANGUAGE_NAMES[ctx.language] ?? ctx.language : null;
   const system = `You are a carousel hook writer. You output 5 alternative hook headlines that match the project style.
 Output STRICT JSON only: an array of 5 strings. No markdown, no code fences, no explanation.
 
@@ -136,7 +160,7 @@ Rules:
 - No emojis unless the project allows.
 - Sound human: use contractions, avoid AI phrases ("dive in", "unlock", "transform", "game-changer", "cutting-edge").
 - Tone: ${ctx.tone_preset}.
-${ctx.do_rules ? `Do: ${ctx.do_rules}` : ""}
+${langName ? `- LANGUAGE: Write ALL 5 headlines in ${langName} only. Do not mix languages.\n` : ""}${ctx.do_rules ? `Do: ${ctx.do_rules}` : ""}
 ${ctx.dont_rules ? `Don't: ${ctx.dont_rules}` : ""}
 
 Output format: {"variants":["headline1","headline2","headline3","headline4","headline5"]}`;

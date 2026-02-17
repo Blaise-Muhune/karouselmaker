@@ -25,10 +25,12 @@ export default async function EditProjectPage({
     logo_storage_path?: string;
   } | undefined;
 
+  const projectWithLang = project as { language?: string };
   const defaultValues = {
     name: project.name,
     niche: project.niche ?? "",
     tone_preset: project.tone_preset as "neutral" | "funny" | "serious" | "savage" | "inspirational",
+    language: projectWithLang.language ?? "en",
     slide_structure: { number_of_slides: slideStructure?.number_of_slides ?? 8 },
     voice_rules: {
       do_rules: voiceRules?.do_rules ?? "",

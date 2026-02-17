@@ -41,6 +41,22 @@ const TONE_OPTIONS = [
   { value: "inspirational", label: "Inspirational" },
 ] as const;
 
+const LANGUAGE_OPTIONS = [
+  { value: "en", label: "English" },
+  { value: "es", label: "Spanish" },
+  { value: "fr", label: "French" },
+  { value: "de", label: "German" },
+  { value: "pt", label: "Portuguese" },
+  { value: "it", label: "Italian" },
+  { value: "nl", label: "Dutch" },
+  { value: "pl", label: "Polish" },
+  { value: "ar", label: "Arabic" },
+  { value: "hi", label: "Hindi" },
+  { value: "zh", label: "Chinese" },
+  { value: "ja", label: "Japanese" },
+  { value: "ko", label: "Korean" },
+] as const;
+
 export default function NewProjectPage() {
   const [isPending, startTransition] = useTransition();
   const [logoFile, setLogoFile] = useState<File | null>(null);
@@ -51,6 +67,7 @@ export default function NewProjectPage() {
       name: "",
       niche: "",
       tone_preset: "neutral",
+      language: "en",
       slide_structure: { number_of_slides: 8 },
       voice_rules: { do_rules: "", dont_rules: "" },
       brand_kit: {
@@ -66,6 +83,7 @@ export default function NewProjectPage() {
     fd.set("name", data.name);
     fd.set("niche", data.niche ?? "");
     fd.set("tone_preset", data.tone_preset);
+    fd.set("language", data.language ?? "en");
     fd.set("number_of_slides", "8"); // Default; set per carousel on New Carousel page
     fd.set("do_rules", data.voice_rules.do_rules ?? "");
     fd.set("dont_rules", data.voice_rules.dont_rules ?? "");
@@ -117,6 +135,35 @@ export default function NewProjectPage() {
                   <FormControl>
                     <Input placeholder="e.g. Marketing, Fitness" {...field} />
                   </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="language"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Language</FormLabel>
+                  <Select
+                    onValueChange={field.onChange}
+                    defaultValue={field.value}
+                    value={field.value}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select language" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {LANGUAGE_OPTIONS.map((o) => (
+                        <SelectItem key={o.value} value={o.value}>
+                          {o.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-muted-foreground text-xs">All carousels in this project will be generated in this language.</p>
                   <FormMessage />
                 </FormItem>
               )}

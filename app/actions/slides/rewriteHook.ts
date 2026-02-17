@@ -52,11 +52,13 @@ export async function rewriteHook(
   if (!project) return { ok: false, error: "Project not found" };
 
   const voiceRules = (project.voice_rules as { do_rules?: string; dont_rules?: string }) ?? {};
+  const projectLanguage = (project as { language?: string }).language?.trim() || undefined;
   const { system, user: userMsg } = buildHookRewritePrompt({
     tone_preset: (project.tone_preset as string) ?? "professional",
     do_rules: voiceRules.do_rules ?? "",
     dont_rules: voiceRules.dont_rules ?? "",
     current_headline: (slide as { headline: string }).headline,
+    language: projectLanguage,
   });
 
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
