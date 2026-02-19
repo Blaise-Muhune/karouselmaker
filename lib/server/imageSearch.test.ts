@@ -23,7 +23,7 @@ describe("imageSearch", () => {
 
     it("prefers Brave for fictional character intent", () => {
       expect(getProviderPreference("anime character")).toBe("brave");
-      expect(getProviderPreference("marvel character key art")).toBe("brave");
+      expect(getProviderPreference("marvel character poster")).toBe("brave");
     });
   });
 });

@@ -93,8 +93,15 @@ export default function NewProjectPage() {
     if (logoFile && logoFile instanceof File && logoFile.size > 0) {
       fd.set("logo", logoFile);
     }
-    startTransition(() => {
-      createProject(fd);
+    startTransition(async () => {
+      try {
+        await createProject(fd);
+      } catch (err) {
+        // Next.js redirect() throws; don't treat as form error
+        if (err && typeof err === "object" && "digest" in err && (err as { digest?: string }).digest === "NEXT_REDIRECT") return;
+        console.error(err);
+        form.setError("root", { type: "server", message: "Failed to create project. Try again." });
+      }
     });
   }
 
@@ -338,6 +345,9 @@ export default function NewProjectPage() {
                 />
               </div>
             </div>
+            {form.formState.errors.root && (
+              <p className="text-destructive text-sm">{form.formState.errors.root.message}</p>
+            )}
             <div className="flex gap-4">
               <Button type="submit" disabled={isPending} loading={isPending}>
                 {isPending ? "Creating…" : "Create project"}

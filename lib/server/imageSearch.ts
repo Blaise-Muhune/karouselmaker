@@ -110,10 +110,10 @@ const PEOPLE_INTENT_PATTERNS = [
   /\b(marvel|dc\s+comics|disney|pixar)\s+(character|actor|film)\b/i,
 ];
 
-/** Fictional character / franchise: prefer Brave, use key art / official artwork refiners. */
+/** Fictional character / franchise: prefer Brave, use "wallpaper" (or "poster") refiners—avoid "images", "artwork", "key art". */
 const FICTIONAL_CHARACTER_PATTERNS = [
   /\b(anime|character|fanart|fan\s+art)\b/i,
-  /\b(key\s+art|official\s+artwork|concept\s+art)\b/i,
+  /\b(wallpaper|concept\s+art|poster)\b/i,
   /\b(marvel|dc\s+comics|disney|pixar|star\s+wars|harry\s+potter|lotr|game\s+of\s+thrones)\b/i,
 ];
 
@@ -145,6 +145,46 @@ export function getProviderPreference(query: string): "unsplash" | "brave" {
   return preferUnsplashForQuery(query) ? "unsplash" : "brave";
 }
 
+/** Known single-name or nickname athletes (no role/sport/country in query) → disambiguating suffix so search returns the right person. */
+const VAGUE_NAME_DISAMBIGUATION: Record<string, string> = {
+  pele: "Brazil soccer legend",
+  pelé: "Brazil soccer legend",
+  maradona: "Argentina soccer",
+  zidane: "France soccer",
+  ronaldinho: "Brazil soccer",
+  kaka: "Brazil soccer",
+  kaká: "Brazil soccer",
+  cruyff: "Netherlands soccer",
+  beckham: "England soccer",
+  rooney: "England soccer",
+  henry: "Thierry Henry France soccer",
+  iniesta: "Spain soccer",
+  xavi: "Spain soccer",
+  puyol: "Spain soccer",
+  buffon: "Italy soccer",
+  maldini: "Italy soccer",
+  cafu: "Brazil soccer",
+  kahn: "Germany soccer goalkeeper",
+};
+
+/** Words that already disambiguate (role, sport, country); if present we don't need to add suffix. */
+const DISAMBIGUATION_KEYWORDS =
+  /\b(footballer|soccer|football|player|athlete|legend|brazil|argentina|france|spain|england|italy|germany|portugal|netherlands|club|national|team|coach|manager)\b/i;
+
+/**
+ * If the query looks like a vague person name (e.g. "Pele 3000x2000 photo" with no role/sport/country),
+ * return a disambiguated query to try first. Otherwise return null.
+ */
+function disambiguateVagueNameQuery(query: string): string | null {
+  const q = query.trim();
+  if (!q || DISAMBIGUATION_KEYWORDS.test(q)) return null;
+  const firstWord = q.split(/\s+/)[0]?.toLowerCase();
+  if (!firstWord) return null;
+  const suffix = VAGUE_NAME_DISAMBIGUATION[firstWord];
+  if (!suffix) return null;
+  return `${q} ${suffix}`;
+}
+
 /** Brave refiners for people/celebrity: original first, then these in order. Stop once good candidates exist. */
 const BRAVE_PEOPLE_REFINERS = [
   (q: string) => `${q} official photo`,
@@ -152,10 +192,10 @@ const BRAVE_PEOPLE_REFINERS = [
   (q: string) => `${q} site:commons.wikimedia.org`,
 ];
 
-/** Brave refiners for fictional characters (no "press photo"—there is no such thing for comics/characters). */
+/** Brave refiners for fictional characters (no "press photo"; avoid "artwork", "key art"—return canvas/drawn or merchandise). */
 const BRAVE_FICTIONAL_REFINERS = [
-  (q: string) => `${q} key art`,
-  (q: string) => `${q} official artwork`,
+  (q: string) => `${q} wallpaper`,
+  (q: string) => `${q} poster`,
   (q: string) => `${q} concept art`,
 ];
 
@@ -192,20 +232,16 @@ async function tryBraveWithRefiners(query: string): Promise<ImageSearchResult | 
       ? BRAVE_PEOPLE_REFINERS
       : [];
 
-  const queriesToTry = [query, ...refiners.map((fn) => fn(query))];
+  const disambiguated = disambiguateVagueNameQuery(query);
+  const queriesToTry = disambiguated ? [disambiguated, query, ...refiners.map((fn) => fn(query))] : [query, ...refiners.map((fn) => fn(query))];
 
   for (const q of queriesToTry) {
     await waitForBraveRateLimit();
     lastBraveCallAt = Date.now();
-    log("trying Brave Search:", q.slice(0, 50) + (q.length > 50 ? "..." : ""));
     const result = await searchBraveImage(q);
     if (result?.url) {
       const altCount = result.alternates?.length ?? 0;
-      log("Brave OK:", result.url.slice(0, 60) + "...", "| approved for shuffle:", altCount + 1);
-      if (altCount > 0) {
-        log("  primary:", result.url);
-        result.alternates!.forEach((u, i) => log("  alternate", i + 1, u.slice(0, 70) + (u.length > 70 ? "..." : "")));
-      }
+      if (DEBUG) log("Brave OK, total images:", altCount + 1);
       const searchResult: ImageSearchResult = {
         url: result.url,
         source: "brave",

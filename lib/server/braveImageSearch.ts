@@ -231,7 +231,7 @@ export async function searchBraveImage(query: string): Promise<{ url: string; al
   const cacheKey = `brave:${normalizeQueryForCache(query)}`;
   const cached = resultCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
-    if (DEBUG) console.log("[braveImageSearch] cache hit:", query.slice(0, 40));
+    if (DEBUG || isDev) console.log("[braveImageSearch] Query:", query.trim(), "(cached)\n");
     return { url: cached.url, alternates: cached.alternates };
   }
 
@@ -242,7 +242,10 @@ export async function searchBraveImage(query: string): Promise<{ url: string; al
   }
 
   const results = await fetchBraveResults(query);
-  if (DEBUG || isDev) console.debug("[braveImageSearch] Brave raw results:", results.length);
+  if (DEBUG || isDev) {
+    console.log("[braveImageSearch] Query:", query.trim());
+    console.log("[braveImageSearch] Raw:", results.length);
+  }
 
   const seenNormalized = new Set<string>();
   const seenHostPath = new Set<string>();
@@ -274,7 +277,7 @@ export async function searchBraveImage(query: string): Promise<{ url: string; al
 
       const c = { url, maxDim, host };
       if (BLACKLIST_DOMAINS.test(host)) {
-        if (DEBUG) console.log("[braveImageSearch] skip blacklisted domain:", host);
+        if (DEBUG || isDev) console.log("[braveImageSearch] skip domain:", host);
         if (!fallbackBlacklisted) fallbackBlacklisted = c;
         continue;
       }
@@ -287,13 +290,14 @@ export async function searchBraveImage(query: string): Promise<{ url: string; al
 
   if (candidates.length === 0 && fallbackBlacklisted) {
     candidates.push(fallbackBlacklisted);
-    if (DEBUG || isDev) console.debug("[braveImageSearch] Using last-resort blacklisted result to avoid empty");
   }
 
-  if (DEBUG || isDev) console.debug("[braveImageSearch] After filtering:", candidates.length);
+  if (DEBUG || isDev) {
+    console.log("[braveImageSearch] After filtering:", candidates.length);
+    console.log("");
+  }
 
   if (candidates.length === 0) {
-    if (DEBUG) console.log("[braveImageSearch] no results (all skipped or none returned)");
     return null;
   }
 
