@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useIsStandalonePWA } from "@/lib/hooks/useIsStandalonePWA";
@@ -12,8 +12,23 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { CarouselVideoPlayer } from "@/components/carousels/CarouselVideoPlayer";
-import { createVideoFromImages, preloadFFmpeg } from "@/lib/video/createVideoFromImages";
-import { DownloadIcon, Loader2Icon, PlayIcon, VideoIcon } from "lucide-react";
+import {
+  createVideoFromImages,
+  createVideoFromLayeredSlides,
+  preloadFFmpeg,
+  type CaptionPosition,
+  type LayeredSlideInput,
+} from "@/lib/video/createVideoFromImages";
+import { VOICE_PRESETS } from "@/lib/video/voices";
+import { DownloadIcon, Loader2Icon, Pause, PlayIcon, VideoIcon } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
 import { PLAN_LIMITS } from "@/lib/constants";
 
@@ -51,22 +66,46 @@ export function EditorExportSection({
   const [exporting, setExporting] = useState(false);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [slideUrls, setSlideUrls] = useState<string[]>([]);
+  const [slideVideoData, setSlideVideoData] = useState<LayeredSlideInput[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [videoPreviewOpen, setVideoPreviewOpen] = useState(false);
   const [videoUrlsLoading, setVideoUrlsLoading] = useState(false);
   const [videoDownloading, setVideoDownloading] = useState(false);
   const [videoDownloadProgress, setVideoDownloadProgress] = useState(0);
+  const [videoDownloadStep, setVideoDownloadStep] = useState<string>("");
   const [videoDownloadError, setVideoDownloadError] = useState<string | null>(null);
+  const [captionPosition, setCaptionPosition] = useState<CaptionPosition>("bottom_center");
+  const [withCaption, setWithCaption] = useState(false);
   const [zipDownloading, setZipDownloading] = useState(false);
+  const [withVoiceover, setWithVoiceover] = useState(false);
+  const [selectedVoiceId, setSelectedVoiceId] = useState(VOICE_PRESETS[0]!.voiceId);
+  const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(null);
+  const [generatedVideoBlob, setGeneratedVideoBlob] = useState<Blob | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const isStandalonePWA = useIsStandalonePWA();
 
   const latestReadyExport = recentExports.find((ex) => ex.status === "ready");
+
+  // Revoke object URL when dialog closes or component unmounts
+  useEffect(() => {
+    return () => {
+      if (generatedVideoUrl) {
+        URL.revokeObjectURL(generatedVideoUrl);
+      }
+    };
+  }, [generatedVideoUrl]);
+
+  // Captions require voiceover (TTS); keep state in sync
+  useEffect(() => {
+    if (!withVoiceover) setWithCaption(false);
+  }, [withVoiceover]);
 
   const handleExport = async () => {
     setExporting(true);
     setError(null);
     setDownloadUrl(null);
     setSlideUrls([]);
+    setSlideVideoData(null);
     try {
       const res = await fetch(`/api/export/${carouselId}`, { method: "POST" });
       const data = await res.json().catch(() => ({}));
@@ -86,44 +125,113 @@ export function EditorExportSection({
     }
   };
 
-  const loadVideoUrls = async (): Promise<string[]> => {
-    if (slideUrls.length > 0) return slideUrls;
-    if (!latestReadyExport) return [];
+  const loadVideoUrls = async (): Promise<{ urls: string[]; videoData: LayeredSlideInput[] | null }> => {
+    const hasCompleteVideoData =
+      slideVideoData != null &&
+      slideVideoData.length === slideUrls.length &&
+      slideVideoData.every((s) => s.backgroundUrls?.length);
+    if (slideUrls.length > 0 && hasCompleteVideoData) {
+      return { urls: slideUrls, videoData: slideVideoData };
+    }
+    if (!latestReadyExport) return { urls: slideUrls.length > 0 ? slideUrls : [], videoData: null };
     setVideoUrlsLoading(true);
     try {
       const res = await fetch(`/api/export/${carouselId}/${latestReadyExport.id}/slide-urls`);
       const data = await res.json().catch(() => ({}));
       if (data.slideUrls?.length) {
         setSlideUrls(data.slideUrls);
-        return data.slideUrls as string[];
+        const vd =
+          Array.isArray(data.slideVideoData) && data.slideVideoData.length === data.slideUrls.length
+            ? (data.slideVideoData as LayeredSlideInput[])
+            : null;
+        setSlideVideoData(vd);
+        return { urls: data.slideUrls as string[], videoData: vd };
       }
-      return [];
+      return { urls: slideUrls, videoData: null };
     } finally {
       setVideoUrlsLoading(false);
     }
   };
 
   const handleDownloadVideo = async () => {
-    const urls = await loadVideoUrls();
+    const { urls, videoData } = await loadVideoUrls();
     if (urls.length === 0) return;
+    const previousVideoUrl = generatedVideoUrl;
     setVideoDownloading(true);
     setVideoDownloadError(null);
     setVideoDownloadProgress(0);
+    setVideoDownloadStep("");
     try {
       const width = exportSize === "1080x1080" ? 1080 : 1080;
       const height = exportSize === "1080x1080" ? 1080 : exportSize === "1080x1350" ? 1350 : 1920;
-      const blob = await createVideoFromImages(urls, width, height, setVideoDownloadProgress);
-      const url = URL.createObjectURL(blob);
+      let audioBuffer: ArrayBuffer | undefined;
+      let slideDurationsSec: number[] | undefined;
+      let captionCues: { text: string; start: number; end: number }[] | undefined;
+      if (withVoiceover) {
+        const ttsRes = await fetch("/api/tts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            carouselId,
+            voiceId: selectedVoiceId,
+            timestamps: true,
+          }),
+        });
+        if (!ttsRes.ok) {
+          const err = await ttsRes.json().catch(() => ({}));
+          throw new Error(err.error ?? "Voiceover failed. Add ELEVENLABS_API_KEY in env.");
+        }
+        const ttsData = (await ttsRes.json()) as {
+          audioBase64?: string;
+          captionCues?: { text: string; start: number; end: number }[];
+          slideDurationsSec?: number[];
+        };
+        if (ttsData.audioBase64) {
+          const binary = atob(ttsData.audioBase64);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          audioBuffer = bytes.buffer;
+          slideDurationsSec = ttsData.slideDurationsSec;
+          // Only use caption cues when user opted in to captions
+          if (withCaption) captionCues = ttsData.captionCues;
+        }
+      }
+      const blob = videoData?.every((s) => s.backgroundUrls?.length)
+        ? await createVideoFromLayeredSlides(
+            videoData,
+            width,
+            height,
+            setVideoDownloadProgress,
+            withVoiceover && audioBuffer
+              ? {
+                  audioBuffer,
+                  slideDurationsSec,
+                  ...(withCaption && captionCues
+                    ? { captionCues, captionPosition }
+                    : {}),
+                  onStep: setVideoDownloadStep,
+                }
+              : {
+                  onStep: setVideoDownloadStep,
+                }
+          )
+        : await createVideoFromImages(urls, width, height, setVideoDownloadProgress);
+      // Keep blob and URL so we can show a real <video> with play/pause and re-download
+      setGeneratedVideoBlob(blob);
+      if (previousVideoUrl) URL.revokeObjectURL(previousVideoUrl);
+      setGeneratedVideoUrl(URL.createObjectURL(blob));
+      const downloadUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url;
+      a.href = downloadUrl;
       a.download = "carousel.mp4";
       a.click();
-      URL.revokeObjectURL(url);
+      URL.revokeObjectURL(downloadUrl);
     } catch (e) {
       setVideoDownloadError(e instanceof Error ? e.message : "Video download failed");
     } finally {
       setVideoDownloading(false);
       setVideoDownloadProgress(0);
+      setVideoDownloadStep("");
     }
   };
 
@@ -207,8 +315,15 @@ export function EditorExportSection({
           <Dialog open={videoPreviewOpen} onOpenChange={(open) => {
             setVideoPreviewOpen(open);
             if (open) {
-              if (slideUrls.length === 0) loadVideoUrls();
+              const hasComplete =
+                slideVideoData != null &&
+                slideVideoData.length === slideUrls.length &&
+                slideVideoData.every((s) => s.backgroundUrls?.length);
+              if (slideUrls.length === 0 || !hasComplete) loadVideoUrls();
               preloadFFmpeg(); // Start loading FFmpeg so Download MP4 is faster
+            } else {
+              setGeneratedVideoUrl(null);
+              setGeneratedVideoBlob(null);
             }
           }}>
             <DialogTrigger asChild>
@@ -221,45 +336,170 @@ export function EditorExportSection({
               <DialogHeader>
                 <DialogTitle>Carousel video preview</DialogTitle>
               </DialogHeader>
-              <div className="flex justify-center py-4">
+              <div className="flex justify-center py-4 rounded-lg overflow-hidden bg-black/5">
                 {videoUrlsLoading ? (
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <Loader2Icon className="size-5 animate-spin" />
                     Loading…
                   </div>
+                ) : generatedVideoUrl ? (
+                  <video
+                    ref={videoRef}
+                    src={generatedVideoUrl}
+                    controls
+                    playsInline
+                    className="max-h-[60vh] w-full rounded-lg"
+                  />
                 ) : (
                   <CarouselVideoPlayer
                     slideUrls={slideUrls}
-                    width={exportSize === "1080x1080" ? 1080 : exportSize === "1080x1350" ? 1080 : 1080}
+                    slideVideoData={slideVideoData}
+                    width={exportSize === "1080x1080" ? 1080 : 1080}
                     height={exportSize === "1080x1080" ? 1080 : exportSize === "1080x1350" ? 1350 : 1920}
                   />
                 )}
               </div>
-              <div className="flex flex-col items-center gap-2 mt-4">
-                <Button
-                  size="sm"
-                  onClick={handleDownloadVideo}
-                  disabled={slideUrls.length === 0 || videoDownloading || videoUrlsLoading}
-                >
-                  {videoDownloading ? (
+              <div className="flex flex-col items-center gap-4 mt-4">
+                <div className="flex flex-wrap items-center justify-center gap-4 w-full">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="voiceover"
+                      checked={withVoiceover}
+                      onChange={(e) => setWithVoiceover(e.target.checked)}
+                      className="rounded border-input accent-primary"
+                    />
+                    <Label htmlFor="voiceover" className="text-sm font-medium cursor-pointer">
+                      With voiceover
+                    </Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="with-caption"
+                      checked={withCaption}
+                      disabled={!withVoiceover}
+                      onChange={(e) => setWithCaption(e.target.checked)}
+                      className="rounded border-input accent-primary disabled:opacity-50"
+                    />
+                    <Label htmlFor="with-caption" className={`text-sm font-medium cursor-pointer ${!withVoiceover ? "text-muted-foreground" : ""}`}>
+                      With caption
+                    </Label>
+                  </div>
+                  {withVoiceover && (
                     <>
-                      <Loader2Icon className="mr-2 size-4 animate-spin" />
-                      {videoDownloadProgress > 0
-                        ? `Encoding… ${Math.round(videoDownloadProgress * 100)}%`
-                        : "Loading FFmpeg…"}
-                    </>
-                  ) : (
-                    <>
-                      <VideoIcon className="mr-2 size-4" />
-                      Download MP4
+                      <div className="flex items-center gap-2">
+                        <Label htmlFor="voice-select" className="text-sm text-muted-foreground whitespace-nowrap">
+                          Voice
+                        </Label>
+                        <Select
+                          value={selectedVoiceId}
+                          onValueChange={setSelectedVoiceId}
+                        >
+                          <SelectTrigger id="voice-select" className="w-[180px]">
+                            <SelectValue placeholder="Pick a voice" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {VOICE_PRESETS.map((v) => (
+                              <SelectItem key={v.id} value={v.voiceId}>
+                                {v.name}
+                                {v.description ? ` — ${v.description}` : ""}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Label htmlFor="caption-pos" className="text-sm text-muted-foreground whitespace-nowrap">
+                          Caption position
+                        </Label>
+                        <Select
+                          value={captionPosition}
+                          onValueChange={(v) => setCaptionPosition(v as CaptionPosition)}
+                        >
+                          <SelectTrigger id="caption-pos" className="w-[160px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="bottom_center">Bottom center</SelectItem>
+                            <SelectItem value="lower_third">Lower third</SelectItem>
+                            <SelectItem value="center">Center</SelectItem>
+                            <SelectItem value="safe_lower">Safe lower (above platform buttons)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </>
                   )}
-                </Button>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap justify-center">
+                  {generatedVideoUrl && (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => videoRef.current?.play()}
+                        aria-label="Play"
+                      >
+                        <PlayIcon className="mr-2 size-4" />
+                        Play
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => videoRef.current?.pause()}
+                        aria-label="Pause"
+                      >
+                        <Pause className="mr-2 size-4" />
+                        Pause
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          if (!generatedVideoBlob) return;
+                          const url = URL.createObjectURL(generatedVideoBlob);
+                          const a = document.createElement("a");
+                          a.href = url;
+                          a.download = "carousel.mp4";
+                          a.click();
+                          URL.revokeObjectURL(url);
+                        }}
+                        disabled={!generatedVideoBlob}
+                      >
+                        <DownloadIcon className="mr-2 size-4" />
+                        Download MP4
+                      </Button>
+                    </>
+                  )}
+                  {!generatedVideoUrl && (
+                    <Button
+                      size="sm"
+                      onClick={handleDownloadVideo}
+                      disabled={slideUrls.length === 0 || videoDownloading || videoUrlsLoading}
+                    >
+                      {videoDownloading ? (
+                        <>
+                          <Loader2Icon className="mr-2 size-4 animate-spin" />
+                          {videoDownloadStep
+                            ? `${videoDownloadStep} ${videoDownloadProgress > 0 ? Math.round(videoDownloadProgress * 100) + "%" : ""}`
+                            : "Loading FFmpeg…"}
+                        </>
+                      ) : (
+                        <>
+                          <VideoIcon className="mr-2 size-4" />
+                          Generate & download MP4
+                        </>
+                      )}
+                    </Button>
+                  )}
+                </div>
                 {videoDownloadError && (
                   <p className="text-destructive text-xs">{videoDownloadError}</p>
                 )}
                 <p className="text-muted-foreground text-xs text-center">
-                  Encodes in browser · Open this dialog first for faster download
+                  {generatedVideoUrl
+                    ? "Use the video controls to play, pause, and seek. Download again if needed."
+                    : "Encodes in browser · Open this dialog first for faster download"}
                 </p>
               </div>
             </DialogContent>

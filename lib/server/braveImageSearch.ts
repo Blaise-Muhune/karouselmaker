@@ -12,22 +12,25 @@
  *
  * Quality: Brave often returns low-res thumbnails. We prefer properties.url (original/full-size)
  * over thumbnail.src, and filter by max(width,height) so vertical portraits are preserved.
- * SOFT FILTERING: Prefer high-quality but never return empty. Only hard-reject: maxDim known and < 1200, or blacklisted domains. Missing dimensions => keep. Portrait preserved via max(width, height).
+ * SOFT FILTERING: Prefer high-quality but never return empty. Only hard-reject when maxDim is known and < MIN_DIM_HARD_REJECT, or blacklisted domains. Missing dimensions => keep. Portrait preserved via max(width, height).
  */
+
+import { normalizeQueryForCache, CACHE_TTL_MS, evictCacheBatch } from "@/lib/server/imageSearchUtils";
 
 const BRAVE_IMAGE_URL = "https://api.search.brave.com/res/v1/images/search";
 
 const DEBUG = process.env.IMAGE_SEARCH_DEBUG === "true" || process.env.IMAGE_SEARCH_DEBUG === "1";
 const isDev = process.env.NODE_ENV === "development";
 
-/** Only discard when maxDim is known and below this (icon-sized). Brave often returns thumbnail dimensions (200–600) for full-size URLs; use 400 so we keep those and only drop real icons. */
+/** Request timeout for Brave API (avoids hanging on slow/unresponsive API). */
+const BRAVE_FETCH_TIMEOUT_MS = 15000;
+
+/** Only discard when maxDim is known and below this (icon/small-thumb). 600 drops tiny icons while keeping typical Brave results (sports, people, how-to, etc.). */
 const MIN_DIM_HARD_REJECT = 400;
 
-/** Blacklist only (no whitelist). Store/e-commerce and low-value domains. */
+/** Blacklist only (no whitelist). Store/e-commerce and low-value domains. media-amazon = product CDN (m.media-amazon.com etc.). */
 const BLACKLIST_DOMAINS =
-// /sideshow\.com/i;
-  /ebay\.|bidsquare\.|etsy\.|amazon\.|sideshow\.|shuttersstock\.|thehorrordome\.?walmartimages\.|pinimg\.|images-wixmp\.|redbubble\.|etsy\.|static\.|.foxsports\.|alamy\.|ebayimg\.com/i;
-  // /amazon\.|ebay\.|ebayimg\.|etsy\.|alibaba|alamy|aliexpress|walmart\.|target\.|bestbuy\.|shopify\.|overstock\.|wayfair\.|homedepot\.|lowes\.|costco\.|newegg\.|bhphotovideo\.|adorama\.|buzzfeed\.com\/shopping|rakuten\.|wish\.|shein\.|zalando\.|asos\.|pinterest\.|pinimg\./i;
+  /ebay\.|bidsquare\.|etsy\.|amazon\.|rare-gallery\.|media-amazon\.|sideshow\.|shuttersstock\.|thehorrordome\.|walmartimages\.|pinimg\.|images-wixmp\.|redbubble\.|static\.|\.foxsports\.|alamy\.|ebayimg\.com/i;
 
 /** Only keep URLs whose path ends with a common image extension. Ignores links that don't look like direct image files. */
 const IMAGE_EXT_REGEX = /\.(png|jpe?g|webp|gif|bmp|avif|svg|ico)(\?|$)/i;
@@ -47,30 +50,15 @@ const REPUTABLE_DOMAINS = [
   "gettyimages.com",
   "reuters.com",
   "apimages.com",
+  "pinterest.com",
 ];
 
-/** Domains to penalize (aggregators, wallpapers, often lower quality or licensing issues). */
-const PENALTY_DOMAINS = [
-  // "pinterest.",
-  // "pinimg.com",
-  // "wallpaper",
-  // "wallpapers.",
-  // "hdwallpapers",
-  // "wallpapercave",
-  // "imgflip",
-  "memes.",
-];
-
-const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
-const CACHE_MAX_ENTRIES = 500;
+/** Domains to penalize in ranking (aggregators/meme sites; others removed to avoid over-penalizing). */
+const PENALTY_DOMAINS = ["memes."];
 
 type CacheEntry = { url: string; alternates: string[]; ts: number };
 
 let resultCache: Map<string, CacheEntry> = new Map();
-
-function normalizeQueryForCache(q: string): string {
-  return q.trim().toLowerCase().slice(0, 200);
-}
 
 function normalizeUrl(url: string): string {
   try {
@@ -171,10 +159,23 @@ async function fetchBraveResults(query: string): Promise<BraveResultItem[]> {
   });
 
   const url = `${BRAVE_IMAGE_URL}?${params.toString()}`;
-  const res = await fetch(url, {
-    headers: { "X-Subscription-Token": apiKey },
-    next: { revalidate: 0 },
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), BRAVE_FETCH_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      headers: { "X-Subscription-Token": apiKey },
+      next: { revalidate: 0 },
+      signal: controller.signal,
+    });
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err instanceof Error && err.name === "AbortError") {
+      if (DEBUG) console.log("[braveImageSearch] request timeout");
+    } else if (DEBUG) console.log("[braveImageSearch] fetch error:", err);
+    return [];
+  }
+  clearTimeout(timeoutId);
 
   if (!res.ok) {
     const bodyText = await res.text().catch(() => "");
@@ -271,7 +272,7 @@ export async function searchBraveImage(query: string): Promise<{ url: string; al
       seenNormalized.add(norm);
       seenHostPath.add(hp);
 
-      // Soft dimension filter: only discard when we have a known dimension and it's icon-sized (< 400). Missing dims => keep.
+      // Soft dimension filter: only discard when maxDim is known and < MIN_DIM_HARD_REJECT. Missing dims => keep.
       const maxDimVal = maxDim ?? 0;
       if (maxDimVal > 0 && maxDimVal < MIN_DIM_HARD_REJECT) continue;
 
@@ -314,10 +315,7 @@ export async function searchBraveImage(query: string): Promise<{ url: string; al
   // Return all approved URLs so the editor can shuffle through them (not just top 3).
   const alternates = scored.map((c) => c.url).filter((u) => u !== picked.url);
 
-  if (resultCache.size >= CACHE_MAX_ENTRIES) {
-    const firstKey = resultCache.keys().next().value;
-    if (firstKey) resultCache.delete(firstKey);
-  }
+  evictCacheBatch(resultCache);
   resultCache.set(cacheKey, { url: picked.url, alternates, ts: Date.now() });
 
   return { url: picked.url, alternates };

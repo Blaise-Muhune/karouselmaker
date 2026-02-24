@@ -3,9 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { getUser } from "@/lib/server/auth/getUser";
 import { requirePro } from "@/lib/server/subscription";
-import { getCarousel, listSlides, updateSlide } from "@/lib/server/db";
+import { getCarousel, listSlides, updateSlide, getTemplate } from "@/lib/server/db";
 import type { Json } from "@/lib/server/db/types";
 import type { Slide } from "@/lib/server/db/types";
+import { getAutoHighlightSpans, normalizeHighlightSpansToWords, getHighlightSpansFromWords, HIGHLIGHT_COLORS } from "@/lib/editor/inlineFormat";
 
 export type ApplyToAllResult = { ok: true; updated: number } | { ok: false; error: string };
 
@@ -41,7 +42,7 @@ export async function applyToAllSlides(
     headline?: string;
     body?: string | null;
   },
-  revalidatePathname?: string,
+  revalidatePathname?: string | string[],
   scope?: ApplyScope
 ): Promise<ApplyToAllResult> {
   const { user } = await getUser();
@@ -57,7 +58,10 @@ export async function applyToAllSlides(
   if (slides.length === 0) return { ok: true, updated: 0 };
 
   const patch: { template_id?: string | null; background?: Json; meta?: Json; headline?: string; body?: string | null } = {};
-  if (payload.template_id !== undefined) patch.template_id = payload.template_id;
+  if (payload.template_id !== undefined) {
+    const templateExists = payload.template_id ? await getTemplate(user.id, payload.template_id) : true;
+    patch.template_id = templateExists ? payload.template_id : null;
+  }
   if (payload.background !== undefined) patch.background = payload.background as Json;
   if (payload.meta !== undefined) patch.meta = payload.meta as Json;
   if (payload.headline !== undefined) patch.headline = payload.headline;
@@ -67,11 +71,30 @@ export async function applyToAllSlides(
 
   for (const slide of slides) {
     const slidePatch = { ...patch };
-    if (patch.meta !== undefined) {
+    if (slide.template_id && payload.template_id === undefined) {
+      const existingTemplate = await getTemplate(user.id, slide.template_id);
+      if (!existingTemplate) (slidePatch as Record<string, unknown>).template_id = null;
+    }
+    // When changing template, clear previous slide overrides then apply new template's defaults (so saved zone position/font size apply).
+    if (patch.template_id !== undefined) {
+      const existingMeta = (slide.meta as Record<string, unknown>) ?? {};
+      const metaForNewTemplate = { ...existingMeta };
+      delete metaForNewTemplate.headline_font_size;
+      delete metaForNewTemplate.body_font_size;
+      delete metaForNewTemplate.headline_zone_override;
+      delete metaForNewTemplate.body_zone_override;
+      if (patch.meta !== undefined) {
+        const incomingMeta = { ...(patch.meta as Record<string, unknown>) };
+        delete incomingMeta.headline_highlights;
+        delete incomingMeta.body_highlights;
+        // Keep template defaults (zone overrides, font sizes, etc.) so layout matches the saved template.
+        slidePatch.meta = { ...metaForNewTemplate, ...incomingMeta } as Json;
+      } else {
+        slidePatch.meta = metaForNewTemplate as Json;
+      }
+    } else if (patch.meta !== undefined) {
       const existingMeta = (slide.meta as Record<string, unknown>) ?? {};
       const incomingMeta = { ...(patch.meta as Record<string, unknown>) };
-      // Never copy highlight spans to other slides: indices are for the source slide's text only.
-      // Applying them to different headline/body text causes wrong characters highlighted and layout issues.
       delete incomingMeta.headline_highlights;
       delete incomingMeta.body_highlights;
       slidePatch.meta = { ...existingMeta, ...incomingMeta } as Json;
@@ -79,7 +102,12 @@ export async function applyToAllSlides(
     await updateSlide(user.id, slide.id, slidePatch);
   }
 
-  if (revalidatePathname) revalidatePath(revalidatePathname);
+  const paths = revalidatePathname
+    ? Array.isArray(revalidatePathname)
+      ? revalidatePathname
+      : [revalidatePathname]
+    : [];
+  for (const p of paths) revalidatePath(p);
   return { ok: true, updated: slides.length };
 }
 
@@ -259,4 +287,69 @@ export async function clearTextFromSlides(
 
   if (revalidatePathname) revalidatePath(revalidatePathname);
   return { ok: true, updated: targetSlides.length };
+}
+
+const DEFAULT_AUTO_HIGHLIGHT_COLOR = HIGHLIGHT_COLORS.yellow ?? "#facc15";
+
+/** Run auto-highlight on headline and body for each slide and save. Only applies Auto logic (key words). */
+export async function applyAutoHighlightsToAllSlides(
+  carouselId: string,
+  revalidatePathname?: string | string[],
+  scope?: ApplyScope,
+  defaultColor?: string
+): Promise<ApplyToAllResult> {
+  const { user } = await getUser();
+  if (!user) return { ok: false, error: "Unauthorized" };
+
+  const proCheck = await requirePro(user.id, user.email);
+  if (!proCheck.allowed) return { ok: false, error: proCheck.error ?? "Upgrade to Pro" };
+
+  const carousel = await getCarousel(user.id, carouselId);
+  if (!carousel) return { ok: false, error: "Carousel not found" };
+
+  const slides = filterSlidesByScope(await listSlides(user.id, carouselId), scope);
+  if (slides.length === 0) return { ok: true, updated: 0 };
+
+  const color = defaultColor && (defaultColor.startsWith("#") || HIGHLIGHT_COLORS[defaultColor])
+    ? (defaultColor.startsWith("#") ? defaultColor : (HIGHLIGHT_COLORS[defaultColor] ?? DEFAULT_AUTO_HIGHLIGHT_COLOR))
+    : DEFAULT_AUTO_HIGHLIGHT_COLOR;
+
+  for (const slide of slides) {
+    const headline = (slide.headline ?? "") as string;
+    const body = (slide.body ?? "") as string;
+    const meta = (slide.meta as Record<string, unknown>) ?? {};
+    const headlineWords = meta.headline_highlight_words as string[] | undefined;
+    const bodyWords = meta.body_highlight_words as string[] | undefined;
+    const headlineSpans = headline.trim()
+      ? normalizeHighlightSpansToWords(
+          headline,
+          headlineWords?.length
+            ? getHighlightSpansFromWords(headline, headlineWords, color)
+            : getAutoHighlightSpans(headline, { style: "headline", defaultColor: color })
+        )
+      : [];
+    const bodySpans = body.trim()
+      ? normalizeHighlightSpansToWords(
+          body,
+          bodyWords?.length
+            ? getHighlightSpansFromWords(body, bodyWords, color)
+            : getAutoHighlightSpans(body, { style: "body", defaultColor: color })
+        )
+      : [];
+    const existingMeta = (slide.meta as Record<string, unknown>) ?? {};
+    const newMeta: Record<string, unknown> = { ...existingMeta };
+    if (headlineSpans.length > 0) newMeta.headline_highlights = headlineSpans;
+    else delete newMeta.headline_highlights;
+    if (bodySpans.length > 0) newMeta.body_highlights = bodySpans;
+    else delete newMeta.body_highlights;
+    await updateSlide(user.id, slide.id, { meta: newMeta as Json });
+  }
+
+  const paths = revalidatePathname
+    ? Array.isArray(revalidatePathname)
+      ? revalidatePathname
+      : [revalidatePathname]
+    : [];
+  for (const p of paths) revalidatePath(p);
+  return { ok: true, updated: slides.length };
 }

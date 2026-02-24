@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { setSlideTemplate } from "@/app/actions/slides/setSlideTemplate";
+import { getTemplateConfigAction } from "@/app/actions/templates/getTemplateConfig";
 import { reorderSlides } from "@/app/actions/slides/reorderSlides";
 import { shuffleSlideBackgrounds } from "@/app/actions/slides/shuffleCarouselBackgrounds";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
@@ -54,6 +55,21 @@ type SlideGridProps = {
   isPro?: boolean;
 };
 
+/** Build overlay object from template gradient for optimistic UI update. */
+function overlayFromTemplateGradient(grad: { color?: string; direction?: string; strength?: number; extent?: number; solidSize?: number } | undefined): Record<string, unknown> | undefined {
+  if (!grad) return undefined;
+  const color = (typeof grad.color === "string" && /^#([0-9A-Fa-f]{3}){1,2}$/.test(grad.color)) ? grad.color : "#0a0a0a";
+  return {
+    gradient: true,
+    color,
+    textColor: getContrastingTextColor(color),
+    direction: grad.direction ?? "bottom",
+    darken: grad.strength ?? 0.5,
+    extent: grad.extent ?? 50,
+    solidSize: grad.solidSize ?? 25,
+  };
+}
+
 function getTemplateConfig(
   slide: Slide,
   templates: TemplateWithConfig[]
@@ -65,6 +81,71 @@ function getTemplateConfig(
   return templates[0]?.parsedConfig ?? null;
 }
 
+/** Zone + font overrides from template defaults.meta so saved layouts display correctly in the grid. */
+function getZoneAndFontOverridesFromTemplate(config: TemplateConfig | null): {
+  zoneOverrides?: { headline?: Record<string, unknown>; body?: Record<string, unknown> };
+  fontOverrides?: { headline_font_size?: number; body_font_size?: number };
+  chromeOverrides?: import("@/lib/renderer/renderModel").ChromeOverrides;
+} {
+  if (!config?.defaults?.meta || typeof config.defaults.meta !== "object") return {};
+  const meta = config.defaults.meta;
+  const headlineZone =
+    meta.headline_zone_override && typeof meta.headline_zone_override === "object" && Object.keys(meta.headline_zone_override).length > 0
+      ? meta.headline_zone_override
+      : undefined;
+  const bodyZone =
+    meta.body_zone_override && typeof meta.body_zone_override === "object" && Object.keys(meta.body_zone_override).length > 0
+      ? meta.body_zone_override
+      : undefined;
+  const zoneOverrides =
+    headlineZone || bodyZone
+      ? { headline: headlineZone as Record<string, unknown>, body: bodyZone as Record<string, unknown> }
+      : undefined;
+  const fontOverrides =
+    meta.headline_font_size != null || meta.body_font_size != null
+      ? {
+          ...(meta.headline_font_size != null && { headline_font_size: Number(meta.headline_font_size) }),
+          ...(meta.body_font_size != null && { body_font_size: Number(meta.body_font_size) }),
+        }
+      : undefined;
+  const counterRaw = meta.counter_zone_override;
+  const watermarkRaw = meta.watermark_zone_override;
+  const madeWithRaw = meta.made_with_zone_override;
+  const counter =
+    counterRaw && typeof counterRaw === "object" && counterRaw !== null && Object.keys(counterRaw).length > 0
+      ? {
+          ...(counterRaw.top != null && { top: Number(counterRaw.top) }),
+          ...(counterRaw.right != null && { right: Number(counterRaw.right) }),
+          ...(counterRaw.fontSize != null && { fontSize: Number(counterRaw.fontSize) }),
+        }
+      : undefined;
+  const watermark =
+    watermarkRaw && typeof watermarkRaw === "object" && watermarkRaw !== null && Object.keys(watermarkRaw).length > 0
+      ? {
+          ...(watermarkRaw.position ? { position: watermarkRaw.position as "top_left" | "top_right" | "bottom_left" | "bottom_right" | "custom" } : {}),
+          ...(watermarkRaw.logoX != null && { logoX: Number(watermarkRaw.logoX) }),
+          ...(watermarkRaw.logoY != null && { logoY: Number(watermarkRaw.logoY) }),
+          ...(watermarkRaw.fontSize != null && { fontSize: Number(watermarkRaw.fontSize) }),
+          ...(watermarkRaw.maxWidth != null && { maxWidth: Number(watermarkRaw.maxWidth) }),
+          ...(watermarkRaw.maxHeight != null && { maxHeight: Number(watermarkRaw.maxHeight) }),
+        }
+      : undefined;
+  const madeWith =
+    madeWithRaw && typeof madeWithRaw === "object" && madeWithRaw !== null && Object.keys(madeWithRaw).length > 0
+      ? {
+          ...(madeWithRaw.fontSize != null && { fontSize: Number(madeWithRaw.fontSize) }),
+          ...(madeWithRaw.x != null && { x: Number(madeWithRaw.x) }),
+          ...(madeWithRaw.y != null && { y: Number(madeWithRaw.y) }),
+          ...((madeWithRaw as { y?: number }).y == null && { bottom: (madeWithRaw as { bottom?: number }).bottom != null ? Number((madeWithRaw as { bottom: number }).bottom) : 16 }),
+        }
+      : undefined;
+  const chromeOverrides =
+    (counter && Object.keys(counter).length > 0) || (watermark && Object.keys(watermark).length > 0) || (madeWith && Object.keys(madeWith).length > 0)
+      ? { counter, watermark, madeWith }
+      : undefined;
+  return { zoneOverrides, fontOverrides, chromeOverrides };
+}
+
 function getBackgroundOverride(slide: Slide, templateConfig: TemplateConfig | null): SlideBackgroundOverride | null {
   const bg = slide.background as {
     style?: "solid" | "gradient";
@@ -74,7 +155,7 @@ function getBackgroundOverride(slide: Slide, templateConfig: TemplateConfig | nu
     overlay?: { gradient?: boolean; darken?: number; color?: string; textColor?: string; direction?: "top" | "bottom" | "left" | "right"; extent?: number; solidSize?: number };
   } | null;
   if (!bg) return null;
-  const gradientColor = bg.overlay?.color ?? templateConfig?.overlays?.gradient?.color ?? "#000000";
+  const gradientColor = bg.overlay?.color ?? templateConfig?.overlays?.gradient?.color ?? "#0a0a0a";
   const templateStrength = templateConfig?.overlays?.gradient?.strength ?? 0.5;
   const gradientStrength =
     bg.overlay?.darken != null && bg.overlay.darken !== 0.5 ? bg.overlay.darken : templateStrength;
@@ -107,10 +188,10 @@ function getShowCounterOverride(slide: Slide): boolean | undefined {
   return m.show_counter;
 }
 
-function getShowWatermarkOverride(slide: Slide, totalSlides: number): boolean | undefined {
+function getShowWatermarkOverride(slide: Slide, _totalSlides: number): boolean | undefined {
   const m = slide.meta as { show_watermark?: boolean } | null;
   if (m != null && typeof m.show_watermark === "boolean") return m.show_watermark;
-  return slide.slide_index === 1 || slide.slide_index === totalSlides ? true : false;
+  return false; // default off: logo only shows when user has checked "Logo" and saved
 }
 
 function getShowMadeWithOverride(slide: Slide, isPro: boolean): boolean | undefined {
@@ -129,6 +210,9 @@ function getFontOverrides(slide: Slide): { headline_font_size?: number; body_fon
 type SlideMeta = {
   headline_zone_override?: Record<string, unknown>;
   body_zone_override?: Record<string, unknown>;
+  counter_zone_override?: { top?: number; right?: number; fontSize?: number };
+  watermark_zone_override?: Record<string, unknown>;
+  made_with_zone_override?: { fontSize?: number; x?: number; y?: number };
   headline_highlight_style?: "text" | "background";
   body_highlight_style?: "text" | "background";
   headline_highlights?: { start: number; end: number; color: string }[];
@@ -143,6 +227,33 @@ function getZoneOverrides(slide: Slide): { headline?: Record<string, unknown>; b
     headline: m.headline_zone_override && Object.keys(m.headline_zone_override).length > 0 ? m.headline_zone_override : undefined,
     body: m.body_zone_override && Object.keys(m.body_zone_override).length > 0 ? m.body_zone_override : undefined,
   };
+}
+
+function getChromeOverrides(slide: Slide): import("@/lib/renderer/renderModel").ChromeOverrides | undefined {
+  const m = slide.meta as SlideMeta | null;
+  if (m == null) return undefined;
+  const counter =
+    m.counter_zone_override && Object.keys(m.counter_zone_override).length > 0
+      ? { ...m.counter_zone_override }
+      : undefined;
+  const watermark =
+    m.watermark_zone_override && typeof m.watermark_zone_override === "object" && Object.keys(m.watermark_zone_override).length > 0
+      ? (m.watermark_zone_override as import("@/lib/renderer/renderModel").ChromeOverrides["watermark"])
+      : undefined;
+  const madeWith =
+    m.made_with_zone_override && Object.keys(m.made_with_zone_override).length > 0
+      ? (() => {
+          const raw = m.made_with_zone_override as { fontSize?: number; x?: number; y?: number; bottom?: number };
+          return {
+            ...(raw.fontSize != null && { fontSize: raw.fontSize }),
+            ...(raw.x != null && { x: raw.x }),
+            ...(raw.y != null && { y: raw.y }),
+            ...(raw.y == null && { bottom: raw.bottom ?? 16 }),
+          };
+        })()
+      : undefined;
+  if (!counter && !watermark && !madeWith) return undefined;
+  return { counter, watermark, madeWith };
 }
 
 function getHighlightStyles(slide: Slide): { headline: "text" | "background"; body: "text" | "background" } {
@@ -216,8 +327,27 @@ export function SlideGrid({
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [reorderPending, setReorderPending] = useState(false);
   const [shufflingSlideId, setShufflingSlideId] = useState<string | null>(null);
+  const [downloadingSlideId, setDownloadingSlideId] = useState<string | null>(null);
   const router = useRouter();
   const editorPath = `/p/${projectId}/c/${carouselId}`;
+  const [fetchedTemplateConfigs, setFetchedTemplateConfigs] = useState<Record<string, TemplateConfig>>({});
+
+  useEffect(() => {
+    const missing = slidesOrder.filter(
+      (s) => s.template_id && !getTemplateConfig(s, templates)
+    );
+    if (missing.length === 0) return;
+    let cancelled = false;
+    missing.forEach(async (slide) => {
+      if (!slide.template_id || cancelled) return;
+      const config = await getTemplateConfigAction(slide.template_id);
+      if (cancelled || !config) return;
+      setFetchedTemplateConfigs((prev) => ({ ...prev, [slide.id]: config }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [slidesOrder, templates]);
 
   useEffect(() => {
     setSlidesOrder(slides);
@@ -270,9 +400,14 @@ export function SlideGrid({
     <>
       <ul className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {slidesOrder.map((slide) => {
-          const templateConfig = getTemplateConfig(slide, templates);
+          const templateConfigFromList = getTemplateConfig(slide, templates);
+          const effectiveTemplateConfig = templateConfigFromList ?? fetchedTemplateConfigs[slide.id] ?? null;
+          const templateDefaults = getZoneAndFontOverridesFromTemplate(effectiveTemplateConfig);
+          const previewZoneOverrides = getZoneOverrides(slide) ?? templateDefaults.zoneOverrides;
+          const previewFontOverrides = getFontOverrides(slide) ?? templateDefaults.fontOverrides;
+          const previewChromeOverrides = getChromeOverrides(slide) ?? templateDefaults.chromeOverrides;
           const currentTemplateId = slide.template_id ?? templates[0]?.id;
-          const backgroundOverride = getBackgroundOverride(slide, templateConfig);
+          const backgroundOverride = getBackgroundOverride(slide, effectiveTemplateConfig);
           const isDragging = draggedId === slide.id;
           const isDragOver = dragOverId === slide.id;
 
@@ -311,7 +446,7 @@ export function SlideGrid({
                         height: previewDims.h,
                       }}
                     >
-                      {templateConfig ? (
+                      {effectiveTemplateConfig ? (
                         <div
                           className="absolute left-0 top-0 shrink-0"
                           style={{
@@ -330,7 +465,7 @@ export function SlideGrid({
                               slide_index: slide.slide_index,
                               slide_type: slide.slide_type,
                             }}
-                            templateConfig={templateConfig}
+                            templateConfig={effectiveTemplateConfig}
                             brandKit={brandKit}
                             totalSlides={slidesOrder.length}
                             backgroundImageUrl={typeof slideBackgroundImageUrls[slide.id] === "string" ? slideBackgroundImageUrls[slide.id] as string : undefined}
@@ -339,8 +474,9 @@ export function SlideGrid({
                             showCounterOverride={getShowCounterOverride(slide)}
                             showWatermarkOverride={getShowWatermarkOverride(slide, slidesOrder.length)}
                             showMadeWithOverride={getShowMadeWithOverride(slide, isPro)}
-                            fontOverrides={getFontOverrides(slide)}
-                            zoneOverrides={getZoneOverrides(slide)}
+                            fontOverrides={previewFontOverrides}
+                            zoneOverrides={previewZoneOverrides}
+                            chromeOverrides={previewChromeOverrides}
                             headlineHighlightStyle={getHighlightStyles(slide).headline}
                             bodyHighlightStyle={getHighlightStyles(slide).body}
                             headline_highlights={getHighlightSpans(slide).headline_highlights}
@@ -367,7 +503,7 @@ export function SlideGrid({
                         height: previewDims.h,
                       }}
                     >
-                      {templateConfig ? (
+                      {effectiveTemplateConfig ? (
                         <div
                           className="absolute left-0 top-0 shrink-0"
                           style={{
@@ -386,7 +522,7 @@ export function SlideGrid({
                               slide_index: slide.slide_index,
                               slide_type: slide.slide_type,
                             }}
-                            templateConfig={templateConfig}
+                            templateConfig={effectiveTemplateConfig}
                             brandKit={brandKit}
                             totalSlides={slidesOrder.length}
                             backgroundImageUrl={typeof slideBackgroundImageUrls[slide.id] === "string" ? slideBackgroundImageUrls[slide.id] as string : undefined}
@@ -395,8 +531,9 @@ export function SlideGrid({
                             showCounterOverride={getShowCounterOverride(slide)}
                             showWatermarkOverride={getShowWatermarkOverride(slide, slidesOrder.length)}
                             showMadeWithOverride={getShowMadeWithOverride(slide, isPro)}
-                            fontOverrides={getFontOverrides(slide)}
-                            zoneOverrides={getZoneOverrides(slide)}
+                            fontOverrides={previewFontOverrides}
+                            zoneOverrides={previewZoneOverrides}
+                            chromeOverrides={previewChromeOverrides}
                             headlineHighlightStyle={getHighlightStyles(slide).headline}
                             bodyHighlightStyle={getHighlightStyles(slide).body}
                             headline_highlights={getHighlightSpans(slide).headline_highlights}
@@ -420,9 +557,30 @@ export function SlideGrid({
                       value={currentTemplateId ?? ""}
                       onValueChange={(templateId) => {
                         if (!templateId || templateId === currentTemplateId) return;
+                        const selectedTemplate = templates.find((t) => t.id === templateId);
+                        const templateOverlay = overlayFromTemplateGradient(selectedTemplate?.parsedConfig?.overlays?.gradient);
                         startTransition(async () => {
                           const result = await setSlideTemplate(slide.id, templateId, editorPath);
-                          if (result.ok) router.refresh();
+                          if (result.ok) {
+                            router.refresh();
+                            // Optimistically update local state so overlay (e.g. purple) shows immediately without waiting for refresh
+                            if (templateOverlay) {
+                              setSlidesOrder((prev) =>
+                                prev.map((s) =>
+                                  s.id === slide.id
+                                    ? {
+                                        ...s,
+                                        template_id: templateId,
+                                        background: {
+                                          ...(typeof s.background === "object" && s.background ? s.background : {}),
+                                          overlay: { ...((s.background as Record<string, unknown>)?.overlay as Record<string, unknown> | undefined), ...templateOverlay },
+                                        } as Slide["background"],
+                                      }
+                                    : s
+                                )
+                              );
+                            }
+                          }
                         });
                       }}
                       disabled={!canEdit || isPending || reorderPending || templates.length === 0}
@@ -448,15 +606,37 @@ export function SlideGrid({
                         {getImageCount(slide)}
                       </span>
                     )}
-                    <Button variant="outline" size="icon-sm" asChild title="Download this slide">
-                      <a
-                        href={`/api/export/slide/${slide.id}?format=${exportFormat}&size=${exportSize ?? "1080x1350"}`}
-                        download={`slide-${slide.slide_index}.${exportFormat === "jpeg" ? "jpg" : "png"}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
+                    <Button
+                      variant="outline"
+                      size="icon-sm"
+                      title="Download this slide"
+                      disabled={downloadingSlideId === slide.id}
+                      onClick={async () => {
+                        if (downloadingSlideId) return;
+                        setDownloadingSlideId(slide.id);
+                        const url = `/api/export/slide/${slide.id}?format=${exportFormat}&size=${exportSize ?? "1080x1350"}`;
+                        const filename = `slide-${slide.slide_index}.${exportFormat === "jpeg" ? "jpg" : "png"}`;
+                        try {
+                          const res = await fetch(url);
+                          if (!res.ok) throw new Error("Download failed");
+                          const blob = await res.blob();
+                          const blobUrl = URL.createObjectURL(blob);
+                          const a = document.createElement("a");
+                          a.href = blobUrl;
+                          a.download = filename;
+                          a.click();
+                          URL.revokeObjectURL(blobUrl);
+                        } finally {
+                          setDownloadingSlideId(null);
+                        }
+                      }}
+                    >
+                      {downloadingSlideId === slide.id ? (
+                        <Loader2Icon className="size-4 animate-spin" aria-hidden />
+                      ) : (
                         <DownloadIcon className="size-4" />
-                      </a>
+                      )}
+                      <span className="sr-only">Download this slide</span>
                     </Button>
                     {canEdit && slideHasShuffleableImages(slide) && (
                       <Button

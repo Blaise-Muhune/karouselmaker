@@ -1,7 +1,7 @@
 "use client";
 
 import { applyTemplate } from "@/lib/renderer/applyTemplate";
-import type { BrandKit, SlideData, TextZoneOverrides } from "@/lib/renderer/renderModel";
+import type { BrandKit, SlideData, TextZoneOverrides, ChromeOverrides } from "@/lib/renderer/renderModel";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { getContrastingTextColor, hexToRgba } from "@/lib/editor/colorUtils";
 import { parseInlineFormatting, type HighlightSpan } from "@/lib/editor/inlineFormat";
@@ -68,12 +68,14 @@ export type SlidePreviewProps = {
   showCounterOverride?: boolean;
   /** Override template: show/hide watermark. Undefined = use template default (model.chrome.watermark.enabled). */
   showWatermarkOverride?: boolean;
-  /** When false, hide "Watermark KarouselMaker.com" attribution. Pro only. Undefined = show. */
+  /** When false, hide "Made with KarouselMaker.com" attribution. Pro only. Undefined = show. */
   showMadeWithOverride?: boolean;
   /** Override font sizes per zone (headline_font_size, body_font_size in px). */
   fontOverrides?: FontSizeOverrides | null;
   /** Per-slide text zone overrides (x, y, w, h, maxLines, align, etc.). */
   zoneOverrides?: TextZoneOverrides | null;
+  /** Counter, logo watermark, and "Made with" position/size overrides (from slide meta or template defaults). */
+  chromeOverrides?: ChromeOverrides | null;
   /** Headline {{color}} style: "text" or "background" (highlighter). */
   headlineHighlightStyle?: "text" | "background";
   /** Body {{color}} style: "text" or "background" (highlighter). */
@@ -193,6 +195,7 @@ export function SlidePreview({
   showMadeWithOverride,
   fontOverrides,
   zoneOverrides,
+  chromeOverrides,
   headlineHighlightStyle = "text",
   bodyHighlightStyle = "text",
   borderedFrame = false,
@@ -205,10 +208,14 @@ export function SlidePreview({
   const canvasH = exportSize === "1080x1920" ? 1920 : exportSize === "1080x1350" ? 1350 : 1080;
   const maxDim = Math.max(CANVAS_SIZE, canvasH);
   const textScale = maxDim <= 1080 ? 1 : Math.max(0.5, 1080 / maxDim);
+  // Cover: background and overlay always fill the viewport.
   const scale = Math.max(1080 / 1080, canvasH / 1080);
   const scaledSize = 1080 * scale;
   const slideTranslateX = (1080 - scaledSize) / 2;
   const slideTranslateY = (canvasH - scaledSize) / 2;
+  /** When cover crops the sides (4:5, 9:16), visible band in 1080 design space so text is not cut off. */
+  const visibleLeft = scale > 1 ? (1080 - 1080 / scale) / 2 : 0;
+  const visibleWidth = scale > 1 ? 1080 / scale : 1080;
 
   const slideData: SlideData = {
     headline: slide.headline,
@@ -219,7 +226,7 @@ export function SlidePreview({
     ...(body_highlights?.length && { body_highlights }),
   };
 
-  const mergedZoneOverrides =
+  const baseMerged =
     zoneOverrides || fontOverrides
       ? {
           headline: {
@@ -232,6 +239,35 @@ export function SlidePreview({
           },
         }
       : undefined;
+
+  /** Scale zone x/w by visible width ratio so the same relative position and width apply across 1:1, 4:5, 9:16. */
+  const scaleZoneToVisible = (zone: { x?: number; w?: number }) => {
+    if (visibleWidth >= 1080) return {};
+    const ratio = visibleWidth / 1080;
+    const x = zone.x != null ? visibleLeft + zone.x * ratio : undefined;
+    const w = zone.w != null ? Math.max(1, Math.round(zone.w * ratio)) : undefined;
+    return { ...(x != null && { x }), ...(w != null && { w }) };
+  };
+  const mergedZoneOverrides =
+    baseMerged || scale > 1
+      ? (() => {
+          const headlineZone = templateConfig.textZones.find((z) => z.id === "headline");
+          const bodyZone = templateConfig.textZones.find((z) => z.id === "body");
+          const mergedHeadlineZone = headlineZone ? { ...headlineZone, ...baseMerged?.headline } : null;
+          const mergedBodyZone = bodyZone ? { ...bodyZone, ...baseMerged?.body } : null;
+          const headline =
+            mergedHeadlineZone && scale > 1
+              ? { ...baseMerged?.headline, ...scaleZoneToVisible(mergedHeadlineZone) }
+              : baseMerged?.headline;
+          const body =
+            mergedBodyZone && scale > 1
+              ? { ...baseMerged?.body, ...scaleZoneToVisible(mergedBodyZone) }
+              : baseMerged?.body;
+          const out = { headline, body };
+          if (!out.headline && !out.body) return undefined;
+          return { headline: out.headline ?? {}, body: out.body ?? {} };
+        })()
+      : baseMerged;
   const hasZoneOverrides =
     mergedZoneOverrides &&
     (Object.keys(mergedZoneOverrides.headline ?? {}).length > 0 || Object.keys(mergedZoneOverrides.body ?? {}).length > 0);
@@ -242,7 +278,8 @@ export function SlidePreview({
     slide.slide_index,
     totalSlides,
     hasZoneOverrides ? mergedZoneOverrides : undefined,
-    textScale
+    textScale,
+    chromeOverrides ?? undefined
   );
 
   const backgroundColor =
@@ -320,7 +357,7 @@ export function SlidePreview({
       />
       {multiImages ? (
         (() => {
-          const gap = imageDisplay?.gap ?? 8;
+          const gap = imageDisplay?.gap ?? 0;
           const frame = imageDisplay?.frame ?? "none";
           const frameW = FRAME_WIDTHS[frame] ?? 5;
           const radius = imageDisplay?.frameRadius ?? 0;
@@ -826,10 +863,10 @@ export function SlidePreview({
         <div
           className="absolute rounded-full"
           style={{
-            top: 24 * chromeScale,
-            right: 24,
+            top: (model.chrome.counterTop ?? 24) * chromeScale,
+            right: model.chrome.counterRight ?? 24,
             padding: `${6 * chromeScale}px ${12 * chromeScale}px`,
-            fontSize: 20 * chromeScale,
+            fontSize: (model.chrome.counterFontSize ?? 20) * chromeScale,
             fontWeight: 500,
             letterSpacing: "0.02em",
             color: textColor,
@@ -848,7 +885,7 @@ export function SlidePreview({
           style={{
             color: textColor,
             opacity: 0.7,
-            fontSize: 20 * chromeScale,
+            fontSize: (model.chrome.watermark.fontSize ?? 20) * chromeScale,
             fontWeight: 500,
             zIndex: 10,
             ...(model.chrome.watermark.position === "custom" || (model.chrome.watermark.logoX != null && model.chrome.watermark.logoY != null)
@@ -866,8 +903,12 @@ export function SlidePreview({
             <img
               src={model.chrome.watermark.logoUrl}
               alt=""
-              className="w-auto object-contain"
-              style={{ maxWidth: 120, maxHeight: 48 * chromeScale }}
+              className="w-auto h-auto object-contain"
+              style={
+                model.chrome.watermark.maxWidth != null || model.chrome.watermark.maxHeight != null
+                  ? { maxWidth: model.chrome.watermark.maxWidth ?? undefined, maxHeight: model.chrome.watermark.maxHeight != null ? model.chrome.watermark.maxHeight * chromeScale : undefined }
+                  : { height: (model.chrome.watermark.fontSize ?? 20) * 2.4 * chromeScale, width: "auto" }
+              }
             />
           ) : (
             model.chrome.watermark.text
@@ -875,52 +916,29 @@ export function SlidePreview({
         </div>
       )}
 
-      {showMadeWithOverride !== false && (() => {
-        const headlineBlock = model.textBlocks.find((b) => b.zone.id === "headline");
-        const zone = headlineBlock?.zone;
-        if (zone) {
-          const viewportLeft = zone.x * scale + slideTranslateX;
-          const viewportTop = (zone.y + zone.h) * scale + slideTranslateY + 16 * chromeScale;
-          const viewportWidth = zone.w * scale;
-          return (
-            <div
-              className="absolute"
-              style={{
-                left: viewportLeft,
-                top: viewportTop,
-                width: viewportWidth,
-                fontSize: 30 * chromeScale,
-                fontWeight: 500,
-                letterSpacing: "0.02em",
-                color: textColor,
-                opacity: 0.65,
-                zIndex: 10,
-                textAlign: zone.align,
-                textShadow: "0 1px 2px rgba(0,0,0,0.3)",
-              }}
-            >
-              Watermark KarouselMaker.com
-            </div>
-          );
-        }
-        return (
-          <div
-            className="absolute left-1/2 -translate-x-1/2"
-            style={{
-              bottom: 16 * chromeScale,
-              fontSize: 30 * chromeScale,
-              fontWeight: 500,
-              letterSpacing: "0.02em",
-              color: textColor,
-              opacity: 0.65,
-              zIndex: 10,
-              textShadow: "0 1px 2px rgba(0,0,0,0.3)",
-            }}
-          >
-            Watermark KarouselMaker.com
-          </div>
-        );
-      })()}
+      {showMadeWithOverride !== false && (
+        <div
+          className="absolute"
+          style={{
+            ...(model.chrome.madeWithY != null
+              ? { top: model.chrome.madeWithY * chromeScale }
+              : { bottom: (model.chrome.madeWithBottom ?? 16) * chromeScale }),
+            ...(model.chrome.madeWithX != null
+              ? { left: model.chrome.madeWithX * chromeScale, transform: "translateX(-50%)" }
+              : { left: "50%", transform: "translateX(-50%)" }),
+            maxWidth: 1032 * chromeScale,
+            fontSize: (model.chrome.madeWithFontSize ?? 30) * chromeScale,
+            fontWeight: 500,
+            letterSpacing: "0.02em",
+            color: textColor,
+            opacity: 0.65,
+            zIndex: 10,
+            textShadow: "0 1px 2px rgba(0,0,0,0.3)",
+          }}
+        >
+          {model.chrome.madeWithText ?? "Made with KarouselMaker.com"}
+        </div>
+      )}
     </div>
   );
 }

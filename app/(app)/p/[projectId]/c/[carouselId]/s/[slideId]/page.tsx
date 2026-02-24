@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { getUser } from "@/lib/server/auth/getUser";
+import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { getSubscription } from "@/lib/server/subscription";
 import { getSlide, getCarousel, getProject, listSlides, listTemplatesForUser } from "@/lib/server/db";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
@@ -39,6 +40,11 @@ export default async function EditSlidePage({
     listSlides(user.id, carouselId),
     listTemplatesForUser(user.id, { includeSystem: true }),
   ]);
+
+  const projectBrandKit = project?.brand_kit as { watermark_text?: string } | null | undefined;
+  const pageHandle = (projectBrandKit?.watermark_text ?? "").trim().replace(/^@/, "");
+  const defaultMadeWithSuffix =
+    isPro && pageHandle ? `follow @${pageHandle}` : "";
 
   if (!slide) notFound();
   if (!carousel) notFound();
@@ -164,6 +170,8 @@ export default async function EditSlidePage({
           initialImageSource={initialImageSource}
           initialImageSources={initialImageSources}
           initialSecondaryBackgroundImageUrl={initialSecondaryBackgroundImageUrl}
+          initialMadeWithText={defaultMadeWithSuffix}
+          isAdmin={isAdmin(user.email)}
         />
       </div>
     </div>

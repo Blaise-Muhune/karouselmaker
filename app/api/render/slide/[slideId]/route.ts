@@ -68,7 +68,10 @@ export async function GET(
     | { style?: "solid" | "gradient"; color?: string; gradientOn?: boolean; mode?: string; storage_path?: string; image_url?: string; secondary_storage_path?: string; secondary_image_url?: string; images?: { image_url?: string; storage_path?: string }[]; overlay?: { gradient?: boolean; darken?: number; color?: string; textColor?: string; direction?: "top" | "bottom" | "left" | "right"; extent?: number; solidSize?: number } }
     | null
     | undefined;
-  const gradientColor = slideBg?.overlay?.color ?? templateCfg?.overlays?.gradient?.color ?? "#000000";
+  // Overlay color: slide override > template (no brand logo color; use template or neutral)
+  const gradientColor =
+    slideBg?.overlay?.color ??
+    (templateCfg?.overlays?.gradient?.color || "#0a0a0a");
   const templateStrength = templateCfg?.overlays?.gradient?.strength ?? 0.5;
   const gradientStrength =
     slideBg?.overlay?.darken != null && slideBg.overlay.darken !== 0.5
@@ -82,15 +85,23 @@ export async function GET(
     gradientStrength,
     gradientColor,
     textColor: getContrastingTextColor(gradientColor),
-    gradientDirection: slideBg?.overlay?.direction ?? templateCfg?.overlays?.gradient?.direction ?? "bottom",
+    gradientDirection: (slideBg?.overlay?.direction ?? templateCfg?.overlays?.gradient?.direction ?? "bottom") as "top" | "bottom" | "left" | "right",
     gradientExtent,
     gradientSolidSize,
   };
+  const hasBackgroundImage =
+    slideBg?.mode === "image" &&
+    (!!slideBg.images?.length || !!slideBg.image_url || !!slideBg.storage_path);
+  const defaultStyle = templateCfg?.backgroundRules?.defaultStyle;
+  const gradientOn =
+    hasBackgroundImage && (defaultStyle === "none" || defaultStyle === "blur")
+      ? false
+      : (slideBg?.gradientOn ?? slideBg?.overlay?.gradient ?? true);
   const backgroundOverride = slideBg
     ? {
         style: slideBg.style,
         color: slideBg.color,
-        gradientOn: slideBg.gradientOn ?? slideBg.overlay?.gradient ?? true,
+        gradientOn,
         ...overlayFields,
       }
     : undefined;
@@ -135,35 +146,17 @@ export async function GET(
   }
   const borderedFrame = !!(backgroundImageUrl || backgroundImageUrls?.length);
 
-  const slideMeta = slide.meta as {
-    show_counter?: boolean;
-    show_watermark?: boolean;
-    show_made_with?: boolean;
-    headline_font_size?: number;
-    body_font_size?: number;
-    headline_zone_override?: { x?: number; y?: number; w?: number; h?: number; fontSize?: number; fontWeight?: number; lineHeight?: number; maxLines?: number; align?: "left" | "center"; color?: string };
-    body_zone_override?: { x?: number; y?: number; w?: number; h?: number; fontSize?: number; fontWeight?: number; lineHeight?: number; maxLines?: number; align?: "left" | "center"; color?: string };
-    headline_highlight_style?: "text" | "background";
-    body_highlight_style?: "text" | "background";
-    headline_highlights?: { start: number; end: number; color: string }[];
-    body_highlights?: { start: number; end: number; color: string }[];
-  } | null;
-  const showCounterOverride = slideMeta?.show_counter === true;
-  const defaultShowWatermark = slide.slide_index === 1 || slide.slide_index === totalSlides;
-  const showWatermarkOverride = slideMeta?.show_watermark ?? defaultShowWatermark;
-  const showMadeWithOverride = slideMeta?.show_made_with ?? !isPro;
-  const fontOverrides =
-    slideMeta && (slideMeta.headline_font_size != null || slideMeta.body_font_size != null)
-      ? { headline_font_size: slideMeta.headline_font_size, body_font_size: slideMeta.body_font_size }
-      : undefined;
-  const zoneOverrides =
-    slideMeta && (slideMeta.headline_zone_override || slideMeta.body_zone_override)
-      ? { headline: slideMeta.headline_zone_override, body: slideMeta.body_zone_override }
-      : undefined;
-  const highlightStyles = {
-    headline: slideMeta?.headline_highlight_style === "background" ? "background" as const : undefined,
-    body: slideMeta?.body_highlight_style === "background" ? "background" as const : undefined,
-  };
+  const slideMeta = (slide.meta ?? null) as Record<string, unknown> | null;
+  const defaultShowWatermark = false; // logo only when user explicitly enabled it
+  const { normalizeSlideMetaForRender } = await import("@/lib/server/export/normalizeSlideMetaForRender");
+  const normalized = normalizeSlideMetaForRender(slideMeta);
+  const showCounterOverride = normalized.showCounterOverride;
+  const showWatermarkOverride = normalized.showWatermarkOverride ?? defaultShowWatermark;
+  const showMadeWithOverride = normalized.showMadeWithOverride ?? !isPro;
+  const fontOverrides = normalized.fontOverrides;
+  const zoneOverrides = normalized.zoneOverrides;
+  const chromeOverrides = normalized.chromeOverrides;
+  const highlightStyles = normalized.highlightStyles;
 
   const html = renderSlideHtml(
     {
@@ -171,9 +164,9 @@ export async function GET(
       body: slide.body ?? null,
       slide_index: slide.slide_index,
       slide_type: slide.slide_type,
-      ...(slideMeta?.headline_highlights?.length && { headline_highlights: slideMeta.headline_highlights }),
-      ...(slideMeta?.body_highlights?.length && { body_highlights: slideMeta.body_highlights }),
-    },
+    ...(normalized.headline_highlights?.length && { headline_highlights: normalized.headline_highlights }),
+    ...(normalized.body_highlights?.length && { body_highlights: normalized.body_highlights }),
+  },
     config.data,
     brandKit,
     totalSlides,
@@ -186,6 +179,7 @@ export async function GET(
     showMadeWithOverride,
     fontOverrides,
     zoneOverrides,
+    chromeOverrides,
     highlightStyles,
     borderedFrame
   );

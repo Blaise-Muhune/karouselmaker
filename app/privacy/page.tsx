@@ -156,6 +156,7 @@ export default function PrivacyPage() {
             <Link href="/" className="hover:text-foreground transition-colors">Home</Link>
             <Link href="/privacy" className="hover:text-foreground transition-colors">Privacy</Link>
             <Link href="/terms" className="hover:text-foreground transition-colors">Terms</Link>
+            <Link href="/copyright" className="hover:text-foreground transition-colors">Copyright</Link>
             <ContactUsModal userEmail="" />
           </div>
         </div>

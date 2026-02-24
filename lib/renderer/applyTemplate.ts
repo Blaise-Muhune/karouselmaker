@@ -1,4 +1,4 @@
-import { buildSlideRenderModel, type SlideData, type BrandKit, type SlideRenderModel, type TextZoneOverrides } from "./renderModel";
+import { buildSlideRenderModel, type SlideData, type BrandKit, type SlideRenderModel, type TextZoneOverrides, type ChromeOverrides } from "./renderModel";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 
 /**
@@ -13,7 +13,8 @@ export function applyTemplate(
   slideIndex: number,
   totalSlides: number,
   zoneOverrides?: TextZoneOverrides | null,
-  textScale?: number
+  textScale?: number,
+  chromeOverrides?: ChromeOverrides | null
 ): SlideRenderModel {
   return buildSlideRenderModel(
     templateConfig,
@@ -22,6 +23,7 @@ export function applyTemplate(
     slideIndex,
     totalSlides,
     zoneOverrides,
-    textScale
+    textScale,
+    chromeOverrides
   );
 }

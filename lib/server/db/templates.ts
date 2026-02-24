@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import type { Template, TemplateInsert } from "./types";
 
 export async function listTemplatesForUser(
@@ -91,6 +92,18 @@ export async function createTemplate(
 ): Promise<Template> {
   const supabase = await createClient();
   const row = { ...payload, user_id: userId };
+  const { data, error } = await supabase.from("templates").insert(row).select().single();
+
+  if (error) throw new Error(error.message);
+  return data as Template;
+}
+
+/** Create a system template (user_id = null), visible to all users. Admin only; use service role to bypass RLS. */
+export async function createSystemTemplate(
+  payload: Omit<TemplateInsert, "user_id">
+): Promise<Template> {
+  const supabase = createAdminClient();
+  const row = { ...payload, user_id: null };
   const { data, error } = await supabase.from("templates").insert(row).select().single();
 
   if (error) throw new Error(error.message);

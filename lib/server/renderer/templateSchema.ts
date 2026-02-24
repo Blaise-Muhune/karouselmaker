@@ -58,6 +58,12 @@ const watermarkSchema = z.object({
   logoX: z.number().int().min(0).max(1080).optional(),
   /** Custom Y position (px). Used when position is "custom". */
   logoY: z.number().int().min(0).max(1080).optional(),
+  /** Font size for text watermark. Optional; default 20. */
+  fontSize: z.number().int().min(8).max(72).optional(),
+  /** Max width for logo image (px). Optional; default 120. */
+  maxWidth: z.number().int().min(24).max(400).optional(),
+  /** Max height for logo image (px). Optional; default 48. */
+  maxHeight: z.number().int().min(24).max(200).optional(),
 });
 
 const swipeTypeEnum = z.enum([
@@ -121,6 +127,12 @@ const templateDefaultsSchema = z
         body_font_size: z.number().optional(),
         headline_zone_override: z.record(z.string(), z.unknown()).optional(),
         body_zone_override: z.record(z.string(), z.unknown()).optional(),
+        /** Slide number position/size: x (left), y (top), fontSize. Saved with template. */
+        counter_zone_override: z.record(z.string(), z.unknown()).optional(),
+        /** Logo/custom text watermark position & size. Saved with template. */
+        watermark_zone_override: z.record(z.string(), z.unknown()).optional(),
+        /** "Made with" line: fontSize, bottom (px). Saved with template. */
+        made_with_zone_override: z.record(z.string(), z.unknown()).optional(),
         headline_highlight_style: z.enum(["text", "background"]).optional(),
         body_highlight_style: z.enum(["text", "background"]).optional(),
         headline_highlights: z.array(z.object({ start: z.number(), end: z.number(), color: z.string() })).optional(),

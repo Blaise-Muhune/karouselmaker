@@ -204,6 +204,7 @@ export default async function Home() {
           <div className="flex flex-wrap items-center justify-center gap-4">
             <Link href="/terms" className="hover:text-foreground transition-colors">Terms</Link>
             <Link href="/privacy" className="hover:text-foreground transition-colors">Privacy</Link>
+            <Link href="/copyright" className="hover:text-foreground transition-colors">Copyright</Link>
             <ContactUsModal userEmail="" />
           </div>
         </div>

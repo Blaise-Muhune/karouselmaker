@@ -20,10 +20,19 @@ import { resolveBrandKitLogo } from "@/lib/server/brandKit";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
 import { getSignedDownloadUrl } from "@/lib/server/storage/signedUrl";
 import { formatUnsplashAttributionLine } from "@/lib/server/unsplash";
+import { normalizeSlideMetaForRender } from "@/lib/server/export/normalizeSlideMetaForRender";
+import { resolveSlideBackgroundUrls } from "@/lib/server/export/resolveSlideBackgroundUrls";
+import {
+  isExternalImageUrl,
+  materializeImageUrl,
+} from "@/lib/server/export/materializeImageUrl";
 import type { BrandKit } from "@/lib/renderer/renderModel";
 import JSZip from "jszip";
 
 const BUCKET = "carousel-assets";
+const VIDEO_ASSET_EXPIRES = 600;
+/** Delay after load before screenshot so layout/fonts settle. Lower = faster export, higher = safer for slow assets. */
+const SCREENSHOT_DELAY_MS = 200;
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -96,6 +105,30 @@ export async function POST(
 
     const defaultTemplateId = await getDefaultTemplateId(userId);
     const paths = getExportStoragePaths(userId, carouselId, exportId);
+
+    // Resolve video URLs per slide: materialize externals, collect signed URLs so we can render each variant the same way as main (screenshot).
+    const backgroundData = await resolveSlideBackgroundUrls(slides);
+    const resolvedVideoUrls: string[][] = [];
+    for (let i = 0; i < slides.length; i++) {
+      const raw = backgroundData[i]!.backgroundUrls;
+      const urls: string[] = [];
+      for (let bgIdx = 0; bgIdx < raw.length; bgIdx++) {
+        const u = raw[bgIdx]!;
+        if (isExternalImageUrl(u)) {
+          const signed = await materializeImageUrl(
+            u,
+            null,
+            paths.videoBgPath(i, bgIdx),
+            VIDEO_ASSET_EXPIRES
+          );
+          if (signed) urls.push(signed);
+        } else {
+          urls.push(u);
+        }
+      }
+      resolvedVideoUrls.push(urls.length > 0 ? urls : []);
+    }
+
     const unsplashAttributions = new Map<
       string,
       { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string }
@@ -170,8 +203,10 @@ export async function POST(
         const dir = slideBg?.overlay?.direction ?? templateCfg?.overlays?.gradient?.direction;
         const gradientDirection: "top" | "bottom" | "left" | "right" =
           dir === "top" || dir === "bottom" || dir === "left" || dir === "right" ? dir : "bottom";
+        // Overlay color: slide override > template (no brand logo color; use template or neutral)
         const gradientColor =
-          slideBg?.overlay?.color ?? templateCfg?.overlays?.gradient?.color ?? "#000000";
+          slideBg?.overlay?.color ??
+          (templateCfg?.overlays?.gradient?.color || "#0a0a0a");
         const templateStrength = templateCfg?.overlays?.gradient?.strength ?? 0.5;
         const gradientStrength =
           slideBg?.overlay?.darken != null && slideBg.overlay.darken !== 0.5
@@ -189,11 +224,20 @@ export async function POST(
           gradientExtent,
           gradientSolidSize,
         };
+        // Match editor preview: when template defaultStyle is "none" or "blur" and slide has image, no gradient
+        const hasBackgroundImage =
+          slideBg?.mode === "image" &&
+          (!!slideBg.images?.length || !!slideBg.image_url || !!slideBg.storage_path);
+        const defaultStyle = templateCfg?.backgroundRules?.defaultStyle;
+        const gradientOn =
+          hasBackgroundImage && (defaultStyle === "none" || defaultStyle === "blur")
+            ? false
+            : (slideBg?.gradientOn ?? slideBg?.overlay?.gradient ?? true);
         const backgroundOverride = slideBg
           ? {
               style: slideBg.style,
               color: slideBg.color,
-              gradientOn: slideBg.gradientOn ?? slideBg.overlay?.gradient ?? true,
+              gradientOn,
               ...overlayFields,
             }
           : undefined;
@@ -255,49 +299,23 @@ export async function POST(
         }
         const borderedFrame = !!(backgroundImageUrl || (backgroundImageUrls?.length ?? 0) > 0);
 
-        const slideMeta = slide.meta as {
-          show_counter?: boolean;
-          show_watermark?: boolean;
-          show_made_with?: boolean;
-          headline_font_size?: number;
-          body_font_size?: number;
-          headline_zone_override?: Record<string, unknown>;
-          body_zone_override?: Record<string, unknown>;
-          headline_highlight_style?: "text" | "background";
-          body_highlight_style?: "text" | "background";
-          headline_highlights?: { start: number; end: number; color: string }[];
-          body_highlights?: { start: number; end: number; color: string }[];
-        } | null;
-        const defaultShowWatermark =
-          slide.slide_index === 1 || slide.slide_index === slides.length;
-        const showCounterOverride = slideMeta?.show_counter === true;
-        const showWatermarkOverride = slideMeta?.show_watermark ?? defaultShowWatermark;
-        const showMadeWithOverride = slideMeta?.show_made_with ?? !isPro;
-        const fontOverrides =
-          slideMeta &&
-          (slideMeta.headline_font_size != null || slideMeta.body_font_size != null)
-            ? {
-                headline_font_size: slideMeta.headline_font_size,
-                body_font_size: slideMeta.body_font_size,
-              }
+        const slideMeta = (slide.meta ?? null) as Record<string, unknown> | null;
+        const defaultShowWatermark = false; // logo only when user explicitly enabled it
+        const normalized = normalizeSlideMetaForRender(slideMeta);
+        const showCounterOverride = normalized.showCounterOverride;
+        const showWatermarkOverride = normalized.showWatermarkOverride ?? defaultShowWatermark;
+        const showMadeWithOverride = normalized.showMadeWithOverride ?? !isPro;
+        const fontOverrides = normalized.fontOverrides;
+        const zoneOverrides = normalized.zoneOverrides;
+        const chromeOverrides = normalized.chromeOverrides;
+        const highlightStyles = normalized.highlightStyles;
+        type ImageDisplayOption = NonNullable<Parameters<typeof renderSlideHtml>[16]>;
+        const imageDisplayParam: ImageDisplayOption | undefined =
+          slideBg?.image_display != null &&
+          typeof slideBg.image_display === "object" &&
+          !Array.isArray(slideBg.image_display)
+            ? (slideBg.image_display as unknown as ImageDisplayOption)
             : undefined;
-        const zoneOverrides =
-          slideMeta && (slideMeta.headline_zone_override || slideMeta.body_zone_override)
-            ? {
-                headline: slideMeta.headline_zone_override,
-                body: slideMeta.body_zone_override,
-              }
-            : undefined;
-        const highlightStyles = {
-          headline:
-            slideMeta?.headline_highlight_style === "background"
-              ? ("background" as const)
-              : undefined,
-          body:
-            slideMeta?.body_highlight_style === "background"
-              ? ("background" as const)
-              : undefined,
-        };
 
         const html = renderSlideHtml(
           {
@@ -305,8 +323,8 @@ export async function POST(
             body: slide.body ?? null,
             slide_index: slide.slide_index,
             slide_type: slide.slide_type,
-            ...(slideMeta?.headline_highlights?.length && { headline_highlights: slideMeta.headline_highlights }),
-            ...(slideMeta?.body_highlights?.length && { body_highlights: slideMeta.body_highlights }),
+            ...(normalized.headline_highlights?.length && { headline_highlights: normalized.headline_highlights }),
+            ...(normalized.body_highlights?.length && { body_highlights: normalized.body_highlights }),
           },
           config.data,
           brandKit,
@@ -320,20 +338,19 @@ export async function POST(
           showMadeWithOverride,
           fontOverrides,
           zoneOverrides,
+          chromeOverrides,
           highlightStyles,
           borderedFrame,
-          (slideBg?.image_display as Parameters<typeof renderSlideHtml>[15]) ?? undefined,
+          imageDisplayParam,
           dimensions
         );
 
         const page = await browser.newPage();
         try {
           await page.setViewportSize({ width: dimensions.w, height: dimensions.h });
-          // waitUntil: "load" ensures all images (including CSS background-image) are fully loaded before screenshot
           await page.setContent(html, { waitUntil: "load", timeout: CONTENT_TIMEOUT_MS });
           await page.waitForSelector(".slide", { state: "visible", timeout: SELECTOR_TIMEOUT_MS });
-          // Brief delay so decoded images are painted (avoids half-loaded background in export)
-          await new Promise((r) => setTimeout(r, 500));
+          await new Promise((r) => setTimeout(r, SCREENSHOT_DELAY_MS));
           const buffer = await page.screenshot({ type: format });
           const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
           const { error: uploadError } = await supabase.storage
@@ -344,6 +361,97 @@ export async function POST(
             });
           if (uploadError) {
             throw new Error(`Upload slide ${i + 1} failed: ${uploadError.message}`);
+          }
+
+          // Overlay-only PNG (transparent + gradient + text + chrome) for video: backgrounds cycle, overlay stays
+          const overlayHtml = renderSlideHtml(
+            {
+              headline: slide.headline,
+              body: slide.body ?? null,
+              slide_index: slide.slide_index,
+              slide_type: slide.slide_type,
+              ...(normalized.headline_highlights?.length && { headline_highlights: normalized.headline_highlights }),
+              ...(normalized.body_highlights?.length && { body_highlights: normalized.body_highlights }),
+            },
+            config.data,
+            brandKit,
+            slides.length,
+            backgroundOverride,
+            undefined,
+            undefined,
+            undefined,
+            showCounterOverride,
+            showWatermarkOverride,
+            showMadeWithOverride,
+            fontOverrides,
+            zoneOverrides,
+            chromeOverrides,
+            highlightStyles,
+            borderedFrame,
+            imageDisplayParam,
+            dimensions,
+            true
+          );
+          await page.setContent(overlayHtml, { waitUntil: "load", timeout: CONTENT_TIMEOUT_MS });
+          await page.waitForSelector(".slide", { state: "visible", timeout: SELECTOR_TIMEOUT_MS });
+          await new Promise((r) => setTimeout(r, SCREENSHOT_DELAY_MS));
+          const overlayBuffer = await page.screenshot({ type: "png" });
+          const overlayBuf = Buffer.isBuffer(overlayBuffer) ? overlayBuffer : Buffer.from(overlayBuffer);
+          const { error: overlayUploadError } = await supabase.storage
+            .from(BUCKET)
+            .upload(paths.overlayPath(i), overlayBuf, {
+              contentType: "image/png",
+              upsert: true,
+            });
+          if (overlayUploadError) {
+            throw new Error(`Upload overlay ${i + 1} failed: ${overlayUploadError.message}`);
+          }
+
+          // Video variants: background-only (no title/body) so voiceover video can use Cathy-style burned-in captions.
+          const variants = resolvedVideoUrls[i] ?? [];
+          for (let v = 0; v < variants.length; v++) {
+            const singleBgUrl = variants[v]!;
+            const variantHtml = renderSlideHtml(
+              {
+                headline: "",
+                body: null,
+                slide_index: slide.slide_index,
+                slide_type: slide.slide_type,
+              },
+              config.data,
+              brandKit,
+              slides.length,
+              backgroundOverride,
+              singleBgUrl,
+              null,
+              null,
+              false,
+              false,
+              false,
+              fontOverrides,
+              zoneOverrides,
+              chromeOverrides,
+              highlightStyles,
+              borderedFrame,
+              imageDisplayParam,
+              dimensions,
+              undefined,
+              true
+            );
+            await page.setContent(variantHtml, { waitUntil: "load", timeout: CONTENT_TIMEOUT_MS });
+            await page.waitForSelector(".slide", { state: "visible", timeout: SELECTOR_TIMEOUT_MS });
+            await new Promise((r) => setTimeout(r, SCREENSHOT_DELAY_MS));
+            const variantBuffer = await page.screenshot({ type: "png" });
+            const variantBuf = Buffer.isBuffer(variantBuffer) ? variantBuffer : Buffer.from(variantBuffer);
+            const { error: variantUploadError } = await supabase.storage
+              .from(BUCKET)
+              .upload(paths.videoSlidePath(i, v), variantBuf, {
+                contentType: "image/png",
+                upsert: true,
+              });
+            if (variantUploadError) {
+              throw new Error(`Upload video variant ${i + 1}-${v + 1} failed: ${variantUploadError.message}`);
+            }
           }
         } finally {
           try {

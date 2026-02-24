@@ -131,6 +131,16 @@ export function TemplateBuilderForm({
     }));
   }, []);
 
+  const updateDefaultsMeta = useCallback((updates: Record<string, unknown>) => {
+    setConfig((prev) => ({
+      ...prev,
+      defaults: {
+        ...prev.defaults,
+        meta: { ...(prev.defaults?.meta && typeof prev.defaults.meta === "object" ? prev.defaults.meta : {}), ...updates },
+      },
+    }));
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -165,6 +175,31 @@ export function TemplateBuilderForm({
 
   const headlineZone = config.textZones.find((z) => z.id === "headline");
   const bodyZone = config.textZones.find((z) => z.id === "body");
+
+  /** Chrome defaults from template defaults.meta (counter, watermark, made with). Matches slide edit. */
+  const defaultsMeta = config.defaults?.meta && typeof config.defaults.meta === "object" ? config.defaults.meta : {};
+  const counterZone = defaultsMeta.counter_zone_override && typeof defaultsMeta.counter_zone_override === "object" ? defaultsMeta.counter_zone_override as { top?: number; right?: number; fontSize?: number } : undefined;
+  const watermarkZone = defaultsMeta.watermark_zone_override && typeof defaultsMeta.watermark_zone_override === "object" ? defaultsMeta.watermark_zone_override as Record<string, unknown> : undefined;
+  const madeWithZone = defaultsMeta.made_with_zone_override && typeof defaultsMeta.made_with_zone_override === "object" ? defaultsMeta.made_with_zone_override as { fontSize?: number; x?: number; y?: number; bottom?: number } : undefined;
+  const showMadeWith = typeof defaultsMeta.show_made_with === "boolean" ? defaultsMeta.show_made_with : true;
+  const chromeOverridesForPreview =
+    (counterZone && Object.keys(counterZone).length > 0) ||
+    (watermarkZone && Object.keys(watermarkZone).length > 0) ||
+    madeWithZone ||
+    showMadeWith === false
+      ? {
+          ...(counterZone && Object.keys(counterZone).length > 0 && { counter: counterZone }),
+          ...(watermarkZone && Object.keys(watermarkZone).length > 0 && { watermark: watermarkZone }),
+          ...(showMadeWith !== false && {
+            madeWith: {
+              ...(madeWithZone?.fontSize != null && { fontSize: Number(madeWithZone.fontSize) }),
+              ...(madeWithZone?.x != null && { x: Number(madeWithZone.x) }),
+              ...(madeWithZone?.y != null && { y: Number(madeWithZone.y) }),
+              ...(madeWithZone?.y == null && { bottom: 16 }),
+            },
+          }),
+        }
+      : undefined;
 
   const templatePreviewContent = (
     <div className="flex flex-col rounded-xl border border-border/50 bg-muted/5 overflow-hidden">
@@ -251,7 +286,8 @@ export function TemplateBuilderForm({
                     totalSlides={previewTotalSlides}
                     backgroundImageUrl={previewImageUrl.trim() || undefined}
                     backgroundOverride={{ color: previewBackgroundColor }}
-                    showMadeWithOverride={false}
+                    showMadeWithOverride={showMadeWith}
+                    {...(chromeOverridesForPreview && { chromeOverrides: chromeOverridesForPreview })}
                   />
                 </div>
               </div>
@@ -326,7 +362,8 @@ export function TemplateBuilderForm({
                       totalSlides={previewTotalSlides}
                       backgroundImageUrl={previewImageUrl.trim() || undefined}
                       backgroundOverride={{ color: previewBackgroundColor }}
-                      showMadeWithOverride={false}
+                      showMadeWithOverride={showMadeWith}
+                      {...(chromeOverridesForPreview && { chromeOverrides: chromeOverridesForPreview })}
                     />
                   </div>
                 </div>
@@ -764,9 +801,9 @@ export function TemplateBuilderForm({
             </div>
           </div>
         )}
-          </section>
-            )}
-            {templateTab === "background" && (
+        </section>
+      )}
+      {templateTab === "background" && (
           <section className="space-y-4" aria-label="Background">
         <div className="rounded-lg border border-border/50 bg-muted/5 p-3">
           <h3 className="text-xs font-semibold text-foreground mb-2">Background</h3>
@@ -947,7 +984,8 @@ export function TemplateBuilderForm({
             {templateTab === "more" && (
           <section className="space-y-4" aria-label="More">
         <div className="rounded-lg border border-border/50 bg-muted/5 p-3">
-          <h3 className="text-xs font-semibold text-foreground mb-2">Watermark & chrome</h3>
+          <h3 className="text-xs font-semibold text-foreground mb-2">Show on slide</h3>
+          <p className="text-muted-foreground text-[11px] mb-3">Same options as the slide editor. These become the template defaults when slides use this template.</p>
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <Label>Show swipe hint</Label>
@@ -1055,7 +1093,7 @@ export function TemplateBuilderForm({
               </div>
             )}
             <div className="flex items-center justify-between">
-              <Label>Show counter</Label>
+              <Label>Slide number</Label>
               <input
                 type="checkbox"
                 checked={config.chrome.showCounter}
@@ -1064,6 +1102,59 @@ export function TemplateBuilderForm({
                 }
               />
             </div>
+            {config.chrome.showCounter && (
+              <div className="rounded border border-border/40 bg-background/50 p-3 space-y-2">
+                <p className="text-[11px] font-medium text-foreground">Slide number position</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {(["top", "right", "fontSize"] as const).map((key) => {
+                    const label = key === "top" ? "Top (px)" : key === "right" ? "Right (px)" : "Font size";
+                    const val = (counterZone as { top?: number; right?: number; fontSize?: number })?.[key] ?? (key === "fontSize" ? 20 : 24);
+                    return (
+                      <div key={key} className="space-y-1">
+                        <Label className="text-xs">{label}</Label>
+                        <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background w-full max-w-[100px]">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            className="h-7 w-7 shrink-0 rounded-r-none"
+                            onClick={() =>
+                              updateDefaultsMeta({
+                                counter_zone_override: {
+                                  ...(counterZone as object),
+                                  [key]: Math.max(key === "fontSize" ? 10 : 0, val - (key === "fontSize" ? 1 : 4)),
+                                },
+                              })
+                            }
+                            aria-label={`Decrease ${label}`}
+                          >
+                            <MinusIcon className="size-3" />
+                          </Button>
+                          <span className="min-w-8 flex-1 text-center text-xs tabular-nums">{val}</span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            className="h-7 w-7 shrink-0 rounded-l-none"
+                            onClick={() =>
+                              updateDefaultsMeta({
+                                counter_zone_override: {
+                                  ...(counterZone as object),
+                                  [key]: Math.min(key === "fontSize" ? 48 : 1080, val + (key === "fontSize" ? 1 : 4)),
+                                },
+                              })
+                            }
+                            aria-label={`Increase ${label}`}
+                          >
+                            <PlusIcon className="size-3" />
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             <div className="flex items-center justify-between">
               <Label>Watermark</Label>
               <input
@@ -1155,6 +1246,184 @@ export function TemplateBuilderForm({
                     </div>
                   </div>
                 )}
+                <div className="space-y-1">
+                  <Label className="text-xs">Font size</Label>
+                  <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background w-full max-w-[100px]">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      className="h-7 w-7 shrink-0 rounded-r-none"
+                      onClick={() =>
+                        updateConfig((prev) => ({
+                          chrome: {
+                            ...prev.chrome,
+                            watermark: { ...prev.chrome.watermark, fontSize: Math.max(8, (prev.chrome.watermark.fontSize ?? 20) - 1) },
+                          },
+                        }))
+                      }
+                      aria-label="Decrease font size"
+                    >
+                      <MinusIcon className="size-3" />
+                    </Button>
+                    <span className="min-w-8 flex-1 text-center text-xs tabular-nums">{config.chrome.watermark.fontSize ?? 20}</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      className="h-7 w-7 shrink-0 rounded-l-none"
+                      onClick={() =>
+                        updateConfig((prev) => ({
+                          chrome: {
+                            ...prev.chrome,
+                            watermark: { ...prev.chrome.watermark, fontSize: Math.min(72, (prev.chrome.watermark.fontSize ?? 20) + 1) },
+                          },
+                        }))
+                      }
+                      aria-label="Increase font size"
+                    >
+                      <PlusIcon className="size-3" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+            <div className="flex items-center justify-between">
+              <Label>Made with (attribution)</Label>
+              <input
+                type="checkbox"
+                checked={showMadeWith}
+                onChange={(e) =>
+                  updateDefaultsMeta({ show_made_with: e.target.checked })
+                }
+              />
+            </div>
+            {showMadeWith && (
+              <div className="rounded border border-border/40 bg-background/50 p-3 space-y-2">
+                <p className="text-[11px] font-medium text-foreground">Made with position & size</p>
+                <p className="text-muted-foreground text-[11px]">Leave X/Y empty for default (centered at bottom). Same as slide editor.</p>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Font size</Label>
+                    <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background w-full max-w-[100px]">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        className="h-7 w-7 shrink-0 rounded-r-none"
+                        onClick={() =>
+                          updateDefaultsMeta({
+                            made_with_zone_override: {
+                              ...(madeWithZone && typeof madeWithZone === "object" ? madeWithZone : {}),
+                              fontSize: Math.max(12, (madeWithZone?.fontSize ?? 30) - 1),
+                            },
+                          })
+                        }
+                        aria-label="Decrease font size"
+                      >
+                        <MinusIcon className="size-3" />
+                      </Button>
+                      <span className="min-w-8 flex-1 text-center text-xs tabular-nums">{madeWithZone?.fontSize ?? 30}</span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        className="h-7 w-7 shrink-0 rounded-l-none"
+                        onClick={() =>
+                          updateDefaultsMeta({
+                            made_with_zone_override: {
+                              ...(madeWithZone && typeof madeWithZone === "object" ? madeWithZone : {}),
+                              fontSize: Math.min(48, (madeWithZone?.fontSize ?? 30) + 1),
+                            },
+                          })
+                        }
+                        aria-label="Increase font size"
+                      >
+                        <PlusIcon className="size-3" />
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">X (px)</Label>
+                    <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background w-full max-w-[100px]">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        className="h-7 w-7 shrink-0 rounded-r-none"
+                        onClick={() =>
+                          updateDefaultsMeta({
+                            made_with_zone_override: {
+                              ...(madeWithZone && typeof madeWithZone === "object" ? madeWithZone : {}),
+                              x: Math.max(0, (madeWithZone?.x ?? 540) - 4),
+                            },
+                          })
+                        }
+                        aria-label="Decrease X"
+                      >
+                        <MinusIcon className="size-3" />
+                      </Button>
+                      <span className="min-w-8 flex-1 text-center text-xs tabular-nums">{madeWithZone?.x ?? 540}</span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        className="h-7 w-7 shrink-0 rounded-l-none"
+                        onClick={() =>
+                          updateDefaultsMeta({
+                            made_with_zone_override: {
+                              ...(madeWithZone && typeof madeWithZone === "object" ? madeWithZone : {}),
+                              x: Math.min(968, (madeWithZone?.x ?? 540) + 4),
+                            },
+                          })
+                        }
+                        aria-label="Increase X"
+                      >
+                        <PlusIcon className="size-3" />
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Y (px)</Label>
+                    <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background w-full max-w-[100px]">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        className="h-7 w-7 shrink-0 rounded-r-none"
+                        onClick={() =>
+                          updateDefaultsMeta({
+                            made_with_zone_override: {
+                              ...(madeWithZone && typeof madeWithZone === "object" ? madeWithZone : {}),
+                              y: Math.max(0, (madeWithZone?.y ?? 1016) - 4),
+                            },
+                          })
+                        }
+                        aria-label="Decrease Y"
+                      >
+                        <MinusIcon className="size-3" />
+                      </Button>
+                      <span className="min-w-8 flex-1 text-center text-xs tabular-nums">{madeWithZone?.y != null ? madeWithZone.y : "—"}</span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        className="h-7 w-7 shrink-0 rounded-l-none"
+                        onClick={() =>
+                          updateDefaultsMeta({
+                            made_with_zone_override: {
+                              ...(madeWithZone && typeof madeWithZone === "object" ? madeWithZone : {}),
+                              y: Math.min(1032, (madeWithZone?.y ?? 1016) + 4),
+                            },
+                          })
+                        }
+                        aria-label="Increase Y"
+                      >
+                        <PlusIcon className="size-3" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
           </div>

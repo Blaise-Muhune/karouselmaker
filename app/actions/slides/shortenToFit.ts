@@ -51,3 +51,37 @@ export async function shortenToFit(
   if (revalidatePathname) revalidatePath(revalidatePathname);
   return { ok: true, headline, body };
 }
+
+/** Return shortened headline/body for the slide (no save). Used to pre-fill shorten_variants in meta. */
+export type GetShortenedPreviewResult =
+  | { ok: true; headline: string; body: string }
+  | { ok: false; error: string };
+
+export async function getShortenedPreview(slideId: string): Promise<GetShortenedPreviewResult> {
+  const { user } = await getUser();
+  if (!user) return { ok: false, error: "Unauthorized" };
+
+  const slide = await getSlide(user.id, slideId);
+  if (!slide) return { ok: false, error: "Slide not found" };
+
+  const templateId = slide.template_id;
+  if (!templateId) return { ok: false, error: "Slide has no template" };
+
+  const template = await getTemplate(user.id, templateId);
+  if (!template) return { ok: false, error: "Template not found" };
+
+  const config = templateConfigSchema.safeParse(template.config);
+  if (!config.success) return { ok: false, error: "Invalid template config" };
+
+  const headlineZone = config.data.textZones.find((z) => z.id === "headline");
+  const bodyZone = config.data.textZones.find((z) => z.id === "body");
+
+  const headline = headlineZone
+    ? shortenTextToZone(slide.headline, headlineZone)
+    : slide.headline;
+  const body = bodyZone
+    ? shortenTextToZone(slide.body ?? "", bodyZone)
+    : (slide.body ?? "");
+
+  return { ok: true, headline, body };
+}

@@ -297,11 +297,12 @@ export function AppShell({
               rel="noopener noreferrer"
               className="text-muted-foreground text-sm hover:text-foreground transition-colors"
             >
-              Watermark KarouselMaker.com
+              Made with KarouselMaker.com
             </a>
             <div className="flex flex-wrap items-center justify-center gap-4 text-sm text-muted-foreground">
               <Link href="/terms" className="hover:text-foreground">Terms</Link>
               <Link href="/privacy" className="hover:text-foreground">Privacy</Link>
+              <Link href="/copyright" className="hover:text-foreground">Copyright</Link>
               <ContactUsModal userEmail={userEmail} userName={userName} />
             </div>
           </div>

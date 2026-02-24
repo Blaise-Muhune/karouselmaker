@@ -31,13 +31,31 @@ export function getExportStoragePaths(
   userId: string,
   carouselId: string,
   exportId: string
-): { slidesDir: string; zipPath: string; slidePath: (index: number) => string } {
+): {
+  slidesDir: string;
+  zipPath: string;
+  slidePath: (index: number) => string;
+  overlayPath: (index: number) => string;
+  /** Path for materialized video background image (server-fetched external URL). */
+  videoBgPath: (slideIndex: number, bgIndex: number, ext?: string) => string;
+  /** Path for video slide variant: full slide screenshot with one bg (same way as main). */
+  videoSlidePath: (slideIndex: number, variantIndex: number) => string;
+  /** Prefix for listing video slide variants (e.g. user/.../exports/.../exportId/video-slides/). */
+  videoSlidesPrefix: string;
+} {
   const prefix = `user/${userId}/exports/${carouselId}/${exportId}`;
   return {
     slidesDir: `${prefix}/slides`,
     zipPath: `${prefix}/carousel.zip`,
     slidePath: (index: number) =>
       `${prefix}/slides/${String(index + 1).padStart(2, "0")}.png`,
+    overlayPath: (index: number) =>
+      `${prefix}/slides/overlay_${String(index + 1).padStart(2, "0")}.png`,
+    videoBgPath: (slideIndex: number, bgIndex: number, ext = "jpg") =>
+      `${prefix}/video-bg/${slideIndex}-${bgIndex}.${ext}`,
+    videoSlidePath: (slideIndex: number, variantIndex: number) =>
+      `${prefix}/video-slides/${slideIndex}-${variantIndex}.png`,
+    videoSlidesPrefix: `${prefix}/video-slides/`,
   };
 }
 

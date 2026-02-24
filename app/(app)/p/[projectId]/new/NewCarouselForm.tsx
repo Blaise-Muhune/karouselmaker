@@ -8,8 +8,27 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { BackgroundImagesPickerModal } from "@/components/carousels/BackgroundImagesPickerModal";
+import { TemplateSelectCards } from "@/components/carousels/TemplateSelectCards";
+import type { TemplateOption } from "@/components/carousels/TemplateSelectCards";
+import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { createCheckoutSession } from "@/app/actions/subscription/createCheckoutSession";
-import { GlobeIcon, ImageIcon, Loader2Icon, SparklesIcon } from "lucide-react";
+import { GlobeIcon, ImageIcon, LayoutTemplateIcon, Loader2Icon, SparklesIcon } from "lucide-react";
+
+const TEMPLATE_PAGE_SIZE = 8;
+/** Diverse Unsplash sample images for template preview when "Let AI suggest background images" is on. */
+const TEMPLATE_PREVIEW_IMAGE_URLS = [
+  "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=1080&q=80", // people / portrait
+  "https://images.unsplash.com/photo-1587300003388-59208cc962cb?w=1080&q=80", // animal / dog
+  "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=1080&q=80", // sunset / beach
+  "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1080&q=80", // nature / mountains
+  "https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=1080&q=80", // object / coffee
+  "https://images.unsplash.com/photo-1514565131-fce0801e5785?w=1080&q=80",   // city
+  "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=1080&q=80",   // food
+  "https://images.unsplash.com/photo-1505144808419-1957a94ca61e?w=1080&q=80", // ocean / water
+  "https://images.unsplash.com/photo-1466692476868-aef1dfb1e735?w=1080&q=80", // forest / road
+  "https://images.unsplash.com/photo-1497366216548-37526070297c?w=1080&q=80", // lifestyle / workspace
+];
 
 const INPUT_TYPES = [
   { value: "topic", label: "Topic" },
@@ -37,6 +56,10 @@ export function NewCarouselForm({
   initialUseAiBackgrounds,
   initialUseUnsplashOnly,
   initialUseWebSearch,
+  templateOptions = [],
+  defaultTemplateId = null,
+  defaultTemplateConfig = null,
+  primaryColor = "#0a0a0a",
 }: {
   projectId: string;
   isPro?: boolean;
@@ -50,6 +73,11 @@ export function NewCarouselForm({
   initialUseAiBackgrounds?: boolean;
   initialUseUnsplashOnly?: boolean;
   initialUseWebSearch?: boolean;
+  /** Templates the user can choose before generating (with parsed config for preview). */
+  templateOptions?: TemplateOption[];
+  defaultTemplateId?: string | null;
+  defaultTemplateConfig?: TemplateConfig | null;
+  primaryColor?: string;
 }) {
   const router = useRouter();
   const [inputType, setInputType] = useState<"topic" | "url" | "text">(initialInputType ?? "topic");
@@ -61,6 +89,9 @@ export function NewCarouselForm({
   const [useWebSearch, setUseWebSearch] = useState(initialUseWebSearch ?? false);
   const [notes, setNotes] = useState("");
   const [backgroundPickerOpen, setBackgroundPickerOpen] = useState(false);
+  const [templateModalOpen, setTemplateModalOpen] = useState(false);
+  const [visibleTemplateCount, setVisibleTemplateCount] = useState(TEMPLATE_PAGE_SIZE);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
   const [generationStep, setGenerationStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -95,6 +126,10 @@ export function NewCarouselForm({
     return () => clearInterval(interval);
   }, [isPending]);
 
+  useEffect(() => {
+    if (templateModalOpen) setVisibleTemplateCount(TEMPLATE_PAGE_SIZE);
+  }, [templateModalOpen]);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -119,6 +154,7 @@ export function NewCarouselForm({
       if (useUnsplashOnly) formData.set("use_unsplash_only", "true");
       if (useWebSearch) formData.set("use_web_search", "true");
       if (notes.trim()) formData.set("notes", notes.trim());
+      if (selectedTemplateId) formData.set("template_id", selectedTemplateId);
       const result = await generateCarousel(formData);
       if ("error" in result) {
         setError(result.error);
@@ -347,6 +383,68 @@ export function NewCarouselForm({
           </div>
           </div>
         </section>
+
+        {(templateOptions.length > 0 || defaultTemplateConfig) && (
+          <section>
+            <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
+              Template (optional)
+            </p>
+            <p className="text-muted-foreground mb-3 text-xs">
+              {useAiBackgrounds
+                ? "Previews show how each template looks with a sample image. Choose the layout for your slides."
+                : "Choose the layout for your slides. Default uses your recommended template."}
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setTemplateModalOpen(true)}
+              className="gap-2"
+            >
+              <LayoutTemplateIcon className="size-4" />
+              {selectedTemplateId
+                ? templateOptions.find((t) => t.id === selectedTemplateId)?.name ?? "Custom"
+                : "Default (recommended)"}
+            </Button>
+            <Dialog open={templateModalOpen} onOpenChange={setTemplateModalOpen}>
+              <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
+                <DialogHeader>
+                  <DialogTitle>Choose template</DialogTitle>
+                </DialogHeader>
+                <p className="text-muted-foreground text-sm -mt-2">
+                  Pick a layout for your slides. You can load more below.
+                </p>
+                <div className="overflow-y-auto overflow-x-hidden flex-1 min-h-0 min-w-0 w-full pr-1">
+                  <TemplateSelectCards
+                    templates={templateOptions.slice(0, visibleTemplateCount)}
+                    defaultTemplateId={defaultTemplateId}
+                    defaultTemplateConfig={defaultTemplateConfig}
+                    value={selectedTemplateId}
+                    onChange={(id) => {
+                      setSelectedTemplateId(id);
+                      setTemplateModalOpen(false);
+                    }}
+                    primaryColor={primaryColor}
+                    previewImageUrls={useAiBackgrounds ? TEMPLATE_PREVIEW_IMAGE_URLS : undefined}
+                  />
+                </div>
+                {visibleTemplateCount < templateOptions.length && (
+                  <div className="pt-2 border-t flex justify-center">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setVisibleTemplateCount((n) => n + TEMPLATE_PAGE_SIZE)}
+                    >
+                      Load more
+                    </Button>
+                  </div>
+                )}
+              </DialogContent>
+            </Dialog>
+          </section>
+        )}
+
         <BackgroundImagesPickerModal
           open={backgroundPickerOpen}
           onOpenChange={setBackgroundPickerOpen}

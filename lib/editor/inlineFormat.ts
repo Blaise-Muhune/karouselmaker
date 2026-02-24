@@ -173,3 +173,101 @@ export function injectHighlightMarkers(text: string, spans: HighlightSpan[]): st
   if (lastEnd < len) out += text.slice(lastEnd, len);
   return out;
 }
+
+/** Common words we skip when picking "key" words to auto-highlight in body. */
+const STOP_WORDS = new Set(
+  "the a an and or but is are was were to of in on for with at by it be as this that have has had will would can could from not no so if we you they he she i".split(" ")
+);
+
+/**
+ * Returns word runs as [start, end] (character indices) in order.
+ * Word = sequence of letters, digits, apostrophe (contractions).
+ */
+function getWordRanges(text: string): { start: number; end: number; word: string }[] {
+  const ranges: { start: number; end: number; word: string }[] = [];
+  const re = /[\p{L}\p{N}']+/gu;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    ranges.push({ start: m.index, end: m.index + (m[0]?.length ?? 0), word: (m[0] ?? "").toLowerCase() });
+  }
+  return ranges;
+}
+
+export type AutoHighlightOptions = {
+  /** "headline" = first/last words; "body" = first + key words (skip stop words). */
+  style: "headline" | "body";
+  /** Default color for all spans (e.g. HIGHLIGHT_COLORS.yellow). */
+  defaultColor?: string;
+  /** Max spans to return (headline: 3, body: 5 if not set). */
+  maxSpans?: number;
+};
+
+/**
+ * Picks words to highlight in a smart way so text "pops" like common carousel style.
+ * - Headline: first word, optionally second if short line, optionally last word if different.
+ * - Body: first word + a few "key" words (skip stop words, prefer content words/numbers).
+ */
+export function getAutoHighlightSpans(text: string, options: AutoHighlightOptions): HighlightSpan[] {
+  const { style, defaultColor = HIGHLIGHT_COLORS.yellow ?? "#facc15", maxSpans = style === "headline" ? 3 : 5 } = options;
+  const words = getWordRanges(text);
+  if (!words.length) return [];
+
+  const color = defaultColor.startsWith("#") ? defaultColor : (HIGHLIGHT_COLORS[defaultColor] ?? "#facc15");
+  const spans: HighlightSpan[] = [];
+
+  if (style === "headline") {
+    // First word
+    spans.push({ start: words[0]!.start, end: words[0]!.end, color });
+    if (words.length >= 2 && spans.length < maxSpans) {
+      if (words.length <= 5) spans.push({ start: words[1]!.start, end: words[1]!.end, color });
+    }
+    if (words.length >= 3 && spans.length < maxSpans) {
+      const last = words[words.length - 1]!;
+      const firstStart = words[0]!.start;
+      if (last.start > firstStart && !spans.some((s) => s.start === last.start)) {
+        spans.push({ start: last.start, end: last.end, color });
+      }
+    }
+    return spans.slice(0, maxSpans);
+  }
+
+  // Body: first word + key words (skip stop words)
+  spans.push({ start: words[0]!.start, end: words[0]!.end, color });
+  for (let i = 1; i < words.length && spans.length < maxSpans; i++) {
+    const w = words[i]!;
+    if (STOP_WORDS.has(w.word)) continue;
+    const isNumber = /^\d+$/.test(w.word);
+    const isContentWord = w.word.length >= 2 || isNumber;
+    if (!isContentWord) continue;
+    spans.push({ start: w.start, end: w.end, color });
+  }
+  return spans.slice(0, maxSpans);
+}
+
+/**
+ * Convert AI-suggested highlight words (exact substrings) into highlight spans.
+ * Finds the first occurrence of each word in text; skips spans that would overlap a previous one.
+ * Use when the AI provided headline_highlight_words or body_highlight_words.
+ */
+export function getHighlightSpansFromWords(
+  text: string,
+  words: string[],
+  color: string
+): HighlightSpan[] {
+  if (!text || !words?.length) return [];
+  const hex = color.startsWith("#") ? color : (HIGHLIGHT_COLORS[color] ?? "#facc15");
+  const spans: HighlightSpan[] = [];
+  for (const word of words) {
+    const w = word?.trim();
+    if (!w) continue;
+    const idx = text.indexOf(w);
+    if (idx < 0) continue;
+    const start = idx;
+    const end = idx + w.length;
+    // Skip if overlaps an existing span
+    if (spans.some((s) => (start >= s.start && start < s.end) || (end > s.start && end <= s.end) || (start <= s.start && end >= s.end))) continue;
+    spans.push({ start, end, color: hex });
+  }
+  spans.sort((a, b) => a.start - b.start);
+  return spans;
+}

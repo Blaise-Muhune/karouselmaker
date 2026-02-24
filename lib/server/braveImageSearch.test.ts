@@ -72,14 +72,14 @@ describe("braveImageSearch", () => {
       const commons = scoreCandidateForRanking(2000, "commons.wikimedia.org");
       expect(commons).toBeGreaterThan(generic);
     });
-    it("penalizes thehorrordome and wallpaper sites", () => {
+    it("penalizes penalty-domain hosts (e.g. memes)", () => {
       const generic = scoreCandidateForRanking(2000, "random-site.com");
-      const thehorrordome = scoreCandidateForRanking(2000, "thehorrordome.com");
-      expect(thehorrordome).toBeLessThan(generic);
+      const penalty = scoreCandidateForRanking(2000, "memes.example.com");
+      expect(penalty).toBeLessThan(generic);
     });
     it("ranking prefers higher-res and reputable over lower-res and penalty", () => {
       const highResReputable = scoreCandidateForRanking(2400, "commons.wikimedia.org");
-      const lowResPenalty = scoreCandidateForRanking(1200, "thehorrordome.com");
+      const lowResPenalty = scoreCandidateForRanking(1200, "memes.example.com");
       expect(highResReputable).toBeGreaterThan(lowResPenalty);
     });
   });

@@ -1,6 +1,6 @@
 # Karouselmaker — Brand, Design & App Description
 
-Use this document for promotional videos, Remotion compositions, or marketing assets.
+Use this document for promotional videos or marketing assets.
 
 ---
 
@@ -93,7 +93,7 @@ Dark background gradient: `160deg, oklch(0.16 0.028 163) → oklch(0.14 0.02 163
 
 2. **Carousel editor**
    - Slide grid (1080×1080 or 1080×1350 or 1080×1920)
-   - Export: PNG/ZIP + video preview (Remotion)
+   - Export: PNG/ZIP + video preview (slideshow) + MP4 via FFmpeg.wasm
 
 3. **Output**
    - Instagram-style carousel slides
@@ -116,4 +116,4 @@ Dark background gradient: `160deg, oklch(0.16 0.028 163) → oklch(0.14 0.02 163
 - Next.js App Router, TypeScript, Tailwind, shadcn/ui
 - Supabase (Auth, DB, Storage)
 - AI slide generation, Playwright for export
-- Remotion for video preview, ffmpeg.wasm for MP4 download
+- Image slideshow for video preview (all devices), FFmpeg.wasm for MP4 download

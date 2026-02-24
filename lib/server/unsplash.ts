@@ -8,7 +8,21 @@ const UNSPLASH_SEARCH = "https://api.unsplash.com/search/photos";
 const UTM_SOURCE = "karouselmaker";
 const UTM_MEDIUM = "referral";
 
+/** Request timeout so a hanging Unsplash API doesn't block the app. */
+const UNSPLASH_FETCH_TIMEOUT_MS = 15000;
+
 const DEBUG = process.env.IMAGE_SEARCH_DEBUG === "true" || process.env.IMAGE_SEARCH_DEBUG === "1";
+
+async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), UNSPLASH_FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { ...init, signal: controller.signal });
+    return res;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 export type UnsplashAttribution = {
   photographerName: string;
@@ -39,10 +53,16 @@ export async function searchUnsplashPhoto(
   });
 
   const url = `${UNSPLASH_SEARCH}?${params.toString()}`;
-  const res = await fetch(url, {
-    headers: { Authorization: `Client-ID ${key}` },
-    next: { revalidate: 0 },
-  });
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(url, {
+      headers: { Authorization: `Client-ID ${key}` },
+      next: { revalidate: 0 },
+    });
+  } catch (err) {
+    if (DEBUG && err instanceof Error) console.log("[unsplash] fetch error:", err.name, err.message);
+    return null;
+  }
 
   if (!res.ok) {
     if (DEBUG) console.log("[unsplash] HTTP", res.status, res.statusText, await res.text().catch(() => ""));
@@ -89,18 +109,49 @@ export async function searchUnsplashPhoto(
   };
 }
 
+/** Parse API response into UnsplashPhotoResult[]. Shared by random and multiple. */
+function parseUnsplashResults(
+  data: {
+    results?: Array<{
+      urls?: { regular?: string; full?: string };
+      links?: { download_location?: string };
+      user?: { name?: string; username?: string; links?: { html?: string } };
+    }>;
+    errors?: string[];
+  }
+): UnsplashPhotoResult[] {
+  if (data.errors?.length || !data.results?.length) return [];
+  const out: UnsplashPhotoResult[] = [];
+  for (const item of data.results) {
+    const imageUrl = item?.urls?.full ?? item?.urls?.regular;
+    if (!imageUrl) continue;
+    const user = item?.user;
+    const profileHtml = user?.links?.html ?? (user?.username ? `https://unsplash.com/@${user.username}` : undefined);
+    const attribution: UnsplashAttribution | undefined =
+      user?.name && user?.username && profileHtml
+        ? {
+            photographerName: user.name,
+            photographerUsername: user.username,
+            profileUrl: `${profileHtml}?utm_source=${UTM_SOURCE}&utm_medium=${UTM_MEDIUM}`,
+            unsplashUrl: `https://unsplash.com/?utm_source=${UTM_SOURCE}&utm_medium=${UTM_MEDIUM}`,
+          }
+        : undefined;
+    out.push({ url: imageUrl, downloadLocation: item?.links?.download_location, attribution });
+  }
+  return out;
+}
+
 /**
- * Search Unsplash and return a random result from the first page.
- * Use for "shuffle" to get variety. Fetches up to 15 results and picks one at random.
+ * Search Unsplash and return up to `count` results (for shuffle: store one as primary, rest as alternates).
  */
-export async function searchUnsplashPhotoRandom(
+export async function searchUnsplashPhotosMultiple(
   query: string,
   count = 15
-): Promise<UnsplashPhotoResult | null> {
+): Promise<UnsplashPhotoResult[]> {
   const key = process.env.UNSPLASH_ACCESS_KEY;
   if (!key || !query.trim()) {
     if (DEBUG) console.log("[unsplash] skip: missing UNSPLASH_ACCESS_KEY or query");
-    return null;
+    return [];
   }
 
   const params = new URLSearchParams({
@@ -110,53 +161,38 @@ export async function searchUnsplashPhotoRandom(
   });
 
   const url = `${UNSPLASH_SEARCH}?${params.toString()}`;
-  const res = await fetch(url, {
-    headers: { Authorization: `Client-ID ${key}` },
-    next: { revalidate: 0 },
-  });
-
-  if (!res.ok) {
-    if (DEBUG) console.log("[unsplash] HTTP", res.status, res.statusText, await res.text().catch(() => ""));
-    return null;
+  try {
+    const res = await fetchWithTimeout(url, {
+      headers: { Authorization: `Client-ID ${key}` },
+      next: { revalidate: 0 },
+    });
+    if (!res.ok) {
+      if (DEBUG) console.log("[unsplash] HTTP", res.status, res.statusText, await res.text().catch(() => ""));
+      return [];
+    }
+    const data = (await res.json()) as Parameters<typeof parseUnsplashResults>[0];
+    return parseUnsplashResults(data);
+  } catch (err) {
+    if (DEBUG && err instanceof Error) console.log("[unsplash] fetch error:", err.name, err.message);
+    return [];
   }
+}
 
-  const data = (await res.json()) as {
-    results?: Array<{
-      urls?: { regular?: string; full?: string };
-      links?: { download_location?: string };
-      user?: { name?: string; username?: string; links?: { html?: string } };
-    }>;
-    errors?: string[];
-  };
-
-  if (data.errors?.length || !data.results?.length) {
+/**
+ * Search Unsplash and return a random result from the first page.
+ * Use for "shuffle" to get variety. Fetches up to 15 results and picks one at random.
+ */
+export async function searchUnsplashPhotoRandom(
+  query: string,
+  count = 15
+): Promise<UnsplashPhotoResult | null> {
+  const results = await searchUnsplashPhotosMultiple(query, count);
+  if (results.length === 0) {
     if (DEBUG) console.log("[unsplash] no results or API errors");
     return null;
   }
-
-  const results = data.results;
   const idx = Math.floor(Math.random() * results.length);
-  const item = results[idx]!;
-  const imageUrl = item?.urls?.full ?? item?.urls?.regular;
-  if (!imageUrl) return null;
-
-  const user = item?.user;
-  const profileHtml = user?.links?.html ?? (user?.username ? `https://unsplash.com/@${user.username}` : undefined);
-  const attribution: UnsplashAttribution | undefined =
-    user?.name && user?.username && profileHtml
-      ? {
-          photographerName: user.name,
-          photographerUsername: user.username,
-          profileUrl: `${profileHtml}?utm_source=${UTM_SOURCE}&utm_medium=${UTM_MEDIUM}`,
-          unsplashUrl: `https://unsplash.com/?utm_source=${UTM_SOURCE}&utm_medium=${UTM_MEDIUM}`,
-        }
-      : undefined;
-
-  return {
-    url: imageUrl,
-    downloadLocation: item?.links?.download_location,
-    attribution,
-  };
+  return results[idx]!;
 }
 
 /**

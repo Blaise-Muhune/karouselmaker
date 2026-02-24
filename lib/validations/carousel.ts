@@ -28,6 +28,8 @@ export const generateCarouselInputSchema = z.object({
     .transform((v) => v === "true" || v === "1"),
   /** Optional notes or context for the AI before generating (e.g. "focus on beginners", "avoid jargon"). */
   notes: z.string().max(2000).optional(),
+  /** Optional template ID to apply to all slides. If omitted, app default template is used. */
+  template_id: z.string().uuid().optional(),
 });
 
 export type GenerateCarouselInput = z.output<typeof generateCarouselInputSchema>;

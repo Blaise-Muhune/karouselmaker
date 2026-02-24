@@ -43,8 +43,8 @@ export const imageDisplaySchema = z.object({
   frameColor: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
   /** Multi-image only: side-by-side, stacked, or grid. */
   layout: imageLayoutSchema.optional(),
-  /** Multi-image only: gap between images in px. 8–48. */
-  gap: z.number().min(8).max(48).optional(),
+  /** Multi-image only: gap between images in px. 0–48. */
+  gap: z.number().min(0).max(48).optional(),
   /** Multi-image only: how images are separated – gap, line, zigzag (jagged), diagonal (vs-style). */
   dividerStyle: imageDividerSchema.optional(),
   /** Color of divider line (for line/zigzag/diagonal). */
@@ -132,7 +132,7 @@ export const slideMetaSchema = z.object({
   show_counter: z.boolean().optional(),
   /** Override watermark/logo visibility. First, second, last = on by default; middle = off. */
   show_watermark: z.boolean().optional(),
-  /** When false, hide "Watermark KarouselMaker.com" attribution. Pro only. Default true. */
+  /** When false, hide "Made with KarouselMaker.com" attribution. Pro only. Default true. */
   show_made_with: z.boolean().optional(),
   /** Override headline font size (px). 8–200. */
   headline_font_size: z.number().int().min(8).max(200).optional(),
@@ -142,6 +142,30 @@ export const slideMetaSchema = z.object({
   headline_zone_override: textZoneOverrideSchema,
   /** Per-slide body zone overrides. */
   body_zone_override: textZoneOverrideSchema,
+  /** Slide number position & size: top (px), right (px), fontSize. */
+  counter_zone_override: z.object({
+    top: z.number().int().min(0).max(1080).optional(),
+    right: z.number().int().min(0).max(1080).optional(),
+    fontSize: z.number().int().min(10).max(48).optional(),
+  }).optional(),
+  /** Logo/custom text watermark position & size. */
+  watermark_zone_override: z.object({
+    position: z.enum(["top_left", "top_right", "bottom_left", "bottom_right", "custom"]).optional(),
+    logoX: z.number().int().min(0).max(1080).optional(),
+    logoY: z.number().int().min(0).max(1080).optional(),
+    fontSize: z.number().int().min(8).max(72).optional(),
+    maxWidth: z.number().int().min(24).max(400).optional(),
+    maxHeight: z.number().int().min(24).max(200).optional(),
+  }).optional(),
+  /** "Made with" line: fontSize, x and y (px from top-left). Omit x,y for default (centered at bottom). */
+  made_with_zone_override: z.object({
+    fontSize: z.number().int().min(12).max(48).optional(),
+    x: z.number().int().min(0).max(968).optional(),
+    y: z.number().int().min(0).max(1032).optional(),
+    bottom: z.number().int().min(0).max(200).optional(),
+  }).optional(),
+  /** Custom "Made with" attribution text (Pro). When set, overrides default. Default for Pro: Made with KarouselMaker.com/@username. */
+  made_with_text: z.string().max(200).optional(),
   /** How headline {{color}} highlights render. */
   headline_highlight_style: highlightStyleSchema.optional(),
   /** How body {{color}} highlights render. */

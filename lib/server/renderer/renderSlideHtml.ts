@@ -1,4 +1,4 @@
-import { buildSlideRenderModel, type BrandKit, type SlideData, type TextZoneOverrides } from "@/lib/renderer/renderModel";
+import { buildSlideRenderModel, type BrandKit, type SlideData, type TextZoneOverrides, type ChromeOverrides } from "@/lib/renderer/renderModel";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { getContrastingTextColor, hexToRgba } from "@/lib/editor/colorUtils";
 import { parseInlineFormatting } from "@/lib/editor/inlineFormat";
@@ -96,11 +96,13 @@ export function renderSlideHtml(
   secondaryBackgroundImageUrl?: string | null,
   showCounterOverride?: boolean,
   showWatermarkOverride?: boolean,
-  /** When false, hide "Watermark KarouselMaker.com". Pro only. Undefined = show. */
+  /** When false, hide "Made with KarouselMaker.com". Pro only. Undefined = show. */
   showMadeWithOverride?: boolean,
   fontOverrides?: FontSizeOverrides | null,
   /** Per-slide text zone overrides (x, y, w, h, maxLines, align, etc.). Merged with fontOverrides. */
   zoneOverrides?: TextZoneOverrides | null,
+  /** Counter, logo watermark, and "Made with" position/size overrides (from slide meta or template defaults). */
+  chromeOverrides?: ChromeOverrides | null,
   highlightStyles: HighlightStyleOverrides = {},
   /** When true, wrap background image in a bordered frame. */
   borderedFrame?: boolean,
@@ -124,27 +126,61 @@ export function renderSlideHtml(
     dividerWidth?: number;
   } | null,
   /** Export dimensions. Default 1080x1080. */
-  dimensions?: { w: number; h: number }
+  dimensions?: { w: number; h: number },
+  /** When true, render only overlay (gradient + text + chrome) on transparent background for video compositing. */
+  transparentBackground?: boolean,
+  /** When true, render only background (no text, no counter, no watermark). For video voiceover so captions can be burned in separately. */
+  backgroundOnly?: boolean
 ): string {
   const { w: dimW, h: dimH } = dimensions ?? { w: 1080, h: 1080 };
+  const overlayOnly = !!transparentBackground;
+  const noTextOrChrome = !!backgroundOnly;
 
   // Size-based text multiplier: scale down headline/body font so they always fit on 4:5 and 9:16 (no overflow)
   const maxDim = Math.max(dimW, dimH);
   const textScale = maxDim <= 1080 ? 1 : Math.max(0.5, 1080 / maxDim);
 
-  const mergedZoneOverrides: TextZoneOverrides | undefined =
+  // For 4:5 and 9:16, scale zone x/w proportionally so the same relative position and width apply across sizes
+  const coverScale = Math.max(1, dimH / 1080);
+  const visibleLeft = coverScale > 1 ? (1080 - 1080 / coverScale) / 2 : 0;
+  const visibleWidth = coverScale > 1 ? 1080 / coverScale : 1080;
+  const scaleZoneXW = (part: Record<string, unknown> | undefined): Record<string, unknown> | undefined => {
+    if (!part || visibleWidth >= 1080) return part;
+    const ratio = visibleWidth / 1080;
+    const x = part.x != null ? visibleLeft + Number(part.x) * ratio : undefined;
+    const w = part.w != null ? Math.max(1, Math.round(Number(part.w) * ratio)) : undefined;
+    return { ...part, ...(x != null && { x }), ...(w != null && { w }) };
+  };
+
+  const headlineZone = templateConfig.textZones.find((z) => z.id === "headline");
+  const bodyZone = templateConfig.textZones.find((z) => z.id === "body");
+  // Base merge: template + user zone/font overrides (matches editor preview)
+  let mergedZoneOverrides: TextZoneOverrides | undefined =
     zoneOverrides || fontOverrides
       ? {
           headline: {
+            ...(headlineZone ?? {}),
             ...zoneOverrides?.headline,
             ...(fontOverrides?.headline_font_size != null && { fontSize: fontOverrides.headline_font_size }),
           },
           body: {
+            ...(bodyZone ?? {}),
             ...zoneOverrides?.body,
             ...(fontOverrides?.body_font_size != null && { fontSize: fontOverrides.body_font_size }),
           },
         }
       : undefined;
+  // For 4:5 and 9:16, always scale zone x/w into the visible region so text is not clipped (match preview)
+  if (coverScale > 1) {
+    const mergedHead = (mergedZoneOverrides?.headline ?? headlineZone) as Record<string, unknown> | undefined;
+    const mergedBody = (mergedZoneOverrides?.body ?? bodyZone) as Record<string, unknown> | undefined;
+    const scaledHead = scaleZoneXW(mergedHead);
+    const scaledBody = scaleZoneXW(mergedBody);
+    mergedZoneOverrides = {
+      headline: { ...(mergedHead ?? {}), ...(scaledHead ?? {}) } as TextZoneOverrides["headline"],
+      body: { ...(mergedBody ?? {}), ...(scaledBody ?? {}) } as TextZoneOverrides["body"],
+    };
+  }
   const hasZoneOverrides =
     mergedZoneOverrides &&
     (Object.keys(mergedZoneOverrides.headline ?? {}).length > 0 || Object.keys(mergedZoneOverrides.body ?? {}).length > 0);
@@ -155,11 +191,13 @@ export function renderSlideHtml(
     slideData.slide_index,
     totalSlides,
     hasZoneOverrides ? mergedZoneOverrides : undefined,
-    textScale
+    textScale,
+    chromeOverrides ?? undefined
   );
 
-  const backgroundColor =
-    backgroundOverride?.color ?? model.background.backgroundColor;
+  const backgroundColor = overlayOnly
+    ? "transparent"
+    : (backgroundOverride?.color ?? model.background.backgroundColor);
   const useGradient =
     backgroundOverride?.gradientOn !== undefined
       ? backgroundOverride.gradientOn
@@ -174,7 +212,10 @@ export function renderSlideHtml(
   const gradientOpacity = useGradient ? gradientStrength : 0;
   const gradientColorHex = backgroundOverride?.gradientColor ?? (model.background as { gradientColor?: string }).gradientColor ?? "#000000";
   const gradientRgba = hexToRgba(gradientColorHex, gradientOpacity);
-  const textColor = getContrastingTextColor(useGradient ? gradientColorHex : (backgroundColor ?? "#0a0a0a"));
+  // For overlay-only we use design background/gradient for contrast so text and chrome match the full slide
+  const contrastBase =
+    useGradient ? gradientColorHex : overlayOnly ? (model.background.backgroundColor ?? "#0a0a0a") : (backgroundColor ?? "#0a0a0a");
+  const textColor = getContrastingTextColor(contrastBase);
 
   const showCounter = showCounterOverride ?? false;
 
@@ -194,23 +235,25 @@ export function renderSlideHtml(
       .join("");
   }
 
-  const textBlocksHtml = model.textBlocks
-    .map((block) => {
-      const zoneHighlightStyle =
-        block.zone.id === "headline"
-          ? (highlightStyles.headline ?? "text")
-          : (highlightStyles.body ?? "text");
-      const zoneColor = block.zone.color ?? textColor;
-      const fontSize = Math.round(block.zone.fontSize * textScale);
-      const lineHeight = block.zone.lineHeight;
-      return `<div class="text-block" style="left:${block.zone.x}px;top:${block.zone.y}px;width:${block.zone.w}px;height:${block.zone.h}px;font-size:${fontSize}px;font-weight:${block.zone.fontWeight};line-height:${lineHeight};text-align:${block.zone.align};color:${escapeHtml(zoneColor)};z-index:5">${block.lines.map((line) => `<span>${lineToHtml(line, zoneHighlightStyle)}</span>`).join("")}</div>`;
-    })
-    .join("");
+  const textBlocksHtml = noTextOrChrome
+    ? ""
+    : model.textBlocks
+        .map((block) => {
+          const zoneHighlightStyle =
+            block.zone.id === "headline"
+              ? (highlightStyles.headline ?? "text")
+              : (highlightStyles.body ?? "text");
+          const zoneColor = block.zone.color ?? textColor;
+          const fontSize = Math.round(block.zone.fontSize * textScale);
+          const lineHeight = block.zone.lineHeight;
+          return `<div class="text-block" style="left:${block.zone.x}px;top:${block.zone.y}px;width:${block.zone.w}px;height:${block.zone.h}px;font-size:${fontSize}px;font-weight:${block.zone.fontWeight};line-height:${lineHeight};text-align:${block.zone.align};color:${escapeHtml(zoneColor)};z-index:5">${block.lines.map((line) => `<span>${lineToHtml(line, zoneHighlightStyle)}</span>`).join("")}</div>`;
+        })
+        .join("");
 
-  const multiUrls = (backgroundImageUrls?.length ?? 0) >= 2 ? backgroundImageUrls : null;
+  const multiUrls = overlayOnly ? null : (backgroundImageUrls?.length ?? 0) >= 2 ? backgroundImageUrls : null;
   const disp = imageDisplay ?? {};
   const isMulti = multiUrls != null;
-  const gap = disp.gap ?? (isMulti ? 8 : 12);
+  const gap = disp.gap ?? 0;
   const frame = disp.frame ?? (isMulti ? "none" : "medium");
   const frameW = FRAME_WIDTHS[frame] ?? 5;
   const radius = disp.frameRadius ?? (isMulti ? 0 : 16);
@@ -353,7 +396,7 @@ export function renderSlideHtml(
       })()
     : "";
 
-  const resolvedBgUrl = backgroundImageUrl ?? model.background.backgroundImageUrl;
+  const resolvedBgUrl = overlayOnly ? null : (backgroundImageUrl ?? model.background.backgroundImageUrl);
   const isSingleImage = !!resolvedBgUrl && !multiUrls;
   const singleFrame = isSingleImage ? "none" : (disp.frame ?? (borderedFrame ? "medium" : "none"));
   const singleFrameW = isSingleImage ? 0 : (FRAME_WIDTHS[singleFrame] ?? 0);
@@ -371,9 +414,11 @@ export function renderSlideHtml(
       ? `left:16px;top:16px;width:${1080 - 32}px;height:${1080 - 32}px;${singleShapeCss};border:${singleFrameW}px solid ${escapeHtml(singleFrameColor)};box-shadow:0 8px 32px rgba(0,0,0,0.3);`
       : "left:0;top:0;width:1080px;height:1080px;";
   const hookCircleHtml =
-    secondaryBackgroundImageUrl && slideData.slide_type === "hook"
-      ? `<div class="slide-hook-circle" style="position:absolute;right:${HOOK_CIRCLE_INSET}px;bottom:${HOOK_CIRCLE_INSET}px;width:${HOOK_CIRCLE_SIZE}px;height:${HOOK_CIRCLE_SIZE}px;border-radius:50%;overflow:hidden;border:${HOOK_CIRCLE_BORDER}px solid rgba(255,255,255,0.95);box-shadow:0 8px 40px rgba(0,0,0,0.4);"><div style="position:absolute;inset:0;background-image:url(${escapeHtml(secondaryBackgroundImageUrl)});background-size:cover;background-position:center;"></div></div>`
-      : "";
+    overlayOnly
+      ? ""
+      : secondaryBackgroundImageUrl && slideData.slide_type === "hook"
+        ? `<div class="slide-hook-circle" style="position:absolute;right:${HOOK_CIRCLE_INSET}px;bottom:${HOOK_CIRCLE_INSET}px;width:${HOOK_CIRCLE_SIZE}px;height:${HOOK_CIRCLE_SIZE}px;border-radius:50%;overflow:hidden;border:${HOOK_CIRCLE_BORDER}px solid rgba(255,255,255,0.95);box-shadow:0 8px 40px rgba(0,0,0,0.4);"><div style="position:absolute;inset:0;background-image:url(${escapeHtml(secondaryBackgroundImageUrl)});background-size:cover;background-position:center;"></div></div>`
+        : "";
 
   const gradientExtent = backgroundOverride?.gradientExtent ?? (model.background as { gradientExtent?: number }).gradientExtent ?? 50;
   const gradientSolidSize = backgroundOverride?.gradientSolidSize ?? (model.background as { gradientSolidSize?: number }).gradientSolidSize ?? 25;
@@ -386,7 +431,8 @@ export function renderSlideHtml(
           : `linear-gradient(${gradientDir}, transparent 0%, transparent ${100 - gradientExtent}%, ${gradientRgba} ${gradientTransitionEnd}%, ${gradientRgba} 100%)`)
     : "none";
 
-  // Scale to cover: template fills the full frame at 4:5 and 9:16 (no letterboxing); centered crop clips overflow
+  // Scale to cover: template fills the full frame at 4:5 and 9:16 (no letterboxing); centered crop clips overflow.
+  // Use a slide container at scaled size so it fills the viewport and no background color shows at edges.
   const scale = Math.max(dimW / 1080, dimH / 1080);
   const scaledSize = 1080 * scale;
   const slideTranslateX = (dimW - scaledSize) / 2;
@@ -404,7 +450,8 @@ export function renderSlideHtml(
     html { margin: 0; padding: 0; overflow: hidden; background-color: ${escapeHtml(backgroundColor)}; }
     body { margin: 0; padding: 0; width: ${dimW}px; height: ${dimH}px; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: ${escapeHtml(backgroundColor)}; }
     .slide-wrap { position: absolute; left: 0; top: 0; width: ${dimW}px; height: ${dimH}px; overflow: hidden; }
-    .slide { position: absolute; width: 1080px; height: 1080px; left: ${slideTranslateX}px; top: ${slideTranslateY}px; transform: scale(${scale}); transform-origin: top left; background-color: ${escapeHtml(backgroundColor)}; }
+    .slide { position: absolute; left: ${slideTranslateX}px; top: ${slideTranslateY}px; width: ${scaledSize}px; height: ${scaledSize}px; overflow: hidden; background-color: ${escapeHtml(backgroundColor)}; }
+    .slide-inner { position: absolute; left: 0; top: 0; width: 1080px; height: 1080px; transform: scale(${scale}); transform-origin: top left; }
     .slide-bg-image { position: absolute; inset: 0; ${bgImageStyle} }
     .slide-gradient { position: absolute; inset: 0; background: ${gradientStyle}; pointer-events: none; z-index: 1; }
     .text-block { position: absolute; display: flex; flex-direction: column; justify-content: center; z-index: 5; box-sizing: border-box; }
@@ -415,11 +462,12 @@ export function renderSlideHtml(
 <body>
   <div class="slide-wrap">
   <div class="slide">
-    ${multiUrls ? multiImagesHtml : `<div class="slide-bg-image" style="${bgFrameStyle}${bgImageStyle}"></div>`}
-    <div class="slide-gradient"></div>
+  <div class="slide-inner">
+    ${overlayOnly ? "" : (multiUrls ? multiImagesHtml : `<div class="slide-bg-image" style="${bgFrameStyle}${bgImageStyle}"></div>`)}
+    ${noTextOrChrome ? "" : "<div class=\"slide-gradient\"></div>"}
     ${hookCircleHtml}
     ${textBlocksHtml}
-    ${model.chrome.showSwipe ? (() => {
+    ${!noTextOrChrome && model.chrome.showSwipe ? (() => {
       const t = model.chrome.swipeType ?? "text";
       const pos = model.chrome.swipePosition ?? "bottom_center";
       const posStyles: Record<string, string> = {
@@ -461,9 +509,10 @@ export function renderSlideHtml(
       return `<div class="chrome-swipe" style="color:${c};${posStyle};display:flex;align-items:center;justify-content:center;gap:4px">${inner}</div>`;
     })() : ""}
   </div>
-  ${showCounter ? `<div style="position:absolute;top:${24 * chromeScale}px;right:24px;padding:${6 * chromeScale}px ${12 * chromeScale}px;border-radius:9999px;background:rgba(255,255,255,0.08);font-size:${20 * chromeScale}px;font-weight:500;letter-spacing:0.02em;opacity:0.85;z-index:10;color:${escapeHtml(textColor)}">${escapeHtml(model.chrome.counterText)}</div>` : ""}
-  ${(model.chrome.watermark.text || model.chrome.watermark.logoUrl) && (showWatermarkOverride === undefined ? model.chrome.watermark.enabled : showWatermarkOverride) ? (() => {
-    const wm = model.chrome.watermark as { logoX?: number; logoY?: number; position: string };
+  </div>
+  ${!noTextOrChrome && showCounter ? `<div style="position:absolute;top:${(model.chrome.counterTop ?? 24) * chromeScale}px;right:${model.chrome.counterRight ?? 24}px;padding:${6 * chromeScale}px ${12 * chromeScale}px;border-radius:9999px;background:rgba(255,255,255,0.08);font-size:${(model.chrome.counterFontSize ?? 20) * chromeScale}px;font-weight:500;letter-spacing:0.02em;opacity:0.85;z-index:10;color:${escapeHtml(textColor)}">${escapeHtml(model.chrome.counterText)}</div>` : ""}
+  ${!noTextOrChrome && (model.chrome.watermark.text || model.chrome.watermark.logoUrl) && (showWatermarkOverride === undefined ? model.chrome.watermark.enabled : showWatermarkOverride) ? (() => {
+    const wm = model.chrome.watermark;
     const useCustom = wm.position === "custom" || (wm.logoX != null && wm.logoY != null);
     const topPx = 24 * chromeScale;
     const bottomPx = 80 * chromeScale;
@@ -476,17 +525,24 @@ export function renderSlideHtml(
           : wm.position === "bottom_right"
             ? `bottom:${bottomPx}px;right:24px`
             : `bottom:${bottomPx}px;left:24px`;
-    return `<div style="position:absolute;opacity:0.7;font-size:${20 * chromeScale}px;font-weight:500;z-index:10;color:${escapeHtml(textColor)};${posStyle}">${model.chrome.watermark.logoUrl ? `<img src="${escapeHtml(model.chrome.watermark.logoUrl)}" alt="" style="max-height:${48 * chromeScale}px;max-width:120px;width:auto;height:auto;object-fit:contain" />` : escapeHtml(model.chrome.watermark.text)}</div>`;
+    const wmFontSize = (wm.fontSize ?? 20) * chromeScale;
+    const logoImgStyle =
+      wm.logoUrl && (wm.maxWidth != null || wm.maxHeight != null)
+        ? `${wm.maxWidth != null ? `max-width:${wm.maxWidth}px;` : ""}${wm.maxHeight != null ? `max-height:${(wm.maxHeight as number) * chromeScale}px;` : ""}width:auto;height:auto;object-fit:contain`
+        : wm.logoUrl
+          ? `height:${(wm.fontSize ?? 20) * 2.4 * chromeScale}px;width:auto;object-fit:contain`
+          : "";
+    return `<div style="position:absolute;opacity:0.7;font-size:${wmFontSize}px;font-weight:500;z-index:10;color:${escapeHtml(textColor)};${posStyle}">${wm.logoUrl ? `<img src="${escapeHtml(wm.logoUrl)}" alt="" style="${logoImgStyle}" />` : escapeHtml(wm.text)}</div>`;
   })() : ""}
-  ${showMadeWithOverride !== false ? (() => {
-    const headlineZone = model.textBlocks.find((b) => b.zone.id === "headline")?.zone;
-    if (headlineZone) {
-      const viewportLeft = headlineZone.x * scale + slideTranslateX;
-      const viewportTop = (headlineZone.y + headlineZone.h) * scale + slideTranslateY + 16 * chromeScale;
-      const viewportWidth = headlineZone.w * scale;
-      return `<div style="position:absolute;left:${viewportLeft}px;top:${viewportTop}px;width:${viewportWidth}px;font-size:${30 * chromeScale}px;font-weight:500;letter-spacing:0.02em;opacity:0.65;z-index:10;color:${escapeHtml(textColor)};text-shadow:0 1px 2px rgba(0,0,0,0.3);text-align:${headlineZone.align}">Watermark KarouselMaker.com</div>`;
-    }
-    return `<div style="position:absolute;bottom:${16 * chromeScale}px;left:50%;transform:translateX(-50%);font-size:${30 * chromeScale}px;font-weight:500;letter-spacing:0.02em;opacity:0.65;z-index:10;color:${escapeHtml(textColor)};text-shadow:0 1px 2px rgba(0,0,0,0.3)">Watermark KarouselMaker.com</div>`;
+  ${!noTextOrChrome && showMadeWithOverride !== false ? (() => {
+    const mwY = model.chrome.madeWithY != null ? (model.chrome.madeWithY * chromeScale) : null;
+    const mwBottom = model.chrome.madeWithY == null ? ((model.chrome.madeWithBottom ?? 16) * chromeScale) : null;
+    const mwX = model.chrome.madeWithX != null ? (model.chrome.madeWithX * chromeScale) : null;
+    const leftCss = mwX != null ? `left:${mwX}px;transform:translateX(-50%)` : "left:50%;transform:translateX(-50%)";
+    const topBottomCss = mwY != null ? `top:${mwY}px` : `bottom:${mwBottom}px`;
+    const mwFs = (model.chrome.madeWithFontSize ?? 30) * chromeScale;
+    const mwMaxW = 1032 * chromeScale;
+    return `<div style="position:absolute;${leftCss};${topBottomCss};max-width:${mwMaxW}px;font-size:${mwFs}px;font-weight:500;letter-spacing:0.02em;opacity:0.65;z-index:10;color:${escapeHtml(textColor)};text-shadow:0 1px 2px rgba(0,0,0,0.3)">${escapeHtml(model.chrome.madeWithText ?? "Made with KarouselMaker.com")}</div>`;
   })() : ""}
   </div>
 </body>

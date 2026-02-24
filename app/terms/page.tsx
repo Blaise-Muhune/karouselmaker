@@ -66,6 +66,15 @@ export default function TermsPage() {
               your obligation to include such attribution when publishing or distributing your work. Failure to attribute
               may violate the terms of the image provider and applicable copyright or licensing requirements.
             </li>
+            <li>
+              <strong>Likenesses and publicity:</strong> When you use images of identifiable people (e.g. athletes, celebrities),
+              you are responsible for obtaining any rights needed for your use, including for commercial or promotional purposes.
+            </li>
+            <li>
+              <strong>AI-generated content:</strong> You should verify the accuracy of AI-generated or edited content before
+              publishing. We are not liable for defamation, inaccuracy, or other harm arising from content generated or
+              modified through the Service.
+            </li>
           </ul>
         </section>
 
@@ -81,14 +90,25 @@ export default function TermsPage() {
         <section className="space-y-2">
           <h2 className="text-base sm:text-lg font-semibold text-foreground">5. Account and Data</h2>
           <p className="text-muted-foreground leading-relaxed">
-            You must provide accurate information when creating an account. You are responsible for maintaining the
-            security of your credentials. We process your data in accordance with our{" "}
+            You must provide accurate information when creating an account and be at least 13 years of age (or the minimum
+            age required in your jurisdiction). You may not use the Service where prohibited by law. You are responsible
+            for maintaining the security of your credentials. We process your data in accordance with our{" "}
             <Link href="/privacy" className="text-primary underline hover:no-underline">Privacy Policy</Link>.
           </p>
         </section>
 
         <section className="space-y-2">
-          <h2 className="text-base sm:text-lg font-semibold text-foreground">6. Acceptable Use</h2>
+          <h2 className="text-base sm:text-lg font-semibold text-foreground">6. DMCA and Copyright</h2>
+          <p className="text-muted-foreground leading-relaxed">
+            We respond to valid notices of copyright infringement under the DMCA and similar laws. If you believe content
+            on or through the Service infringes your copyright, see our{" "}
+            <Link href="/copyright" className="text-primary underline hover:no-underline">Copyright / DMCA</Link> page for
+            our designated agent and how to send a takedown notice. We may terminate accounts of repeat infringers.
+          </p>
+        </section>
+
+        <section className="space-y-2">
+          <h2 className="text-base sm:text-lg font-semibold text-foreground">7. Acceptable Use</h2>
           <p className="text-muted-foreground leading-relaxed">You may not use the Service to:</p>
           <ul className="list-disc pl-5 space-y-2 text-muted-foreground leading-relaxed">
             <li>Violate any law or third-party rights.</li>
@@ -99,7 +119,7 @@ export default function TermsPage() {
         </section>
 
         <section className="space-y-2">
-          <h2 className="text-base sm:text-lg font-semibold text-foreground">7. Intellectual Property</h2>
+          <h2 className="text-base sm:text-lg font-semibold text-foreground">8. Intellectual Property</h2>
           <p className="text-muted-foreground leading-relaxed">
             Karouselmaker and its branding, templates, and software remain our property. You retain ownership of content
             you create. By using the Service, you grant us a limited license to process and store your content as needed
@@ -108,7 +128,7 @@ export default function TermsPage() {
         </section>
 
         <section className="space-y-2">
-          <h2 className="text-base sm:text-lg font-semibold text-foreground">8. Disclaimers</h2>
+          <h2 className="text-base sm:text-lg font-semibold text-foreground">9. Disclaimers</h2>
           <p className="text-muted-foreground leading-relaxed">
             The Service is provided &quot;as is.&quot; We do not warrant uninterrupted access, accuracy of AI-generated content,
             or compatibility with third-party platforms. We are not liable for how you use exported content or for any
@@ -122,7 +142,7 @@ export default function TermsPage() {
         </section>
 
         <section className="space-y-2">
-          <h2 className="text-base sm:text-lg font-semibold text-foreground">9. Refunds</h2>
+          <h2 className="text-base sm:text-lg font-semibold text-foreground">10. Refunds</h2>
           <p className="text-muted-foreground leading-relaxed">
             All payments are final. We do not offer refunds for subscriptions or other purchases. If you cancel a
             subscription, you retain access until the end of your billing period.
@@ -130,7 +150,7 @@ export default function TermsPage() {
         </section>
 
         <section className="space-y-2">
-          <h2 className="text-base sm:text-lg font-semibold text-foreground">10. Limitation of Liability</h2>
+          <h2 className="text-base sm:text-lg font-semibold text-foreground">11. Limitation of Liability</h2>
           <p className="text-muted-foreground leading-relaxed">
             To the maximum extent permitted by law, Karouselmaker and its operators shall not be liable for any indirect,
             incidental, special, or consequential damages arising from your use of the Service.
@@ -138,7 +158,7 @@ export default function TermsPage() {
         </section>
 
         <section className="space-y-2">
-          <h2 className="text-base sm:text-lg font-semibold text-foreground">11. Changes</h2>
+          <h2 className="text-base sm:text-lg font-semibold text-foreground">12. Changes</h2>
           <p className="text-muted-foreground leading-relaxed">
             We may update these terms from time to time. Continued use of the Service after changes constitutes
             acceptance. Material changes will be communicated via the Service or email where appropriate.
@@ -146,7 +166,7 @@ export default function TermsPage() {
         </section>
 
         <section className="space-y-2">
-          <h2 className="text-base sm:text-lg font-semibold text-foreground">12. Contact</h2>
+          <h2 className="text-base sm:text-lg font-semibold text-foreground">13. Contact</h2>
           <p className="text-muted-foreground leading-relaxed">
             For questions about these terms, please contact us through the contact information provided in the
             application or on our website.
@@ -163,6 +183,7 @@ export default function TermsPage() {
             <Link href="/" className="hover:text-foreground transition-colors">Home</Link>
             <Link href="/privacy" className="hover:text-foreground transition-colors">Privacy</Link>
             <Link href="/terms" className="hover:text-foreground transition-colors">Terms</Link>
+            <Link href="/copyright" className="hover:text-foreground transition-colors">Copyright</Link>
             <ContactUsModal userEmail="" />
           </div>
         </div>

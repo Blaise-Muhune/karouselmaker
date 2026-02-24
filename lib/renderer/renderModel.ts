@@ -51,6 +51,10 @@ export type SlideRenderModel = {
     swipePosition: "bottom_left" | "bottom_center" | "bottom_right" | "top_left" | "top_center" | "top_right" | "center_left" | "center_right";
     showCounter: boolean;
     counterText: string;
+    /** Position/size from template or meta. When set, use these instead of default top-right. */
+    counterTop?: number;
+    counterRight?: number;
+    counterFontSize?: number;
     watermark: {
       enabled: boolean;
       position: "top_left" | "top_right" | "bottom_left" | "bottom_right" | "custom";
@@ -58,7 +62,20 @@ export type SlideRenderModel = {
       logoY?: number;
       text: string;
       logoUrl?: string;
+      fontSize?: number;
+      maxWidth?: number;
+      maxHeight?: number;
     };
+    /** "Made with" line: optional position/size from template or meta. */
+    madeWithFontSize?: number;
+    /** Horizontal position (px from left). When undefined, centered. */
+    madeWithX?: number;
+    /** Vertical position (px from top). When undefined, use madeWithBottom (pinned to bottom). */
+    madeWithY?: number;
+    /** Distance from bottom (px). Used when madeWithY is undefined. Default 16. */
+    madeWithBottom?: number;
+    /** Custom text for "Made with" attribution. When undefined, use "Made with KarouselMaker.com". */
+    madeWithText?: string;
   };
 };
 
@@ -68,6 +85,20 @@ const DEFAULT_BG = "#0a0a0a";
 export type TextZoneOverrides = {
   headline?: Partial<TextZone>;
   body?: Partial<TextZone>;
+};
+
+/** Per-slide or template defaults: counter, logo watermark, and "Made with" position/size. */
+export type ChromeOverrides = {
+  counter?: { top?: number; right?: number; fontSize?: number };
+  watermark?: {
+    position?: "top_left" | "top_right" | "bottom_left" | "bottom_right" | "custom";
+    logoX?: number;
+    logoY?: number;
+    fontSize?: number;
+    maxWidth?: number;
+    maxHeight?: number;
+  };
+  madeWith?: { fontSize?: number; x?: number; y?: number; bottom?: number; text?: string };
 };
 
 /**
@@ -82,7 +113,8 @@ export function buildSlideRenderModel(
   slideIndex: number,
   totalSlides: number,
   zoneOverrides?: TextZoneOverrides | null,
-  textScale?: number
+  textScale?: number,
+  chromeOverrides?: ChromeOverrides | null
 ): SlideRenderModel {
   const textBlocks: TextBlock[] = [];
 
@@ -109,6 +141,20 @@ export function buildSlideRenderModel(
     .replace("1", String(slideIndex))
     .replace("8", String(totalSlides));
 
+  const wm = templateConfig.chrome.watermark;
+  const wmOverrides = chromeOverrides?.watermark;
+  const watermark = {
+    enabled: wm.enabled,
+    position: (wmOverrides?.position ?? wm.position) as "top_left" | "top_right" | "bottom_left" | "bottom_right" | "custom",
+    logoX: wmOverrides?.logoX ?? wm.logoX,
+    logoY: wmOverrides?.logoY ?? wm.logoY,
+    text: brandKit.watermark_text ?? "",
+    logoUrl: brandKit.logo_url,
+    fontSize: wmOverrides?.fontSize ?? (wm as { fontSize?: number }).fontSize,
+    maxWidth: wmOverrides?.maxWidth ?? (wm as { maxWidth?: number }).maxWidth,
+    maxHeight: wmOverrides?.maxHeight ?? (wm as { maxHeight?: number }).maxHeight,
+  };
+
   return {
     layout: templateConfig.layout,
     safeArea: templateConfig.safeArea,
@@ -130,14 +176,15 @@ export function buildSlideRenderModel(
       swipePosition: templateConfig.chrome.swipePosition ?? "bottom_center",
       showCounter: templateConfig.chrome.showCounter,
       counterText,
-      watermark: {
-        enabled: templateConfig.chrome.watermark.enabled,
-        position: templateConfig.chrome.watermark.position,
-        logoX: templateConfig.chrome.watermark.logoX,
-        logoY: templateConfig.chrome.watermark.logoY,
-        text: brandKit.watermark_text ?? "",
-        logoUrl: brandKit.logo_url,
-      },
+      counterTop: chromeOverrides?.counter?.top,
+      counterRight: chromeOverrides?.counter?.right,
+      counterFontSize: chromeOverrides?.counter?.fontSize,
+      watermark,
+      madeWithFontSize: chromeOverrides?.madeWith?.fontSize,
+      madeWithX: chromeOverrides?.madeWith?.x,
+      madeWithY: chromeOverrides?.madeWith?.y,
+      madeWithBottom: chromeOverrides?.madeWith?.bottom,
+      madeWithText: chromeOverrides?.madeWith?.text,
     },
   };
 }

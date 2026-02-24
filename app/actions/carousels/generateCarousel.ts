@@ -4,9 +4,10 @@ import OpenAI from "openai";
 import { getUser } from "@/lib/server/auth/getUser";
 import { getSubscription, getPlanLimits } from "@/lib/server/subscription";
 import { getProject } from "@/lib/server/db/projects";
-import { getDefaultTemplateForNewCarousel } from "@/lib/server/db/templates";
+import { getDefaultTemplateForNewCarousel, getTemplate } from "@/lib/server/db/templates";
 import { createCarousel, getCarousel, updateCarousel, countCarouselsThisMonth } from "@/lib/server/db/carousels";
 import { replaceSlides, updateSlide } from "@/lib/server/db/slides";
+import type { Json } from "@/lib/server/db/types";
 import { getAsset } from "@/lib/server/db/assets";
 import {
   carouselOutputSchema,
@@ -17,7 +18,7 @@ import {
   buildValidationRetryPrompt,
 } from "@/lib/server/ai/prompts";
 import { searchImage } from "@/lib/server/imageSearch";
-import { searchUnsplashPhotoRandom, trackUnsplashDownload } from "@/lib/server/unsplash";
+import { searchUnsplashPhotosMultiple, searchUnsplashPhotoRandom, trackUnsplashDownload } from "@/lib/server/unsplash";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
 import { generateCarouselInputSchema } from "@/lib/validations/carousel";
 
@@ -105,6 +106,7 @@ export async function generateCarousel(formData: FormData): Promise<
     use_unsplash_only: formData.get("use_unsplash_only") ?? undefined,
     use_web_search: formData.get("use_web_search") ?? undefined,
     notes: ((formData.get("notes") as string | null) ?? "").trim() || undefined,
+    template_id: (formData.get("template_id") as string | null)?.trim() || undefined,
   };
 
   const parsed = generateCarouselInputSchema.safeParse(raw);
@@ -277,23 +279,55 @@ export async function generateCarousel(formData: FormData): Promise<
   }
 
   const defaultTemplate = await getDefaultTemplateForNewCarousel(user.id);
-  const defaultTemplateId = defaultTemplate?.templateId ?? null;
+  let defaultTemplateId: string | null = defaultTemplate?.templateId ?? null;
+  if (data.template_id) {
+    const requested = await getTemplate(user.id, data.template_id);
+    if (requested) defaultTemplateId = requested.id;
+  }
   const isFollowCta = defaultTemplate?.isFollowCta ?? false;
 
-  const slideRows = validated.slides.map((s) => ({
-    carousel_id: carousel.id,
-    slide_index: s.slide_index,
-    slide_type: s.slide_type,
-    headline: s.slide_index === 1 ? stripLinksFromText(validated.title) : stripLinksFromText(s.headline),
-    body: s.body ? stripLinksFromText(s.body) : null,
-    template_id: defaultTemplateId,
-    background: {},
-    meta: { show_counter: false },
-  }));
+  const slideRows = validated.slides.map((s) => {
+    const fullHeadline = s.slide_index === 1 ? stripLinksFromText(validated.title) : stripLinksFromText(s.headline);
+    const fullBody = s.body ? stripLinksFromText(s.body) : "";
+    type VariantEntry = { headline: string; body: string; headline_highlight_words?: string[]; body_highlight_words?: string[] };
+    const shortenVariants: VariantEntry[] = [{
+      headline: fullHeadline,
+      body: fullBody,
+      ...(s.headline_highlight_words?.length && { headline_highlight_words: s.headline_highlight_words }),
+      ...(s.body_highlight_words?.length && { body_highlight_words: s.body_highlight_words }),
+    }];
+    const alternates = (s as { shorten_alternates?: { headline: string; body?: string; headline_highlight_words?: string[]; body_highlight_words?: string[] }[] }).shorten_alternates;
+    if (alternates?.length) {
+      for (const a of alternates) {
+        shortenVariants.push({
+          headline: stripLinksFromText(a.headline),
+          body: a.body ? stripLinksFromText(a.body) : "",
+          ...(a.headline_highlight_words?.length && { headline_highlight_words: a.headline_highlight_words }),
+          ...(a.body_highlight_words?.length && { body_highlight_words: a.body_highlight_words }),
+        });
+      }
+    }
+    const meta: Record<string, unknown> = {
+      show_counter: false,
+      ...(shortenVariants.length > 1 && { shorten_variants: shortenVariants }),
+      ...(s.headline_highlight_words?.length && { headline_highlight_words: s.headline_highlight_words }),
+      ...(s.body_highlight_words?.length && { body_highlight_words: s.body_highlight_words }),
+    };
+    return {
+      carousel_id: carousel.id,
+      slide_index: s.slide_index,
+      slide_type: s.slide_type,
+      headline: fullHeadline,
+      body: fullBody || null,
+      template_id: defaultTemplateId,
+      background: {},
+      meta: meta as Json,
+    };
+  });
 
   const createdSlides = await replaceSlides(user.id, carousel.id, slideRows);
 
-  const overlayColor = brandKit?.primary_color?.trim() || "#000000";
+  const overlayColor = "#0a0a0a"; // neutral overlay (template/default); do not use brand logo color
   const overlayTextColor = getContrastingTextColor(overlayColor);
   const defaultOverlay = isFollowCta
     ? { gradient: true, darken: 1, extent: 60, solidSize: 20, color: overlayColor, textColor: overlayTextColor }
@@ -342,15 +376,19 @@ export async function generateCarousel(formData: FormData): Promise<
       for (const query of queries.slice(0, 4)) {
         let result: Awaited<ReturnType<typeof searchImage>> | null;
         if (useUnsplashOnly) {
-          const unsplash = await searchUnsplashPhotoRandom(query, 15);
-          result = unsplash?.url
-            ? {
-                url: unsplash.url,
-                source: "unsplash" as const,
-                unsplashDownloadLocation: unsplash.downloadLocation,
-                unsplashAttribution: unsplash.attribution,
-              }
-            : null;
+          const unsplashList = await searchUnsplashPhotosMultiple(query, 15);
+          if (unsplashList.length > 0) {
+            const [first, ...rest] = unsplashList;
+            result = {
+              url: first!.url,
+              source: "unsplash" as const,
+              unsplashDownloadLocation: first!.downloadLocation,
+              unsplashAttribution: first!.attribution,
+              alternates: rest.map((r) => r.url),
+            };
+          } else {
+            result = null;
+          }
         } else {
           result = await searchImage(query);
         }
@@ -361,15 +399,19 @@ export async function generateCarousel(formData: FormData): Promise<
         const fallbackQuery = "nature landscape peaceful";
         let fallback: Awaited<ReturnType<typeof searchImage>> | null;
         if (useUnsplashOnly) {
-          const unsplash = await searchUnsplashPhotoRandom(fallbackQuery, 15);
-          fallback = unsplash?.url
-            ? {
-                url: unsplash.url,
-                source: "unsplash" as const,
-                unsplashDownloadLocation: unsplash.downloadLocation,
-                unsplashAttribution: unsplash.attribution,
-              }
-            : null;
+          const unsplashList = await searchUnsplashPhotosMultiple(fallbackQuery, 15);
+          if (unsplashList.length > 0) {
+            const [first, ...rest] = unsplashList;
+            fallback = {
+              url: first!.url,
+              source: "unsplash" as const,
+              unsplashDownloadLocation: first!.downloadLocation,
+              unsplashAttribution: first!.attribution,
+              alternates: rest.map((r) => r.url),
+            };
+          } else {
+            fallback = null;
+          }
         } else {
           fallback = await searchImage(fallbackQuery);
         }

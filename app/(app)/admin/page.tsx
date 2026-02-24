@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getUser } from "@/lib/server/auth/getUser";
+import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { getAdminStats } from "@/lib/server/db/admin";
 import {
   UsersIcon,
@@ -14,8 +15,6 @@ import {
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ActivityChartWithToggle, PlanDonutChart } from "@/components/admin/AdminCharts";
-
-const ADMIN_EMAILS = ["blaisemu007@gmail.com", "muyumba@andrews.edu"];
 
 function StatCard({
   icon: Icon,
@@ -42,7 +41,7 @@ function StatCard({
 
 export default async function AdminPage() {
   const { user } = await getUser();
-  if (!user?.email || !ADMIN_EMAILS.includes(user.email)) {
+  if (!user?.email || !isAdmin(user.email)) {
     redirect("/projects");
   }
 

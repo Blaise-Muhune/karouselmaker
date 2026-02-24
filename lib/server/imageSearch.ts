@@ -14,23 +14,20 @@
  */
 
 import { searchBraveImage, isBraveImageSearchConfigured } from "@/lib/server/braveImageSearch";
+import { normalizeQueryForCache, CACHE_TTL_MS, evictCacheBatch } from "@/lib/server/imageSearchUtils";
 import { searchUnsplashPhotoRandom } from "@/lib/server/unsplash";
 
 const DEBUG = process.env.IMAGE_SEARCH_DEBUG === "true" || process.env.IMAGE_SEARCH_DEBUG === "1";
 /** Brave free tier: 1 request per second. We wait this long between Brave calls to avoid 429. */
 const BRAVE_MIN_INTERVAL_MS = 1100;
 
-const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
-const CACHE_MAX_ENTRIES = 500;
+/** Number of Unsplash results to fetch per search (for random pick). */
+const UNSPLASH_PAGE_SIZE = 15;
 
 let lastBraveCallAt = 0;
 
 type CacheEntry = { result: ImageSearchResult; alternates?: string[]; ts: number };
 let searchCache: Map<string, CacheEntry> = new Map();
-
-function normalizeQueryForCache(q: string): string {
-  return q.trim().toLowerCase().slice(0, 200);
-}
 
 function cacheKey(provider: "brave" | "unsplash", query: string): string {
   return `${provider}:${normalizeQueryForCache(query)}`;
@@ -49,58 +46,43 @@ function log(...args: unknown[]) {
   if (DEBUG) console.log("[imageSearch]", ...args);
 }
 
-/** Generic/atmospheric keywords: Unsplash excels at these (nature, landscapes, abstract backgrounds). */
-const UNSPLASH_GENERIC_PATTERNS = [
-  /\bnature\b/i,
-  /\blandscape[s]?\b/i,
-  /\bmountain[s]?\b/i,
-  /\bforest\b/i,
-  /\bocean\b/i,
-  /\bsunset\b/i,
-  /\bsunrise\b/i,
-  /\bpeaceful\b/i,
-  /\bserene\b/i,
-  /\bcalm\b/i,
-  /\babstract\b/i,
-  /\bminimal\b/i,
-  /\binspirational\b/i,
-  /\bencouraging\b/i,
-  /\bbible\b/i,
-  /\bverse\b/i,
-  /\bspiritual\b/i,
-  /\bhand\s+holding\b/i,
-  /\bcityscape\b/i,
-  /\bfuture\s+city\b/i,
-  /\bdawn\b/i,
-  /\bdusk\b/i,
-  /\bhorizon\b/i,
-  /\bmeadow\b/i,
-  /\bvalley\b/i,
-  /\bbeach\b/i,
-  /\blake\b/i,
-  /\briver\b/i,
-  /\bwaterfall\b/i,
-  /\bclouds?\b/i,
-  /\bsky\b/i,
-  /\blight\s+(bulb|ray|beam)?\b/i,
-  /\bholding\s+light\b/i,
-  /\bsoft\s+light\b/i,
-  /\bwarm\s+light\b/i,
-  /\bgolden\s+hour\b/i,
-  /\bmisty\b/i,
-  /\bfoggy\b/i,
-  /\bautumn\b/i,
-  /\bspring\b/i,
-  /\bwinter\b/i,
-  /\bsummer\b/i,
-  /\bmeditation\b/i,
-  /\bzen\b/i,
-  /\btranquil\b/i,
-  /\bhopeful\b/i,
-  /\bhopefulness\b/i,
-];
+/** Remove duplicate words (case-insensitive) so "X photo official photo" → "X photo official". */
+function dedupeWords(q: string): string {
+  const seen = new Set<string>();
+  return q
+    .trim()
+    .split(/\s+/)
+    .filter((w) => {
+      const lower = w.toLowerCase();
+      if (seen.has(lower)) return false;
+      seen.add(lower);
+      return true;
+    })
+    .join(" ");
+}
 
-/** People/public-figure intent: actors, athletes, celebrities, etc. Treat as specific (Brave-first) even with generic words. */
+/** Words that tend to return composite/graphic-heavy images (montages, collages). Strip so we get single clean photos. */
+const GRAPHIC_HEAVY_WORDS = ["montage", "collage", "compilation", "infographic"];
+
+function stripGraphicHeavyWords(q: string): string {
+  return q
+    .trim()
+    .split(/\s+/)
+    .filter((w) => !GRAPHIC_HEAVY_WORDS.includes(w.toLowerCase()))
+    .join(" ");
+}
+
+/** Generic/atmospheric keywords: Unsplash excels at these (nature, landscapes, abstract backgrounds). Kept as strings for easy maintenance; compiled to regex for matching. */
+const UNSPLASH_GENERIC_STRINGS = [
+  "nature", "landscape", "landscapes", "mountain", "mountains", "forest", "ocean", "sunset", "sunrise",
+  "peaceful", "serene", "calm", "abstract", "minimal", "inspirational", "encouraging", "bible", "verse", "spiritual",
+  "hand holding", "cityscape", "future city", "dawn", "dusk", "horizon", "meadow", "valley", "beach", "lake", "river", "waterfall",
+  "cloud", "clouds", "sky", "light", "light bulb", "light ray", "light beam", "holding light", "soft light", "warm light", "golden hour",
+  "misty", "foggy", "autumn", "spring", "winter", "summer", "meditation", "zen", "tranquil", "hopeful", "hopefulness",
+];
+const UNSPLASH_GENERIC_PATTERNS = UNSPLASH_GENERIC_STRINGS.map((s) => new RegExp(`\\b${s.replace(/\s+/g, "\\s+")}\\b`, "i"));
+
+/** People/public-figure intent: actors, athletes, celebrities, etc. Treat as specific (Brave-first). "press kit" is for detection only (we use Brave); refiners add "press photo" / "official photo", not "press kit". */
 const PEOPLE_INTENT_PATTERNS = [
   /\b(actor|actress|athlete|player|footballer|soccer|basketball|tennis|celebrity|celeb|star|singer|musician|rapper|artist|director|filmmaker)\b/i,
   /\b(portrait|headshot|press\s+photo|official\s+photo|red\s+carpet)\b/i,
@@ -145,7 +127,7 @@ export function getProviderPreference(query: string): "unsplash" | "brave" {
   return preferUnsplashForQuery(query) ? "unsplash" : "brave";
 }
 
-/** Known single-name or nickname athletes (no role/sport/country in query) → disambiguating suffix so search returns the right person. */
+/** Known single-name or nickname athletes → disambiguating suffix. Lookup uses only the first word of the query (e.g. "Pele" works; "cal vinicius jr" won't match unless we add multi-word logic later). */
 const VAGUE_NAME_DISAMBIGUATION: Record<string, string> = {
   pele: "Brazil soccer legend",
   pelé: "Brazil soccer legend",
@@ -186,7 +168,9 @@ function disambiguateVagueNameQuery(query: string): string | null {
 }
 
 /** Brave refiners for people/celebrity: original first, then these in order. Stop once good candidates exist. */
+/** For people/sports: try "wallpaper" first—tends to return clean hero images, fewer product/merchandise pages than "photo" alone. */
 const BRAVE_PEOPLE_REFINERS = [
+  (q: string) => `${q} wallpaper`,
   (q: string) => `${q} official photo`,
   (q: string) => `${q} press photo`,
   (q: string) => `${q} site:commons.wikimedia.org`,
@@ -198,6 +182,28 @@ const BRAVE_FICTIONAL_REFINERS = [
   (q: string) => `${q} poster`,
   (q: string) => `${q} concept art`,
 ];
+
+/** American football signals: when present in query, we do not treat "football" as soccer. */
+const AMERICAN_FOOTBALL_PATTERN = /\b(NFL|super\s*bowl|touchdown|quarterback|american\s*football)\b/i;
+
+/** When query suggests the insect (e.g. "cricket insect"), we do not force "cricket sport". */
+const CRICKET_INSECT_PATTERN = /\b(cricket\s+)(insect|bug|animal)\b|\b(insect|bug)\s+cricket\b/i;
+
+/**
+ * When a query word is ambiguous, return a variant that biases image search toward the intended meaning.
+ * - Football (no American signals) → soccer.
+ * - Cricket (no insect context) → cricket sport.
+ */
+function getDisambiguationVariants(query: string): string[] {
+  const variants: string[] = [];
+  if (/\bfootball\b/i.test(query) && !AMERICAN_FOOTBALL_PATTERN.test(query)) {
+    variants.push(query.replace(/\b(football)\b/i, "soccer $1"));
+  }
+  if (/\bcricket\b/i.test(query) && !CRICKET_INSECT_PATTERN.test(query)) {
+    variants.push(query.replace(/\b(cricket)\b/i, "$1 sport"));
+  }
+  return variants;
+}
 
 export type ImageSearchSource = "brave" | "unsplash";
 
@@ -233,9 +239,14 @@ async function tryBraveWithRefiners(query: string): Promise<ImageSearchResult | 
       : [];
 
   const disambiguated = disambiguateVagueNameQuery(query);
-  const queriesToTry = disambiguated ? [disambiguated, query, ...refiners.map((fn) => fn(query))] : [query, ...refiners.map((fn) => fn(query))];
+  const ambiguityVariants = getDisambiguationVariants(query);
+  const baseQueries = disambiguated ? [disambiguated, query] : [query];
+  const extra = ambiguityVariants.filter((v) => v !== query && !baseQueries.includes(v));
+  const queriesToTry = [...extra, ...baseQueries, ...refiners.map((fn) => fn(query))];
 
-  for (const q of queriesToTry) {
+  for (const raw of queriesToTry) {
+    const q = stripGraphicHeavyWords(dedupeWords(raw)).trim();
+    if (!q) continue;
     await waitForBraveRateLimit();
     lastBraveCallAt = Date.now();
     const result = await searchBraveImage(q);
@@ -264,23 +275,24 @@ async function tryBraveWithRefiners(query: string): Promise<ImageSearchResult | 
  * Debug: set IMAGE_SEARCH_DEBUG=true in .env to log search flow.
  */
 export async function searchImage(query: string): Promise<ImageSearchResult | null> {
-  if (!query.trim()) {
+  const q = stripGraphicHeavyWords(dedupeWords(query.trim()));
+  if (!q) {
     log("skip: empty query");
     return null;
   }
 
   const braveConfigured = isBraveImageSearchConfigured();
-  const useUnsplashFirst = preferUnsplashForQuery(query);
-  log("query:", JSON.stringify(query), "| preferUnsplash:", useUnsplashFirst, "| Brave configured:", braveConfigured);
+  const useUnsplashFirst = preferUnsplashForQuery(q);
+  log("query:", JSON.stringify(q), "| preferUnsplash:", useUnsplashFirst, "| Brave configured:", braveConfigured);
 
   async function tryUnsplash(): Promise<ImageSearchResult | null> {
-    const key = cacheKey("unsplash", query);
+    const key = cacheKey("unsplash", q);
     const cached = searchCache.get(key);
     if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
       log("Unsplash cache hit");
       return cached.result;
     }
-    const unsplash = await searchUnsplashPhotoRandom(query, 15);
+    const unsplash = await searchUnsplashPhotoRandom(q, UNSPLASH_PAGE_SIZE);
     if (unsplash?.url) {
       log("Unsplash OK:", unsplash.url.slice(0, 60) + "...");
       const result: ImageSearchResult = {
@@ -289,10 +301,7 @@ export async function searchImage(query: string): Promise<ImageSearchResult | nu
         unsplashDownloadLocation: unsplash.downloadLocation,
         unsplashAttribution: unsplash.attribution,
       };
-      if (searchCache.size >= CACHE_MAX_ENTRIES) {
-        const first = searchCache.keys().next().value;
-        if (first) searchCache.delete(first);
-      }
+      evictCacheBatch(searchCache);
       searchCache.set(key, { result, ts: Date.now() });
       return result;
     }
@@ -305,18 +314,15 @@ export async function searchImage(query: string): Promise<ImageSearchResult | nu
       log("Brave: not configured (need BRAVE_SEARCH_API_KEY)");
       return null;
     }
-    const key = cacheKey("brave", query);
+    const key = cacheKey("brave", q);
     const cached = searchCache.get(key);
     if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
       log("Brave cache hit");
       return cached.result;
     }
-    const result = await tryBraveWithRefiners(query);
+    const result = await tryBraveWithRefiners(q);
     if (result) {
-      if (searchCache.size >= CACHE_MAX_ENTRIES) {
-        const first = searchCache.keys().next().value;
-        if (first) searchCache.delete(first);
-      }
+      evictCacheBatch(searchCache);
       searchCache.set(key, { result, ts: Date.now() });
     }
     return result;

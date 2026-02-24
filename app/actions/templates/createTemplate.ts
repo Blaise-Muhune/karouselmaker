@@ -1,26 +1,35 @@
 "use server";
 
 import { getUser } from "@/lib/server/auth/getUser";
+import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { getSubscription, getPlanLimits } from "@/lib/server/subscription";
-import { getTemplate, createTemplate, countUserTemplates } from "@/lib/server/db";
+import { getTemplate, createTemplate, createSystemTemplate, countUserTemplates } from "@/lib/server/db";
 import type { Json } from "@/lib/server/db/types";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 
 export async function createTemplateAction(
-  payload: { name: string; category: string; config?: unknown; baseTemplateId?: string }
+  payload: { name: string; category: string; config?: unknown; baseTemplateId?: string; asSystemTemplate?: boolean }
 ): Promise<{ ok: true; templateId: string } | { ok: false; error: string }> {
   const { user } = await getUser();
-  const { isPro } = await getSubscription(user.id, user.email);
-  const limits = await getPlanLimits(user.id, user.email);
+  const asSystem = payload.asSystemTemplate === true;
 
-  if (!isPro) {
-    return { ok: false, error: "Upgrade to Pro to create custom templates." };
-  }
+  if (asSystem) {
+    if (!isAdmin(user.email)) {
+      return { ok: false, error: "Only admins can add a system template available to all users." };
+    }
+  } else {
+    const { isPro } = await getSubscription(user.id, user.email);
+    const limits = await getPlanLimits(user.id, user.email);
 
-  const count = await countUserTemplates(user.id);
-  if (count >= limits.customTemplates) {
-    return { ok: false, error: `Template limit reached (${limits.customTemplates}). Delete one to create a new template.` };
+    if (!isPro) {
+      return { ok: false, error: "Upgrade to Pro to create custom templates." };
+    }
+
+    const count = await countUserTemplates(user.id);
+    if (count >= limits.customTemplates) {
+      return { ok: false, error: `Template limit reached (${limits.customTemplates}). Delete one to create a new template.` };
+    }
   }
 
   const trimmed = payload.name.trim();
@@ -44,14 +53,17 @@ export async function createTemplateAction(
     return { ok: false, error: "Template config or base template is required." };
   }
 
-  const template = await createTemplate(user.id, {
-    user_id: user.id,
+  const insertPayload = {
     name: trimmed,
     category: payload.category || "generic",
-    aspect_ratio: "1:1",
+    aspect_ratio: "1:1" as const,
     config: config as Json,
     is_locked: true,
-  });
+  };
+
+  const template = asSystem
+    ? await createSystemTemplate(insertPayload)
+    : await createTemplate(user.id, { ...insertPayload, user_id: user.id });
 
   return { ok: true, templateId: template.id };
 }

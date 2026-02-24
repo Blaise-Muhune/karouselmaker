@@ -15,7 +15,7 @@ export const DEFAULT_TEMPLATE_CONFIG: TemplateConfig = {
     swipePosition: "bottom_center",
     showCounter: true,
     counterStyle: "1/8",
-    watermark: { enabled: true, position: "top_right" },
+    watermark: { enabled: true, position: "custom", logoX: 24, logoY: 24 },
   },
   backgroundRules: { allowImage: true, defaultStyle: "darken" },
 };
