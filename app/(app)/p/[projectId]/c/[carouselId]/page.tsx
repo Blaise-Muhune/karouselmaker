@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getUser } from "@/lib/server/auth/getUser";
 import { getSubscription } from "@/lib/server/subscription";
-import { getCarousel, getProject, listSlides, listTemplatesForUser, listExportsByCarousel, countExportsThisMonth } from "@/lib/server/db";
+import { getCarousel, getProject, listSlides, listTemplatesForUser, listExportsByCarousel, countExportsThisMonth, getAsset } from "@/lib/server/db";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { resolveBrandKitLogo } from "@/lib/server/brandKit";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
@@ -59,7 +59,7 @@ export default async function CarouselEditorPage({
   const slideBackgroundImageUrls: Record<string, string | string[]> = {};
   await Promise.all(
     slides.map(async (s) => {
-      const bg = s.background as { mode?: string; storage_path?: string; image_url?: string; images?: { image_url?: string; storage_path?: string }[] } | null;
+      const bg = s.background as { mode?: string; storage_path?: string; image_url?: string; asset_id?: string; images?: { image_url?: string; storage_path?: string }[] } | null;
       if (bg?.mode !== "image") return;
       if (bg.images?.length) {
         const urls: string[] = [];
@@ -80,11 +80,16 @@ export default async function CarouselEditorPage({
         slideBackgroundImageUrls[s.id] = bg.image_url;
         return;
       }
-      if (bg.storage_path) {
+      let pathToUse = bg.storage_path;
+      if (!pathToUse && bg.asset_id) {
+        const asset = await getAsset(user.id, bg.asset_id);
+        if (asset?.storage_path) pathToUse = asset.storage_path;
+      }
+      if (pathToUse) {
         try {
           slideBackgroundImageUrls[s.id] = await getSignedImageUrl(
             "carousel-assets",
-            bg.storage_path,
+            pathToUse,
             600
           );
         } catch {

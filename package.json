@@ -2,6 +2,7 @@
   "name": "karouselmaker",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@10.28.2",
   "scripts": {
     "dev": "node --max-http-header-size=32768 node_modules/next/dist/bin/next dev",
     "build": "next build",
@@ -38,6 +39,8 @@
     "react-dom": "19.2.3",
     "react-hook-form": "^7.71.1",
     "recharts": "^3.7.0",
+    "heic-convert": "^2.1.0",
+    "sharp": "^0.33.5",
     "resend": "^6.9.1",
     "stripe": "^20.3.0",
     "tailwind-merge": "^3.4.0",

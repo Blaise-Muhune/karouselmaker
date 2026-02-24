@@ -273,21 +273,32 @@ export function EditorExportSection({
       <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
         Export
       </p>
-      <div className="flex flex-wrap items-center gap-3">
+      {exporting && (
+        <div className="mb-4 flex flex-col items-center justify-center gap-4 rounded-lg border bg-muted/30 py-8 px-4 min-h-[180px]">
+          <Loader2Icon className="size-14 animate-spin text-primary" aria-hidden />
+          <div className="text-center space-y-1">
+            <p className="font-medium text-foreground">Exporting…</p>
+            <p className="text-muted-foreground text-sm">
+              Don&apos;t close this window until the export has finished.
+            </p>
+          </div>
+        </div>
+      )}
+      <div className={`flex flex-wrap items-center gap-3 transition-opacity ${exporting ? "pointer-events-none opacity-50" : ""}`} aria-disabled={exporting}>
         {downloadUrl && (
           <div className="flex flex-wrap items-center gap-2">
             {isStandalonePWA ? (
               <Button
                 size="sm"
                 onClick={handleDownloadZipInPWA}
-                disabled={zipDownloading}
+                disabled={zipDownloading || exporting}
                 loading={zipDownloading}
               >
                 <DownloadIcon className="mr-2 size-4" />
                 {zipDownloading ? "Downloading…" : "Download ZIP"}
               </Button>
             ) : (
-              <Button asChild size="sm">
+              <Button asChild size="sm" disabled={exporting}>
                 <a href={downloadUrl} download="carousel.zip" target="_blank" rel="noopener noreferrer">
                   <DownloadIcon className="mr-2 size-4" />
                   Download ZIP
@@ -327,17 +338,39 @@ export function EditorExportSection({
             }
           }}>
             <DialogTrigger asChild>
-              <Button size="sm" variant="outline">
+              <Button size="sm" variant="outline" disabled={exporting}>
                 <PlayIcon className="mr-2 size-4" />
                 Video preview
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl">
+            <DialogContent
+              className="max-w-2xl"
+              showCloseButton={!videoDownloading}
+              onInteractOutside={(e) => {
+                if (videoDownloading) e.preventDefault();
+              }}
+              onEscapeKeyDown={(e) => {
+                if (videoDownloading) e.preventDefault();
+              }}
+            >
               <DialogHeader>
                 <DialogTitle>Carousel video preview</DialogTitle>
               </DialogHeader>
               <div className="flex justify-center py-4 rounded-lg overflow-hidden bg-black/5">
-                {videoUrlsLoading ? (
+                {videoDownloading ? (
+                  <div className="flex flex-col items-center justify-center gap-4 py-8 px-4 w-full min-h-[200px]">
+                    <Loader2Icon className="size-14 animate-spin text-primary" aria-hidden />
+                    <div className="text-center space-y-1">
+                      <p className="font-medium text-foreground">
+                        {videoDownloadStep || "Generating video…"}
+                        {videoDownloadProgress > 0 ? ` ${Math.round(videoDownloadProgress * 100)}%` : ""}
+                      </p>
+                      <p className="text-muted-foreground text-sm">
+                        Don&apos;t close this window until the video has finished generating.
+                      </p>
+                    </div>
+                  </div>
+                ) : videoUrlsLoading ? (
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <Loader2Icon className="size-5 animate-spin" />
                     Loading…
@@ -360,13 +393,17 @@ export function EditorExportSection({
                 )}
               </div>
               <div className="flex flex-col items-center gap-4 mt-4">
-                <div className="flex flex-wrap items-center justify-center gap-4 w-full">
+                <div
+                  className={`flex flex-wrap items-center justify-center gap-4 w-full transition-opacity ${videoDownloading ? "pointer-events-none opacity-50" : ""}`}
+                  aria-disabled={videoDownloading}
+                >
                   <div className="flex items-center gap-2">
                     <input
                       type="checkbox"
                       id="voiceover"
                       checked={withVoiceover}
                       onChange={(e) => setWithVoiceover(e.target.checked)}
+                      disabled={videoDownloading}
                       className="rounded border-input accent-primary"
                     />
                     <Label htmlFor="voiceover" className="text-sm font-medium cursor-pointer">
@@ -378,7 +415,7 @@ export function EditorExportSection({
                       type="checkbox"
                       id="with-caption"
                       checked={withCaption}
-                      disabled={!withVoiceover}
+                      disabled={!withVoiceover || videoDownloading}
                       onChange={(e) => setWithCaption(e.target.checked)}
                       className="rounded border-input accent-primary disabled:opacity-50"
                     />
@@ -396,7 +433,7 @@ export function EditorExportSection({
                           value={selectedVoiceId}
                           onValueChange={setSelectedVoiceId}
                         >
-                          <SelectTrigger id="voice-select" className="w-[180px]">
+                          <SelectTrigger id="voice-select" className="w-[180px]" disabled={videoDownloading}>
                             <SelectValue placeholder="Pick a voice" />
                           </SelectTrigger>
                           <SelectContent>
@@ -417,7 +454,7 @@ export function EditorExportSection({
                           value={captionPosition}
                           onValueChange={(v) => setCaptionPosition(v as CaptionPosition)}
                         >
-                          <SelectTrigger id="caption-pos" className="w-[160px]">
+                          <SelectTrigger id="caption-pos" className="w-[160px]" disabled={videoDownloading}>
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -431,7 +468,7 @@ export function EditorExportSection({
                     </>
                   )}
                 </div>
-                <div className="flex items-center gap-2 flex-wrap justify-center">
+                <div className={`flex items-center gap-2 flex-wrap justify-center ${videoDownloading ? "pointer-events-none opacity-50" : ""}`}>
                   {generatedVideoUrl && (
                     <>
                       <Button
@@ -497,9 +534,11 @@ export function EditorExportSection({
                   <p className="text-destructive text-xs">{videoDownloadError}</p>
                 )}
                 <p className="text-muted-foreground text-xs text-center">
-                  {generatedVideoUrl
-                    ? "Use the video controls to play, pause, and seek. Download again if needed."
-                    : "Encodes in browser · Open this dialog first for faster download"}
+                  {videoDownloading
+                    ? "Keep this window open until the video finishes generating."
+                    : generatedVideoUrl
+                      ? "Use the video controls to play, pause, and seek. Download again if needed."
+                      : "Encodes in browser · Open this dialog first for faster download"}
                 </p>
               </div>
             </DialogContent>

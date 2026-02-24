@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { SlidePreview, type SlideBackgroundOverride } from "@/components/renderer/SlidePreview";
 import { AssetPickerModal } from "@/components/assets/AssetPickerModal";
+import { GoogleDriveFilePicker } from "@/components/drive/GoogleDriveFilePicker";
+import { importSingleFileFromGoogleDrive } from "@/app/actions/assets/importFromGoogleDrive";
 import { TemplateSelectCards } from "@/components/carousels/TemplateSelectCards";
 import { Button } from "@/components/ui/button";
 import {
@@ -688,6 +690,9 @@ export function SlideEditForm({
   const [templateName, setTemplateName] = useState("");
   const [saveAsSystemTemplate, setSaveAsSystemTemplate] = useState(false);
   const [savingTemplate, setSavingTemplate] = useState(false);
+  const [driveImporting, setDriveImporting] = useState(false);
+  const [driveError, setDriveError] = useState<string | null>(null);
+  const [driveSuccess, setDriveSuccess] = useState<string | null>(null);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [visibleTemplateCount, setVisibleTemplateCount] = useState(TEMPLATE_PAGE_SIZE);
   /** When user selects a template from the modal, we store its config here so the preview updates immediately (avoids relying on list lookup). */
@@ -1535,9 +1540,40 @@ export function SlideEditForm({
         overlay: b.overlay ?? { gradient: true, darken: 0.5, color: "#000000", textColor: "#ffffff" },
       }));
       setBackgroundImageUrlForPreview(url);
+      // Clear URL list so preview uses this asset (otherwise old URL still wins and preview doesn't update)
+      setImageUrls([{ url: "", source: undefined }]);
     }
     setPickerOpen(false);
   };
+
+  const handleDriveFilePicked = useCallback(
+    async (fileId: string, accessToken: string) => {
+      setDriveError(null);
+      setDriveSuccess(null);
+      setDriveImporting(true);
+      const result = await importSingleFileFromGoogleDrive(fileId, accessToken, projectId ?? undefined);
+      setDriveImporting(false);
+      if (result.ok && result.asset.url) {
+        const { asset } = result;
+        setBackground((b) => ({
+          ...b,
+          mode: "image",
+          asset_id: asset.id,
+          storage_path: asset.storage_path,
+          image_url: undefined,
+          fit: b.fit ?? "cover",
+          overlay: b.overlay ?? { gradient: true, darken: 0.5, color: "#000000", textColor: "#ffffff" },
+        }));
+        setBackgroundImageUrlForPreview(asset.url);
+        setImageUrls([{ url: "", source: undefined }]);
+        setDriveSuccess("Image from Drive applied. Save the slide to keep it.");
+        setTimeout(() => setDriveSuccess(null), 4000);
+      } else if (!result.ok) {
+        setDriveError(result.error);
+      }
+    },
+    [projectId]
+  );
 
   const applyPreset = (preset: OverlayPreset) => {
     setBackground((b) => ({
@@ -3038,6 +3074,31 @@ export function SlideEditForm({
             {isImageMode && (
               <div className={`rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3 ${!isPro ? "pointer-events-none opacity-60" : ""}`}>
                 <p className="text-muted-foreground text-[11px] font-medium">Background image</p>
+                {background.asset_id && validImageUrls.length === 0 && (
+                  <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-background/50 px-3 py-2">
+                    <span className="text-muted-foreground text-xs flex-1">From library (Upload or Google Drive)</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      className="shrink-0 h-8 w-8 text-muted-foreground hover:text-destructive"
+                      title="Remove image"
+                      onClick={() => {
+                        setBackground((b) => ({
+                          ...b,
+                          asset_id: undefined,
+                          storage_path: undefined,
+                          image_url: undefined,
+                        }));
+                        setBackgroundImageUrlForPreview(null);
+                        setImageUrls([{ url: "", source: undefined }]);
+                      }}
+                    >
+                      <Trash2 className="size-4" />
+                      <span className="sr-only">Remove image</span>
+                    </Button>
+                  </div>
+                )}
                 <div className="space-y-2">
                   <Label className="text-muted-foreground text-xs">Image URL{imageUrls.length > 1 ? "s" : ""}</Label>
                   {imageUrls.map((item, i) => {
@@ -3193,6 +3254,14 @@ export function SlideEditForm({
                   <Button type="button" variant="outline" size="sm" className="rounded-lg h-9" title="Pick from library" onClick={() => { setPickerForSecondary(false); setPickerOpen(true); }}>
                     <ImageIcon className="size-4" /> Pick
                   </Button>
+                  <GoogleDriveFilePicker
+                    onFilePicked={handleDriveFilePicked}
+                    onError={setDriveError}
+                    variant="outline"
+                    size="sm"
+                    className="rounded-lg h-9 text-xs"
+                    disabled={driveImporting}
+                  />
                   <Button type="button" variant="ghost" size="sm" className="rounded-lg h-9" asChild title="Upload image">
                     <a href="/assets" target="_blank" rel="noopener noreferrer">
                       <UploadIcon className="size-4" /> Upload
@@ -3211,6 +3280,11 @@ export function SlideEditForm({
                     Apply {validImageCount} to all
                   </Button>
                 </div>
+                {(driveError || driveSuccess) && (
+                  <p className={`text-xs ${driveError ? "text-destructive" : "text-emerald-600 dark:text-emerald-400"}`}>
+                    {driveError ?? driveSuccess}
+                  </p>
+                )}
                 <div className="rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3">
                   <p className="text-muted-foreground text-[11px] font-medium">Display</p>
                 <div className="space-y-2">
@@ -3560,6 +3634,14 @@ export function SlideEditForm({
                     <ImageIcon className="size-3.5" />
                     Pick
                   </Button>
+                  <GoogleDriveFilePicker
+                    onFilePicked={handleDriveFilePicked}
+                    onError={setDriveError}
+                    variant="outline"
+                    size="sm"
+                    className="rounded-md h-8 text-xs"
+                    disabled={driveImporting}
+                  />
                   <Button type="button" variant="ghost" size="sm" className="rounded-lg h-9" asChild title="Upload">
                     <a href="/assets" target="_blank" rel="noopener noreferrer">
                       <UploadIcon className="size-4" />
@@ -3567,6 +3649,9 @@ export function SlideEditForm({
                     </a>
                   </Button>
                 </div>
+                {driveError && (
+                  <p className="text-destructive text-xs">{driveError}</p>
+                )}
                 <div className="space-y-1.5">
                   <Label htmlFor="image-url-solid" className="text-muted-foreground text-xs font-medium">URL</Label>
                   <Input
@@ -3651,7 +3736,7 @@ export function SlideEditForm({
             </div>
           </section>
           )}
-          <AssetPickerModal open={pickerOpen} onOpenChange={setPickerOpen} onPick={handlePickImage} />
+          <AssetPickerModal open={pickerOpen} onOpenChange={setPickerOpen} onPick={handlePickImage} projectId={projectId} />
           </div>
         </div>
       </section>

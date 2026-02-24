@@ -14,7 +14,7 @@ import { listAssetsWithUrls } from "@/app/actions/assets/listAssetsWithUrls";
 import type { Asset } from "@/lib/server/db/types";
 import { ImageIcon, Loader2Icon, CheckIcon } from "lucide-react";
 
-const MAX_IMAGES = 4;
+const MAX_IMAGES = 30;
 
 type BackgroundImagesPickerModalProps = {
   open: boolean;
@@ -34,11 +34,12 @@ export function BackgroundImagesPickerModal({
   const [assets, setAssets] = useState<Asset[]>([]);
   const [urls, setUrls] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
-  const [selection, setSelection] = useState<Set<string>>(new Set(selectedIds));
+  const [selection, setSelection] = useState<Set<string>>(() => new Set(selectedIds.slice(0, MAX_IMAGES)));
 
+  // Keep selection in sync with selectedIds (e.g. after Import folder / Pick images from Drive) so those images show as selected when the modal opens.
   useEffect(() => {
-    if (!open) return;
-    queueMicrotask(() => setSelection(new Set(selectedIds)));
+    const ids = selectedIds.slice(0, MAX_IMAGES);
+    setSelection(new Set(ids));
   }, [open, selectedIds]);
 
   useEffect(() => {
@@ -66,7 +67,7 @@ export function BackgroundImagesPickerModal({
     setSelection((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
-      else next.add(id);
+      else if (next.size < MAX_IMAGES) next.add(id);
       return next;
     });
   };
@@ -82,7 +83,7 @@ export function BackgroundImagesPickerModal({
         <DialogHeader>
           <DialogTitle>Background images for slides</DialogTitle>
           <DialogDescription>
-            Select 1–4 images. They will be applied to slides in order (round-robin). First slide can use 1 or 2 images (full + circle).
+            Select 1–30 images. They will be applied to slides in order (round-robin). First slide can use 1 or 2 images (full + circle).
           </DialogDescription>
         </DialogHeader>
         {loading ? (
@@ -102,9 +103,9 @@ export function BackgroundImagesPickerModal({
                   <button
                     type="button"
                     onClick={() => toggle(asset.id)}
-                    className={`relative flex aspect-square w-full overflow-hidden rounded-xl border-2 transition-all focus:outline-none focus:ring-2 focus:ring-primary/50 ${
+                    className={`relative flex aspect-square w-full overflow-hidden rounded-xl border-2 transition-all focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 ${
                       isSelected
-                        ? "border-primary bg-primary/10"
+                        ? "border-primary border-[3px] bg-primary/20 ring-2 ring-primary ring-offset-2"
                         : "border-border bg-muted/30 hover:border-primary/50"
                     }`}
                   >
@@ -120,13 +121,13 @@ export function BackgroundImagesPickerModal({
                       </span>
                     )}
                     {isSelected && (
-                      <span className="absolute right-2 top-2 rounded-full bg-primary p-1 text-primary-foreground">
-                        <CheckIcon className="size-4" />
+                      <span className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md">
+                        <CheckIcon className="size-4" strokeWidth={2.5} />
                       </span>
                     )}
                     {!isSelected && selection.size >= MAX_IMAGES && (
                       <span className="absolute inset-0 flex items-center justify-center bg-black/50 text-xs text-white">
-                        Max 4
+                        Max {MAX_IMAGES}
                       </span>
                     )}
                   </button>
@@ -139,7 +140,7 @@ export function BackgroundImagesPickerModal({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={handleConfirm}>
+          <Button onClick={handleConfirm} disabled={selection.size === 0}>
             Use {selection.size} image{selection.size !== 1 ? "s" : ""}
           </Button>
         </DialogFooter>

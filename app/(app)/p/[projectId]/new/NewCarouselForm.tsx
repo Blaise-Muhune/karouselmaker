@@ -8,6 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { BackgroundImagesPickerModal } from "@/components/carousels/BackgroundImagesPickerModal";
+import { GoogleDriveFolderPicker } from "@/components/drive/GoogleDriveFolderPicker";
+import { GoogleDriveMultiFilePicker } from "@/components/drive/GoogleDriveMultiFilePicker";
+import { importFromGoogleDrive, importFilesFromGoogleDrive } from "@/app/actions/assets/importFromGoogleDrive";
 import { TemplateSelectCards } from "@/components/carousels/TemplateSelectCards";
 import type { TemplateOption } from "@/components/carousels/TemplateSelectCards";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
@@ -96,6 +99,8 @@ export function NewCarouselForm({
   const [generationStep, setGenerationStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [upgradeLoading, setUpgradeLoading] = useState(false);
+  const [driveFolderImporting, setDriveFolderImporting] = useState(false);
+  const [driveFolderError, setDriveFolderError] = useState<string | null>(null);
 
   const handleUpgrade = async () => {
     setUpgradeLoading(true);
@@ -323,6 +328,10 @@ export function NewCarouselForm({
               if (!isPro) return;
               const checked = e.target.checked;
               setUseAiBackgrounds(checked);
+              if (checked) {
+                setBackgroundAssetIds([]);
+                setDriveFolderError(null);
+              }
               if (!checked) setUseUnsplashOnly(false);
             }}
               disabled={!isPro}
@@ -359,27 +368,82 @@ export function NewCarouselForm({
             <GlobeIcon className="size-4 text-muted-foreground" />
             <span>Use web search for current info (URLs, recent topics){!isPro && " — Pro"}</span>
           </label>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setBackgroundPickerOpen(true)}
-            >
-              <ImageIcon className="mr-1.5 size-4" />
-              {backgroundAssetIds.length ? `${backgroundAssetIds.length} image(s) selected` : "Pick from library"}
-            </Button>
-            {backgroundAssetIds.length > 0 && (
+          <div className={useAiBackgrounds ? "pointer-events-none opacity-60" : undefined}>
+            <div className="flex flex-wrap items-center gap-2">
               <Button
                 type="button"
-                variant="ghost"
+                variant="outline"
                 size="sm"
-                onClick={() => setBackgroundAssetIds([])}
+                onClick={() => setBackgroundPickerOpen(true)}
+                disabled={useAiBackgrounds || driveFolderImporting}
               >
-                Clear
+                <ImageIcon className="mr-1.5 size-4" />
+                {backgroundAssetIds.length ? `${backgroundAssetIds.length} image(s) selected` : "Pick from library"}
               </Button>
-            )}
+              <GoogleDriveFolderPicker
+                onFolderPicked={async (folderId, accessToken) => {
+                  setDriveFolderError(null);
+                  setDriveFolderImporting(true);
+                  const result = await importFromGoogleDrive(folderId, accessToken, projectId);
+                  setDriveFolderImporting(false);
+                  if (result.ok && result.assets.length > 0) {
+                    setBackgroundAssetIds(result.assets.map((a) => a.id));
+                  } else if (!result.ok) {
+                    setDriveFolderError(result.error);
+                  } else {
+                    setDriveFolderError("No images found in that folder.");
+                  }
+                }}
+                onError={setDriveFolderError}
+                variant="outline"
+                size="sm"
+                disabled={driveFolderImporting || useAiBackgrounds}
+              >
+                {driveFolderImporting ? (
+                  <Loader2Icon className="mr-1.5 size-4 animate-spin" />
+                ) : (
+                  <ImageIcon className="mr-1.5 size-4" />
+                )}
+                Import folder from Drive
+              </GoogleDriveFolderPicker>
+              <GoogleDriveMultiFilePicker
+                onFilesPicked={async (fileIds, accessToken) => {
+                  setDriveFolderError(null);
+                  setDriveFolderImporting(true);
+                  const result = await importFilesFromGoogleDrive(fileIds, accessToken, projectId);
+                  setDriveFolderImporting(false);
+                  if (result.ok && result.assets.length > 0) {
+                    setBackgroundAssetIds(result.assets.map((a) => a.id));
+                  } else if (!result.ok) {
+                    setDriveFolderError(result.error);
+                  } else {
+                    setDriveFolderError("No images could be imported.");
+                  }
+                }}
+                onError={setDriveFolderError}
+                variant="outline"
+                size="sm"
+                disabled={driveFolderImporting || useAiBackgrounds}
+              >
+                <ImageIcon className="mr-1.5 size-4" />
+                Pick images from Drive
+              </GoogleDriveMultiFilePicker>
+              {backgroundAssetIds.length > 0 && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setBackgroundAssetIds([])}
+                  disabled={useAiBackgrounds}
+                >
+                  Clear
+                </Button>
+              )}
+            </div>
           </div>
+          {!useAiBackgrounds && driveFolderError && (
+            <p className="text-destructive text-xs mt-1">{driveFolderError}</p>
+          )}
           </div>
           </div>
         </section>

@@ -134,10 +134,14 @@ export async function POST(
       { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string }
    >();
 
-    const browser = await launchChromium();
     const CONTENT_TIMEOUT_MS = 20000;
     const SELECTOR_TIMEOUT_MS = 15000;
-    try {
+    const MAX_EXPORT_ATTEMPTS = 2;
+
+    let lastError: unknown = null;
+    for (let attempt = 1; attempt <= MAX_EXPORT_ATTEMPTS; attempt++) {
+      const browser = await launchChromium();
+      try {
       for (let i = 0; i < slides.length; i++) {
         const slide = slides[i];
         if (!slide) continue;
@@ -461,15 +465,7 @@ export async function POST(
           }
         }
       }
-    } finally {
-      try {
-        await browser.close();
-      } catch {
-        // ignore
-      }
-    }
-
-    const captionVariants = (carousel.caption_variants ?? {}) as {
+      const captionVariants = (carousel.caption_variants ?? {}) as {
       short?: string;
       medium?: string;
       spicy?: string;
@@ -543,20 +539,48 @@ export async function POST(
       downloadUrl,
       slideUrls,
     });
+      } catch (e) {
+        lastError = e;
+      } finally {
+        try {
+          await browser.close();
+        } catch {
+          // ignore
+        }
+      }
+      if (lastError) {
+        const raw = lastError instanceof Error ? lastError.message : "";
+        const isBrowserClosed =
+          /Target page, context or browser has been closed/i.test(raw) ||
+          /browser has been closed/i.test(raw) ||
+          /Protocol error/i.test(raw);
+        if (!isBrowserClosed || attempt >= MAX_EXPORT_ATTEMPTS) break;
+      }
+    }
+
+    if (lastError) {
+      const raw = lastError instanceof Error ? lastError.message : "Export failed";
+      const isBrowserClosed =
+        /Target page, context or browser has been closed/i.test(raw) ||
+        /browser has been closed/i.test(raw) ||
+        /Protocol error/i.test(raw);
+      const msg = isBrowserClosed
+        ? "Export failed: the browser closed unexpectedly. Try again in a moment or download each slide individually below."
+        : raw;
+      try {
+        await updateExport(userId, exportId, { status: "failed" });
+      } catch {
+        // ignore
+      }
+      return NextResponse.json({ error: msg }, { status: 500 });
+    }
   } catch (e) {
     const raw = e instanceof Error ? e.message : "Export failed";
-    const isBrowserClosed =
-      /Target page, context or browser has been closed/i.test(raw) ||
-      /browser has been closed/i.test(raw) ||
-      /Protocol error/i.test(raw);
-    const msg = isBrowserClosed
-      ? "Export failed: the browser closed unexpectedly. Try again in a moment or download each slide individually below."
-      : raw;
     try {
       await updateExport(userId, exportId, { status: "failed" });
     } catch {
       // ignore
     }
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return NextResponse.json({ error: raw }, { status: 500 });
   }
 }
