@@ -1,8 +1,9 @@
 "use server";
 
 import { getProfile } from "@/lib/server/db/profiles";
+import { countCarouselsLifetime } from "@/lib/server/db/carousels";
 import type { Plan } from "@/lib/server/db/types";
-import { PLAN_LIMITS, TESTER_EMAIL } from "@/lib/constants";
+import { PLAN_LIMITS, TESTER_EMAIL, FREE_FULL_ACCESS_GENERATIONS } from "@/lib/constants";
 
 export type Subscription = {
   plan: Plan;
@@ -39,11 +40,14 @@ export async function getPlanLimits(
   return PLAN_LIMITS[plan];
 }
 
+/** Allow Pro or free users still within their 3 full-access generations. */
 export async function requirePro(
   userId: string,
   email?: string | null
 ): Promise<{ allowed: boolean; error?: string }> {
   const { isPro } = await getSubscription(userId, email);
   if (isPro) return { allowed: true };
+  const lifetimeCount = await countCarouselsLifetime(userId);
+  if (lifetimeCount < FREE_FULL_ACCESS_GENERATIONS) return { allowed: true };
   return { allowed: false, error: "Upgrade to Pro to edit slides and export." };
 }

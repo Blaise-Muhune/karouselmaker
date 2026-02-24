@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getUser } from "@/lib/server/auth/getUser";
 import { getSubscription } from "@/lib/server/subscription";
-import { getCarousel, getProject, listSlides, listTemplatesForUser, listExportsByCarousel, countExportsThisMonth, getAsset } from "@/lib/server/db";
+import { getCarousel, getProject, listSlides, listTemplatesForUser, listExportsByCarousel, countExportsThisMonth, getAsset, countCarouselsLifetime } from "@/lib/server/db";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { resolveBrandKitLogo } from "@/lib/server/brandKit";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
@@ -16,6 +16,7 @@ import { EditorExportSection } from "@/components/editor/EditorExportSection";
 import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
 import type { BrandKit } from "@/lib/renderer/renderModel";
 import type { ExportFormat, ExportSize } from "@/lib/server/db/types";
+import { FREE_FULL_ACCESS_GENERATIONS } from "@/lib/constants";
 import { ArrowLeftIcon } from "lucide-react";
 
 function getExportFormat(c: { export_format?: unknown }): ExportFormat {
@@ -33,7 +34,7 @@ export default async function CarouselEditorPage({
   const { user } = await getUser();
   const { projectId, carouselId } = await params;
 
-  const [carousel, project, slides, templatesRaw, recentExports, subscription, exportCount] = await Promise.all([
+  const [carousel, project, slides, templatesRaw, recentExports, subscription, exportCount, lifetimeCarouselCount] = await Promise.all([
     getCarousel(user.id, carouselId),
     getProject(user.id, projectId),
     listSlides(user.id, carouselId),
@@ -41,7 +42,13 @@ export default async function CarouselEditorPage({
     listExportsByCarousel(user.id, carouselId, 3),
     getSubscription(user.id, user.email),
     countExportsThisMonth(user.id),
+    countCarouselsLifetime(user.id),
   ]);
+
+  const hasFullAccess = subscription.isPro || lifetimeCarouselCount < FREE_FULL_ACCESS_GENERATIONS;
+  const freeGenerationsLeft = hasFullAccess && !subscription.isPro
+    ? FREE_FULL_ACCESS_GENERATIONS - Math.min(lifetimeCarouselCount, FREE_FULL_ACCESS_GENERATIONS)
+    : 0;
 
   if (!carousel) notFound();
   if (!project) notFound();
@@ -147,8 +154,13 @@ export default async function CarouselEditorPage({
   return (
     <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">
       <div className="mx-auto max-w-4xl space-y-10">
-        {!subscription.isPro && (
-          <UpgradeBanner message="Upgrade to Pro to edit slides, export, and unlock AI backgrounds." />
+        {hasFullAccess && !subscription.isPro && (
+          <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-2 text-sm text-foreground">
+            You have full access for your <strong>{FREE_FULL_ACCESS_GENERATIONS} free carousel generations</strong>. {freeGenerationsLeft} {freeGenerationsLeft === 1 ? "generation" : "generations"} left—then upgrade to Pro to keep editing and exporting.
+          </div>
+        )}
+        {!hasFullAccess && (
+          <UpgradeBanner message="You've used your 3 free generations with full access. Upgrade to Pro to edit slides, export, and unlock AI backgrounds." />
         )}
 
         {/* Header */}
