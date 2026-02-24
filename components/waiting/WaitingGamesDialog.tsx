@@ -57,7 +57,7 @@ export function WaitingGamesDialog({
           Play a game while you wait
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md z-[101]" overlayClassName="z-[101]">
         <DialogHeader>
           <DialogTitle className="text-base">Play a game</DialogTitle>
         </DialogHeader>

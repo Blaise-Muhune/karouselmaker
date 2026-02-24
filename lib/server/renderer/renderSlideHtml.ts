@@ -542,7 +542,7 @@ export function renderSlideHtml(
     const topBottomCss = mwY != null ? `top:${mwY}px` : `bottom:${mwBottom}px`;
     const mwFs = (model.chrome.madeWithFontSize ?? 30) * chromeScale;
     const mwMaxW = 1032 * chromeScale;
-    return `<div style="position:absolute;${leftCss};${topBottomCss};max-width:${mwMaxW}px;font-size:${mwFs}px;font-weight:500;letter-spacing:0.02em;opacity:0.65;z-index:10;color:${escapeHtml(textColor)};text-shadow:0 1px 2px rgba(0,0,0,0.3)">${escapeHtml(model.chrome.madeWithText ?? "Made with KarouselMaker.com")}</div>`;
+    return `<div style="position:absolute;${leftCss};${topBottomCss};max-width:${mwMaxW}px;font-size:${mwFs}px;font-weight:500;letter-spacing:0.02em;opacity:0.65;z-index:10;color:${escapeHtml(textColor)};text-shadow:0 1px 2px rgba(0,0,0,0.3);white-space:nowrap">${escapeHtml(model.chrome.madeWithText ?? "Made with KarouselMaker.com")}</div>`;
   })() : ""}
   </div>
 </body>

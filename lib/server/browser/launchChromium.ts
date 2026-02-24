@@ -16,6 +16,7 @@ const CHROMIUM_PACK_URL =
 const SERVERLESS_ARGS = [
   "--disable-gpu",
   "--no-sandbox",
+  "--no-zygote",
   "--disable-dev-shm-usage",
   "--disable-setuid-sandbox",
   "--disable-software-rasterizer",
@@ -28,6 +29,7 @@ const SERVERLESS_ARGS = [
   "--disable-backgrounding-occluded-windows",
   "--disable-hang-monitor",
   "--disable-breakpad",
+  "--disable-features=TranslateUI",
 ];
 
 /** Launch timeout (ms). Prevents hanging on cold start in serverless. */

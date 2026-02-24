@@ -33,6 +33,8 @@ const BUCKET = "carousel-assets";
 const VIDEO_ASSET_EXPIRES = 600;
 /** Delay after load before screenshot so layout/fonts settle. Lower = faster export, higher = safer for slow assets. */
 const SCREENSHOT_DELAY_MS = 200;
+/** Short pause between processing slides in production to reduce browser memory pressure and "browser closed" errors. */
+const INTER_SLIDE_DELAY_MS = 150;
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -136,13 +138,16 @@ export async function POST(
 
     const CONTENT_TIMEOUT_MS = 20000;
     const SELECTOR_TIMEOUT_MS = 15000;
-    const MAX_EXPORT_ATTEMPTS = 2;
+    const MAX_EXPORT_ATTEMPTS = 3;
 
     let lastError: unknown = null;
     for (let attempt = 1; attempt <= MAX_EXPORT_ATTEMPTS; attempt++) {
       const browser = await launchChromium();
       try {
       for (let i = 0; i < slides.length; i++) {
+        if (i > 0) {
+          await new Promise((r) => setTimeout(r, INTER_SLIDE_DELAY_MS));
+        }
         const slide = slides[i];
         if (!slide) continue;
 
@@ -555,6 +560,7 @@ export async function POST(
           /browser has been closed/i.test(raw) ||
           /Protocol error/i.test(raw);
         if (!isBrowserClosed || attempt >= MAX_EXPORT_ATTEMPTS) break;
+        await new Promise((r) => setTimeout(r, 2500));
       }
     }
 
