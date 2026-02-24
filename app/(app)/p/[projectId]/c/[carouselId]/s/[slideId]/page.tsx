@@ -35,6 +35,8 @@ export default async function EditSlidePage({
   const { isPro } = await getSubscription(user.id, user.email);
   const lifetimeCarouselCount = await countCarouselsLifetime(user.id);
   const hasFullAccess = isPro || lifetimeCarouselCount < FREE_FULL_ACCESS_GENERATIONS;
+  const freeGenerationsUsed = Math.min(lifetimeCarouselCount, FREE_FULL_ACCESS_GENERATIONS);
+  const freeGenerationsLeft = FREE_FULL_ACCESS_GENERATIONS - freeGenerationsUsed;
 
   const [slide, carousel, project, slides, templatesRaw] = await Promise.all([
     getSlide(user.id, slideId),
@@ -142,6 +144,13 @@ export default async function EditSlidePage({
 
   return (
     <div className="min-h-[calc(100vh-8rem)] flex flex-col p-0 md:p-2">
+      {hasFullAccess && !isPro && (
+        <div className="shrink-0 px-4 py-2">
+          <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-2 text-sm text-foreground">
+            You have full access for your <strong>{FREE_FULL_ACCESS_GENERATIONS} free carousel generations</strong>. {freeGenerationsLeft} {freeGenerationsLeft === 1 ? "generation" : "generations"} left with full access—then upgrade to Pro to keep editing template, background, and all features.
+          </div>
+        </div>
+      )}
       {!hasFullAccess && (
         <div className="shrink-0 px-4 py-2">
           <UpgradeBanner
