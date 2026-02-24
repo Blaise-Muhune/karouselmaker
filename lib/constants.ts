@@ -1,6 +1,9 @@
 /** Pro plan price (display only). Actual price is configured in Stripe. */
 export const PRO_PRICE_DISPLAY = "$15.99";
 
+/** Free users get this many carousel generations with full Pro features (AI backgrounds, web search); after that, features are locked until they upgrade. */
+export const FREE_FULL_ACCESS_GENERATIONS = 3;
+
 /** Tester account: 500 carousel generations, double pro limits for assets/exports/templates. */
 export const TESTER_EMAIL = "muyumba@andrews.edu";
 

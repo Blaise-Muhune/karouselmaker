@@ -2,9 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getUser } from "@/lib/server/auth/getUser";
 import { getSubscription, getPlanLimits } from "@/lib/server/subscription";
-import { getProject, getCarousel, countCarouselsThisMonth, listTemplatesForUser, getDefaultTemplateForNewCarousel } from "@/lib/server/db";
+import { getProject, getCarousel, countCarouselsThisMonth, countCarouselsLifetime, listTemplatesForUser, getDefaultTemplateForNewCarousel } from "@/lib/server/db";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
-import { PLAN_LIMITS } from "@/lib/constants";
+import { PLAN_LIMITS, FREE_FULL_ACCESS_GENERATIONS } from "@/lib/constants";
 import { NewCarouselForm } from "./NewCarouselForm";
 import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
 import { Button } from "@/components/ui/button";
@@ -21,11 +21,12 @@ export default async function NewCarouselPage({
   const { user } = await getUser();
   const { projectId } = await params;
   const { regenerate: regenerateCarouselId } = await searchParams;
-  const [project, subscription, limits, carouselCount, regenerateCarousel, templatesRaw, defaultTemplate] = await Promise.all([
+  const [project, subscription, limits, carouselCount, lifetimeCarouselCount, regenerateCarousel, templatesRaw, defaultTemplate] = await Promise.all([
     getProject(user.id, projectId),
     getSubscription(user.id, user.email),
     getPlanLimits(user.id, user.email),
     countCarouselsThisMonth(user.id),
+    countCarouselsLifetime(user.id),
     regenerateCarouselId ? getCarousel(user.id, regenerateCarouselId) : Promise.resolve(null),
     listTemplatesForUser(user.id, { includeSystem: true }),
     getDefaultTemplateForNewCarousel(user.id),
@@ -50,12 +51,23 @@ export default async function NewCarouselPage({
   const primaryColor = (project.brand_kit as { primary_color?: string } | null)?.primary_color?.trim() || "#0a0a0a";
 
   const carouselLimit = limits.carouselsPerMonth;
+  const hasFullAccess = subscription.isPro || lifetimeCarouselCount < FREE_FULL_ACCESS_GENERATIONS;
+  const freeGenerationsUsed = Math.min(lifetimeCarouselCount, FREE_FULL_ACCESS_GENERATIONS);
+  const freeGenerationsLeft = FREE_FULL_ACCESS_GENERATIONS - freeGenerationsUsed;
 
   return (
     <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">
       <div className="mx-auto max-w-xl space-y-10">
-        {!subscription.isPro && (
-          <UpgradeBanner message={`Free: ${carouselCount}/${carouselLimit} carousels this month. Upgrade to Pro for ${PLAN_LIMITS.pro.carouselsPerMonth}/month, AI backgrounds, and web search.`} />
+        {!subscription.isPro && !hasFullAccess && (
+          <UpgradeBanner message="You've used your 3 free generations with full access. Upgrade to Pro for AI backgrounds, web search, and more carousels." />
+        )}
+        {!subscription.isPro && hasFullAccess && freeGenerationsLeft <= 1 && (
+          <UpgradeBanner message={`${freeGenerationsLeft} free generation left with full access. Upgrade to Pro to keep AI backgrounds and web search.`} variant="inline" />
+        )}
+        {!subscription.isPro && hasFullAccess && freeGenerationsLeft > 1 && (
+          <p className="rounded-lg border border-border/50 bg-muted/30 px-4 py-2 text-sm text-muted-foreground">
+            You have <strong>{FREE_FULL_ACCESS_GENERATIONS} free generations</strong> with full access (AI backgrounds, web search). {freeGenerationsLeft} left.
+          </p>
         )}
         <header className="flex items-start gap-2">
           <Button variant="ghost" size="icon-sm" className="-ml-1 shrink-0" asChild>
@@ -74,6 +86,9 @@ export default async function NewCarouselPage({
         <NewCarouselForm
           projectId={projectId}
           isPro={subscription.isPro}
+          hasFullAccess={hasFullAccess}
+          freeGenerationsUsed={freeGenerationsUsed}
+          freeGenerationsTotal={FREE_FULL_ACCESS_GENERATIONS}
           carouselCount={carouselCount}
           carouselLimit={carouselLimit}
           regenerateCarouselId={regenerateCarousel?.id}

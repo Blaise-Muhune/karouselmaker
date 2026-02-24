@@ -51,6 +51,9 @@ const GENERATION_STEPS = [
 export function NewCarouselForm({
   projectId,
   isPro = true,
+  hasFullAccess: hasFullAccessProp,
+  freeGenerationsUsed = 0,
+  freeGenerationsTotal = 3,
   carouselCount = 0,
   carouselLimit = 50,
   regenerateCarouselId,
@@ -66,6 +69,10 @@ export function NewCarouselForm({
 }: {
   projectId: string;
   isPro?: boolean;
+  /** When true, user can use AI backgrounds and web search (Pro or within 3 free generations). */
+  hasFullAccess?: boolean;
+  freeGenerationsUsed?: number;
+  freeGenerationsTotal?: number;
   carouselCount?: number;
   carouselLimit?: number;
   /** When set, form pre-fills from this carousel and submit regenerates it in place. */
@@ -101,6 +108,8 @@ export function NewCarouselForm({
   const [upgradeLoading, setUpgradeLoading] = useState(false);
   const [driveFolderImporting, setDriveFolderImporting] = useState(false);
   const [driveFolderError, setDriveFolderError] = useState<string | null>(null);
+
+  const hasFullAccess = hasFullAccessProp ?? isPro;
 
   const handleUpgrade = async () => {
     setUpgradeLoading(true);
@@ -319,13 +328,16 @@ export function NewCarouselForm({
             <p className="text-muted-foreground mb-2 text-xs font-medium">Background images</p>
             <p className="text-muted-foreground mb-3 text-xs">
               Pick from library or let AI suggest. Leave unchecked for project colors.
+              {hasFullAccess && !isPro && (
+                <> You have <strong>{freeGenerationsTotal} free generations</strong> with full access ({freeGenerationsTotal - freeGenerationsUsed} left).</>
+              )}
             </p>
-          <label className={`flex items-center gap-3 rounded-lg py-2 text-sm ${isPro ? "cursor-pointer hover:bg-muted/50" : "opacity-70"}`}>
+          <label className={`flex items-center gap-3 rounded-lg py-2 text-sm ${hasFullAccess ? "cursor-pointer hover:bg-muted/50" : "opacity-70"}`}>
             <input
               type="checkbox"
               checked={useAiBackgrounds}
               onChange={(e) => {
-              if (!isPro) return;
+              if (!hasFullAccess) return;
               const checked = e.target.checked;
               setUseAiBackgrounds(checked);
               if (checked) {
@@ -334,11 +346,11 @@ export function NewCarouselForm({
               }
               if (!checked) setUseUnsplashOnly(false);
             }}
-              disabled={!isPro}
+              disabled={!hasFullAccess}
               className="rounded border-input accent-primary"
             />
             <SparklesIcon className="size-4 text-muted-foreground" />
-            <span>Let AI suggest background images{!isPro && " — Pro"}</span>
+            <span>Let AI suggest background images{!hasFullAccess && " — Pro"}</span>
           </label>
           {useAiBackgrounds && (
             <label className="flex items-center gap-3 rounded-lg py-2 pl-7 text-sm cursor-pointer hover:bg-muted/50">
@@ -357,16 +369,16 @@ export function NewCarouselForm({
               Unsplash: high quality, mostly generic (nature, cityscapes, abstracts, lifestyle, objects).
             </p>
           )}
-          <label className={`flex items-center gap-3 rounded-lg py-2 text-sm ${isPro ? "cursor-pointer hover:bg-muted/50" : "opacity-70"}`}>
+          <label className={`flex items-center gap-3 rounded-lg py-2 text-sm ${hasFullAccess ? "cursor-pointer hover:bg-muted/50" : "opacity-70"}`}>
             <input
               type="checkbox"
               checked={useWebSearch}
-              onChange={(e) => isPro && setUseWebSearch(e.target.checked)}
-              disabled={!isPro}
+              onChange={(e) => hasFullAccess && setUseWebSearch(e.target.checked)}
+              disabled={!hasFullAccess}
               className="rounded border-input accent-primary"
             />
             <GlobeIcon className="size-4 text-muted-foreground" />
-            <span>Use web search for current info (URLs, recent topics){!isPro && " — Pro"}</span>
+            <span>Use web search for current info (URLs, recent topics){!hasFullAccess && " — Pro"}</span>
           </label>
           <div className={useAiBackgrounds ? "pointer-events-none opacity-60" : undefined}>
             <div className="flex flex-wrap items-center gap-2">

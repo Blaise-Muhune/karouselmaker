@@ -5,7 +5,7 @@ import { getUser } from "@/lib/server/auth/getUser";
 import { getSubscription, getPlanLimits } from "@/lib/server/subscription";
 import { getProject } from "@/lib/server/db/projects";
 import { getDefaultTemplateForNewCarousel, getTemplate } from "@/lib/server/db/templates";
-import { createCarousel, getCarousel, updateCarousel, countCarouselsThisMonth } from "@/lib/server/db/carousels";
+import { createCarousel, getCarousel, updateCarousel, countCarouselsThisMonth, countCarouselsLifetime } from "@/lib/server/db/carousels";
 import { replaceSlides, updateSlide } from "@/lib/server/db/slides";
 import type { Json } from "@/lib/server/db/types";
 import { getAsset } from "@/lib/server/db/assets";
@@ -21,6 +21,7 @@ import { searchImage } from "@/lib/server/imageSearch";
 import { searchUnsplashPhotosMultiple, searchUnsplashPhotoRandom, trackUnsplashDownload } from "@/lib/server/unsplash";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
 import { generateCarouselInputSchema } from "@/lib/validations/carousel";
+import { FREE_FULL_ACCESS_GENERATIONS } from "@/lib/constants";
 
 const MAX_RETRIES = 2;
 
@@ -35,12 +36,14 @@ function looksLikeNewsOrTimeSensitive(inputValue: string, inputType: string): bo
   return false;
 }
 
-/** Remove URLs and markdown links from slide text so web-search generations stay link-free. */
+/** Remove URLs, markdown links, and parenthetical domain refs (e.g. (marvel.com)) from slide text so web-search generations stay link-free. */
 function stripLinksFromText(text: string): string {
   if (!text?.trim()) return text;
   let s = text
     // Markdown links [label](url) -> keep label only
     .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    // Parenthetical domain/source refs e.g. (marvel.com), (www.example.org) — remove entirely
+    .replace(/\s*\([^)]*[a-zA-Z0-9][\w.-]*\.[a-zA-Z]{2,}[^)]*\)/g, "")
     // Bare URLs (http/https)
     .replace(/https?:\/\/[^\s\]\)"'<>]+\b/gi, "")
     // Leftover "source:", "read more at", trailing colons/spaces before where URL was
@@ -124,12 +127,17 @@ export async function generateCarousel(formData: FormData): Promise<
 
   const { isPro } = await getSubscription(user.id, user.email);
   const limits = await getPlanLimits(user.id, user.email);
-  const count = await countCarouselsThisMonth(user.id);
+  const [count, lifetimeCount] = await Promise.all([
+    countCarouselsThisMonth(user.id),
+    countCarouselsLifetime(user.id),
+  ]);
   if (count >= limits.carouselsPerMonth) {
     return {
       error: `Generation limit: ${count}/${limits.carouselsPerMonth} carousels this month.${isPro ? "" : " Upgrade to Pro for more."}`,
     };
   }
+  const hasFreeFullAccess = !isPro && lifetimeCount < FREE_FULL_ACCESS_GENERATIONS;
+  const hasFullAccess = isPro || hasFreeFullAccess;
 
   const voiceRules = project.voice_rules as {
     do_rules?: string;
@@ -164,8 +172,8 @@ export async function generateCarousel(formData: FormData): Promise<
 
   const useUnsplashOnly = !!parsed.data.use_unsplash_only;
   const userAskedWebSearch = !!data.use_web_search;
-  const autoNewsWebSearch = isPro && looksLikeNewsOrTimeSensitive(data.input_value, data.input_type);
-  const useWebSearch = isPro && (userAskedWebSearch || autoNewsWebSearch);
+  const autoNewsWebSearch = hasFullAccess && looksLikeNewsOrTimeSensitive(data.input_value, data.input_type);
+  const useWebSearch = hasFullAccess && (userAskedWebSearch || autoNewsWebSearch);
   const projectLanguage = (project as { language?: string }).language?.trim() || undefined;
   const ctx = {
     tone_preset: project.tone_preset,
@@ -174,7 +182,7 @@ export async function generateCarousel(formData: FormData): Promise<
     number_of_slides,
     input_type: data.input_type as "topic" | "url" | "text",
     input_value: data.input_value,
-    use_ai_backgrounds: isPro ? (data.use_ai_backgrounds ?? false) : false,
+    use_ai_backgrounds: hasFullAccess ? (data.use_ai_backgrounds ?? false) : false,
     use_unsplash_only: useUnsplashOnly,
     use_web_search: useWebSearch,
     creator_handle: creatorHandle,
