@@ -2,13 +2,14 @@ import { notFound } from "next/navigation";
 import { getUser } from "@/lib/server/auth/getUser";
 import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { getSubscription } from "@/lib/server/subscription";
-import { getSlide, getCarousel, getProject, listSlides, listTemplatesForUser } from "@/lib/server/db";
+import { getSlide, getCarousel, getProject, listSlides, listTemplatesForUser, countCarouselsLifetime } from "@/lib/server/db";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { resolveBrandKitLogo } from "@/lib/server/brandKit";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
 import { SlideEditForm, type TemplateWithConfig } from "@/components/editor/SlideEditForm";
 import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
 import type { BrandKit } from "@/lib/renderer/renderModel";
+import { FREE_FULL_ACCESS_GENERATIONS } from "@/lib/constants";
 
 const BUCKET = "carousel-assets";
 
@@ -32,6 +33,8 @@ export default async function EditSlidePage({
   const initialTab = parseTab(tabParam ?? null);
 
   const { isPro } = await getSubscription(user.id, user.email);
+  const lifetimeCarouselCount = await countCarouselsLifetime(user.id);
+  const hasFullAccess = isPro || lifetimeCarouselCount < FREE_FULL_ACCESS_GENERATIONS;
 
   const [slide, carousel, project, slides, templatesRaw] = await Promise.all([
     getSlide(user.id, slideId),
@@ -44,7 +47,7 @@ export default async function EditSlidePage({
   const projectBrandKit = project?.brand_kit as { watermark_text?: string } | null | undefined;
   const pageHandle = (projectBrandKit?.watermark_text ?? "").trim().replace(/^@/, "");
   const defaultMadeWithSuffix =
-    isPro && pageHandle ? `follow @${pageHandle}` : "";
+    hasFullAccess && pageHandle ? `follow @${pageHandle}` : "";
 
   if (!slide) notFound();
   if (!carousel) notFound();
@@ -139,17 +142,17 @@ export default async function EditSlidePage({
 
   return (
     <div className="min-h-[calc(100vh-8rem)] flex flex-col p-0 md:p-2">
-      {!isPro && (
+      {!hasFullAccess && (
         <div className="shrink-0 px-4 py-2">
           <UpgradeBanner
-            message="Free plan: Edit headline and text only. Upgrade to Pro to change template, background, and more."
+            message="You've used your 3 free generations with full access. Upgrade to Pro to edit template, background, and all slide features."
             variant="inline"
           />
         </div>
       )}
       <div className="flex-1 min-h-0 flex flex-col">
         <SlideEditForm
-          isPro={isPro}
+          isPro={hasFullAccess}
           slide={slide}
           slides={slides}
           templates={templates}

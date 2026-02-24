@@ -30,6 +30,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
+import { WaitingGamesDialog } from "@/components/waiting/WaitingGamesDialog";
 import { PLAN_LIMITS } from "@/lib/constants";
 
 export type ExportRowDisplay = {
@@ -281,6 +282,7 @@ export function EditorExportSection({
             <p className="text-muted-foreground text-sm">
               Don&apos;t close this window until the export has finished.
             </p>
+            <WaitingGamesDialog loadingMessage="Your export is still in progress…" />
           </div>
         </div>
       )}
@@ -368,6 +370,7 @@ export function EditorExportSection({
                       <p className="text-muted-foreground text-sm">
                         Don&apos;t close this window until the video has finished generating.
                       </p>
+                      <WaitingGamesDialog loadingMessage="Your video is still encoding…" />
                     </div>
                   </div>
                 ) : videoUrlsLoading ? (

@@ -16,6 +16,7 @@ import type { TemplateOption } from "@/components/carousels/TemplateSelectCards"
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { createCheckoutSession } from "@/app/actions/subscription/createCheckoutSession";
+import { WaitingGamesDialog } from "@/components/waiting/WaitingGamesDialog";
 import { GlobeIcon, ImageIcon, LayoutTemplateIcon, Loader2Icon, SparklesIcon } from "lucide-react";
 
 const TEMPLATE_PAGE_SIZE = 8;
@@ -215,6 +216,10 @@ export function NewCarouselForm({
                 <p className="text-xs text-muted-foreground/80">
                   Usually 15–30 seconds
                 </p>
+                <WaitingGamesDialog
+                  loadingMessage="Your carousel is still generating…"
+                  triggerClassName="mt-2"
+                />
               </div>
             </div>
           </div>
