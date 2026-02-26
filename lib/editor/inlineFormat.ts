@@ -138,6 +138,25 @@ export function normalizeHighlightSpansToWords(text: string, spans: HighlightSpa
 }
 
 /**
+ * Keep highlight spans valid after text changed: clamp to length, drop invalid, re-anchor to word boundaries.
+ * Use in the editor when headline or body text is edited so highlights don't point at wrong indices.
+ */
+export function clampHighlightSpansToText(text: string, spans: HighlightSpan[]): HighlightSpan[] {
+  if (!text || !spans.length) return [];
+  const len = text.length;
+  const out: HighlightSpan[] = [];
+  for (const s of spans) {
+    const start = Math.max(0, Math.min(s.start, len));
+    const end = Math.max(0, Math.min(s.end, len));
+    if (start >= end) continue;
+    const expanded = expandSelectionToWordBoundaries(text, start, end);
+    if (expanded) out.push({ start: expanded.start, end: expanded.end, color: s.color });
+  }
+  out.sort((a, b) => a.start - b.start);
+  return out;
+}
+
+/**
  * Inject {{#hex}}...{{/}} into plain text from stored highlight spans.
  * Spans are clamped to text length; overlapping spans are merged (last wins for overlap).
  * Use this when headline/body are stored without brackets and highlights are in meta.
@@ -216,15 +235,19 @@ export function getAutoHighlightSpans(text: string, options: AutoHighlightOption
   const spans: HighlightSpan[] = [];
 
   if (style === "headline") {
-    // First word
-    spans.push({ start: words[0]!.start, end: words[0]!.end, color });
+    // First word (skip if single letter to avoid bad line breaks like "A" alone)
+    const first = words[0]!;
+    if (first.word.length > 1) spans.push({ start: first.start, end: first.end, color });
     if (words.length >= 2 && spans.length < maxSpans) {
-      if (words.length <= 5) spans.push({ start: words[1]!.start, end: words[1]!.end, color });
+      if (words.length <= 5) {
+        const second = words[1]!;
+        if (second.word.length > 1) spans.push({ start: second.start, end: second.end, color });
+      }
     }
     if (words.length >= 3 && spans.length < maxSpans) {
       const last = words[words.length - 1]!;
       const firstStart = words[0]!.start;
-      if (last.start > firstStart && !spans.some((s) => s.start === last.start)) {
+      if (last.word.length > 1 && last.start > firstStart && !spans.some((s) => s.start === last.start)) {
         spans.push({ start: last.start, end: last.end, color });
       }
     }
@@ -246,7 +269,7 @@ export function getAutoHighlightSpans(text: string, options: AutoHighlightOption
 
 /**
  * Convert AI-suggested highlight words (exact substrings) into highlight spans.
- * Finds the first occurrence of each word in text; skips spans that would overlap a previous one.
+ * Finds every occurrence of each word in text; skips spans that would overlap a previous one.
  * Use when the AI provided headline_highlight_words or body_highlight_words.
  */
 export function getHighlightSpansFromWords(
@@ -260,13 +283,21 @@ export function getHighlightSpansFromWords(
   for (const word of words) {
     const w = word?.trim();
     if (!w) continue;
-    const idx = text.indexOf(w);
-    if (idx < 0) continue;
-    const start = idx;
-    const end = idx + w.length;
-    // Skip if overlaps an existing span
-    if (spans.some((s) => (start >= s.start && start < s.end) || (end > s.start && end <= s.end) || (start <= s.start && end >= s.end))) continue;
-    spans.push({ start, end, color: hex });
+    let pos = 0;
+    for (;;) {
+      const idx = text.indexOf(w, pos);
+      if (idx < 0) break;
+      const start = idx;
+      const end = idx + w.length;
+      const overlaps = spans.some(
+        (s) =>
+          (start >= s.start && start < s.end) ||
+          (end > s.start && end <= s.end) ||
+          (start <= s.start && end >= s.end)
+      );
+      if (!overlaps) spans.push({ start, end, color: hex });
+      pos = end;
+    }
   }
   spans.sort((a, b) => a.start - b.start);
   return spans;

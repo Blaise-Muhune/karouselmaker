@@ -9,6 +9,11 @@ import { renderSlideHtml } from "@/lib/server/renderer/renderSlideHtml";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
 import { resolveBrandKitLogo } from "@/lib/server/brandKit";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
+import {
+  normalizeSlideMetaForRender,
+  getTemplateDefaultOverrides,
+  mergeWithTemplateDefaults,
+} from "@/lib/server/export/normalizeSlideMetaForRender";
 import type { BrandKit } from "@/lib/renderer/renderModel";
 
 const BUCKET = "carousel-assets";
@@ -182,15 +187,16 @@ export async function GET(
 
   const slideMeta = (slide.meta ?? null) as Record<string, unknown> | null;
   const defaultShowWatermark = false; // logo only when user explicitly enabled it
-  const { normalizeSlideMetaForRender } = await import("@/lib/server/export/normalizeSlideMetaForRender");
   const normalized = normalizeSlideMetaForRender(slideMeta);
-  const showCounterOverride = normalized.showCounterOverride;
-  const showWatermarkOverride = normalized.showWatermarkOverride ?? defaultShowWatermark;
-  const showMadeWithOverride = normalized.showMadeWithOverride ?? !isPro;
-  const fontOverrides = normalized.fontOverrides;
-  const zoneOverrides = normalized.zoneOverrides;
-  const chromeOverrides = normalized.chromeOverrides;
-  const highlightStyles = normalized.highlightStyles;
+  const templateDefaults = getTemplateDefaultOverrides(config.data);
+  const merged = mergeWithTemplateDefaults(normalized, templateDefaults);
+  const showCounterOverride = merged.showCounterOverride;
+  const showWatermarkOverride = merged.showWatermarkOverride ?? defaultShowWatermark;
+  const showMadeWithOverride = merged.showMadeWithOverride ?? !isPro;
+  const fontOverrides = merged.fontOverrides;
+  const zoneOverrides = merged.zoneOverrides;
+  const chromeOverrides = merged.chromeOverrides;
+  const highlightStyles = merged.highlightStyles;
 
   type ImageDisplayOption = NonNullable<Parameters<typeof renderSlideHtml>[16]>;
   const imageDisplayParam: ImageDisplayOption | undefined =
@@ -207,8 +213,8 @@ export async function GET(
       body: slide.body ?? null,
       slide_index: slide.slide_index,
       slide_type: slide.slide_type,
-    ...(normalized.headline_highlights?.length && { headline_highlights: normalized.headline_highlights }),
-    ...(normalized.body_highlights?.length && { body_highlights: normalized.body_highlights }),
+    ...(merged.headline_highlights?.length && { headline_highlights: merged.headline_highlights }),
+    ...(merged.body_highlights?.length && { body_highlights: merged.body_highlights }),
   },
     config.data,
     brandKit,

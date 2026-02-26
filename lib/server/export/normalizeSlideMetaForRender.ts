@@ -1,4 +1,18 @@
 import type { TextZoneOverrides, ChromeOverrides } from "@/lib/renderer/renderModel";
+import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
+import { HIGHLIGHT_COLORS } from "@/lib/editor/inlineFormat";
+
+export type NormalizedSlideMeta = {
+  zoneOverrides: TextZoneOverrides | undefined;
+  fontOverrides: { headline_font_size?: number; body_font_size?: number } | undefined;
+  chromeOverrides: ChromeOverrides | undefined;
+  highlightStyles: { headline?: "background" | "outline"; body?: "background" | "outline" };
+  showCounterOverride: boolean;
+  showWatermarkOverride: boolean | undefined;
+  showMadeWithOverride: boolean | undefined;
+  headline_highlights?: { start: number; end: number; color: string }[];
+  body_highlights?: { start: number; end: number; color: string }[];
+};
 
 const NUMERIC_KEYS = ["x", "y", "w", "h", "fontSize", "fontWeight", "lineHeight", "maxLines"] as const;
 const ALIGN_VALUES = new Set(["left", "center"]);
@@ -25,21 +39,61 @@ function normalizeZoneOverride(
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
+/** Validate and normalize highlight spans for export/render: valid start/end, color as hex. */
+function normalizeHighlightSpans(
+  raw: unknown
+): { start: number; end: number; color: string }[] | undefined {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  const out: { start: number; end: number; color: string }[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const start = Number((item as { start?: unknown }).start);
+    const end = Number((item as { end?: unknown }).end);
+    if (Number.isNaN(start) || Number.isNaN(end) || start < 0 || end <= start) continue;
+    let color = (item as { color?: unknown }).color;
+    if (typeof color !== "string" || !color.trim()) continue;
+    const hex =
+      /^#([0-9A-Fa-f]{3}){1,2}$/.test(color) ? color : (HIGHLIGHT_COLORS[color] ?? "#facc15");
+    out.push({ start: Math.round(start), end: Math.round(end), color: hex });
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+/**
+ * Build overrides from template.defaults.meta (from "Save as template").
+ * Export uses this so downloaded files match the preview when the template has saved layout/chrome.
+ */
+export function getTemplateDefaultOverrides(config: TemplateConfig | null): Partial<NormalizedSlideMeta> {
+  if (!config?.defaults?.meta || typeof config.defaults.meta !== "object") return {};
+  return normalizeSlideMetaForRender(config.defaults.meta as Record<string, unknown>);
+}
+
+/**
+ * Merge template default overrides with normalized slide meta. Slide meta wins when both set.
+ * Use in export so: template defaults (e.g. from Save as template) apply, then slide overrides on top.
+ */
+export function mergeWithTemplateDefaults(
+  normalized: NormalizedSlideMeta,
+  templateDefaults: Partial<NormalizedSlideMeta>
+): NormalizedSlideMeta {
+  return {
+    zoneOverrides: normalized.zoneOverrides ?? templateDefaults.zoneOverrides,
+    fontOverrides: normalized.fontOverrides ?? templateDefaults.fontOverrides,
+    chromeOverrides: normalized.chromeOverrides ?? templateDefaults.chromeOverrides,
+    highlightStyles: normalized.highlightStyles,
+    showCounterOverride: normalized.showCounterOverride || (templateDefaults.showCounterOverride ?? false),
+    showWatermarkOverride: normalized.showWatermarkOverride ?? templateDefaults.showWatermarkOverride,
+    showMadeWithOverride: normalized.showMadeWithOverride ?? templateDefaults.showMadeWithOverride,
+    headline_highlights: normalized.headline_highlights ?? templateDefaults.headline_highlights,
+    body_highlights: normalized.body_highlights ?? templateDefaults.body_highlights,
+  };
+}
+
 /**
  * Build zone overrides and font overrides from slide meta with normalized numerics.
  * Use in export so every slide (including second, third, etc.) gets the same treatment as the first.
  */
-export function normalizeSlideMetaForRender(meta: Record<string, unknown> | null | undefined): {
-  zoneOverrides: TextZoneOverrides | undefined;
-  fontOverrides: { headline_font_size?: number; body_font_size?: number } | undefined;
-  chromeOverrides: ChromeOverrides | undefined;
-  highlightStyles: { headline?: "background"; body?: "background" };
-  showCounterOverride: boolean;
-  showWatermarkOverride: boolean | undefined;
-  showMadeWithOverride: boolean | undefined;
-  headline_highlights?: { start: number; end: number; color: string }[];
-  body_highlights?: { start: number; end: number; color: string }[];
-} {
+export function normalizeSlideMetaForRender(meta: Record<string, unknown> | null | undefined): NormalizedSlideMeta {
   const m = meta ?? {};
   const headlineZone = normalizeZoneOverride(m.headline_zone_override as Record<string, unknown> | undefined);
   const bodyZone = normalizeZoneOverride(m.body_zone_override as Record<string, unknown> | undefined);
@@ -108,15 +162,25 @@ export function normalizeSlideMetaForRender(meta: Record<string, unknown> | null
       : undefined;
 
   const highlightStyles = {
-    headline: m.headline_highlight_style === "background" ? ("background" as const) : undefined,
-    body: m.body_highlight_style === "background" ? ("background" as const) : undefined,
+    headline:
+      m.headline_highlight_style === "background"
+        ? ("background" as const)
+        : m.headline_highlight_style === "outline"
+          ? ("outline" as const)
+          : undefined,
+    body:
+      m.body_highlight_style === "background"
+        ? ("background" as const)
+        : m.body_highlight_style === "outline"
+          ? ("outline" as const)
+          : undefined,
   };
 
   const showCounterOverride = m.show_counter === true;
   const showWatermarkOverride = m.show_watermark as boolean | undefined;
   const showMadeWithOverride = m.show_made_with as boolean | undefined;
-  const headline_highlights = Array.isArray(m.headline_highlights) ? m.headline_highlights : undefined;
-  const body_highlights = Array.isArray(m.body_highlights) ? m.body_highlights : undefined;
+  const headline_highlights = normalizeHighlightSpans(m.headline_highlights);
+  const body_highlights = normalizeHighlightSpans(m.body_highlights);
 
   return {
     zoneOverrides: zoneOverrides as TextZoneOverrides | undefined,

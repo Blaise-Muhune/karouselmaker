@@ -133,8 +133,8 @@ const templateDefaultsSchema = z
         watermark_zone_override: z.record(z.string(), z.unknown()).optional(),
         /** "Made with" line: fontSize, bottom (px). Saved with template. */
         made_with_zone_override: z.record(z.string(), z.unknown()).optional(),
-        headline_highlight_style: z.enum(["text", "background"]).optional(),
-        body_highlight_style: z.enum(["text", "background"]).optional(),
+        headline_highlight_style: z.enum(["text", "background", "outline"]).optional(),
+        body_highlight_style: z.enum(["text", "background", "outline"]).optional(),
         headline_highlights: z.array(z.object({ start: z.number(), end: z.number(), color: z.string() })).optional(),
         body_highlights: z.array(z.object({ start: z.number(), end: z.number(), color: z.string() })).optional(),
       })

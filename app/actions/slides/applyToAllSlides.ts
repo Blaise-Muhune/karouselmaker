@@ -291,12 +291,13 @@ export async function clearTextFromSlides(
 
 const DEFAULT_AUTO_HIGHLIGHT_COLOR = HIGHLIGHT_COLORS.yellow ?? "#facc15";
 
-/** Run auto-highlight on headline and body for each slide and save. Only applies Auto logic (key words). */
+/** Run auto-highlight on each slide and save. When field is "headline" or "body", only that field is updated; "both" (default) updates both. */
 export async function applyAutoHighlightsToAllSlides(
   carouselId: string,
   revalidatePathname?: string | string[],
   scope?: ApplyScope,
-  defaultColor?: string
+  defaultColor?: string,
+  field?: "headline" | "body" | "both"
 ): Promise<ApplyToAllResult> {
   const { user } = await getUser();
   if (!user) return { ok: false, error: "Unauthorized" };
@@ -314,34 +315,43 @@ export async function applyAutoHighlightsToAllSlides(
     ? (defaultColor.startsWith("#") ? defaultColor : (HIGHLIGHT_COLORS[defaultColor] ?? DEFAULT_AUTO_HIGHLIGHT_COLOR))
     : DEFAULT_AUTO_HIGHLIGHT_COLOR;
 
+  const doHeadline = field === "headline" || field === "both" || field === undefined;
+  const doBody = field === "body" || field === "both" || field === undefined;
+
   for (const slide of slides) {
     const headline = (slide.headline ?? "") as string;
     const body = (slide.body ?? "") as string;
     const meta = (slide.meta as Record<string, unknown>) ?? {};
     const headlineWords = meta.headline_highlight_words as string[] | undefined;
     const bodyWords = meta.body_highlight_words as string[] | undefined;
-    const headlineSpans = headline.trim()
+
+    const headlineSpans = doHeadline && headline.trim()
       ? normalizeHighlightSpansToWords(
           headline,
           headlineWords?.length
             ? getHighlightSpansFromWords(headline, headlineWords, color)
             : getAutoHighlightSpans(headline, { style: "headline", defaultColor: color })
         )
-      : [];
-    const bodySpans = body.trim()
+      : null;
+    const bodySpans = doBody && body.trim()
       ? normalizeHighlightSpansToWords(
           body,
           bodyWords?.length
             ? getHighlightSpansFromWords(body, bodyWords, color)
             : getAutoHighlightSpans(body, { style: "body", defaultColor: color })
         )
-      : [];
+      : null;
+
     const existingMeta = (slide.meta as Record<string, unknown>) ?? {};
     const newMeta: Record<string, unknown> = { ...existingMeta };
-    if (headlineSpans.length > 0) newMeta.headline_highlights = headlineSpans;
-    else delete newMeta.headline_highlights;
-    if (bodySpans.length > 0) newMeta.body_highlights = bodySpans;
-    else delete newMeta.body_highlights;
+    if (doHeadline) {
+      if (headlineSpans && headlineSpans.length > 0) newMeta.headline_highlights = headlineSpans;
+      else delete newMeta.headline_highlights;
+    }
+    if (doBody) {
+      if (bodySpans && bodySpans.length > 0) newMeta.body_highlights = bodySpans;
+      else delete newMeta.body_highlights;
+    }
     await updateSlide(user.id, slide.id, { meta: newMeta as Json });
   }
 

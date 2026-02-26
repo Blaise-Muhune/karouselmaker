@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect, useLayoutEffect } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { SlidePreview, type SlideBackgroundOverride } from "@/components/renderer/SlidePreview";
+import { HighlightModal } from "@/components/editor/HighlightModal";
 import { AssetPickerModal } from "@/components/assets/AssetPickerModal";
 import { GoogleDriveFilePicker } from "@/components/drive/GoogleDriveFilePicker";
 import { importSingleFileFromGoogleDrive } from "@/app/actions/assets/importFromGoogleDrive";
@@ -74,7 +76,7 @@ import {
 import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { ColorPicker } from "@/components/ui/color-picker";
 import { OVERLAY_PRESETS, PRESET_CUSTOM_ID, type OverlayPreset } from "@/lib/editor/overlayPresets";
-import { HIGHLIGHT_COLORS, expandSelectionToWordBoundaries, normalizeHighlightSpansToWords, getAutoHighlightSpans, getHighlightSpansFromWords, type HighlightSpan } from "@/lib/editor/inlineFormat";
+import { HIGHLIGHT_COLORS, expandSelectionToWordBoundaries, normalizeHighlightSpansToWords, clampHighlightSpansToText, getAutoHighlightSpans, getHighlightSpansFromWords, type HighlightSpan } from "@/lib/editor/inlineFormat";
 
 /** +/- stepper with long-press: hold to repeat, interval speeds up over time. */
 function StepperWithLongPress({
@@ -281,7 +283,7 @@ function getPreviewDimensions(size: "1080x1080" | "1080x1350" | "1080x1920", max
 const SECTION_INFO: Record<string, { title: string; body: string }> = {
   content: {
     title: "Content",
-    body: "Type your headline and optional body here. For bold, wrap a word in **like this**. For colored highlights, select the text you want to color, then click a preset (e.g. Yellow) or use the color picker—like in Word. The Highlight row applies to whichever field (headline or body) you’re editing. Font size (+ / −) sets size per zone. Highlight style toggles between colored text only or a highlighter (colored background + dark text).",
+    body: "Type your headline and optional body here. For bold, wrap a word in **like this**. Highlights: select a word (or drag to select), then click a color—Yellow, Amber, or the color picker. Or click Auto to highlight key words automatically. Use “Apply to all highlights” to change the color of every highlight in that field; use “Apply to all slides” to run Auto on every slide. Highlight style: colored text only, or highlighter (colored background + dark text).",
   },
   layout: {
     title: "Slide layout",
@@ -599,13 +601,15 @@ export function SlideEditForm({
     const m = slide.meta as { body_font_size?: number } | null;
     return m?.body_font_size;
   });
-  const [headlineHighlightStyle, setHeadlineHighlightStyle] = useState<"text" | "background">(() => {
-    const m = slide.meta as { headline_highlight_style?: "text" | "background" } | null;
-    return m?.headline_highlight_style === "background" ? "background" : "text";
+  const [headlineHighlightStyle, setHeadlineHighlightStyle] = useState<"text" | "background" | "outline">(() => {
+    const m = slide.meta as { headline_highlight_style?: "text" | "background" | "outline" } | null;
+    const v = m?.headline_highlight_style;
+        return v === "background" || v === "outline" ? v : "text";
   });
-  const [bodyHighlightStyle, setBodyHighlightStyle] = useState<"text" | "background">(() => {
-    const m = slide.meta as { body_highlight_style?: "text" | "background" } | null;
-    return m?.body_highlight_style === "background" ? "background" : "text";
+  const [bodyHighlightStyle, setBodyHighlightStyle] = useState<"text" | "background" | "outline">(() => {
+    const m = slide.meta as { body_highlight_style?: "text" | "background" | "outline" } | null;
+    const v = m?.body_highlight_style;
+        return v === "background" || v === "outline" ? v : "text";
   });
   type ZoneOverride = { x?: number; y?: number; w?: number; h?: number; fontSize?: number; fontWeight?: number; lineHeight?: number; maxLines?: number; align?: "left" | "center"; color?: string };
   const [headlineZoneOverride, setHeadlineZoneOverride] = useState<ZoneOverride | undefined>(() => {
@@ -656,13 +660,15 @@ export function SlideEditForm({
       : (HIGHLIGHT_COLORS.yellow ?? "#facc15");
   const [headlineHighlightColor, setHeadlineHighlightColor] = useState<string>(defaultHighlightColor);
   const [bodyHighlightColor, setBodyHighlightColor] = useState<string>(defaultHighlightColor);
-  const [headlineEditMoreOpen, setHeadlineEditMoreOpen] = useState(false);
-  const [bodyEditMoreOpen, setBodyEditMoreOpen] = useState(false);
+  const [headlineLayoutModalOpen, setHeadlineLayoutModalOpen] = useState(false);
+  const [bodyLayoutModalOpen, setBodyLayoutModalOpen] = useState(false);
   const [chromeLayoutOpen, setChromeLayoutOpen] = useState(false);
   const [headlineHighlightOpen, setHeadlineHighlightOpen] = useState(false);
   const [bodyHighlightOpen, setBodyHighlightOpen] = useState(false);
   const headlineRef = useRef<HTMLTextAreaElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const headlineModalRef = useRef<HTMLTextAreaElement>(null);
+  const bodyModalRef = useRef<HTMLTextAreaElement>(null);
   /** When user opens color picker we lose focus; save selection so we can apply on pick */
   const savedHighlightSelectionRef = useRef<{ field: "headline" | "body"; start: number; end: number } | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -678,12 +684,13 @@ export function SlideEditForm({
   const [applyingImageDisplay, setApplyingImageDisplay] = useState(false);
   const [applyingImageCount, setApplyingImageCount] = useState(false);
   const [applyingBackground, setApplyingBackground] = useState(false);
-  const [applyingFontSize, setApplyingFontSize] = useState(false);
   const [applyingClear, setApplyingClear] = useState(false);
   const [applyingHeadlineZone, setApplyingHeadlineZone] = useState(false);
   const [applyingBodyZone, setApplyingBodyZone] = useState(false);
   const [applyingMadeWith, setApplyingMadeWith] = useState(false);
   const [applyingAutoHighlights, setApplyingAutoHighlights] = useState(false);
+  const [lastHeadlineHighlightAction, setLastHeadlineHighlightAction] = useState<"auto" | "manual">("manual");
+  const [lastBodyHighlightAction, setLastBodyHighlightAction] = useState<"auto" | "manual">("manual");
   const [headlineVariants, setHeadlineVariants] = useState<string[]>(() => (slide.meta as { headline_variants?: string[] } | null)?.headline_variants ?? []);
   const [shortenVariants, setShortenVariants] = useState<{ headline: string; body: string }[]>(() => (slide.meta as { shorten_variants?: { headline: string; body: string }[] } | null)?.shorten_variants ?? []);
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
@@ -715,6 +722,15 @@ export function SlideEditForm({
   const [isMobile, setIsMobile] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [pendingDownload, setPendingDownload] = useState<{ url: string; filename: string } | null>(null);
+  const pendingDownloadLinkRef = useRef<HTMLAnchorElement>(null);
+  const pendingBlobUrlRef = useRef<string | null>(null);
+  const clearPendingDownload = useCallback(() => {
+    if (pendingBlobUrlRef.current) {
+      URL.revokeObjectURL(pendingBlobUrlRef.current);
+      pendingBlobUrlRef.current = null;
+    }
+    setPendingDownload(null);
+  }, []);
   const [savedFeedback, setSavedFeedback] = useState(false);
   const lastSavedRef = useRef<string>(
     JSON.stringify({
@@ -730,7 +746,10 @@ export function SlideEditForm({
   const [previewWrapWidth, setPreviewWrapWidth] = useState<number | null>(null);
   const headerRef = useRef<HTMLElement>(null);
   const mainScrollRef = useRef<HTMLDivElement>(null);
+  const editorSectionRef = useRef<HTMLElement>(null);
   const lastScrollTopRef = useRef(0);
+  const [layoutModalRect, setLayoutModalRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
+  const [highlightModalRect, setHighlightModalRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
   const [headerVisible, setHeaderVisible] = useState(true);
   const [headerHeight, setHeaderHeight] = useState(56);
 
@@ -779,6 +798,56 @@ export function SlideEditForm({
     else if (st < last || st <= 30) setHeaderVisible(true);
   }, [isMobile]);
 
+  const layoutModalOpen = headlineLayoutModalOpen || bodyLayoutModalOpen;
+  useLayoutEffect(() => {
+    if (!layoutModalOpen) {
+      setLayoutModalRect(null);
+      return;
+    }
+    const measure = () => {
+      const main = mainScrollRef.current;
+      const section = editorSectionRef.current;
+      if (main && section) {
+        const mr = main.getBoundingClientRect();
+        const sr = section.getBoundingClientRect();
+        setLayoutModalRect({
+          top: mr.bottom,
+          left: sr.left,
+          width: sr.width,
+          height: Math.max(0, window.innerHeight - mr.bottom),
+        });
+      }
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [layoutModalOpen]);
+
+  const highlightModalOpen = headlineHighlightOpen || bodyHighlightOpen;
+  useLayoutEffect(() => {
+    if (!highlightModalOpen) {
+      setHighlightModalRect(null);
+      return;
+    }
+    const measure = () => {
+      const main = mainScrollRef.current;
+      const section = editorSectionRef.current;
+      if (main && section) {
+        const mr = main.getBoundingClientRect();
+        const sr = section.getBoundingClientRect();
+        setHighlightModalRect({
+          top: mr.bottom,
+          left: sr.left,
+          width: sr.width,
+          height: Math.max(0, window.innerHeight - mr.bottom),
+        });
+      }
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [highlightModalOpen]);
+
   useEffect(() => {
     const main = mainScrollRef.current;
     if (!isMobile || !main) return;
@@ -794,6 +863,42 @@ export function SlideEditForm({
     setPreviewWrapWidth(el.clientWidth);
     return () => ro.disconnect();
   }, [exportSize]);
+
+  // One-click download: when we show the "Tap to download" link (e.g. on narrow viewport), trigger it so the file downloads without a second click. Falls back to manual tap on iOS if programmatic click is blocked.
+  useEffect(() => {
+    if (!pendingDownload) return;
+    const clickTimer = setTimeout(() => pendingDownloadLinkRef.current?.click(), 50);
+    const clearTimer = setTimeout(clearPendingDownload, 800);
+    return () => {
+      clearTimeout(clickTimer);
+      clearTimeout(clearTimer);
+    };
+  }, [pendingDownload, clearPendingDownload]);
+
+  // Keep highlight spans in sync when user edits headline or body so indices don't point at wrong text.
+  useEffect(() => {
+    if (headlineHighlights.length === 0) return;
+    const clamped = clampHighlightSpansToText(headline, headlineHighlights);
+    if (clamped.length !== headlineHighlights.length || clamped.some((c, i) => c.start !== headlineHighlights[i]?.start || c.end !== headlineHighlights[i]?.end)) {
+      setHeadlineHighlights(clamped);
+    }
+  }, [headline, headlineHighlights]);
+  useEffect(() => {
+    if (bodyHighlights.length === 0) return;
+    const clamped = clampHighlightSpansToText(body, bodyHighlights);
+    if (clamped.length !== bodyHighlights.length || clamped.some((c, i) => c.start !== bodyHighlights[i]?.start || c.end !== bodyHighlights[i]?.end)) {
+      setBodyHighlights(clamped);
+    }
+  }, [body, bodyHighlights]);
+
+  useEffect(() => {
+    return () => {
+      if (pendingBlobUrlRef.current) {
+        URL.revokeObjectURL(pendingBlobUrlRef.current);
+        pendingBlobUrlRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (process.env.NODE_ENV !== "development") return;
@@ -823,9 +928,13 @@ export function SlideEditForm({
     bodyZoneFromTemplate && templateDefaultsOverrides.zoneOverrides?.body
       ? ({ ...bodyZoneFromTemplate, ...templateDefaultsOverrides.zoneOverrides.body } as TextZone)
       : bodyZoneFromTemplate;
+  /** When user edits one zone, keep the other zone using template defaults so the layout doesn’t revert to the base template (e.g. CTA when using a saved template like AAA). */
   const previewZoneOverrides =
     headlineZoneOverride || bodyZoneOverride
-      ? { headline: headlineZoneOverride, body: bodyZoneOverride }
+      ? {
+          headline: headlineZoneOverride ?? templateDefaultsOverrides.zoneOverrides?.headline,
+          body: bodyZoneOverride ?? templateDefaultsOverrides.zoneOverrides?.body,
+        }
       : templateDefaultsOverrides.zoneOverrides;
   const previewFontOverrides =
     headlineFontSize != null || bodyFontSize != null
@@ -892,12 +1001,19 @@ export function SlideEditForm({
   const multiImageDefaults: ImageDisplayState = { position: "top", fit: "cover", frame: "none", frameRadius: 0, frameColor: "#ffffff", frameShape: "squircle", layout: "auto", gap: 0, dividerStyle: "wave", dividerColor: "#ffffff", dividerWidth: 48 };
   const effectiveImageDisplay = validImageCount >= 2 ? { ...multiImageDefaults, ...imageDisplay } : imageDisplay;
 
-  /** Word-style: apply color to selection by storing a span (no brackets in text). Color is preset name or hex. */
+  /** Word-style: apply color to selection by storing a span (no brackets in text). Color is preset name or hex. Uses modal textarea ref when modal is open. */
   const applyHighlightToSelection = useCallback(
     (color: string, target: "headline" | "body", useSavedSelection?: boolean) => {
       const hex = color.startsWith("#") ? color : (HIGHLIGHT_COLORS[color] ?? "#facc15");
 
-      const ref = target === "headline" ? headlineRef : bodyRef;
+      const ref =
+        target === "headline"
+          ? headlineHighlightOpen && headlineModalRef.current
+            ? headlineModalRef
+            : headlineRef
+          : bodyHighlightOpen && bodyModalRef.current
+            ? bodyModalRef
+            : bodyRef;
 
       let start: number;
       let end: number;
@@ -927,12 +1043,14 @@ export function SlideEditForm({
         next.sort((a, b) => a.start - b.start);
         return next;
       });
+      if (target === "headline") setLastHeadlineHighlightAction("manual");
+      else setLastBodyHighlightAction("manual");
       setTimeout(() => {
         ref.current?.focus();
         ref.current?.setSelectionRange(end, end);
       }, 0);
     },
-    [headline, body]
+    [headline, body, headlineHighlightOpen, bodyHighlightOpen]
   );
 
   /** Auto-highlight: use AI-suggested words from generation when available (per slide/variant), else heuristic. */
@@ -968,8 +1086,13 @@ export function SlideEditForm({
           ? getHighlightSpansFromWords(text, wordsToUse, color)
           : getAutoHighlightSpans(text, { style: target, defaultColor: color });
       const normalized = normalizeHighlightSpansToWords(text, spans);
-      if (target === "headline") setHeadlineHighlights(normalized);
-      else setBodyHighlights(normalized);
+      if (target === "headline") {
+        setHeadlineHighlights(normalized);
+        setLastHeadlineHighlightAction("auto");
+      } else {
+        setBodyHighlights(normalized);
+        setLastBodyHighlightAction("auto");
+      }
     },
     [headline, body, headlineHighlightColor, bodyHighlightColor, slide.meta, slide.headline, slide.body]
   );
@@ -980,23 +1103,72 @@ export function SlideEditForm({
     const hex = color.startsWith("#") ? color : (HIGHLIGHT_COLORS[color] ?? "#facc15");
     if (target === "headline") {
       if (headlineHighlights.length === 0) return;
+      setLastHeadlineHighlightAction("manual");
       setHeadlineHighlights(headlineHighlights.map((s) => ({ ...s, color: hex })));
     } else {
       if (bodyHighlights.length === 0) return;
+      setLastBodyHighlightAction("manual");
       setBodyHighlights(bodyHighlights.map((s) => ({ ...s, color: hex })));
     }
   }, [headlineHighlightColor, bodyHighlightColor, headlineHighlights, bodyHighlights]);
 
-  /** Save selection when user mousedowns on color picker (before blur). */
+  /** Remove highlight from the current selection: drop any span that overlaps the selection. */
+  const removeHighlightFromSelection = useCallback(
+    (target: "headline" | "body", useSavedSelection?: boolean) => {
+      const ref = target === "headline" ? headlineRef : bodyRef;
+      let start: number;
+      let end: number;
+      if (useSavedSelection && savedHighlightSelectionRef.current?.field === target) {
+        const saved = savedHighlightSelectionRef.current;
+        start = saved.start;
+        end = saved.end;
+        savedHighlightSelectionRef.current = null;
+      } else {
+        const el = ref.current;
+        if (!el || document.activeElement !== el) return;
+        start = el.selectionStart;
+        end = el.selectionEnd;
+      }
+      if (start >= end) return;
+
+      const spans = target === "headline" ? headlineHighlights : bodyHighlights;
+      const setSpans = target === "headline" ? setHeadlineHighlights : setBodyHighlights;
+      const next = spans.filter((s) => s.end <= start || s.start >= end);
+      if (next.length === spans.length) return;
+      setSpans(next);
+      if (target === "headline") setLastHeadlineHighlightAction("manual");
+      else setLastBodyHighlightAction("manual");
+      setTimeout(() => {
+        ref.current?.focus();
+        ref.current?.setSelectionRange(start, end);
+      }, 0);
+    },
+    [headlineHighlights, bodyHighlights]
+  );
+
+  /** Clear all highlights in this field. */
+  const clearAllHighlights = useCallback((target: "headline" | "body") => {
+    if (target === "headline") setHeadlineHighlights([]);
+    else setBodyHighlights([]);
+  }, []);
+
+  /** Save selection when user mousedowns on color picker (before blur). Uses modal textarea ref when modal is open. */
   const saveHighlightSelectionForPicker = useCallback((target: "headline" | "body") => {
-    const ref = target === "headline" ? headlineRef : bodyRef;
+    const ref =
+      target === "headline"
+        ? headlineHighlightOpen && headlineModalRef.current
+          ? headlineModalRef
+          : headlineRef
+        : bodyHighlightOpen && bodyModalRef.current
+          ? bodyModalRef
+          : bodyRef;
     const el = ref.current;
     if (el && typeof el.selectionStart === "number" && typeof el.selectionEnd === "number") {
       const start = el.selectionStart;
       const end = el.selectionEnd;
       if (start !== end) savedHighlightSelectionRef.current = { field: target, start, end };
     }
-  }, []);
+  }, [headlineHighlightOpen, bodyHighlightOpen]);
 
   const buildImageDisplayPayload = (): Record<string, unknown> | undefined => {
     const source = validImageCount >= 2 ? effectiveImageDisplay : imageDisplay;
@@ -1130,25 +1302,31 @@ export function SlideEditForm({
 
   const handleDownloadSlide = async () => {
     setDownloading(true);
-    setPendingDownload(null);
+    clearPendingDownload();
     try {
       const saveResult = await performSave(false);
       if (!saveResult.ok) return;
       const filename = `slide-${slide.slide_index}.${exportFormat === "jpeg" ? "jpg" : "png"}`;
       const url = `/api/export/slide/${slide.id}?format=${exportFormat}&size=${exportSize}`;
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      setDownloading(false);
       if (isMobile) {
-        // On mobile, programmatic click after async often fails (iOS Safari ignores blob URLs and blocks non-user-gesture downloads).
-        // Show a "Tap to download" link so the user's tap is a real gesture.
-        setPendingDownload({ url, filename });
+        if (pendingBlobUrlRef.current) URL.revokeObjectURL(pendingBlobUrlRef.current);
+        pendingBlobUrlRef.current = blobUrl;
+        setPendingDownload({ url: blobUrl, filename });
       } else {
         const a = document.createElement("a");
-        a.href = url;
+        a.href = blobUrl;
         a.download = filename;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
+        URL.revokeObjectURL(blobUrl);
       }
-    } finally {
+    } catch {
       setDownloading(false);
     }
   };
@@ -1377,29 +1555,35 @@ export function SlideEditForm({
     if (result.ok) router.refresh();
   };
 
-  const handleApplyAutoHighlightsToAll = async () => {
+  const handleApplyAutoHighlightsToAll = async (field: "headline" | "body") => {
     setApplyingAutoHighlights(true);
-    const color = headlineHighlightColor.startsWith("#") ? headlineHighlightColor : (HIGHLIGHT_COLORS[headlineHighlightColor] ?? "#facc15");
-    const result = await applyAutoHighlightsToAllSlides(slide.carousel_id, editorPath, applyScope, color);
+    const colorForField = field === "headline" ? headlineHighlightColor : bodyHighlightColor;
+    const color = colorForField.startsWith("#") ? colorForField : (HIGHLIGHT_COLORS[colorForField] ?? "#facc15");
+    const result = await applyAutoHighlightsToAllSlides(slide.carousel_id, editorPath, applyScope, color, field);
     setApplyingAutoHighlights(false);
     if (result.ok) router.refresh();
   };
 
-  const handleApplyHeadlineFontSizeToAll = async () => {
-    setApplyingFontSize(true);
-    const meta = { headline_font_size: headlineFontSize ?? defaultHeadlineSize };
-    const result = await applyFontSizeToAllSlides(slide.carousel_id, meta, editorPath, applyScope);
-    setApplyingFontSize(false);
-    if (result.ok) router.refresh();
-  };
-
-  const handleApplyBodyFontSizeToAll = async () => {
-    setApplyingFontSize(true);
-    const meta = { body_font_size: bodyFontSize ?? defaultBodySize };
-    const result = await applyFontSizeToAllSlides(slide.carousel_id, meta, editorPath, applyScope);
-    setApplyingFontSize(false);
-    if (result.ok) router.refresh();
-  };
+  /** Apply to all highlights: if last action was Auto and multiple slides, run Auto on all slides; else apply current color to all highlights in this field. */
+  const handleApplyToAllHighlights = useCallback(
+    (field: "headline" | "body") => {
+      const lastAction = field === "headline" ? lastHeadlineHighlightAction : lastBodyHighlightAction;
+      const count = field === "headline" ? headlineHighlights.length : bodyHighlights.length;
+      if (lastAction === "auto" && totalSlides > 1) {
+        handleApplyAutoHighlightsToAll(field);
+      } else if (count > 0) {
+        applyColorToAllHighlights(field);
+      }
+    },
+    [
+      lastHeadlineHighlightAction,
+      lastBodyHighlightAction,
+      totalSlides,
+      headlineHighlights.length,
+      bodyHighlights.length,
+      applyColorToAllHighlights,
+    ]
+  );
 
   const handleApplyClearHeadlineToAll = async () => {
     setApplyingClear(true);
@@ -1415,20 +1599,30 @@ export function SlideEditForm({
     if (result.ok) router.refresh();
   };
 
-  const handleApplyHeadlineZoneToAll = async () => {
-    if (!headlineZoneOverride || Object.keys(headlineZoneOverride).length === 0) return;
+  /** Apply headline font size and position & layout to all slides. Used by the single "Apply to all" at top of Headline. */
+  const handleApplyHeadlineToAll = async () => {
     setApplyingHeadlineZone(true);
-    const result = await applyToAllSlides(slide.carousel_id, { meta: { headline_zone_override: headlineZoneOverride } }, editorPath, applyScope);
+    const sizeResult = await applyFontSizeToAllSlides(slide.carousel_id, { headline_font_size: headlineFontSize ?? defaultHeadlineSize }, editorPath, applyScope);
+    if (sizeResult.ok && headlineZoneOverride && Object.keys(headlineZoneOverride).length > 0) {
+      const zoneResult = await applyToAllSlides(slide.carousel_id, { meta: { headline_zone_override: headlineZoneOverride } }, editorPath, applyScope);
+      if (zoneResult.ok) router.refresh();
+    } else if (sizeResult.ok) {
+      router.refresh();
+    }
     setApplyingHeadlineZone(false);
-    if (result.ok) router.refresh();
   };
 
-  const handleApplyBodyZoneToAll = async () => {
-    if (!bodyZoneOverride || Object.keys(bodyZoneOverride).length === 0) return;
+  /** Apply body font size and position & layout to all slides. Used by the single "Apply to all" at top of Body. */
+  const handleApplyBodyToAll = async () => {
     setApplyingBodyZone(true);
-    const result = await applyToAllSlides(slide.carousel_id, { meta: { body_zone_override: bodyZoneOverride } }, editorPath, applyScope);
+    const sizeResult = await applyFontSizeToAllSlides(slide.carousel_id, { body_font_size: bodyFontSize ?? defaultBodySize }, editorPath, applyScope);
+    if (sizeResult.ok && bodyZoneOverride && Object.keys(bodyZoneOverride).length > 0) {
+      const zoneResult = await applyToAllSlides(slide.carousel_id, { meta: { body_zone_override: bodyZoneOverride } }, editorPath, applyScope);
+      if (zoneResult.ok) router.refresh();
+    } else if (sizeResult.ok) {
+      router.refresh();
+    }
     setApplyingBodyZone(false);
-    if (result.ok) router.refresh();
   };
 
   const handleSaveTemplate = async () => {
@@ -1851,10 +2045,11 @@ export function SlideEditForm({
         <div className="flex items-center gap-1 shrink-0">
           {pendingDownload ? (
             <a
+              ref={pendingDownloadLinkRef}
               href={pendingDownload.url}
               download={pendingDownload.filename}
               className="flex items-center justify-center h-8 w-8 rounded-md border border-input bg-background text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
-              onClick={() => setPendingDownload(null)}
+              onClick={clearPendingDownload}
               title="Tap to download"
               aria-label="Download ready"
             >
@@ -2249,7 +2444,7 @@ export function SlideEditForm({
         <div className="w-full max-w-[560px]">{previewContent}</div>
       </main>
 
-      <section className="shrink-0 border-t border-border md:flex md:flex-col md:items-center md:px-4">
+      <section ref={editorSectionRef} className="shrink-0 border-t border-border md:flex md:flex-col md:items-center md:px-4">
         <div className="w-full md:max-w-xl md:rounded-t-xl md:border md:border-b-0 md:border-border md:bg-card md:shadow-sm">
           <div className="flex border-b border-border bg-muted/20 md:bg-muted/20" role="tablist" aria-label="Editor sections">
             {(["layout", "text", "background", "more"] as const).map((tab) => {
@@ -2528,182 +2723,88 @@ export function SlideEditForm({
           )}
           {editorTab === "text" && (
           <section className="space-y-5" aria-label="Text">
+            <div className="relative min-h-0 space-y-5">
             {/* Headline */}
-            <div className="rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-xs font-semibold text-foreground">Headline</h3>
-                {isPro && (
-                  <>
-                    <StepperWithLongPress
-                      value={headlineFontSize ?? defaultHeadlineSize}
-                      min={24}
-                      max={160}
-                      step={4}
-                      onChange={(v) => setHeadlineFontSize(v)}
-                      label="headline size"
-                      className="shrink-0 max-w-[120px]"
-                    />
-                      <div className="flex items-center gap-1.5 shrink-0 rounded-md border border-input/80 bg-background px-1.5 py-0.5">
-                        <Label className="text-[11px] text-muted-foreground whitespace-nowrap">Color</Label>
-                        <ColorPicker
-                          value={headlineZoneOverride?.color ?? ""}
-                          onChange={(v) => setHeadlineZoneOverride((o) => ({ ...o, color: v.trim() || undefined }))}
-                          placeholder="Auto"
-                          compact
-                        />
-                      </div>
-                    </>
+            <div className="rounded-lg border border-border/50 bg-muted/5 p-3 space-y-2.5">
+              <div className="flex items-center justify-between gap-2 w-full">
+                <h3 className="text-xs font-semibold text-foreground shrink-0">Headline</h3>
+                <div className="flex items-center gap-1 shrink-0">
+                  {totalSlides > 1 && isPro && (
+                    <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={handleApplyHeadlineToAll} disabled={applyingHeadlineZone} title="Apply headline size and position & layout to all slides">
+                      {applyingHeadlineZone ? <Loader2Icon className="size-3 animate-spin" /> : <CopyIcon className="size-3" />}
+                      Apply to all
+                    </Button>
                   )}
-                  <button type="button" onClick={() => setInfoSection("content")} className="rounded p-0.5 text-muted-foreground hover:bg-muted ml-auto" aria-label="Content help" title="Help">
+                  <button type="button" onClick={() => setInfoSection("content")} className="rounded p-0.5 text-muted-foreground hover:bg-muted" aria-label="Content help" title="Help">
                     <InfoIcon className="size-3.5" />
                   </button>
                 </div>
+              </div>
+              {isPro && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <StepperWithLongPress
+                    value={headlineFontSize ?? defaultHeadlineSize}
+                    min={24}
+                    max={160}
+                    step={4}
+                    onChange={(v) => setHeadlineFontSize(v)}
+                    label="headline size"
+                    className="shrink-0 max-w-[120px]"
+                  />
+                  <div className="flex items-center gap-1.5 shrink-0 rounded-md border border-input/80 bg-background px-1.5 py-0.5">
+                    <Label className="text-[11px] text-muted-foreground whitespace-nowrap">Text</Label>
+                    <ColorPicker
+                      value={headlineZoneOverride?.color ?? ""}
+                      onChange={(v) => setHeadlineZoneOverride((o) => ({ ...o, color: v.trim() || undefined }))}
+                      placeholder="Auto"
+                      compact
+                      swatchOnly
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs text-muted-foreground"
+                    onClick={() => { setHeadlineLayoutModalOpen(false); setHeadlineHighlightOpen(true); }}
+                  >
+                    Highlight
+                  </Button>
+                  <Button type="button" variant="secondary" size="sm" className="h-7 text-xs" onClick={() => { setHeadlineHighlightOpen(false); setHeadlineLayoutModalOpen((o) => !o); }} title="Headline position & layout">
+                    <LayoutTemplateIcon className="size-3" /> Layout
+                  </Button>
+                </div>
+              )}
               <Textarea
                 ref={headlineRef}
                 id="headline"
                 value={headline}
                 onChange={(e) => setHeadline(e.target.value)}
+                onBlur={() => { if (headlineHighlightOpen) saveHighlightSelectionForPicker("headline"); }}
                 placeholder="Enter your headline..."
                 className="min-h-[72px] w-full md:max-w-[360px] resize-none rounded-md border-input/80 text-sm field-sizing-content px-3 py-2"
                 rows={2}
               />
-              {isHook && isPro && (
-                <div className="flex items-center gap-2">
-                  <Button type="button" variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={handleCycleHook} disabled={cyclingHook || ensuringVariants || headlineVariants.length === 0} title="Cycle to next hook variant">
-                    {cyclingHook ? <Loader2Icon className="size-3.5 animate-spin" /> : <SparklesIcon className="size-3.5" />}
-                    Rewrite hook
-                  </Button>
-                  {headlineVariants.length > 0 && <span className="text-[11px] text-muted-foreground">({headlineVariants.length} variants)</span>}
-                </div>
-              )}
-              <div className="flex flex-wrap items-center gap-2">
-                {isPro && (
-                  <>
-                    <Button type="button" variant="secondary" size="sm" className="h-7 text-xs" onClick={() => { setHeadlineHighlightOpen(false); setHeadlineEditMoreOpen((o) => !o); }}>
-                      {headlineEditMoreOpen ? <ChevronUpIcon className="size-3" /> : <ChevronDownIcon className="size-3" />} Layout
+              {((isHook && isPro) || (totalSlides > 1 && isPro)) && (
+                <div className="flex flex-wrap items-center gap-2">
+                  {isHook && isPro && (
+                    <Button type="button" variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={handleCycleHook} disabled={cyclingHook || ensuringVariants || headlineVariants.length === 0} title="Cycle to next hook variant">
+                      {cyclingHook ? <Loader2Icon className="size-3.5 animate-spin" /> : <SparklesIcon className="size-3.5" />}
+                      Rewrite hook
                     </Button>
-                    <button
-                      type="button"
-                      onClick={() => { setHeadlineEditMoreOpen(false); setHeadlineHighlightOpen((o) => !o); }}
-                      className="flex items-center gap-1.5 rounded-md py-1.5 pr-1 text-left text-[11px] font-medium text-muted-foreground hover:text-foreground"
-                      aria-expanded={headlineHighlightOpen}
-                    >
-                      <span>Highlight</span>
-                      {headlineHighlightOpen ? <ChevronUpIcon className="size-3.5 shrink-0" /> : <ChevronDownIcon className="size-3.5 shrink-0" />}
-                    </button>
-                  </>
-                )}
-                {totalSlides > 1 && isPro && (
-                  <>
-                    <Button type="button" variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" onClick={handleApplyHeadlineFontSizeToAll} disabled={applyingFontSize}>
-                      {applyingFontSize ? <Loader2Icon className="size-3 animate-spin" /> : <CopyIcon className="size-3" />} Size to all
-                    </Button>
-                    <Button type="button" variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" onClick={handleApplyClearHeadlineToAll} disabled={applyingClear} title="Clear headline on every slide">
-                      {applyingClear ? <Loader2Icon className="size-3 animate-spin" /> : <Trash2 className="size-3" />} Clear on all slides
-                    </Button>
-                  </>
-                )}
-              </div>
-            {isPro && headlineEditMoreOpen && templateConfig?.textZones?.find((z) => z.id === "headline") && (
-              <div className="rounded-lg border border-border/50 bg-muted/10 p-4 space-y-4 mb-3">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-medium text-foreground">Headline position & layout</span>
-                  {totalSlides > 1 && (
-                    <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={handleApplyHeadlineZoneToAll} disabled={applyingHeadlineZone || !headlineZoneOverride || Object.keys(headlineZoneOverride).length === 0} title="Apply headline position & layout to all slides">
-                      {applyingHeadlineZone ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
-                      Apply to all
+                  )}
+                  {totalSlides > 1 && isPro && (
+                    <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground gap-1.5" onClick={handleApplyClearHeadlineToAll} disabled={applyingClear} title="Clear headline text on every slide">
+                      {applyingClear ? <Loader2Icon className="size-3.5 animate-spin" /> : <Trash2 className="size-3" />}
+                      Clear text on all slides
                     </Button>
                   )}
                 </div>
-                <div>
-                  <p className="text-muted-foreground text-[11px] mb-2">Position & size (px)</p>
-                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                  {(["x", "y", "w", "h"] as const).map((key) => {
-                    const base = effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!;
-                    const val = headlineZoneOverride?.[key] ?? base[key];
-                    const minVal = key === "w" || key === "h" ? 1 : 0;
-                    const step = 8;
-                    const label = key === "x" ? "X" : key === "y" ? "Y" : key === "w" ? "Width" : "Height";
-                    return (
-                      <div key={key} className="space-y-1.5">
-                        <Label className="text-xs">{label}</Label>
-                        <StepperWithLongPress
-                          value={val}
-                          min={minVal}
-                          max={1080}
-                          step={step}
-                          onChange={(v) => setHeadlineZoneOverride((o) => ({ ...(effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!), ...o, [key]: v }))}
-                          label={label.toLowerCase()}
-                          className="w-full max-w-[140px]"
-                        />
-                      </div>
-                    );
-                  })}
-                  </div>
-                </div>
-                <div>
-                  <p className="text-muted-foreground text-[11px] mb-2">Typography</p>
-                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Max lines</Label>
-                    <StepperWithLongPress
-                      value={headlineZoneOverride?.maxLines ?? (effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!).maxLines}
-                      min={1}
-                      max={20}
-                      step={1}
-                      onChange={(v) => setHeadlineZoneOverride((o) => ({ ...(effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!), ...o, maxLines: v }))}
-                      label="max lines"
-                      className="w-full max-w-[100px]"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Font weight</Label>
-                    <StepperWithLongPress
-                      value={headlineZoneOverride?.fontWeight ?? (effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!).fontWeight}
-                      min={100}
-                      max={900}
-                      step={100}
-                      onChange={(v) => setHeadlineZoneOverride((o) => ({ ...(effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!), ...o, fontWeight: v }))}
-                      label="font weight"
-                      className="w-full max-w-[100px]"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Line height</Label>
-                    <StepperWithLongPress
-                      value={Math.round((headlineZoneOverride?.lineHeight ?? (effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!).lineHeight) * 20) / 20}
-                      min={0.5}
-                      max={3}
-                      step={0.05}
-                      onChange={(v) => setHeadlineZoneOverride((o) => ({ ...(effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!), ...o, lineHeight: Math.round(v * 20) / 20 }))}
-                      formatDisplay={(v) => v.toFixed(1)}
-                      label="line height"
-                      className="w-full max-w-[100px]"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Align</Label>
-                    <Select
-                      value={headlineZoneOverride?.align ?? (effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!).align}
-                      onValueChange={(v) => setHeadlineZoneOverride((o) => ({ ...(effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!), ...o, align: v as "left" | "center" }))}
-                    >
-                      <SelectTrigger className="h-8 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="left">Left</SelectItem>
-                        <SelectItem value="center">Center</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  </div>
-                </div>
-              </div>
-            )}
-              {isPro && headlineHighlightOpen && (
-              <div className="border-t border-border/40 pt-3 mt-3">
+              )}
+              {false && headlineHighlightOpen && (
+              <div className="border-t border-border/40 pt-3 mt-3 hidden">
                   <div className="space-y-2">
-                    <p className="text-[11px] text-muted-foreground">Select text, then pick a color. Or use Auto to highlight key words. Choose a color for Auto, then apply to all highlights or to all slides.</p>
+                    <p className="text-[11px] text-muted-foreground">Select a word (or drag to select), then click a color. Or click Auto to highlight key words. Use “Apply to all highlights” to change every highlight’s color; “Apply to all slides” runs Auto on every slide.</p>
                     <div className="flex flex-wrap items-center gap-1.5">
                       <Button
                         type="button"
@@ -2748,17 +2849,41 @@ export function SlideEditForm({
                         title="Custom color"
                         aria-label="Custom highlight"
                       />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 text-[11px] px-2"
+                        onMouseDown={() => saveHighlightSelectionForPicker("headline")}
+                        onClick={() => removeHighlightFromSelection("headline", true)}
+                        disabled={headlineHighlights.length === 0}
+                        title="Select highlighted text, then click to remove its highlight"
+                      >
+                        Remove highlight
+                      </Button>
                       {headlineHighlights.length > 0 && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 text-[11px] px-2"
-                          onClick={() => applyColorToAllHighlights("headline")}
-                          title="Apply chosen color to all headline highlights"
-                        >
-                          Apply to all highlights
-                        </Button>
+                        <>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 text-[11px] px-2"
+                            onClick={() => applyColorToAllHighlights("headline")}
+                            title="Apply chosen color to all headline highlights"
+                          >
+                            Apply to all highlights
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 text-[11px] px-2"
+                            onClick={() => clearAllHighlights("headline")}
+                            title="Clear all headline highlights"
+                          >
+                            Clear all
+                          </Button>
+                        </>
                       )}
                       {totalSlides > 1 && (
                         <Button
@@ -2766,16 +2891,22 @@ export function SlideEditForm({
                           variant="outline"
                           size="sm"
                           className="h-6 text-[11px] px-2"
-                          onClick={handleApplyAutoHighlightsToAll}
+                          onClick={() => handleApplyAutoHighlightsToAll("headline")}
                           disabled={applyingAutoHighlights}
-                          title="Run Auto highlight on every slide (uses chosen color)"
+                          title="Run Auto highlight on headlines only, on every slide (uses headline color)"
                         >
                           {applyingAutoHighlights ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
                           Apply Auto to all slides
                         </Button>
                       )}
-                      <Button type="button" variant={headlineHighlightStyle === "background" ? "secondary" : "ghost"} size="sm" className="h-6 text-[11px]" onClick={() => setHeadlineHighlightStyle((s) => (s === "text" ? "background" : "text"))} title={headlineHighlightStyle === "text" ? "Background highlight" : "Text color only"}>
-                        {headlineHighlightStyle === "text" ? "Text" : "Bg"}
+                      <Button type="button" variant={headlineHighlightStyle === "text" ? "secondary" : "ghost"} size="sm" className="h-6 text-[11px]" onClick={() => setHeadlineHighlightStyle("text")} title="Highlight style: text color only">
+                        Text
+                      </Button>
+                      <Button type="button" variant={headlineHighlightStyle === "background" ? "secondary" : "ghost"} size="sm" className="h-6 text-[11px]" onClick={() => setHeadlineHighlightStyle("background")} title="Highlight style: colored background">
+                        Bg
+                      </Button>
+                      <Button type="button" variant={headlineHighlightStyle === "outline" ? "secondary" : "ghost"} size="sm" className="h-6 text-[11px]" onClick={() => setHeadlineHighlightStyle((s) => (s === "outline" ? "text" : "outline"))} title="Black outline on highlighted characters (toggle on/off)">
+                        Outline
                       </Button>
                     </div>
                   </div>
@@ -2784,177 +2915,83 @@ export function SlideEditForm({
             </div>
 
             {/* Body */}
-            <div className="rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-xs font-semibold text-foreground">Body</h3>
-                {isPro && (
-                  <>
-                    <StepperWithLongPress
-                      value={bodyFontSize ?? defaultBodySize}
-                      min={18}
-                      max={120}
-                      step={4}
-                      onChange={(v) => setBodyFontSize(v)}
-                      label="body size"
-                      className="shrink-0 max-w-[120px]"
-                    />
-                    <div className="flex items-center gap-1.5 shrink-0 rounded-md border border-input/80 bg-background px-1.5 py-0.5">
-                      <Label className="text-[11px] text-muted-foreground whitespace-nowrap">Color</Label>
-                      <ColorPicker
-                        value={bodyZoneOverride?.color ?? ""}
-                        onChange={(v) => setBodyZoneOverride((o) => ({ ...o, color: v.trim() || undefined }))}
-                        placeholder="Auto"
-                        compact
-                      />
-                    </div>
-                  </>
-                )}
+            <div className="relative rounded-lg border border-border/50 bg-muted/5 p-3 space-y-2.5">
+              <div className="flex items-center justify-between gap-2 w-full">
+                <h3 className="text-xs font-semibold text-foreground shrink-0">Body</h3>
+                <div className="flex items-center gap-1 shrink-0">
+                  {totalSlides > 1 && isPro && (
+                    <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={handleApplyBodyToAll} disabled={applyingBodyZone} title="Apply body size and position & layout to all slides">
+                      {applyingBodyZone ? <Loader2Icon className="size-3 animate-spin" /> : <CopyIcon className="size-3" />}
+                      Apply to all
+                    </Button>
+                  )}
+                </div>
               </div>
+              {isPro && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <StepperWithLongPress
+                    value={bodyFontSize ?? defaultBodySize}
+                    min={18}
+                    max={120}
+                    step={4}
+                    onChange={(v) => setBodyFontSize(v)}
+                    label="body size"
+                    className="shrink-0 max-w-[120px]"
+                  />
+                  <div className="flex items-center gap-1.5 shrink-0 rounded-md border border-input/80 bg-background px-1.5 py-0.5">
+                    <Label className="text-[11px] text-muted-foreground whitespace-nowrap">Text</Label>
+                    <ColorPicker
+                      value={bodyZoneOverride?.color ?? ""}
+                      onChange={(v) => setBodyZoneOverride((o) => ({ ...o, color: v.trim() || undefined }))}
+                      placeholder="Auto"
+                      compact
+                      swatchOnly
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs text-muted-foreground"
+                    onClick={() => { setBodyLayoutModalOpen(false); setBodyHighlightOpen(true); }}
+                  >
+                    Highlight
+                  </Button>
+                  <Button type="button" variant="secondary" size="sm" className="h-7 text-xs" onClick={() => { setBodyHighlightOpen(false); setBodyLayoutModalOpen((o) => !o); }} title="Body position & layout">
+                    <LayoutTemplateIcon className="size-3" /> Layout
+                  </Button>
+                </div>
+              )}
               <Textarea
                 ref={bodyRef}
                 id="body"
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
+                onBlur={() => { if (bodyHighlightOpen) saveHighlightSelectionForPicker("body"); }}
                 placeholder="Optional body text..."
                 className="min-h-[60px] w-full md:max-w-[360px] resize-none rounded-md border-input/80 text-sm field-sizing-content px-3 py-2"
                 rows={2}
               />
-              {templateId && (
-                <div className="flex items-center gap-2">
-                  <Button type="button" variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={handleCycleShorten} disabled={cyclingShorten || ensuringVariants || shortenVariants.length === 0} title="Cycle to next length (original / shortened)">
-                    {cyclingShorten || (ensuringVariants && shortenVariants.length === 0) ? <Loader2Icon className="size-3.5 animate-spin" /> : <ScissorsIcon className="size-3.5" />}
-                    Shorten to fit
-                  </Button>
-                </div>
-              )}
-              <div className="flex flex-wrap items-center gap-2">
-                {isPro && (
-                  <>
-                    <Button type="button" variant="secondary" size="sm" className="h-7 text-xs" onClick={() => { setBodyHighlightOpen(false); setBodyEditMoreOpen((o) => !o); }}>
-                      {bodyEditMoreOpen ? <ChevronUpIcon className="size-3" /> : <ChevronDownIcon className="size-3" />} Layout
+              {(templateId || (totalSlides > 1 && isPro)) && (
+                <div className="flex flex-wrap items-center gap-2">
+                  {templateId && (
+                    <Button type="button" variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={handleCycleShorten} disabled={cyclingShorten || ensuringVariants || shortenVariants.length === 0} title="Cycle to next length (original / shortened)">
+                      {cyclingShorten || (ensuringVariants && shortenVariants.length === 0) ? <Loader2Icon className="size-3.5 animate-spin" /> : <ScissorsIcon className="size-3.5" />}
+                      Shorten to fit
                     </Button>
-                    <button
-                      type="button"
-                      onClick={() => { setBodyEditMoreOpen(false); setBodyHighlightOpen((o) => !o); }}
-                      className="flex items-center gap-1.5 rounded-md py-1.5 pr-1 text-left text-[11px] font-medium text-muted-foreground hover:text-foreground"
-                      aria-expanded={bodyHighlightOpen}
-                    >
-                      <span>Highlight</span>
-                      {bodyHighlightOpen ? <ChevronUpIcon className="size-3.5 shrink-0" /> : <ChevronDownIcon className="size-3.5 shrink-0" />}
-                    </button>
-                  </>
-                )}
-                {totalSlides > 1 && isPro && (
-                  <>
-                    <Button type="button" variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" onClick={handleApplyBodyFontSizeToAll} disabled={applyingFontSize}>
-                      {applyingFontSize ? <Loader2Icon className="size-3 animate-spin" /> : <CopyIcon className="size-3" />} Size to all
-                    </Button>
-                    <Button type="button" variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" onClick={handleApplyClearBodyToAll} disabled={applyingClear} title="Clear body on every slide">
-                      {applyingClear ? <Loader2Icon className="size-3 animate-spin" /> : <Trash2 className="size-3" />} Clear on all slides
-                    </Button>
-                  </>
-                )}
-              </div>
-            {isPro && bodyEditMoreOpen && templateConfig?.textZones?.find((z) => z.id === "body") && (
-              <div className="rounded-lg border border-border/50 bg-muted/10 p-4 space-y-4 mb-3">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-medium text-foreground">Body position & layout</span>
-                  {totalSlides > 1 && (
-                    <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={handleApplyBodyZoneToAll} disabled={applyingBodyZone || !bodyZoneOverride || Object.keys(bodyZoneOverride).length === 0} title="Apply body position & layout to all slides">
-                      {applyingBodyZone ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
-                      Apply to all
+                  )}
+                  {totalSlides > 1 && isPro && (
+                    <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground gap-1.5" onClick={handleApplyClearBodyToAll} disabled={applyingClear} title="Clear body text on every slide">
+                      {applyingClear ? <Loader2Icon className="size-3.5 animate-spin" /> : <Trash2 className="size-3" />}
+                      Clear text on all slides
                     </Button>
                   )}
                 </div>
-                <div>
-                  <p className="text-muted-foreground text-[11px] mb-2">Position & size (px)</p>
-                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                  {(["x", "y", "w", "h"] as const).map((key) => {
-                    const base = effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!;
-                    const val = bodyZoneOverride?.[key] ?? base[key];
-                    const minVal = key === "w" || key === "h" ? 1 : 0;
-                    const step = 8;
-                    const label = key === "x" ? "X" : key === "y" ? "Y" : key === "w" ? "Width" : "Height";
-                    return (
-                      <div key={key} className="space-y-1.5">
-                        <Label className="text-xs">{label}</Label>
-                        <StepperWithLongPress
-                          value={val}
-                          min={minVal}
-                          max={1080}
-                          step={step}
-                          onChange={(v) => setBodyZoneOverride((o) => ({ ...(effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!), ...o, [key]: v }))}
-                          label={label.toLowerCase()}
-                          className="w-full max-w-[140px]"
-                        />
-                      </div>
-                    );
-                  })}
-                  </div>
-                </div>
-                <div>
-                  <p className="text-muted-foreground text-[11px] mb-2">Typography</p>
-                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Max lines</Label>
-                    <StepperWithLongPress
-                      value={bodyZoneOverride?.maxLines ?? (effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!).maxLines}
-                      min={1}
-                      max={20}
-                      step={1}
-                      onChange={(v) => setBodyZoneOverride((o) => ({ ...(effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!), ...o, maxLines: v }))}
-                      label="max lines"
-                      className="w-full max-w-[100px]"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Font weight</Label>
-                    <StepperWithLongPress
-                      value={bodyZoneOverride?.fontWeight ?? (effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!).fontWeight}
-                      min={100}
-                      max={900}
-                      step={100}
-                      onChange={(v) => setBodyZoneOverride((o) => ({ ...(effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!), ...o, fontWeight: v }))}
-                      label="font weight"
-                      className="w-full max-w-[100px]"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Line height</Label>
-                    <StepperWithLongPress
-                      value={Math.round((bodyZoneOverride?.lineHeight ?? (effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!).lineHeight) * 20) / 20}
-                      min={0.5}
-                      max={3}
-                      step={0.05}
-                      onChange={(v) => setBodyZoneOverride((o) => ({ ...(effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!), ...o, lineHeight: Math.round(v * 20) / 20 }))}
-                      formatDisplay={(v) => v.toFixed(1)}
-                      label="line height"
-                      className="w-full max-w-[100px]"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Align</Label>
-                    <Select
-                      value={bodyZoneOverride?.align ?? (effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!).align}
-                      onValueChange={(v) => setBodyZoneOverride((o) => ({ ...(effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!), ...o, align: v as "left" | "center" }))}
-                    >
-                      <SelectTrigger className="h-8 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="left">Left</SelectItem>
-                        <SelectItem value="center">Center</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  </div>
-                </div>
-              </div>
-            )}
-              {isPro && bodyHighlightOpen && (
-              <div className="border-t border-border/40 pt-3 mt-3">
+              )}
+              {false && bodyHighlightOpen && (
+              <div className="border-t border-border/40 pt-3 mt-3 hidden">
                   <div className="space-y-2">
-                    <p className="text-[11px] text-muted-foreground">Select text, then pick a color. Or use Auto to highlight key words. Choose a color for Auto, then apply to all highlights or to all slides.</p>
+                    <p className="text-[11px] text-muted-foreground">Select a word (or drag to select), then click a color. Or click Auto to highlight key words. Use “Apply to all highlights” to change every highlight’s color; “Apply to all slides” runs Auto on every slide.</p>
                     <div className="flex flex-wrap items-center gap-1.5">
                       <Button
                         type="button"
@@ -2994,17 +3031,41 @@ export function SlideEditForm({
                         title="Custom color"
                         aria-label="Custom highlight"
                       />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 text-[11px] px-2"
+                        onMouseDown={() => saveHighlightSelectionForPicker("body")}
+                        onClick={() => removeHighlightFromSelection("body", true)}
+                        disabled={bodyHighlights.length === 0}
+                        title="Select highlighted text, then click to remove its highlight"
+                      >
+                        Remove highlight
+                      </Button>
                       {bodyHighlights.length > 0 && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 text-[11px] px-2"
-                          onClick={() => applyColorToAllHighlights("body")}
-                          title="Apply chosen color to all body highlights"
-                        >
-                          Apply to all highlights
-                        </Button>
+                        <>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 text-[11px] px-2"
+                            onClick={() => applyColorToAllHighlights("body")}
+                            title="Apply chosen color to all body highlights"
+                          >
+                            Apply to all highlights
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 text-[11px] px-2"
+                            onClick={() => clearAllHighlights("body")}
+                            title="Clear all body highlights"
+                          >
+                            Clear all
+                          </Button>
+                        </>
                       )}
                       {totalSlides > 1 && (
                         <Button
@@ -3012,21 +3073,28 @@ export function SlideEditForm({
                           variant="outline"
                           size="sm"
                           className="h-6 text-[11px] px-2"
-                          onClick={handleApplyAutoHighlightsToAll}
+                          onClick={() => handleApplyAutoHighlightsToAll("body")}
                           disabled={applyingAutoHighlights}
-                          title="Run Auto highlight on every slide (uses chosen color)"
+                          title="Run Auto highlight on body only, on every slide (uses body color)"
                         >
                           {applyingAutoHighlights ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
                           Apply Auto to all slides
                         </Button>
                       )}
-                      <Button type="button" variant={bodyHighlightStyle === "background" ? "secondary" : "ghost"} size="sm" className="h-6 text-[11px]" onClick={() => setBodyHighlightStyle((s) => (s === "text" ? "background" : "text"))} title={bodyHighlightStyle === "text" ? "Background highlight" : "Text color only"}>
-                        {bodyHighlightStyle === "text" ? "Text" : "Bg"}
+                      <Button type="button" variant={bodyHighlightStyle === "text" ? "secondary" : "ghost"} size="sm" className="h-6 text-[11px]" onClick={() => setBodyHighlightStyle("text")} title="Highlight style: text color only">
+                        Text
+                      </Button>
+                      <Button type="button" variant={bodyHighlightStyle === "background" ? "secondary" : "ghost"} size="sm" className="h-6 text-[11px]" onClick={() => setBodyHighlightStyle("background")} title="Highlight style: colored background">
+                        Bg
+                      </Button>
+                      <Button type="button" variant={bodyHighlightStyle === "outline" ? "secondary" : "ghost"} size="sm" className="h-6 text-[11px]" onClick={() => setBodyHighlightStyle((s) => (s === "outline" ? "text" : "outline"))} title="Black outline on highlighted characters (toggle on/off)">
+                        Outline
                       </Button>
                     </div>
                   </div>
               </div>
               )}
+            </div>
             </div>
           </section>
           )}
@@ -3742,6 +3810,300 @@ export function SlideEditForm({
       </section>
 
     </div>
+    {layoutModalOpen &&
+      layoutModalRect &&
+      typeof document !== "undefined" &&
+      createPortal(
+        <div
+          className="fixed z-[100] overflow-hidden flex flex-col"
+          style={{
+            top: layoutModalRect.top,
+            left: layoutModalRect.left,
+            width: layoutModalRect.width,
+            height: layoutModalRect.height,
+          }}
+        >
+          <div
+            className="absolute inset-0 bg-black/50"
+            aria-hidden
+            onClick={() => {
+              setHeadlineLayoutModalOpen(false);
+              setBodyLayoutModalOpen(false);
+            }}
+          />
+          {isPro && headlineLayoutModalOpen && templateConfig?.textZones?.find((z) => z.id === "headline") && (
+            <div className="absolute inset-0 z-[101] flex items-start justify-center overflow-y-auto p-3" onClick={(e) => e.stopPropagation()}>
+              <div className="w-full max-w-xl flex flex-col bg-background shadow-2xl border border-border/50 rounded-lg overflow-hidden shrink-0 my-auto">
+                <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border/50 shrink-0 bg-muted/30">
+                  <span className="text-xs font-medium text-foreground">Headline position & layout</span>
+                  <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0 text-xs" onClick={() => setHeadlineLayoutModalOpen(false)} aria-label="Close">×</Button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-2 sm:p-3 space-y-3 min-w-0">
+                  <div>
+                    <p className="text-muted-foreground text-[11px] mb-1.5 sm:mb-2">Position & size (px)</p>
+                    <div className="grid grid-cols-2 gap-2 sm:gap-4 sm:grid-cols-4">
+                      {(["x", "y", "w", "h"] as const).map((key) => {
+                        const base = effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!;
+                        const val = headlineZoneOverride?.[key] ?? base[key];
+                        const minVal = key === "w" || key === "h" ? 1 : 0;
+                        const step = 8;
+                        const label = key === "x" ? "X" : key === "y" ? "Y" : key === "w" ? "Width" : "Height";
+                        return (
+                          <div key={key} className="space-y-1 sm:space-y-1.5 min-w-0">
+                            <Label className="text-xs">{label}</Label>
+                            <StepperWithLongPress
+                              value={val}
+                              min={minVal}
+                              max={1080}
+                              step={step}
+                              onChange={(v) => setHeadlineZoneOverride((o) => ({ ...(effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!), ...o, [key]: v }))}
+                              label={label.toLowerCase()}
+                              className="w-full max-w-[140px]"
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground text-[11px] mb-1.5 sm:mb-2">Typography</p>
+                    <div className="grid grid-cols-2 gap-2 sm:gap-4 sm:grid-cols-4">
+                      <div className="space-y-1 sm:space-y-1.5 min-w-0">
+                        <Label className="text-xs">Max lines</Label>
+                        <StepperWithLongPress
+                          value={headlineZoneOverride?.maxLines ?? (effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!).maxLines}
+                          min={1}
+                          max={20}
+                          step={1}
+                          onChange={(v) => setHeadlineZoneOverride((o) => ({ ...(effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!), ...o, maxLines: v }))}
+                          label="max lines"
+                          className="w-full max-w-[100px]"
+                        />
+                      </div>
+                      <div className="space-y-1 sm:space-y-1.5 min-w-0">
+                        <Label className="text-xs">Font weight</Label>
+                        <StepperWithLongPress
+                          value={headlineZoneOverride?.fontWeight ?? (effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!).fontWeight}
+                          min={100}
+                          max={900}
+                          step={100}
+                          onChange={(v) => setHeadlineZoneOverride((o) => ({ ...(effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!), ...o, fontWeight: v }))}
+                          label="font weight"
+                          className="w-full max-w-[100px]"
+                        />
+                      </div>
+                      <div className="space-y-1 sm:space-y-1.5 min-w-0">
+                        <Label className="text-xs">Line height</Label>
+                        <StepperWithLongPress
+                          value={Math.round((headlineZoneOverride?.lineHeight ?? (effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!).lineHeight) * 20) / 20}
+                          min={0.5}
+                          max={3}
+                          step={0.05}
+                          onChange={(v) => setHeadlineZoneOverride((o) => ({ ...(effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!), ...o, lineHeight: Math.round(v * 20) / 20 }))}
+                          formatDisplay={(v) => v.toFixed(1)}
+                          label="line height"
+                          className="w-full max-w-[100px]"
+                        />
+                      </div>
+                      <div className="space-y-1 min-w-0">
+                        <Label className="text-xs">Align</Label>
+                        <Select
+                          value={headlineZoneOverride?.align ?? (effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!).align}
+                          onValueChange={(v) => setHeadlineZoneOverride((o) => ({ ...(effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!), ...o, align: v as "left" | "center" }))}
+                        >
+                          <SelectTrigger className="h-8 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="left">Left</SelectItem>
+                            <SelectItem value="center">Center</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+          {isPro && bodyLayoutModalOpen && templateConfig?.textZones?.find((z) => z.id === "body") && (
+            <div className="absolute inset-0 z-[101] flex items-start justify-center overflow-y-auto p-3" onClick={(e) => e.stopPropagation()}>
+              <div className="w-full max-w-xl flex flex-col bg-background shadow-2xl border border-border/50 rounded-lg overflow-hidden shrink-0 my-auto">
+                <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border/50 shrink-0 bg-muted/30">
+                  <span className="text-xs font-medium text-foreground">Body position & layout</span>
+                  <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0 text-xs" onClick={() => setBodyLayoutModalOpen(false)} aria-label="Close">×</Button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-2 sm:p-3 space-y-3 min-w-0">
+                  <div>
+                    <p className="text-muted-foreground text-[11px] mb-1.5 sm:mb-2">Position & size (px)</p>
+                    <div className="grid grid-cols-2 gap-2 sm:gap-4 sm:grid-cols-4">
+                      {(["x", "y", "w", "h"] as const).map((key) => {
+                        const base = effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!;
+                        const val = bodyZoneOverride?.[key] ?? base[key];
+                        const minVal = key === "w" || key === "h" ? 1 : 0;
+                        const step = 8;
+                        const label = key === "x" ? "X" : key === "y" ? "Y" : key === "w" ? "Width" : "Height";
+                        return (
+                          <div key={key} className="space-y-1 sm:space-y-1.5 min-w-0">
+                            <Label className="text-xs">{label}</Label>
+                            <StepperWithLongPress
+                              value={val}
+                              min={minVal}
+                              max={1080}
+                              step={step}
+                              onChange={(v) => setBodyZoneOverride((o) => ({ ...(effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!), ...o, [key]: v }))}
+                              label={label.toLowerCase()}
+                              className="w-full max-w-[140px]"
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground text-[11px] mb-1.5 sm:mb-2">Typography</p>
+                    <div className="grid grid-cols-2 gap-2 sm:gap-4 sm:grid-cols-4">
+                      <div className="space-y-1 sm:space-y-1.5 min-w-0">
+                        <Label className="text-xs">Max lines</Label>
+                        <StepperWithLongPress
+                          value={bodyZoneOverride?.maxLines ?? (effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!).maxLines}
+                          min={1}
+                          max={20}
+                          step={1}
+                          onChange={(v) => setBodyZoneOverride((o) => ({ ...(effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!), ...o, maxLines: v }))}
+                          label="max lines"
+                          className="w-full max-w-[100px]"
+                        />
+                      </div>
+                      <div className="space-y-1 sm:space-y-1.5 min-w-0">
+                        <Label className="text-xs">Font weight</Label>
+                        <StepperWithLongPress
+                          value={bodyZoneOverride?.fontWeight ?? (effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!).fontWeight}
+                          min={100}
+                          max={900}
+                          step={100}
+                          onChange={(v) => setBodyZoneOverride((o) => ({ ...(effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!), ...o, fontWeight: v }))}
+                          label="font weight"
+                          className="w-full max-w-[100px]"
+                        />
+                      </div>
+                      <div className="space-y-1 sm:space-y-1.5 min-w-0">
+                        <Label className="text-xs">Line height</Label>
+                        <StepperWithLongPress
+                          value={Math.round((bodyZoneOverride?.lineHeight ?? (effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!).lineHeight) * 20) / 20}
+                          min={0.5}
+                          max={3}
+                          step={0.05}
+                          onChange={(v) => setBodyZoneOverride((o) => ({ ...(effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!), ...o, lineHeight: Math.round(v * 20) / 20 }))}
+                          formatDisplay={(v) => v.toFixed(1)}
+                          label="line height"
+                          className="w-full max-w-[100px]"
+                        />
+                      </div>
+                      <div className="space-y-1 min-w-0">
+                        <Label className="text-xs">Align</Label>
+                        <Select
+                          value={bodyZoneOverride?.align ?? (effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!).align}
+                          onValueChange={(v) => setBodyZoneOverride((o) => ({ ...(effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!), ...o, align: v as "left" | "center" }))}
+                        >
+                          <SelectTrigger className="h-8 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="left">Left</SelectItem>
+                            <SelectItem value="center">Center</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>,
+        document.body
+      )}
+    {highlightModalOpen &&
+      highlightModalRect &&
+      typeof document !== "undefined" &&
+      createPortal(
+        <div
+          className="fixed z-[100] overflow-hidden flex flex-col"
+          style={{
+            top: highlightModalRect.top,
+            left: highlightModalRect.left,
+            width: highlightModalRect.width,
+            height: highlightModalRect.height,
+          }}
+        >
+          <div
+            className="absolute inset-0 bg-black/50"
+            aria-hidden
+            onClick={() => {
+              setHeadlineHighlightOpen(false);
+              setBodyHighlightOpen(false);
+            }}
+          />
+          <div className="absolute inset-0 z-[101] flex items-start justify-center overflow-y-auto p-3" onClick={(e) => e.stopPropagation()}>
+            <div className="my-auto w-full max-w-lg flex justify-center">
+              {headlineHighlightOpen && (
+                <HighlightModal
+                  open={headlineHighlightOpen}
+                  onOpenChange={setHeadlineHighlightOpen}
+                  target="headline"
+                  title="Headline highlights"
+                  value={headline}
+                  onChange={setHeadline}
+                  highlights={headlineHighlights}
+                  highlightColor={headlineHighlightColor}
+                  onHighlightColorChange={setHeadlineHighlightColor}
+                  highlightStyle={headlineHighlightStyle}
+                  onHighlightStyleChange={setHeadlineHighlightStyle}
+                  textareaRef={headlineModalRef}
+                  onSaveSelection={() => saveHighlightSelectionForPicker("headline")}
+                  onApplyToSelection={(color, useSaved) => applyHighlightToSelection(color, "headline", useSaved)}
+                  onRemoveFromSelection={(useSaved) => removeHighlightFromSelection("headline", useSaved)}
+                  onAuto={() => applyAutoHighlight("headline")}
+                  onApplyToAll={() => handleApplyToAllHighlights("headline")}
+                  onClearAll={() => clearAllHighlights("headline")}
+                  lastHighlightAction={lastHeadlineHighlightAction}
+                  totalSlides={totalSlides}
+                  applyingAutoHighlights={applyingAutoHighlights}
+                  contentOnly
+                />
+              )}
+              {bodyHighlightOpen && (
+                <HighlightModal
+                  open={bodyHighlightOpen}
+                  onOpenChange={setBodyHighlightOpen}
+                  target="body"
+                  title="Body highlights"
+                  value={body}
+                  onChange={setBody}
+                  highlights={bodyHighlights}
+                  highlightColor={bodyHighlightColor}
+                  onHighlightColorChange={setBodyHighlightColor}
+                  highlightStyle={bodyHighlightStyle}
+                  onHighlightStyleChange={setBodyHighlightStyle}
+                  textareaRef={bodyModalRef}
+                  onSaveSelection={() => saveHighlightSelectionForPicker("body")}
+                  onApplyToSelection={(color, useSaved) => applyHighlightToSelection(color, "body", useSaved)}
+                  onRemoveFromSelection={(useSaved) => removeHighlightFromSelection("body", useSaved)}
+                  onAuto={() => applyAutoHighlight("body")}
+                  onApplyToAll={() => handleApplyToAllHighlights("body")}
+                  onClearAll={() => clearAllHighlights("body")}
+                  lastHighlightAction={lastBodyHighlightAction}
+                  totalSlides={totalSlides}
+                  applyingAutoHighlights={applyingAutoHighlights}
+                  contentOnly
+                />
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </>
   );
 }

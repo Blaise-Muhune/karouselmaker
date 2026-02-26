@@ -213,8 +213,8 @@ type SlideMeta = {
   counter_zone_override?: { top?: number; right?: number; fontSize?: number };
   watermark_zone_override?: Record<string, unknown>;
   made_with_zone_override?: { fontSize?: number; x?: number; y?: number };
-  headline_highlight_style?: "text" | "background";
-  body_highlight_style?: "text" | "background";
+  headline_highlight_style?: "text" | "background" | "outline";
+  body_highlight_style?: "text" | "background" | "outline";
   headline_highlights?: { start: number; end: number; color: string }[];
   body_highlights?: { start: number; end: number; color: string }[];
 };
@@ -256,11 +256,13 @@ function getChromeOverrides(slide: Slide): import("@/lib/renderer/renderModel").
   return { counter, watermark, madeWith };
 }
 
-function getHighlightStyles(slide: Slide): { headline: "text" | "background"; body: "text" | "background" } {
+function getHighlightStyles(slide: Slide): { headline: "text" | "background" | "outline"; body: "text" | "background" | "outline" } {
   const m = slide.meta as SlideMeta | null;
+  const h = m?.headline_highlight_style;
+  const b = m?.body_highlight_style;
   return {
-    headline: m?.headline_highlight_style === "background" ? "background" : "text",
-    body: m?.body_highlight_style === "background" ? "background" : "text",
+    headline: h === "background" || h === "outline" ? h : "text",
+    body: b === "background" || b === "outline" ? b : "text",
   };
 }
 

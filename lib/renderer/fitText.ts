@@ -23,6 +23,35 @@ function displayLength(s: string): number {
   return stripped.length;
 }
 
+/** Visible text (strip highlight markers) for "is this a word?" checks. */
+function visibleText(s: string): string {
+  return s.replace(/\{\{(?:#[\da-fA-F]{6}|[a-z]+)\}\}/g, "").replace(/\{\{\/\}\}/g, "");
+}
+
+/** True if the token is a short word (1–2 chars) that contains a letter — avoid leaving it alone on a line. */
+function isShortWordToken(token: string): boolean {
+  const v = visibleText(token);
+  return v.length >= 1 && v.length <= 2 && /\p{L}/u.test(v);
+}
+
+/** True if lastPart is acceptable to start a new line. When nextToken is a short word, "—" is ok (line will be "— A"). */
+function isAcceptableLineStart(lastPart: string, nextToken?: string): boolean {
+  const v = visibleText(lastPart).trim();
+  if (v.length >= 2) return true;
+  if (v.length === 1 && /\p{L}/u.test(v)) return true;
+  if (nextToken && isShortWordToken(nextToken) && v.length <= 2) return true;
+  return false;
+}
+
+/** Push a line, or append to the previous line if this line is only a short word (avoids "A" alone on a line). */
+function pushLine(lines: string[], line: string): void {
+  if (lines.length > 0 && isShortWordToken(line)) {
+    lines[lines.length - 1] = lines[lines.length - 1] + " " + line;
+  } else {
+    lines.push(line);
+  }
+}
+
 /**
  * Split text into tokens for line wrapping. Highlight spans {{x}}...{{/}} are kept as single tokens.
  */
@@ -64,7 +93,34 @@ function wrapParagraph(paragraph: string, zone: TextZone, maxLines: number): str
       currentLine = candidate;
     } else {
       if (currentLine) {
-        lines.push(currentLine);
+        if (isShortWordToken(token)) {
+          let breakAt = -1;
+          let pos = currentLine.length;
+          while (true) {
+            const spaceIndex = currentLine.lastIndexOf(" ", pos - 1);
+            if (spaceIndex <= 0) break;
+            const lastPart = currentLine.slice(spaceIndex).trim();
+            if (lastPart && isAcceptableLineStart(lastPart, token)) {
+              breakAt = spaceIndex;
+              break;
+            }
+            pos = spaceIndex;
+          }
+          if (breakAt > 0) {
+            const linePart = currentLine.slice(0, breakAt).trim();
+            const lastPart = currentLine.slice(breakAt).trim();
+            if (linePart && lastPart) {
+              pushLine(lines, linePart);
+              if (lines.length >= maxLines) return lines;
+              currentLine = `${lastPart} ${token}`;
+              continue;
+            }
+          }
+          // No break found (e.g. currentLine is a single word). Avoid leaving short word alone: glue it to this line.
+          currentLine = `${currentLine} ${token}`;
+          continue;
+        }
+        pushLine(lines, currentLine);
         if (lines.length >= maxLines) return lines;
       }
       if (tokenDisplayLen > maxCharsPerLine) {
@@ -81,12 +137,17 @@ function wrapParagraph(paragraph: string, zone: TextZone, maxLines: number): str
           currentLine = "";
         }
       } else {
-        currentLine = token;
+        // Never start a new line with only a short word (e.g. "A") — append to previous line.
+        if (lines.length > 0 && isShortWordToken(token)) {
+          lines[lines.length - 1] = lines[lines.length - 1] + " " + token;
+        } else {
+          currentLine = token;
+        }
       }
     }
   }
 
-  if (currentLine) lines.push(currentLine);
+  if (currentLine) pushLine(lines, currentLine);
   return lines;
 }
 

@@ -62,6 +62,8 @@ type ColorPickerProps = {
   className?: string;
   /** Compact layout: circular swatch + narrow hex input, no extract button. */
   compact?: boolean;
+  /** When true, show only the color swatch (no hex input). Use with compact for headline/body text color. */
+  swatchOnly?: boolean;
   /** When set, show "Extract from logo" button. */
   onExtractFromLogo?: (primary: string, secondary: string) => void;
   /** When set, upload logo file to storage and return path. Called before onExtractFromLogo. */
@@ -74,6 +76,7 @@ export function ColorPicker({
   placeholder = "#000000",
   className,
   compact,
+  swatchOnly,
   onExtractFromLogo,
   onLogoUpload,
 }: ColorPickerProps) {
@@ -113,6 +116,7 @@ export function ColorPicker({
             : "h-10 w-12 cursor-pointer rounded-lg border border-input/80 bg-background p-0"
         }
       />
+      {!swatchOnly && (
       <Input
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -123,6 +127,7 @@ export function ColorPicker({
             : "flex-1 font-mono text-sm"
         }
       />
+      )}
       {!compact && onExtractFromLogo && (
         <>
           <input

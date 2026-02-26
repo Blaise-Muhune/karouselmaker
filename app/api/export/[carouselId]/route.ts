@@ -20,7 +20,11 @@ import { resolveBrandKitLogo } from "@/lib/server/brandKit";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
 import { getSignedDownloadUrl } from "@/lib/server/storage/signedUrl";
 import { formatUnsplashAttributionLine } from "@/lib/server/unsplash";
-import { normalizeSlideMetaForRender } from "@/lib/server/export/normalizeSlideMetaForRender";
+import {
+  normalizeSlideMetaForRender,
+  getTemplateDefaultOverrides,
+  mergeWithTemplateDefaults,
+} from "@/lib/server/export/normalizeSlideMetaForRender";
 import { resolveSlideBackgroundUrls } from "@/lib/server/export/resolveSlideBackgroundUrls";
 import {
   isExternalImageUrl,
@@ -311,13 +315,15 @@ export async function POST(
         const slideMeta = (slide.meta ?? null) as Record<string, unknown> | null;
         const defaultShowWatermark = false; // logo only when user explicitly enabled it
         const normalized = normalizeSlideMetaForRender(slideMeta);
-        const showCounterOverride = normalized.showCounterOverride;
-        const showWatermarkOverride = normalized.showWatermarkOverride ?? defaultShowWatermark;
-        const showMadeWithOverride = normalized.showMadeWithOverride ?? !isPro;
-        const fontOverrides = normalized.fontOverrides;
-        const zoneOverrides = normalized.zoneOverrides;
-        const chromeOverrides = normalized.chromeOverrides;
-        const highlightStyles = normalized.highlightStyles;
+        const templateDefaults = getTemplateDefaultOverrides(config.data);
+        const merged = mergeWithTemplateDefaults(normalized, templateDefaults);
+        const showCounterOverride = merged.showCounterOverride;
+        const showWatermarkOverride = merged.showWatermarkOverride ?? defaultShowWatermark;
+        const showMadeWithOverride = merged.showMadeWithOverride ?? !isPro;
+        const fontOverrides = merged.fontOverrides;
+        const zoneOverrides = merged.zoneOverrides;
+        const chromeOverrides = merged.chromeOverrides;
+        const highlightStyles = merged.highlightStyles;
         type ImageDisplayOption = NonNullable<Parameters<typeof renderSlideHtml>[16]>;
         const imageDisplayParam: ImageDisplayOption | undefined =
           slideBg?.image_display != null &&
@@ -332,8 +338,8 @@ export async function POST(
             body: slide.body ?? null,
             slide_index: slide.slide_index,
             slide_type: slide.slide_type,
-            ...(normalized.headline_highlights?.length && { headline_highlights: normalized.headline_highlights }),
-            ...(normalized.body_highlights?.length && { body_highlights: normalized.body_highlights }),
+            ...(merged.headline_highlights?.length && { headline_highlights: merged.headline_highlights }),
+            ...(merged.body_highlights?.length && { body_highlights: merged.body_highlights }),
           },
           config.data,
           brandKit,
@@ -379,8 +385,8 @@ export async function POST(
               body: slide.body ?? null,
               slide_index: slide.slide_index,
               slide_type: slide.slide_type,
-              ...(normalized.headline_highlights?.length && { headline_highlights: normalized.headline_highlights }),
-              ...(normalized.body_highlights?.length && { body_highlights: normalized.body_highlights }),
+...(merged.headline_highlights?.length && { headline_highlights: merged.headline_highlights }),
+            ...(merged.body_highlights?.length && { body_highlights: merged.body_highlights }),
             },
             config.data,
             brandKit,

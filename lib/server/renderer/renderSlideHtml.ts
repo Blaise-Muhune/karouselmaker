@@ -76,7 +76,7 @@ function getShapeCss(shape: string, radius: number): string {
  * Matches SlidePreview layout for screenshot parity.
  * Template is scaled to cover the given dimensions (fills 4:5 and 9:16 with no letterboxing); centered crop for overflow.
  */
-export type HighlightStyle = "text" | "background";
+export type HighlightStyle = "text" | "background" | "outline";
 
 export type HighlightStyleOverrides = {
   headline?: HighlightStyle;
@@ -219,20 +219,49 @@ export function renderSlideHtml(
 
   const showCounter = showCounterOverride ?? false;
 
-  function lineToHtml(line: string, zoneHighlightStyle: HighlightStyle): string {
-    return parseInlineFormatting(line)
-      .map((seg) => {
-        const escaped = escapeHtml(seg.text);
-        if (seg.type === "bold") return `<strong>${escaped}</strong>`;
-        if (seg.type === "color" && seg.color) {
-          if (zoneHighlightStyle === "background") {
-            return `<span style="background-color:${escapeHtml(seg.color)};color:#0a0a0a;padding:0.02em 0.04em;margin:0;line-height:inherit;display:inline;border-radius:1px;box-decoration-break:clone;-webkit-box-decoration-break:clone">${escaped}</span>`;
-          }
-          return `<span style="color:${escapeHtml(seg.color)}">${escaped}</span>`;
-        }
-        return escaped;
-      })
-      .join("");
+  function segToHtml(
+    seg: { type: string; text: string; color?: string },
+    zoneHighlightStyle: HighlightStyle,
+    zoneColor: string
+  ): string {
+    const escaped = escapeHtml(seg.text);
+    const fillColor = seg.type === "color" && seg.color ? seg.color : zoneColor;
+    const outlineSpan = (inner: string) =>
+      `<span style="color:${escapeHtml(fillColor)};-webkit-text-stroke:2px #000;padding:0 1px;display:inline">${inner}</span>`;
+    if (seg.type === "bold") {
+      return zoneHighlightStyle === "outline"
+        ? `<strong>${outlineSpan(escaped)}</strong>`
+        : `<strong>${escaped}</strong>`;
+    }
+    if (seg.type === "color" && seg.color) {
+      if (zoneHighlightStyle === "background") {
+        return `<span style="background-color:${escapeHtml(seg.color)};padding:0.02em 0;margin:0;line-height:inherit;display:inline;border-radius:1px;box-decoration-break:clone;-webkit-box-decoration-break:clone">${escaped}</span>`;
+      }
+      if (zoneHighlightStyle === "outline") {
+        return outlineSpan(escaped);
+      }
+      return `<span style="color:${escapeHtml(seg.color)}">${escaped}</span>`;
+    }
+    if (zoneHighlightStyle === "outline") {
+      return outlineSpan(escaped);
+    }
+    return escaped;
+  }
+
+  function lineToHtml(line: string, zoneHighlightStyle: HighlightStyle, zoneColor: string): string {
+    const segments = parseInlineFormatting(line);
+    let out = "";
+    for (let j = 0; j < segments.length; j++) {
+      const seg = segments[j]!;
+      const isShort = seg.text.length <= 2;
+      if (isShort && j + 1 < segments.length) {
+        out += `<span style="white-space:nowrap">${segToHtml(seg, zoneHighlightStyle, zoneColor)}${segToHtml(segments[j + 1]!, zoneHighlightStyle, zoneColor)}</span>`;
+        j++;
+      } else {
+        out += segToHtml(seg, zoneHighlightStyle, zoneColor);
+      }
+    }
+    return out;
   }
 
   const textBlocksHtml = noTextOrChrome
@@ -246,7 +275,7 @@ export function renderSlideHtml(
           const zoneColor = block.zone.color ?? textColor;
           const fontSize = Math.round(block.zone.fontSize * textScale);
           const lineHeight = block.zone.lineHeight;
-          return `<div class="text-block" style="left:${block.zone.x}px;top:${block.zone.y}px;width:${block.zone.w}px;height:${block.zone.h}px;font-size:${fontSize}px;font-weight:${block.zone.fontWeight};line-height:${lineHeight};text-align:${block.zone.align};color:${escapeHtml(zoneColor)};z-index:5">${block.lines.map((line) => `<span>${lineToHtml(line, zoneHighlightStyle)}</span>`).join("")}</div>`;
+          return `<div class="text-block" style="left:${block.zone.x}px;top:${block.zone.y}px;width:${block.zone.w}px;height:${block.zone.h}px;font-size:${fontSize}px;font-weight:${block.zone.fontWeight};line-height:${lineHeight};text-align:${block.zone.align};color:${escapeHtml(zoneColor)};z-index:5">${block.lines.map((line) => `<span>${lineToHtml(line, zoneHighlightStyle, zoneColor)}</span>`).join("")}</div>`;
         })
         .join("");
 

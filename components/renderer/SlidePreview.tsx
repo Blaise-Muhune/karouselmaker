@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { applyTemplate } from "@/lib/renderer/applyTemplate";
 import type { BrandKit, SlideData, TextZoneOverrides, ChromeOverrides } from "@/lib/renderer/renderModel";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
@@ -76,10 +77,10 @@ export type SlidePreviewProps = {
   zoneOverrides?: TextZoneOverrides | null;
   /** Counter, logo watermark, and "Made with" position/size overrides (from slide meta or template defaults). */
   chromeOverrides?: ChromeOverrides | null;
-  /** Headline {{color}} style: "text" or "background" (highlighter). */
-  headlineHighlightStyle?: "text" | "background";
-  /** Body {{color}} style: "text" or "background" (highlighter). */
-  bodyHighlightStyle?: "text" | "background";
+  /** Headline {{color}} style: "text" or "background" (highlighter) or "outline" (color + black stroke). */
+  headlineHighlightStyle?: "text" | "background" | "outline";
+  /** Body {{color}} style: "text" or "background" (highlighter) or "outline" (color + black stroke). */
+  bodyHighlightStyle?: "text" | "background" | "outline";
   /** When true, wrap background image in a bordered frame (nice separation for multi-image carousels). */
   borderedFrame?: boolean;
   /** Image display options: position, fit, frame, layout, gap, frameShape, dividerStyle. */
@@ -723,22 +724,36 @@ export function SlidePreview({
             textAlign: block.zone.align,
             zIndex: 5,
             boxSizing: "border-box",
+            textWrap: "pretty",
           }}
         >
-          {block.lines.map((line, i) => (
-            <span key={i} className="block">
-              {parseInlineFormatting(line).map((seg, j) =>
-                seg.type === "bold" ? (
+          {block.lines.map((line, i) => {
+            const segments = parseInlineFormatting(line);
+            const outlineStyle = {
+              WebkitTextStroke: "2px #000",
+              padding: "0 1px",
+              display: "inline" as const,
+            };
+            const renderSeg = (seg: (typeof segments)[0], j: number) => {
+              const fillColor = seg.type === "color" && seg.color ? seg.color : zoneColor;
+              if (seg.type === "bold") {
+                return zoneHighlightStyle === "outline" ? (
+                  <strong key={j}>
+                    <span style={{ ...outlineStyle, color: fillColor }}>{seg.text}</span>
+                  </strong>
+                ) : (
                   <strong key={j}>{seg.text}</strong>
-                ) : seg.type === "color" && seg.color ? (
+                );
+              }
+              if (seg.type === "color" && seg.color) {
+                return (
                   <span
                     key={j}
                     style={
                       zoneHighlightStyle === "background"
                         ? {
                             backgroundColor: seg.color,
-                            color: "#0a0a0a",
-                            padding: "0.02em 0.04em",
+                            padding: "0.02em 0",
                             margin: 0,
                             lineHeight: "inherit",
                             display: "inline",
@@ -746,17 +761,45 @@ export function SlidePreview({
                             boxDecorationBreak: "clone",
                             WebkitBoxDecorationBreak: "clone",
                           }
-                        : { color: seg.color }
+                        : zoneHighlightStyle === "outline"
+                          ? { ...outlineStyle, color: fillColor }
+                          : { color: seg.color }
                     }
                   >
                     {seg.text}
                   </span>
-                ) : (
-                  <span key={j}>{seg.text}</span>
-                )
-              )}
+                );
+              }
+              return zoneHighlightStyle === "outline" ? (
+                <span key={j} style={{ ...outlineStyle, color: fillColor }}>
+                  {seg.text}
+                </span>
+              ) : (
+                <span key={j}>{seg.text}</span>
+              );
+            };
+            const items: ReactNode[] = [];
+            for (let j = 0; j < segments.length; j++) {
+              const seg = segments[j]!;
+              const isShort = seg.text.length <= 2;
+              if (isShort && j + 1 < segments.length) {
+                items.push(
+                  <span key={j} style={{ whiteSpace: "nowrap" }}>
+                    {renderSeg(seg, j)}
+                    {renderSeg(segments[j + 1]!, j + 1)}
+                  </span>
+                );
+                j++;
+              } else {
+                items.push(renderSeg(seg, j));
+              }
+            }
+            return (
+            <span key={i} className="block">
+              {items}
             </span>
-          ))}
+          );
+          })}
         </div>
       );
       })}

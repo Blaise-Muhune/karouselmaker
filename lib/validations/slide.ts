@@ -109,8 +109,8 @@ export const slideBackgroundSchema = z.object({
   overlay: slideBackgroundOverlaySchema.optional(),
 });
 
-/** How colored highlights render: "text" = colored text only, "background" = colored background + dark text. */
-export const highlightStyleSchema = z.enum(["text", "background"]);
+/** How colored highlights render: "text" = colored text only, "background" = colored background, "outline" = colored text with black stroke. */
+export const highlightStyleSchema = z.enum(["text", "background", "outline"]);
 export type HighlightStyle = z.output<typeof highlightStyleSchema>;
 
 /** Per-slide overrides for a text zone (position, size, font). */

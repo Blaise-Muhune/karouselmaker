@@ -52,7 +52,7 @@ Rules:
 - ACCURACY & VALUE: Be accurate—do not invent facts, stats, names, or quotes. Use web search when available for topics that need current or verifiable data. If you are uncertain about a specific claim (e.g. a number, a ranking, a date), either omit it or phrase it in a way that does not present guesswork as fact. When you produce rankings or "top X" lists, base them on real criteria (e.g. actual ratings, awards, widely cited lists, consensus) rather than making up an arbitrary order. Prioritize valuable, useful information: actionable tips, real examples, correct explanations. No random or filler content—every slide should add substance the reader can trust.
 - Short lines. No filler. No complex sentences.
 - Headlines: max 120 chars, punchy. Body: default short (under 300 chars). Use up to 600 chars only when needed—e.g. quotes, full explanations, step-by-step, lists. Most slides stay brief. When a slide lists 3 or more options, people, or objects (e.g. three candidates per position), keep the body minimal: names plus at most one short detail each (e.g. team or role)—no long explanations. Reader should be able to scroll fast.
-- Minimal punctuation.
+- Minimal punctuation. Do not use em dashes (—) in headline or body; they cause awkward line breaks in the layout. Use a comma, period, or rephrase instead (e.g. "Avengers: Doomsday, A New Tale" not "Avengers: Doomsday — A New Tale").
 - Sound human, not AI: use contractions (don't, it's, can't). Vary sentence length—mix short punchy lines with occasional longer ones. Use active voice. Avoid generic AI phrases: "dive into", "unlock", "transform", "harness", "game-changer", "cutting-edge", "seamlessly", "at the forefront", "in today's world", "elevate", "innovative solutions", "firstly/secondly/lastly", "it's important to note". Write like a real creator sharing tips—conversational, specific, not corporate buzzwords.
 - NEVER include URLs, links, or web addresses in headline or body. No markdown links like [text](url) or (url). No parenthetical source or domain references—e.g. no (marvel.com), (example.org), or (source: site.com). No "source:", "read more at", or citations. Summarize in plain text only—slide text must be link-free.
 - slide_index starts at 1 and increments.
@@ -171,7 +171,7 @@ Output STRICT JSON only: an array of 5 strings. No markdown, no code fences, no 
 
 Rules:
 - Short. Readable in 2 seconds.
-- Minimal punctuation.
+- Minimal punctuation. Do not use em dashes (—); they cause awkward line breaks. Use a comma or rephrase instead.
 - No emojis unless the project allows.
 - Sound human: use contractions, avoid AI phrases ("dive in", "unlock", "transform", "game-changer", "cutting-edge").
 - Tone: ${ctx.tone_preset}.
@@ -194,7 +194,7 @@ export function buildValidationRetryPrompt(
 ): { system: string; user: string } {
   const system = `You are a carousel script writer. You must output STRICT JSON that validates against this schema.
 Previous attempt had validation errors. Fix them and output valid JSON only. No markdown, no explanation.
-Use plain text only—no ** or {{color}} formatting. Sound human: contractions, no AI phrases (dive into, unlock, transform, game-changer).
+Use plain text only—no ** or {{color}} formatting. Sound human: contractions, no AI phrases (dive into, unlock, transform, game-changer). Do not use em dashes (—) in headline or body; use a comma or rephrase instead.
 CRITICAL: Preserve image_queries, shorten_alternates, headline_highlight_words, and body_highlight_words on every slide from the previous output. Do not remove them—only fix the validation errors.`;
 
   const user = `Your previous output:
