@@ -35,7 +35,7 @@ const SERVERLESS_ARGS = [
   "--disable-backgrounding-occluded-windows",
   "--disable-hang-monitor",
   "--disable-breakpad",
-  "--disable-features=TranslateUI",
+  "--disable-features=TranslateUI,AudioServiceOutOfProcess",
 ];
 
 /** Launch timeout (ms). Prevents hanging on cold start in serverless. */
@@ -74,10 +74,11 @@ export async function launchChromium() {
         const executablePath = copyResult ? copyResult.executablePath : originalPath;
         const dir = copyResult?.dir;
 
+        const packageArgs = (Chromium.args as string[]).filter((a) => a !== "--single-process");
         const browser = await playwrightChromium.launch({
-          args: [...Chromium.args, ...SERVERLESS_ARGS],
+          args: [...packageArgs, ...SERVERLESS_ARGS],
           executablePath,
-          headless: true,
+          headless: "shell",
           timeout: LAUNCH_TIMEOUT_MS,
         });
         if (dir) {
