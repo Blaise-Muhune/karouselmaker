@@ -244,10 +244,10 @@ export async function GET(
       await page.setViewportSize({ width: dimensions.w, height: dimensions.h });
       // waitUntil: "load" ensures all images (including CSS background-image) are fully loaded before screenshot
       await page.setContent(html, { waitUntil: "load", timeout: CONTENT_TIMEOUT_MS });
-      await page.waitForSelector(".slide", { state: "visible", timeout: SELECTOR_TIMEOUT_MS });
+      await page.waitForSelector(".slide-wrap", { state: "visible", timeout: SELECTOR_TIMEOUT_MS });
       // Brief delay so decoded images are painted (avoids half-loaded background in export)
       await new Promise((r) => setTimeout(r, 500));
-      const buffer = await page.locator(".slide").screenshot({ type: format, timeout: SELECTOR_TIMEOUT_MS });
+      const buffer = await page.locator(".slide-wrap").screenshot({ type: format, timeout: SELECTOR_TIMEOUT_MS });
       const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
       const ext = format === "jpeg" ? "jpg" : "png";
       const filename = `slide-${slide.slide_index}.${ext}`;

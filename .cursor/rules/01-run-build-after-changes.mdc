@@ -1,0 +1,14 @@
+---
+description: Run production build after editing project files
+alwaysApply: true
+---
+
+# Run build after changes
+
+After making code changes to this project (editing, creating, or deleting source files), **always run the production build** to verify everything compiles:
+
+```bash
+pnpm run build
+```
+
+Run it from the project root (`karouselmaker`). If the build fails, fix any reported errors before considering the task done.

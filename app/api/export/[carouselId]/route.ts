@@ -364,9 +364,9 @@ export async function POST(
         try {
           await page.setViewportSize({ width: dimensions.w, height: dimensions.h });
           await page.setContent(html, { waitUntil: "load", timeout: CONTENT_TIMEOUT_MS });
-          await page.waitForSelector(".slide", { state: "visible", timeout: SELECTOR_TIMEOUT_MS });
+          await page.waitForSelector(".slide-wrap", { state: "visible", timeout: SELECTOR_TIMEOUT_MS });
           await new Promise((r) => setTimeout(r, SCREENSHOT_DELAY_MS));
-          const buffer = await page.locator(".slide").screenshot({ type: format, timeout: SELECTOR_TIMEOUT_MS });
+          const buffer = await page.locator(".slide-wrap").screenshot({ type: format, timeout: SELECTOR_TIMEOUT_MS });
           const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
           const { error: uploadError } = await supabase.storage
             .from(BUCKET)
@@ -409,9 +409,9 @@ export async function POST(
             true
           );
           await page.setContent(overlayHtml, { waitUntil: "load", timeout: CONTENT_TIMEOUT_MS });
-          await page.waitForSelector(".slide", { state: "visible", timeout: SELECTOR_TIMEOUT_MS });
+          await page.waitForSelector(".slide-wrap", { state: "visible", timeout: SELECTOR_TIMEOUT_MS });
           await new Promise((r) => setTimeout(r, SCREENSHOT_DELAY_MS));
-          const overlayBuffer = await page.locator(".slide").screenshot({ type: "png", timeout: SELECTOR_TIMEOUT_MS });
+          const overlayBuffer = await page.locator(".slide-wrap").screenshot({ type: "png", timeout: SELECTOR_TIMEOUT_MS });
           const overlayBuf = Buffer.isBuffer(overlayBuffer) ? overlayBuffer : Buffer.from(overlayBuffer);
           const { error: overlayUploadError } = await supabase.storage
             .from(BUCKET)
@@ -456,9 +456,9 @@ export async function POST(
               true
             );
             await page.setContent(variantHtml, { waitUntil: "load", timeout: CONTENT_TIMEOUT_MS });
-            await page.waitForSelector(".slide", { state: "visible", timeout: SELECTOR_TIMEOUT_MS });
+            await page.waitForSelector(".slide-wrap", { state: "visible", timeout: SELECTOR_TIMEOUT_MS });
             await new Promise((r) => setTimeout(r, SCREENSHOT_DELAY_MS));
-            const variantBuffer = await page.locator(".slide").screenshot({ type: "png", timeout: SELECTOR_TIMEOUT_MS });
+            const variantBuffer = await page.locator(".slide-wrap").screenshot({ type: "png", timeout: SELECTOR_TIMEOUT_MS });
             const variantBuf = Buffer.isBuffer(variantBuffer) ? variantBuffer : Buffer.from(variantBuffer);
             const { error: variantUploadError } = await supabase.storage
               .from(BUCKET)
