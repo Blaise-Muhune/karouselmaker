@@ -140,8 +140,8 @@ export async function POST(
       { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string }
    >();
 
-    const CONTENT_TIMEOUT_MS = 20000;
-    const SELECTOR_TIMEOUT_MS = 15000;
+    const CONTENT_TIMEOUT_MS = 25000;
+    const SELECTOR_TIMEOUT_MS = 30000;
     const MAX_EXPORT_ATTEMPTS = 3;
 
     let lastError: unknown = null;

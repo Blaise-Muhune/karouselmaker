@@ -236,8 +236,8 @@ export async function GET(
   );
 
   const browser = await launchChromium();
-  const CONTENT_TIMEOUT_MS = 20000;
-  const SELECTOR_TIMEOUT_MS = 15000;
+  const CONTENT_TIMEOUT_MS = 25000;
+  const SELECTOR_TIMEOUT_MS = 30000;
   try {
     const page = await browser.newPage();
     try {
