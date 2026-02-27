@@ -36,6 +36,8 @@ const SERVERLESS_ARGS = [
   "--disable-hang-monitor",
   "--disable-breakpad",
   "--disable-features=TranslateUI,AudioServiceOutOfProcess",
+  "--disable-font-subpixel-positioning",
+  "--disable-background-timer-throttling",
 ];
 
 /** Launch timeout (ms). Prevents hanging on cold start in serverless. */

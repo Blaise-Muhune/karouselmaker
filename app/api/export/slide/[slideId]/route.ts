@@ -247,7 +247,7 @@ export async function GET(
       await page.waitForSelector(".slide", { state: "visible", timeout: SELECTOR_TIMEOUT_MS });
       // Brief delay so decoded images are painted (avoids half-loaded background in export)
       await new Promise((r) => setTimeout(r, 500));
-      const buffer = await page.screenshot({ type: format });
+      const buffer = await page.locator(".slide").screenshot({ type: format, timeout: SELECTOR_TIMEOUT_MS });
       const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
       const ext = format === "jpeg" ? "jpg" : "png";
       const filename = `slide-${slide.slide_index}.${ext}`;
