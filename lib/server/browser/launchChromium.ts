@@ -6,7 +6,7 @@
  * In production we copy the binary to a unique path before launch to avoid ETXTBSY
  * (Text file busy) when multiple exports run concurrently or the package is still writing the file.
  */
-import { chmodSync, copyFileSync, cpSync, mkdtempSync, rmSync } from "fs";
+import { chmodSync, cpSync, mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join, dirname, basename } from "path";
 import { chromium as playwrightChromium } from "playwright-core";
@@ -43,44 +43,59 @@ const LAUNCH_TIMEOUT_MS = 60_000;
 
 /**
  * Copy Chromium to a unique path so we don't exec the same file another process is writing.
- * If the binary lives directly in /tmp we only copy the file (cannot copy /tmp into itself).
- * Otherwise we copy the whole directory (binary + libs).
+ * If the binary lives directly in /tmp we cannot copy (would copy /tmp into itself) and copying
+ * only the file breaks the binary (missing .so libs) so it exits immediately. In that case we
+ * use the original path and serialize launches to reduce ETXTBSY risk.
  */
-function copyChromiumToUniquePath(originalPath: string): { dir: string; executablePath: string } {
+function copyChromiumToUniquePath(originalPath: string): { dir: string; executablePath: string } | null {
   const sourceDir = dirname(originalPath);
   const systemTmp = tmpdir();
+  if (sourceDir === systemTmp || join(systemTmp, "chromium-").startsWith(sourceDir + "/") || join(systemTmp, "chromium-").startsWith(sourceDir + "\\")) {
+    return null;
+  }
   const dir = mkdtempSync(join(systemTmp, "chromium-"));
   const executablePath = join(dir, basename(originalPath));
-
-  if (sourceDir === systemTmp || dir.startsWith(sourceDir + "/") || dir.startsWith(sourceDir + "\\")) {
-    copyFileSync(originalPath, executablePath);
-  } else {
-    cpSync(sourceDir, dir, { recursive: true });
-  }
+  cpSync(sourceDir, dir, { recursive: true });
   chmodSync(executablePath, 0o755);
   return { dir, executablePath };
 }
 
+/** Serialize production launches so we don't exec the same binary concurrently (ETXTBSY). */
+let launchQueue: Promise<unknown> = Promise.resolve();
+
 export async function launchChromium() {
   if (IS_VERCEL) {
-    const Chromium = (await import("@sparticuz/chromium-min")).default;
-    Chromium.setGraphicsMode = false;
-    const originalPath = await Chromium.executablePath(CHROMIUM_PACK_URL);
-    const { dir, executablePath } = copyChromiumToUniquePath(originalPath);
-    const browser = await playwrightChromium.launch({
-      args: [...Chromium.args, ...SERVERLESS_ARGS],
-      executablePath,
-      headless: true,
-      timeout: LAUNCH_TIMEOUT_MS,
-    });
-    browser.on("disconnected", () => {
-      try {
-        rmSync(dir, { recursive: true, force: true });
-      } catch {
-        // ignore cleanup errors
-      }
-    });
-    return browser;
+    launchQueue = launchQueue
+      .then(async () => {
+        const Chromium = (await import("@sparticuz/chromium-min")).default;
+        Chromium.setGraphicsMode = false;
+        const originalPath = await Chromium.executablePath(CHROMIUM_PACK_URL);
+        const copyResult = copyChromiumToUniquePath(originalPath);
+        const executablePath = copyResult ? copyResult.executablePath : originalPath;
+        const dir = copyResult?.dir;
+
+        const browser = await playwrightChromium.launch({
+          args: [...Chromium.args, ...SERVERLESS_ARGS],
+          executablePath,
+          headless: true,
+          timeout: LAUNCH_TIMEOUT_MS,
+        });
+        if (dir) {
+          browser.on("disconnected", () => {
+            try {
+              rmSync(dir, { recursive: true, force: true });
+            } catch {
+              // ignore
+            }
+          });
+        }
+        return browser;
+      })
+      .catch((err) => {
+        launchQueue = Promise.resolve();
+        throw err;
+      });
+    return launchQueue as Promise<Awaited<ReturnType<typeof playwrightChromium.launch>>>;
   }
   const { chromium } = await import("playwright");
   return chromium.launch({
