@@ -78,7 +78,7 @@ export async function launchChromium() {
         const browser = await playwrightChromium.launch({
           args: [...packageArgs, ...SERVERLESS_ARGS],
           executablePath,
-          headless: "shell",
+          headless: true,
           timeout: LAUNCH_TIMEOUT_MS,
         });
         if (dir) {
