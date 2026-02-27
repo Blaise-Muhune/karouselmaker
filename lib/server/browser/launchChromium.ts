@@ -2,7 +2,13 @@
  * Launch Chromium for HTML-to-image rendering.
  * On Vercel: uses @sparticuz/chromium-min with remote pack (brotli files not bundled).
  * Locally: uses Playwright's bundled Chromium.
+ *
+ * In production we copy the binary to a unique path before launch to avoid ETXTBSY
+ * (Text file busy) when multiple exports run concurrently or the package is still writing the file.
  */
+import { chmodSync, cpSync, mkdtempSync, rmSync } from "fs";
+import { tmpdir } from "os";
+import { join, dirname, basename } from "path";
 import { chromium as playwrightChromium } from "playwright-core";
 
 const IS_VERCEL = process.env.VERCEL === "1";
@@ -35,16 +41,40 @@ const SERVERLESS_ARGS = [
 /** Launch timeout (ms). Prevents hanging on cold start in serverless. */
 const LAUNCH_TIMEOUT_MS = 60_000;
 
+/**
+ * Copy Chromium directory to a unique path so we don't exec the same file another process is writing.
+ * Copies the whole directory (binary + libs) so the executable can find its dependencies.
+ * Returns the new dir and executable path (caller should clean up the dir when the browser is closed).
+ */
+function copyChromiumToUniquePath(originalPath: string): { dir: string; executablePath: string } {
+  const sourceDir = dirname(originalPath);
+  const dir = mkdtempSync(join(tmpdir(), "chromium-"));
+  cpSync(sourceDir, dir, { recursive: true });
+  const executablePath = join(dir, basename(originalPath));
+  chmodSync(executablePath, 0o755);
+  return { dir, executablePath };
+}
+
 export async function launchChromium() {
   if (IS_VERCEL) {
     const Chromium = (await import("@sparticuz/chromium-min")).default;
     Chromium.setGraphicsMode = false;
-    return playwrightChromium.launch({
+    const originalPath = await Chromium.executablePath(CHROMIUM_PACK_URL);
+    const { dir, executablePath } = copyChromiumToUniquePath(originalPath);
+    const browser = await playwrightChromium.launch({
       args: [...Chromium.args, ...SERVERLESS_ARGS],
-      executablePath: await Chromium.executablePath(CHROMIUM_PACK_URL),
+      executablePath,
       headless: true,
       timeout: LAUNCH_TIMEOUT_MS,
     });
+    browser.on("disconnected", () => {
+      try {
+        rmSync(dir, { recursive: true, force: true });
+      } catch {
+        // ignore cleanup errors
+      }
+    });
+    return browser;
   }
   const { chromium } = await import("playwright");
   return chromium.launch({
