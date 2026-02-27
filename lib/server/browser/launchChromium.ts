@@ -6,7 +6,7 @@
  * In production we copy the binary to a unique path before launch to avoid ETXTBSY
  * (Text file busy) when multiple exports run concurrently or the package is still writing the file.
  */
-import { chmodSync, cpSync, mkdtempSync, rmSync } from "fs";
+import { chmodSync, copyFileSync, cpSync, mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join, dirname, basename } from "path";
 import { chromium as playwrightChromium } from "playwright-core";
@@ -42,15 +42,21 @@ const SERVERLESS_ARGS = [
 const LAUNCH_TIMEOUT_MS = 60_000;
 
 /**
- * Copy Chromium directory to a unique path so we don't exec the same file another process is writing.
- * Copies the whole directory (binary + libs) so the executable can find its dependencies.
- * Returns the new dir and executable path (caller should clean up the dir when the browser is closed).
+ * Copy Chromium to a unique path so we don't exec the same file another process is writing.
+ * If the binary lives directly in /tmp we only copy the file (cannot copy /tmp into itself).
+ * Otherwise we copy the whole directory (binary + libs).
  */
 function copyChromiumToUniquePath(originalPath: string): { dir: string; executablePath: string } {
   const sourceDir = dirname(originalPath);
-  const dir = mkdtempSync(join(tmpdir(), "chromium-"));
-  cpSync(sourceDir, dir, { recursive: true });
+  const systemTmp = tmpdir();
+  const dir = mkdtempSync(join(systemTmp, "chromium-"));
   const executablePath = join(dir, basename(originalPath));
+
+  if (sourceDir === systemTmp || dir.startsWith(sourceDir + "/") || dir.startsWith(sourceDir + "\\")) {
+    copyFileSync(originalPath, executablePath);
+  } else {
+    cpSync(sourceDir, dir, { recursive: true });
+  }
   chmodSync(executablePath, 0o755);
   return { dir, executablePath };
 }
