@@ -59,6 +59,32 @@ export function getExportStoragePaths(
   };
 }
 
+/** Storage paths for video-only renders (no export row). Used so video generation does not depend on export. */
+export function getVideoRenderStoragePaths(
+  userId: string,
+  carouselId: string,
+  runId: string
+): {
+  slidePath: (index: number) => string;
+  overlayPath: (index: number) => string;
+  videoBgPath: (slideIndex: number, bgIndex: number, ext?: string) => string;
+  videoSlidePath: (slideIndex: number, variantIndex: number) => string;
+  videoSlidesPrefix: string;
+} {
+  const prefix = `user/${userId}/video-renders/${carouselId}/${runId}`;
+  return {
+    slidePath: (index: number) =>
+      `${prefix}/slides/${String(index + 1).padStart(2, "0")}.png`,
+    overlayPath: (index: number) =>
+      `${prefix}/slides/overlay_${String(index + 1).padStart(2, "0")}.png`,
+    videoBgPath: (slideIndex: number, bgIndex: number, ext = "jpg") =>
+      `${prefix}/video-bg/${slideIndex}-${bgIndex}.${ext}`,
+    videoSlidePath: (slideIndex: number, variantIndex: number) =>
+      `${prefix}/video-slides/${slideIndex}-${variantIndex}.png`,
+    videoSlidesPrefix: `${prefix}/video-slides/`,
+  };
+}
+
 export async function createExport(
   userId: string,
   carouselId: string,

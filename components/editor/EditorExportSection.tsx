@@ -40,6 +40,34 @@ export type ExportRowDisplay = {
   created_at: string;
 };
 
+/** Video output size (preview + download). Includes 16:9 and 5:4. */
+export type VideoSize = "1080x1080" | "1080x864" | "1080x1350" | "1080x1920" | "1920x1080";
+
+const VIDEO_SIZE_LABELS: Record<VideoSize, string> = {
+  "1080x1080": "1:1",
+  "1080x864": "5:4",
+  "1080x1350": "4:5",
+  "1080x1920": "9:16",
+  "1920x1080": "16:9",
+};
+
+function videoSizeToDimensions(size: VideoSize): { width: number; height: number } {
+  switch (size) {
+    case "1080x1080":
+      return { width: 1080, height: 1080 };
+    case "1080x864":
+      return { width: 1080, height: 864 };
+    case "1080x1350":
+      return { width: 1080, height: 1350 };
+    case "1080x1920":
+      return { width: 1080, height: 1920 };
+    case "1920x1080":
+      return { width: 1920, height: 1080 };
+    default:
+      return { width: 1080, height: 1350 };
+  }
+}
+
 type EditorExportSectionProps = {
   carouselId: string;
   isPro?: boolean;
@@ -82,10 +110,13 @@ export function EditorExportSection({
   const [selectedVoiceId, setSelectedVoiceId] = useState(VOICE_PRESETS[0]!.voiceId);
   const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(null);
   const [generatedVideoBlob, setGeneratedVideoBlob] = useState<Blob | null>(null);
+  const [videoSize, setVideoSize] = useState<VideoSize>(() =>
+    exportSize === "1080x1080" || exportSize === "1080x1350" || exportSize === "1080x1920" ? exportSize : "1080x1350"
+  );
   const videoRef = useRef<HTMLVideoElement>(null);
   const isStandalonePWA = useIsStandalonePWA();
 
-  const latestReadyExport = recentExports.find((ex) => ex.status === "ready");
+  // Video no longer depends on export: we use render-for-video when slide URLs are needed.
 
   // Revoke object URL when dialog closes or component unmounts
   useEffect(() => {
@@ -100,6 +131,14 @@ export function EditorExportSection({
   useEffect(() => {
     if (!withVoiceover) setWithCaption(false);
   }, [withVoiceover]);
+
+  // Changing format invalidates the generated video; user must regenerate
+  useEffect(() => {
+    if (generatedVideoUrl) {
+      setGeneratedVideoUrl(null);
+      setGeneratedVideoBlob(null);
+    }
+  }, [videoSize]);
 
   const handleExport = async () => {
     setExporting(true);
@@ -134,11 +173,13 @@ export function EditorExportSection({
     if (slideUrls.length > 0 && hasCompleteVideoData) {
       return { urls: slideUrls, videoData: slideVideoData };
     }
-    if (!latestReadyExport) return { urls: slideUrls.length > 0 ? slideUrls : [], videoData: null };
     setVideoUrlsLoading(true);
     try {
-      const res = await fetch(`/api/export/${carouselId}/${latestReadyExport.id}/slide-urls`);
+      const res = await fetch(`/api/carousel/${carouselId}/render-for-video`, { method: "POST" });
       const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error ?? "Failed to prepare slides for video");
+      }
       if (data.slideUrls?.length) {
         setSlideUrls(data.slideUrls);
         const vd =
@@ -148,7 +189,7 @@ export function EditorExportSection({
         setSlideVideoData(vd);
         return { urls: data.slideUrls as string[], videoData: vd };
       }
-      return { urls: slideUrls, videoData: null };
+      return { urls: slideUrls.length > 0 ? slideUrls : [], videoData: null };
     } finally {
       setVideoUrlsLoading(false);
     }
@@ -163,8 +204,7 @@ export function EditorExportSection({
     setVideoDownloadProgress(0);
     setVideoDownloadStep("");
     try {
-      const width = exportSize === "1080x1080" ? 1080 : 1080;
-      const height = exportSize === "1080x1080" ? 1080 : exportSize === "1080x1350" ? 1350 : 1920;
+      const { width, height } = videoSizeToDimensions(videoSize);
       let audioBuffer: ArrayBuffer | undefined;
       let slideDurationsSec: number[] | undefined;
       let captionCues: { text: string; start: number; end: number }[] | undefined;
@@ -324,8 +364,7 @@ export function EditorExportSection({
             </>
           )}
         </Button>
-        {latestReadyExport && (
-          <Dialog open={videoPreviewOpen} onOpenChange={(open) => {
+        <Dialog open={videoPreviewOpen} onOpenChange={(open) => {
             setVideoPreviewOpen(open);
             if (open) {
               const hasComplete =
@@ -390,8 +429,8 @@ export function EditorExportSection({
                   <CarouselVideoPlayer
                     slideUrls={slideUrls}
                     slideVideoData={slideVideoData}
-                    width={exportSize === "1080x1080" ? 1080 : 1080}
-                    height={exportSize === "1080x1080" ? 1080 : exportSize === "1080x1350" ? 1350 : 1920}
+                    width={videoSizeToDimensions(videoSize).width}
+                    height={videoSizeToDimensions(videoSize).height}
                   />
                 )}
               </div>
@@ -400,6 +439,27 @@ export function EditorExportSection({
                   className={`flex flex-wrap items-center justify-center gap-4 w-full transition-opacity ${videoDownloading ? "pointer-events-none opacity-50" : ""}`}
                   aria-disabled={videoDownloading}
                 >
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="video-size" className="text-sm text-muted-foreground whitespace-nowrap">
+                      Format
+                    </Label>
+                    <Select
+                      value={videoSize}
+                      onValueChange={(v) => setVideoSize(v as VideoSize)}
+                      disabled={videoDownloading}
+                    >
+                      <SelectTrigger id="video-size" className="w-[100px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(Object.keys(VIDEO_SIZE_LABELS) as VideoSize[]).map((size) => (
+                          <SelectItem key={size} value={size}>
+                            {VIDEO_SIZE_LABELS[size]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                   <div className="flex items-center gap-2">
                     <input
                       type="checkbox"
@@ -546,7 +606,6 @@ export function EditorExportSection({
               </div>
             </DialogContent>
           </Dialog>
-        )}
         {canExport && (
           <span className="text-muted-foreground text-xs">
             {exportsUsedThisMonth}/{limit} this month

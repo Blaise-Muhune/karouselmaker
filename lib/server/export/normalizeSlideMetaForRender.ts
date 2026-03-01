@@ -71,6 +71,8 @@ export function getTemplateDefaultOverrides(config: TemplateConfig | null): Part
 /**
  * Merge template default overrides with normalized slide meta. Slide meta wins when both set.
  * Use in export so: template defaults (e.g. from Save as template) apply, then slide overrides on top.
+ * Highlights are never taken from template defaults — only the slide's own meta. Otherwise export
+ * would show highlights the user never set (e.g. from a template saved with highlights).
  */
 export function mergeWithTemplateDefaults(
   normalized: NormalizedSlideMeta,
@@ -84,8 +86,8 @@ export function mergeWithTemplateDefaults(
     showCounterOverride: normalized.showCounterOverride || (templateDefaults.showCounterOverride ?? false),
     showWatermarkOverride: normalized.showWatermarkOverride ?? templateDefaults.showWatermarkOverride,
     showMadeWithOverride: normalized.showMadeWithOverride ?? templateDefaults.showMadeWithOverride,
-    headline_highlights: normalized.headline_highlights ?? templateDefaults.headline_highlights,
-    body_highlights: normalized.body_highlights ?? templateDefaults.body_highlights,
+    headline_highlights: normalized.headline_highlights,
+    body_highlights: normalized.body_highlights,
   };
 }
 

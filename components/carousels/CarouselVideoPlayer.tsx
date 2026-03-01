@@ -5,7 +5,7 @@ import { SECONDS_PER_SLIDE } from "@/lib/video/createVideoFromImages";
 import type { LayeredSlideInput } from "@/lib/video/createVideoFromImages";
 
 const TICK_MS = 150;
-const MAX_BACKGROUNDS_PER_SLIDE = 3;
+const MAX_BACKGROUNDS_PER_SLIDE = 5;
 
 /** Track which background URLs failed to load so we can show the first image instead of white. */
 function useFailedBgUrls() {
@@ -16,7 +16,7 @@ function useFailedBgUrls() {
 
 type CarouselVideoPlayerProps = {
   slideUrls: string[];
-  /** When set, preview shows 2–3 backgrounds cycling per slide with overlay on top (matches MP4). */
+  /** When set, preview shows up to 5 backgrounds cycling per slide with overlay on top (matches MP4). */
   slideVideoData?: LayeredSlideInput[] | null;
   width?: number;
   height?: number;
@@ -25,7 +25,7 @@ type CarouselVideoPlayerProps = {
 
 /**
  * Video-style preview: either layered (backgrounds cycle + overlay per slide) or simple slideshow.
- * Layered mode matches the exported MP4: 2–3 images per slide play in the background, overlay stays on top, then transition to next slide.
+ * Layered mode matches the exported MP4: up to 5 images per slide play in the background, overlay stays on top, then transition to next slide.
  */
 export function CarouselVideoPlayer({
   slideUrls,
@@ -124,7 +124,7 @@ export function CarouselVideoPlayer({
           position: "relative",
         }}
       >
-        {/* Background layer: current of 2–3 images; fallback to first if load fails */}
+        {/* Background layer: current of up to 5 images; fallback to first if load fails */}
         <img
           key={`${index}-${bgIndex}`}
           src={bgUrl}

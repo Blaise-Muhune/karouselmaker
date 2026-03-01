@@ -1,6 +1,6 @@
 import type { TemplateConfig, TextZone } from "@/lib/server/renderer/templateSchema";
 import { fitTextToZone } from "./fitText";
-import { injectHighlightMarkers, stripHighlightMarkers, type HighlightSpan } from "@/lib/editor/inlineFormat";
+import { injectHighlightMarkers, stripHighlightMarkers, clampHighlightSpansToText, type HighlightSpan } from "@/lib/editor/inlineFormat";
 
 export type SlideData = {
   headline: string;
@@ -128,7 +128,12 @@ export function buildSlideRenderModel(
           ? slideData.body ?? ""
           : "";
     const highlights = zone.id === "headline" ? slideData.headline_highlights : slideData.body_highlights;
-    if (highlights?.length) text = injectHighlightMarkers(stripHighlightMarkers(text), highlights);
+    if (highlights?.length) {
+      const plainText = stripHighlightMarkers(text);
+      const clamped = clampHighlightSpansToText(plainText, highlights);
+      if (clamped.length) text = injectHighlightMarkers(plainText, clamped);
+      else text = plainText;
+    }
     const zoneForWrap =
       textScale != null && textScale !== 1
         ? { ...mergedZone, fontSize: Math.round(mergedZone.fontSize * textScale) }

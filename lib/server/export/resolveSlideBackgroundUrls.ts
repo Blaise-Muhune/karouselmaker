@@ -2,7 +2,7 @@ import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
 
 const BUCKET = "carousel-assets";
 
-const MAX_VIDEO_BACKGROUNDS = 3;
+const MAX_VIDEO_BACKGROUNDS = 5;
 
 /** Accepts DB slides (background may be Json); we read the shape we need. */
 type SlideWithBackground = {
@@ -17,8 +17,8 @@ type ImageSlot = {
 
 /**
  * Resolve background image URLs per slide for video.
- * - 1 slot: use primary + up to 2 alternates (shuffle) → max 3 URLs.
- * - 2–4 slots: use 1 image per slot, cap at 3 URLs.
+ * - 1 slot: use primary + alternates (shuffle) → max 5 URLs.
+ * - 2+ slots: use 1 image per slot, cap at 5 URLs.
  */
 export async function resolveSlideBackgroundUrls(
   slides: SlideWithBackground[]
@@ -36,7 +36,7 @@ export async function resolveSlideBackgroundUrls(
       if (slideBg.images?.length) {
         const slots = slideBg.images;
         if (slots.length === 1) {
-          // One slot: primary + up to 2 from alternates (shuffle) → 2–3 for video
+          // One slot: primary + alternates (shuffle) → up to 5 for video
           const slot = slots[0]!;
           const primary = slot.image_url
             ? slot.image_url
@@ -52,7 +52,7 @@ export async function resolveSlideBackgroundUrls(
             }
           }
         } else {
-          // 2–4 slots: 1 from each slot, cap at 3
+          // 2+ slots: 1 from each slot, cap at 5
           for (let i = 0; i < slots.length && urls.length < MAX_VIDEO_BACKGROUNDS; i++) {
             const img = slots[i]!;
             if (img.image_url) urls.push(img.image_url);
