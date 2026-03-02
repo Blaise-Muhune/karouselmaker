@@ -98,6 +98,7 @@ export function NewCarouselForm({
   const [useAiBackgrounds, setUseAiBackgrounds] = useState(initialUseAiBackgrounds ?? (!!regenerateCarouselId));
   const [useUnsplashOnly, setUseUnsplashOnly] = useState(initialUseUnsplashOnly ?? false);
   const [useWebSearch, setUseWebSearch] = useState(initialUseWebSearch ?? false);
+  const [viralShortsStyle, setViralShortsStyle] = useState(false);
   const [notes, setNotes] = useState("");
   const [backgroundPickerOpen, setBackgroundPickerOpen] = useState(false);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
@@ -168,6 +169,7 @@ export function NewCarouselForm({
       if (useAiBackgrounds || regenerateCarouselId) formData.set("use_ai_backgrounds", "true");
       if (useUnsplashOnly) formData.set("use_unsplash_only", "true");
       if (useWebSearch) formData.set("use_web_search", "true");
+      if (viralShortsStyle) formData.set("viral_shorts_style", "true");
       if (notes.trim()) formData.set("notes", notes.trim());
       if (selectedTemplateId) formData.set("template_id", selectedTemplateId);
       const result = await generateCarousel(formData);
@@ -328,6 +330,18 @@ export function NewCarouselForm({
             onChange={(e) => setNotes(e.target.value)}
           />
           </div>
+
+          <label className="flex items-center gap-3 rounded-lg py-2 text-sm cursor-pointer hover:bg-muted/50">
+            <input
+              type="checkbox"
+              checked={viralShortsStyle}
+              onChange={(e) => setViralShortsStyle(e.target.checked)}
+            />
+            <span>
+              <span className="font-medium">Viral Shorts style</span>
+              <span className="text-muted-foreground ml-1">— Bait hook, story, mid-carousel engagement CTA (e.g. &quot;Comment what you think&quot;), then payoff and end CTA.</span>
+            </span>
+          </label>
 
           <div>
             <p className="text-muted-foreground mb-2 text-xs font-medium">Background images</p>

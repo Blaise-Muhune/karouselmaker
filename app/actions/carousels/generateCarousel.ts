@@ -110,6 +110,7 @@ export async function generateCarousel(formData: FormData): Promise<
     use_web_search: formData.get("use_web_search") ?? undefined,
     notes: ((formData.get("notes") as string | null) ?? "").trim() || undefined,
     template_id: (formData.get("template_id") as string | null)?.trim() || undefined,
+    viral_shorts_style: formData.get("viral_shorts_style") ?? undefined,
   };
 
   const parsed = generateCarouselInputSchema.safeParse(raw);
@@ -189,6 +190,7 @@ export async function generateCarousel(formData: FormData): Promise<
     project_niche: project.niche?.trim() || undefined,
     language: projectLanguage,
     notes: data.notes,
+    viral_shorts_style: !!parsed.data.viral_shorts_style,
   } as const;
 
   let lastRaw = "";

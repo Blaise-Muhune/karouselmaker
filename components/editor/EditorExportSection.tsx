@@ -51,6 +51,9 @@ const VIDEO_SIZE_LABELS: Record<VideoSize, string> = {
   "1920x1080": "16:9",
 };
 
+/** Portrait → 1:1 (middle) → landscape */
+const VIDEO_SIZE_ORDER: VideoSize[] = ["1080x1920", "1080x1350", "1080x1080", "1080x864", "1920x1080"];
+
 function videoSizeToDimensions(size: VideoSize): { width: number; height: number } {
   switch (size) {
     case "1080x1080":
@@ -108,12 +111,14 @@ export function EditorExportSection({
   const [zipDownloading, setZipDownloading] = useState(false);
   const [withVoiceover, setWithVoiceover] = useState(false);
   const [selectedVoiceId, setSelectedVoiceId] = useState(VOICE_PRESETS[0]!.voiceId);
+  const [voiceSpeed, setVoiceSpeed] = useState(1);
   const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(null);
   const [generatedVideoBlob, setGeneratedVideoBlob] = useState<Blob | null>(null);
   const [videoSize, setVideoSize] = useState<VideoSize>(() =>
     exportSize === "1080x1080" || exportSize === "1080x1350" || exportSize === "1080x1920" ? exportSize : "1080x1350"
   );
   const videoRef = useRef<HTMLVideoElement>(null);
+  const loadVideoUrlsPromiseRef = useRef<Promise<{ urls: string[]; videoData: LayeredSlideInput[] | null }> | null>(null);
   const isStandalonePWA = useIsStandalonePWA();
 
   // Video no longer depends on export: we use render-for-video when slide URLs are needed.
@@ -132,13 +137,13 @@ export function EditorExportSection({
     if (!withVoiceover) setWithCaption(false);
   }, [withVoiceover]);
 
-  // Changing format invalidates the generated video; user must regenerate
+  // Changing format or voice/caption settings invalidates the generated video; user must regenerate
   useEffect(() => {
     if (generatedVideoUrl) {
       setGeneratedVideoUrl(null);
       setGeneratedVideoBlob(null);
     }
-  }, [videoSize]);
+  }, [videoSize, withVoiceover, withCaption, captionPosition, selectedVoiceId, voiceSpeed]);
 
   const handleExport = async () => {
     setExporting(true);
@@ -173,26 +178,34 @@ export function EditorExportSection({
     if (slideUrls.length > 0 && hasCompleteVideoData) {
       return { urls: slideUrls, videoData: slideVideoData };
     }
-    setVideoUrlsLoading(true);
-    try {
-      const res = await fetch(`/api/carousel/${carouselId}/render-for-video`, { method: "POST" });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data.error ?? "Failed to prepare slides for video");
-      }
-      if (data.slideUrls?.length) {
-        setSlideUrls(data.slideUrls);
-        const vd =
-          Array.isArray(data.slideVideoData) && data.slideVideoData.length === data.slideUrls.length
-            ? (data.slideVideoData as LayeredSlideInput[])
-            : null;
-        setSlideVideoData(vd);
-        return { urls: data.slideUrls as string[], videoData: vd };
-      }
-      return { urls: slideUrls.length > 0 ? slideUrls : [], videoData: null };
-    } finally {
-      setVideoUrlsLoading(false);
+    if (loadVideoUrlsPromiseRef.current) {
+      return loadVideoUrlsPromiseRef.current;
     }
+    const promise = (async () => {
+      setVideoUrlsLoading(true);
+      try {
+        const res = await fetch(`/api/carousel/${carouselId}/render-for-video`, { method: "POST" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data.error ?? "Failed to prepare slides for video");
+        }
+        if (data.slideUrls?.length) {
+          setSlideUrls(data.slideUrls);
+          const vd =
+            Array.isArray(data.slideVideoData) && data.slideVideoData.length === data.slideUrls.length
+              ? (data.slideVideoData as LayeredSlideInput[])
+              : null;
+          setSlideVideoData(vd);
+          return { urls: data.slideUrls as string[], videoData: vd };
+        }
+        return { urls: slideUrls.length > 0 ? slideUrls : [], videoData: null };
+      } finally {
+        setVideoUrlsLoading(false);
+        loadVideoUrlsPromiseRef.current = null;
+      }
+    })();
+    loadVideoUrlsPromiseRef.current = promise;
+    return promise;
   };
 
   const handleDownloadVideo = async () => {
@@ -247,6 +260,7 @@ export function EditorExportSection({
               ? {
                   audioBuffer,
                   slideDurationsSec,
+                  voiceSpeed,
                   ...(withCaption && captionCues
                     ? { captionCues, captionPosition }
                     : {}),
@@ -452,7 +466,7 @@ export function EditorExportSection({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {(Object.keys(VIDEO_SIZE_LABELS) as VideoSize[]).map((size) => (
+                        {VIDEO_SIZE_ORDER.map((size) => (
                           <SelectItem key={size} value={size}>
                             {VIDEO_SIZE_LABELS[size]}
                           </SelectItem>
@@ -506,6 +520,26 @@ export function EditorExportSection({
                                 {v.description ? ` — ${v.description}` : ""}
                               </SelectItem>
                             ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Label htmlFor="voice-speed" className="text-sm text-muted-foreground whitespace-nowrap">
+                          Voice speed
+                        </Label>
+                        <Select
+                          value={String(voiceSpeed)}
+                          onValueChange={(v) => setVoiceSpeed(Number(v))}
+                          disabled={videoDownloading}
+                        >
+                          <SelectTrigger id="voice-speed" className="w-[100px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="0.75">0.75×</SelectItem>
+                            <SelectItem value="1">1×</SelectItem>
+                            <SelectItem value="1.25">1.25×</SelectItem>
+                            <SelectItem value="1.5">1.5×</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -575,7 +609,7 @@ export function EditorExportSection({
                     <Button
                       size="sm"
                       onClick={handleDownloadVideo}
-                      disabled={slideUrls.length === 0 || videoDownloading || videoUrlsLoading}
+                      disabled={videoDownloading}
                     >
                       {videoDownloading ? (
                         <>

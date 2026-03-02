@@ -7,10 +7,11 @@ const SEGMENTS_PER_SLIDE = 2;
 const SECONDS_PER_SEGMENT = SECONDS_PER_SLIDE / SEGMENTS_PER_SLIDE;
 const OUTPUT_FPS = 24;
 const SEGMENT_FRAMES = Math.round(SECONDS_PER_SEGMENT * OUTPUT_FPS);
-const FADE_DURATION_SEC = 0.65;
+/** Shorter = punchier, hooks scrollers. Was 0.65. */
+const FADE_DURATION_SEC = 0.32;
 
-/** Rotate 2–3 transition types so it doesn't feel repetitive. */
-const SLIDE_TRANSITIONS = ["fade", "wipeleft", "slideright"] as const;
+/** Punchy transitions: first = brutal intro (circleclose), then wipe/slide. */
+const SLIDE_TRANSITIONS = ["circleclose", "wipeleft", "slideright", "rectcrop"] as const;
 
 /** center = middle of frame (safe). safe_lower = above platform UI (TikTok/Reels avoid bottom 20–35%). */
 export type CaptionPosition = "bottom_center" | "lower_third" | "center" | "safe_lower";
@@ -182,7 +183,8 @@ export async function createVideoFromImages(
 }
 
 const MAX_BACKGROUNDS_PER_SLIDE = 3;
-const OVERLAY_FADE_IN_SEC = 0.5;
+/** Overlay (text) pops in fast so first image stays the hook. */
+const OVERLAY_FADE_IN_SEC = 0.22;
 
 export type LayeredSlideInput = {
   backgroundUrls: string[];
@@ -198,6 +200,8 @@ export type CreateVideoOptions = {
   audioBuffer?: ArrayBuffer;
   /** Per-slide duration in seconds (from TTS alignment). When set, voice is synced to slide changes. */
   slideDurationsSec?: number[];
+  /** Voice playback speed (0.5–2). 1 = normal. Applied via atempo + scaled slide/caption timing. */
+  voiceSpeed?: number;
   /** Cathy-style caption cues (1–3 words each). Burned in with fontfile. */
   captionCues?: CaptionCue[];
   /** Where to draw captions. */
@@ -358,6 +362,7 @@ export async function createVideoFromLayeredSlides(
   const n = slides.length;
   if (n === 0) throw new Error("No slides");
 
+  const voiceSpeed = Math.min(2, Math.max(0.5, options?.voiceSpeed ?? 1));
   const minDurationSec = options?.minDurationSec ?? 0;
   const slideDurationsSec = options?.slideDurationsSec;
   const hasVoiceover = !!options?.audioBuffer;
@@ -388,8 +393,19 @@ export async function createVideoFromLayeredSlides(
     }
   }
 
+  if (hasVoiceover && voiceSpeed !== 1) {
+    secPerSlideArray = secPerSlideArray.map((d) => Math.max(0.5, d / voiceSpeed));
+  }
+
+  // With voiceover, do NOT shorten slide duration: we transition to the next slide only when the voice for this slide is done. Images still cycle fast (2s each) and loop within the slide.
+
+  /** Within each slide, cycle through its images; loop until voice for that slide ends. */
+  const PER_IMAGE_SEGMENT_DURATION = 3;
+  /** Cap segments per slide to avoid FFmpeg.wasm OOM / abort (huge filter graph). */
+  const MAX_IMAGE_SEGMENTS_PER_SLIDE = 5;
+
   const scale = `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2`;
-  const x264Args = ["-preset", "veryfast", "-crf", "20"];
+  const x264Args = ["-preset", "superfast", "-crf", "23"];
 
   // Per-slide: K = number of background segments (1..MAX_BACKGROUNDS_PER_SLIDE)
   const K: number[] = slides.map((s) =>
@@ -401,9 +417,13 @@ export async function createVideoFromLayeredSlides(
     await ffmpeg.writeFile("voiceover.mp3", new Uint8Array(options.audioBuffer));
   }
   const captionCuesFiltered = (options?.captionCues ?? []).filter((c) => c.text.replace(/\s/g, "").length > 0);
+  const scaledCaptionCues =
+    voiceSpeed !== 1 && captionCuesFiltered.length > 0
+      ? captionCuesFiltered.map((c) => ({ ...c, start: c.start / voiceSpeed, end: c.end / voiceSpeed }))
+      : captionCuesFiltered;
   const captionPosition = options?.captionPosition ?? "bottom_center";
-  if (captionCuesFiltered.length > 0 && options?.captionCues) {
-    const srt = captionCuesToSrt(options.captionCues);
+  if (scaledCaptionCues.length > 0 && options?.captionCues) {
+    const srt = captionCuesToSrt(scaledCaptionCues);
     await ffmpeg.writeFile("captions.srt", new TextEncoder().encode(srt));
   }
 
@@ -428,22 +448,35 @@ export async function createVideoFromLayeredSlides(
     }
   }
 
-  // Build inputArgs and bgInputIndices in a single pass so indices always match the actual -i order.
+  // Per slide: loop its K images until the slide's voice duration is filled. Cap segments to avoid OOM.
+  const numImageSegmentsPerSlide: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const D = secPerSlideArray[i]!;
+    const uncapped = Math.max(1, Math.ceil(D / PER_IMAGE_SEGMENT_DURATION));
+    numImageSegmentsPerSlide.push(Math.min(uncapped, MAX_IMAGE_SEGMENTS_PER_SLIDE));
+  }
+
   const inputArgs: string[] = [];
-  const bgInputIndices: number[][] = [];
+  const bgInputIndices: number[][] = []; // slide i -> list of input indices for its image segments (length M_i)
   const overlayInputIndices: (number | null)[] = [];
   let videoInputIndex = 0;
   for (let i = 0; i < n; i++) {
-    const secSlide = secPerSlideArray[i]!;
-    const secPerBg = secSlide / K[i]!;
+    const D = secPerSlideArray[i]!;
+    const ki = K[i]!;
+    const M = numImageSegmentsPerSlide[i]!;
     const indices: number[] = [];
-    for (let k = 0; k < K[i]!; k++) {
+    for (let j = 0; j < M; j++) {
+      const imageIndex = j % ki;
+      const segDur =
+        j < M - 1
+          ? PER_IMAGE_SEGMENT_DURATION
+          : Math.max(0.25, D - (M - 1) * PER_IMAGE_SEGMENT_DURATION);
       indices.push(videoInputIndex);
       inputArgs.push(
         "-loop", "1",
-        "-t", String(secPerBg),
+        "-t", String(segDur),
         "-framerate", String(OUTPUT_FPS),
-        "-i", `bg_${i}_${k}.png`
+        "-i", `bg_${i}_${imageIndex}.png`
       );
       videoInputIndex++;
     }
@@ -452,7 +485,7 @@ export async function createVideoFromLayeredSlides(
       overlayInputIndices.push(videoInputIndex);
       inputArgs.push(
         "-loop", "1",
-        "-t", String(secSlide),
+        "-t", String(D),
         "-framerate", String(OUTPUT_FPS),
         "-i", `overlay_${i}.png`
       );
@@ -466,8 +499,8 @@ export async function createVideoFromLayeredSlides(
   // Caption-as-overlay: render each cue as a PNG and overlay with enable=between(t,...).
   type WrittenCaption = { ffmpegIndex: number; fileIndex: number; cue: CaptionCue };
   const writtenCaptions: WrittenCaption[] = [];
-  if (captionCuesFiltered.length > 0 && typeof document !== "undefined") {
-    const capped = captionCuesFiltered.slice(0, MAX_CAPTION_CUES);
+  if (scaledCaptionCues.length > 0 && typeof document !== "undefined") {
+    const capped = scaledCaptionCues.slice(0, MAX_CAPTION_CUES);
     let fileIndex = 0;
     for (let i = 0; i < capped.length; i++) {
       const c = capped[i]!;
@@ -495,24 +528,25 @@ export async function createVideoFromLayeredSlides(
   const slideBgLabels: string[] = [];
 
   for (let i = 0; i < n; i++) {
-    const ki = K[i]!;
-    const secSlide = secPerSlideArray[i]!;
-    const secPerBg = secSlide / ki;
-    const framesPerBg = Math.round(secPerBg * OUTPUT_FPS);
+    const M = numImageSegmentsPerSlide[i]!;
+    const D = secPerSlideArray[i]!;
     const indices = bgInputIndices[i]!;
-
-    // Zoom + pan (both axes) on every segment so the image never looks still (no "stuck" feel).
-    const zoomRange = 0.14; // 1.0 -> 1.14
-    const panPct = 0.08; // 8% of frame per axis
-    for (let k = 0; k < ki; k++) {
-      const idx = indices[k]!;
+    const zoomRange = 0.14;
+    const panPct = 0.08;
+    for (let j = 0; j < M; j++) {
+      const idx = indices[j]!;
+      const segDur =
+        j < M - 1
+          ? PER_IMAGE_SEGMENT_DURATION
+          : Math.max(0.25, D - (M - 1) * PER_IMAGE_SEGMENT_DURATION);
+      const framesPerBg = Math.round(segDur * OUTPUT_FPS);
       const inLabel = `${idx}:v`;
-      const scaled = `sb_${i}_${k}`;
-      const zoomIn = k % 2 === 0;
+      const scaled = `sb_${i}_${j}`;
+      const zoomIn = j % 2 === 0;
       const zExpr = zoomIn
         ? `'min(1+${zoomRange}*on/${framesPerBg},1+${zoomRange})'`
         : `'max(1+${zoomRange}-${zoomRange}*on/${framesPerBg},1)'`;
-      const dir = (i + k) % 4; // 0=right+down, 1=left+up, 2=right+up, 3=left+down (diagonal pan)
+      const dir = (i + j) % 4;
       const xPos = dir === 0 || dir === 2;
       const yPos = dir === 0 || dir === 3;
       const xExpr = xPos
@@ -522,30 +556,20 @@ export async function createVideoFromLayeredSlides(
         ? `'ih/2-(ih/zoom/2)+ih*${panPct}*on/${framesPerBg}'`
         : `'ih/2-(ih/zoom/2)-ih*${panPct}*on/${framesPerBg}'`;
       filters.push(`[${inLabel}]${scale}[${scaled}]`);
-      filters.push(`[${scaled}]zoompan=z=${zExpr}:x=${xExpr}:y=${yExpr}:d=1:s=${width}x${height}:fps=${OUTPUT_FPS}[zp_${i}_${k}]`);
-      filters.push(`[zp_${i}_${k}]format=yuv420p,fps=${OUTPUT_FPS}[zb_${i}_${k}]`);
+      filters.push(`[${scaled}]zoompan=z=${zExpr}:x=${xExpr}:y=${yExpr}:d=1:s=${width}x${height}:fps=${OUTPUT_FPS}[zp_${i}_${j}]`);
+      filters.push(`[zp_${i}_${j}]format=yuv420p,fps=${OUTPUT_FPS}[zb_${i}_${j}]`);
     }
-
-    let bgLabel: string;
-    if (ki === 1) {
-      bgLabel = `zb_${i}_0`;
-      slideBgLabels.push(bgLabel);
-    } else {
-      // Use concat for all multi-image slides (FFmpeg.wasm xfade often freezes on 2nd input).
-      // Hard cut between images; both segments get zoom/pan.
-      const concatLabels = Array.from({ length: ki }, (_, k) => `zb_${i}_${k}`);
-      const concatInputStr = concatLabels.map((l) => `[${l}]`).join("");
-      filters.push(`${concatInputStr}concat=n=${ki}:v=1:a=0[bg_${i}]`);
-      filters.push(`[bg_${i}]fps=${OUTPUT_FPS},format=yuv420p[bg_${i}_tb]`);
-      bgLabel = `bg_${i}_tb`;
-      slideBgLabels.push(bgLabel);
-    }
+    const concatLabels = Array.from({ length: M }, (_, j) => `zb_${i}_${j}`);
+    const concatInputStr = concatLabels.map((l) => `[${l}]`).join("");
+    filters.push(`${concatInputStr}concat=n=${M}:v=1:a=0[bg_${i}]`);
+    filters.push(`[bg_${i}]fps=${OUTPUT_FPS},format=yuv420p[bg_${i}_tb]`);
+    slideBgLabels.push(`bg_${i}_tb`);
   }
 
   const slideLabels: string[] = [];
   for (let i = 0; i < n; i++) {
     const bgLabel = slideBgLabels[i]!;
-    if (hasOverlay[i]) {
+    if (hasOverlay[i] && overlayInputIndices[i] != null) {
       const ovIn = overlayInputIndices[i]!;
       filters.push(`[${ovIn}:v]fade=t=in:st=0:d=${OVERLAY_FADE_IN_SEC}:alpha=1,format=rgba[ov_${i}]`);
       filters.push(`[${bgLabel}][ov_${i}]overlay=0:0:format=auto[slide_${i}]`);
@@ -555,14 +579,15 @@ export async function createVideoFromLayeredSlides(
     }
   }
 
-  // Chain slides with xfade (offset = when transition starts in first stream; must be >= 0)
+  // Chain slides with xfade (first transition = brutal intro with circleclose)
   let prevLabel = slideLabels[0]!;
   let currentDurationSec = secPerSlideArray[0]!;
   for (let i = 1; i < n; i++) {
     const offset = Math.max(0, currentDurationSec - FADE_DURATION_SEC);
     const transition = SLIDE_TRANSITIONS[(i - 1) % SLIDE_TRANSITIONS.length];
     const outLabel = i === n - 1 ? "vlast" : `chain_${i}`;
-    filters.push(`[${prevLabel}][${slideLabels[i]}]xfade=transition=${transition}:duration=${FADE_DURATION_SEC.toFixed(2)}:offset=${offset.toFixed(2)}[${outLabel}]`);
+    const nextLabel = slideLabels[i]!;
+    filters.push(`[${prevLabel}][${nextLabel}]xfade=transition=${transition}:duration=${FADE_DURATION_SEC.toFixed(2)}:offset=${offset.toFixed(2)}[${outLabel}]`);
     prevLabel = outLabel;
     currentDurationSec += Math.max(0.1, secPerSlideArray[i]! - FADE_DURATION_SEC);
   }
@@ -572,7 +597,7 @@ export async function createVideoFromLayeredSlides(
   filters.push(`[${lastVideoLabel}]format=yuv420p,fps=${OUTPUT_FPS}[vbase]`);
   const videoBaseLabel = "vbase";
 
-  const hasCaptions = captionCuesFiltered.length > 0;
+  const hasCaptions = scaledCaptionCues.length > 0;
   let captionMethod: "overlay" | "drawtext" | "subtitles" | null = null;
   if (hasCaptions && writtenCaptions.length > 0) {
     captionMethod = "overlay";
@@ -601,7 +626,7 @@ export async function createVideoFromLayeredSlides(
     const captionFilters = buildCaptionDrawtextChain(
       videoBaseLabel,
       "vsub",
-      captionCuesFiltered,
+      scaledCaptionCues,
       width,
       height,
       "font.ttf",
@@ -620,14 +645,18 @@ export async function createVideoFromLayeredSlides(
     filters.push(`[${videoBaseLabel}]format=yuv420p[vout]`);
   }
 
-  const filterComplex = filters.join(";");
   const audioInputIndex = totalInputs; // voiceover.mp3 is last input when present
+  const useAtempo = !!options?.audioBuffer && voiceSpeed !== 1;
+  const filterComplex =
+    filters.join(";") +
+    (useAtempo ? `;[${audioInputIndex}:a]atempo=${voiceSpeed}[aout]` : "");
+  const audioMap = useAtempo ? "[aout]" : `${audioInputIndex}:a:0`;
   const args = options?.audioBuffer
     ? [
         ...inputArgs,
         "-filter_complex", filterComplex,
         "-map", "[vout]",
-        "-map", `${audioInputIndex}:a:0`,
+        "-map", audioMap,
         "-c:v", "libx264",
         "-c:a", "aac",
         "-shortest",
