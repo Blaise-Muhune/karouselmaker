@@ -2,7 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getUser } from "@/lib/server/auth/getUser";
 import { getProject, listCarousels, countCarousels, getSlideCountsForCarousels } from "@/lib/server/db";
+import { getSubscription } from "@/lib/server/subscription";
 import { Button } from "@/components/ui/button";
+import { GoProBar } from "@/components/subscription/GoProBar";
 import { PaginationNav } from "@/components/ui/pagination-nav";
 import { ChevronRightIcon, PencilIcon, PlusCircleIcon } from "lucide-react";
 
@@ -34,9 +36,10 @@ export default async function ProjectDashboardPage({
 
   const page = Math.max(1, parseInt(pageParam ?? "1", 10) || 1);
   const offset = (page - 1) * CAROUSELS_PAGE_SIZE;
-  const [carousels, total] = await Promise.all([
+  const [carousels, total, subscription] = await Promise.all([
     listCarousels(user.id, projectId, { limit: CAROUSELS_PAGE_SIZE, offset }),
     countCarousels(user.id, projectId),
+    getSubscription(user.id, user.email),
   ]);
   const totalPages = Math.max(1, Math.ceil(total / CAROUSELS_PAGE_SIZE));
   const slideCounts =
@@ -44,7 +47,8 @@ export default async function ProjectDashboardPage({
 
   return (
     <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">
-      <div className="mx-auto max-w-xl">
+      <div className="mx-auto max-w-xl space-y-4">
+        {!subscription.isPro && <GoProBar />}
         {/* Header */}
         <header className="mb-10">
           <h1 className="text-xl font-semibold tracking-tight">{project.name}</h1>

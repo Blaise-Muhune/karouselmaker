@@ -6,6 +6,7 @@ import { ContactUsModal } from "@/components/admin/ContactUsModal";
 import { usePathname } from "next/navigation";
 import { signOut } from "@/app/actions/auth";
 import { createCustomerPortalSession } from "@/app/actions/subscription/createCustomerPortalSession";
+import { createCheckoutSession } from "@/app/actions/subscription/createCheckoutSession";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -23,7 +24,7 @@ import {
 import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
 import type { Project } from "@/lib/server/db/types";
-import { ChevronDownIcon, CreditCardIcon, Loader2Icon, LogOutIcon, MenuIcon, PlusCircleIcon, ShieldIcon, UserIcon } from "lucide-react";
+import { ChevronDownIcon, CreditCardIcon, Gem, Loader2Icon, LogOutIcon, MenuIcon, PlusCircleIcon, ShieldIcon, UserIcon } from "lucide-react";
 
 const ADMIN_EMAILS = ["blaisemu007@gmail.com", "muyumba@andrews.edu"];
 
@@ -48,6 +49,31 @@ function ManageSubscriptionButton() {
       {loading ? <Loader2Icon className="mr-2 size-4 animate-spin" /> : <CreditCardIcon className="mr-2 size-4" />}
       Manage subscription
     </button>
+  );
+}
+
+function GoProButton({ className }: { className?: string }) {
+  const [loading, setLoading] = useState(false);
+  return (
+    <Button
+      variant="default"
+      size="sm"
+      className={className}
+      disabled={loading}
+      onClick={async () => {
+        setLoading(true);
+        const result = await createCheckoutSession();
+        if ("url" in result) {
+          window.location.href = result.url;
+        } else {
+          setLoading(false);
+          alert(result.error ?? "Failed to start checkout");
+        }
+      }}
+    >
+      {loading ? <Loader2Icon className="mr-2 size-4 animate-spin" /> : <Gem className="mr-2 size-4" />}
+      Go Pro
+    </Button>
   );
 }
 
@@ -140,6 +166,16 @@ function NavContent({
       >
         Assets
       </NavLink>
+      {isAdmin && (
+        <NavLink
+          href="/settings/connected-accounts"
+          isActive={pathname.startsWith("/settings/connected-accounts")}
+          onClick={() => setSheetOpen?.(false)}
+          className="w-full justify-start md:w-auto md:inline-flex"
+        >
+          Connected accounts
+        </NavLink>
+      )}
           <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
@@ -245,6 +281,11 @@ export function AppShell({
                 </SheetHeader>
                 <nav className="mt-6 flex flex-col gap-1">
                   <NavContent currentProject={currentProject} projects={projects} setSheetOpen={setSheetOpen} isAdmin={isAdmin} pathname={pathname} />
+                  {!isPro && (
+                    <div className="mt-4">
+                      <GoProButton className="w-full sm:hidden" />
+                    </div>
+                  )}
                 </nav>
               </SheetContent>
             </Sheet>
@@ -258,6 +299,9 @@ export function AppShell({
             <NavContent currentProject={currentProject} projects={projects} isAdmin={isAdmin} pathname={pathname} />
           </nav>
           <div className="flex shrink-0 items-center gap-1">
+            {!isPro && (
+              <GoProButton className="hidden sm:inline-flex" />
+            )}
             <ThemeToggle />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -269,6 +313,11 @@ export function AppShell({
                 <DropdownMenuItem className="text-muted-foreground cursor-default" disabled>
                   {userEmail}
                 </DropdownMenuItem>
+                {isAdmin && (
+                  <DropdownMenuItem asChild>
+                    <Link href="/settings/connected-accounts">Connected accounts</Link>
+                  </DropdownMenuItem>
+                )}
                 {isPro && (
                   <DropdownMenuItem asChild>
                     <ManageSubscriptionButton />

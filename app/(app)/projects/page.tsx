@@ -9,7 +9,9 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { SubscriptionStatusBanner } from "@/components/subscription/SubscriptionStatusBanner";
+import { GoProBar } from "@/components/subscription/GoProBar";
 import { ProjectMenuDropdown } from "@/components/projects/ProjectMenuDropdown";
+import { getSubscription } from "@/lib/server/subscription";
 import { PaginationNav } from "@/components/ui/pagination-nav";
 import { PlusCircleIcon } from "lucide-react";
 
@@ -18,7 +20,7 @@ const PROJECTS_PAGE_SIZE = 15;
 export default async function ProjectsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ subscription?: string; page?: string }>;
+  searchParams: Promise<{ subscription?: string; page?: string; error?: string }>;
 }) {
   const { getUser } = await import("@/lib/server/auth/getUser");
   const { listProjects, countProjects } = await import("@/lib/server/db");
@@ -26,18 +28,27 @@ export default async function ProjectsPage({
   const params = await searchParams;
   const page = Math.max(1, parseInt(params.page ?? "1", 10) || 1);
   const offset = (page - 1) * PROJECTS_PAGE_SIZE;
-  const [projects, total] = await Promise.all([
+  const [projects, total, subscription] = await Promise.all([
     listProjects(user.id, { limit: PROJECTS_PAGE_SIZE, offset }),
     countProjects(user.id),
+    getSubscription(user.id, user.email),
   ]);
   const totalPages = Math.max(1, Math.ceil(total / PROJECTS_PAGE_SIZE));
 
   return (
     <div className="p-6 md:p-8">
       <div className="mx-auto max-w-2xl space-y-6">
+        {params.error === "admin_only" && (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm text-amber-700 dark:text-amber-400">
+            Connected accounts and Post to features are available to admins only.
+          </div>
+        )}
         <Suspense fallback={null}>
           <SubscriptionStatusBanner />
         </Suspense>
+        {!subscription.isPro && (
+          <GoProBar />
+        )}
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-semibold tracking-tight">Projects</h1>
           <Button asChild>

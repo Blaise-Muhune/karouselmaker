@@ -1,6 +1,92 @@
 "use server";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
+
+/** Count all users in Supabase Auth (source of truth). Paginates to get accurate total. */
+async function countAuthUsers(supabase: SupabaseClient): Promise<number> {
+  try {
+    let total = 0;
+    let page = 1;
+    const perPage = 1000;
+    while (true) {
+      const { data, error } = await supabase.auth.admin.listUsers({ page, perPage });
+      if (error) return 0;
+      const n = data.users.length;
+      total += n;
+      if (n < perPage) break;
+      page += 1;
+    }
+    return total;
+  } catch {
+    return 0;
+  }
+}
+
+export type AdminUserRow = {
+  id: string;
+  email: string | null;
+  name: string;
+  plan: "free" | "pro" | null;
+  createdAt: string | null;
+};
+
+/** List users with name and email for admin. Uses Auth + profiles; capped at 500. */
+export async function getAdminUsers(): Promise<AdminUserRow[]> {
+  const supabase = createAdminClient();
+  const perPage = 1000;
+  const maxUsers = 500;
+  const rows: { id: string; email: string | null; user_metadata: Record<string, unknown>; created_at: string | null }[] = [];
+  let page = 1;
+  try {
+    while (rows.length < maxUsers) {
+      const { data, error } = await supabase.auth.admin.listUsers({ page, perPage });
+      if (error) break;
+      for (const u of data.users) {
+        rows.push({
+          id: u.id,
+          email: u.email ?? null,
+          user_metadata: (u.user_metadata as Record<string, unknown>) ?? {},
+          created_at: u.created_at ?? null,
+        });
+        if (rows.length >= maxUsers) break;
+      }
+      if (data.users.length < perPage) break;
+      page += 1;
+    }
+  } catch {
+    return [];
+  }
+
+  const userIds = rows.map((r) => r.id);
+  const { data: profiles } = await supabase
+    .from("profiles")
+    .select("user_id, display_name, plan")
+    .in("user_id", userIds);
+  const profileByUserId = new Map(
+    (profiles ?? []).map((p) => [
+      (p as { user_id: string; display_name: string | null; plan: string | null }).user_id,
+      p as { display_name: string | null; plan: string | null },
+    ])
+  );
+
+  return rows.map((u) => {
+    const profile = profileByUserId.get(u.id);
+    const meta = u.user_metadata ?? {};
+    const name =
+      (profile?.display_name?.trim()) ||
+      (typeof meta.full_name === "string" && meta.full_name.trim()) ||
+      (typeof meta.name === "string" && meta.name.trim()) ||
+      "—";
+    return {
+      id: u.id,
+      email: u.email ?? null,
+      name,
+      plan: (profile?.plan === "pro" ? "pro" : profile?.plan === "free" ? "free" : null) ?? null,
+      createdAt: u.created_at,
+    };
+  });
+}
 
 export type AdminStats = {
   totalUsers: number;
@@ -54,7 +140,7 @@ export async function getAdminStats(): Promise<AdminStats | null> {
   const dateLabels30 = dateRange(30);
 
   const [
-    { count: totalUsers },
+    authUsersResult,
     { count: totalProjects },
     { count: totalCarousels },
     { count: totalSlides },
@@ -67,7 +153,7 @@ export async function getAdminStats(): Promise<AdminStats | null> {
     carousels30Res,
     exports30Res,
   ] = await Promise.all([
-    supabase.from("profiles").select("*", { count: "exact", head: true }),
+    countAuthUsers(supabase),
     supabase.from("projects").select("*", { count: "exact", head: true }),
     supabase.from("carousels").select("*", { count: "exact", head: true }),
     supabase.from("slides").select("*", { count: "exact", head: true }),
@@ -81,7 +167,8 @@ export async function getAdminStats(): Promise<AdminStats | null> {
     supabase.from("exports").select("created_at").gte("created_at", thirtyDaysAgo.toISOString()).eq("status", "ready"),
   ]);
 
-  const freeUsers = (totalUsers ?? 0) - (proUsers ?? 0);
+  const totalUsers = authUsersResult ?? 0;
+  const freeUsers = totalUsers - (proUsers ?? 0);
 
   return {
     totalUsers: totalUsers ?? 0,

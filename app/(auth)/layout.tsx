@@ -8,7 +8,7 @@ export default function AuthLayout({
       <div className="absolute top-[max(1rem,env(safe-area-inset-top))] right-[max(1rem,env(safe-area-inset-right))]">
         <ThemeToggle />
       </div>
-      <div className="w-full max-w-sm">{children}</div>
+      <div className="w-full max-w-sm lg:max-w-4xl">{children}</div>
     </div>
   );
 }

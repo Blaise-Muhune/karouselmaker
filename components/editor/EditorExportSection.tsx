@@ -20,7 +20,7 @@ import {
   type LayeredSlideInput,
 } from "@/lib/video/createVideoFromImages";
 import { VOICE_PRESETS } from "@/lib/video/voices";
-import { DownloadIcon, Loader2Icon, Pause, PlayIcon, VideoIcon } from "lucide-react";
+import { DownloadIcon, Loader2Icon, PlayIcon, RefreshCwIcon, VideoIcon } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -209,13 +209,16 @@ export function EditorExportSection({
   };
 
   const handleDownloadVideo = async () => {
-    const { urls, videoData } = await loadVideoUrls();
-    if (urls.length === 0) return;
-    const previousVideoUrl = generatedVideoUrl;
     setVideoDownloading(true);
     setVideoDownloadError(null);
     setVideoDownloadProgress(0);
     setVideoDownloadStep("");
+    const { urls, videoData } = await loadVideoUrls();
+    if (urls.length === 0) {
+      setVideoDownloading(false);
+      return;
+    }
+    const previousVideoUrl = generatedVideoUrl;
     try {
       const { width, height } = videoSizeToDimensions(videoSize);
       let audioBuffer: ArrayBuffer | undefined;
@@ -449,143 +452,128 @@ export function EditorExportSection({
                 )}
               </div>
               <div className="flex flex-col items-center gap-4 mt-4">
-                <div
-                  className={`flex flex-wrap items-center justify-center gap-4 w-full transition-opacity ${videoDownloading ? "pointer-events-none opacity-50" : ""}`}
-                  aria-disabled={videoDownloading}
-                >
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="video-size" className="text-sm text-muted-foreground whitespace-nowrap">
-                      Format
-                    </Label>
-                    <Select
-                      value={videoSize}
-                      onValueChange={(v) => setVideoSize(v as VideoSize)}
-                      disabled={videoDownloading}
-                    >
-                      <SelectTrigger id="video-size" className="w-[100px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {VIDEO_SIZE_ORDER.map((size) => (
-                          <SelectItem key={size} value={size}>
-                            {VIDEO_SIZE_LABELS[size]}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                {/* Options row: only show before video is generated (or when Regenerate was clicked) */}
+                {!generatedVideoUrl && (
+                  <div
+                    className={`flex flex-wrap items-center justify-center gap-4 w-full transition-opacity ${videoDownloading ? "pointer-events-none opacity-50" : ""}`}
+                    aria-disabled={videoDownloading}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Label htmlFor="video-size" className="text-sm text-muted-foreground whitespace-nowrap">
+                        Format
+                      </Label>
+                      <Select
+                        value={videoSize}
+                        onValueChange={(v) => setVideoSize(v as VideoSize)}
+                        disabled={videoDownloading}
+                      >
+                        <SelectTrigger id="video-size" className="w-[100px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {VIDEO_SIZE_ORDER.map((size) => (
+                            <SelectItem key={size} value={size}>
+                              {VIDEO_SIZE_LABELS[size]}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="voiceover"
+                        checked={withVoiceover}
+                        onChange={(e) => setWithVoiceover(e.target.checked)}
+                        disabled={videoDownloading}
+                        className="rounded border-input accent-primary"
+                      />
+                      <Label htmlFor="voiceover" className="text-sm font-medium cursor-pointer">
+                        With voiceover
+                      </Label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="with-caption"
+                        checked={withCaption}
+                        disabled={!withVoiceover || videoDownloading}
+                        onChange={(e) => setWithCaption(e.target.checked)}
+                        className="rounded border-input accent-primary disabled:opacity-50"
+                      />
+                      <Label htmlFor="with-caption" className={`text-sm font-medium cursor-pointer ${!withVoiceover ? "text-muted-foreground" : ""}`}>
+                        With caption
+                      </Label>
+                    </div>
+                    {withVoiceover && (
+                      <>
+                        <div className="flex items-center gap-2">
+                          <Label htmlFor="voice-select" className="text-sm text-muted-foreground whitespace-nowrap">
+                            Voice
+                          </Label>
+                          <Select
+                            value={selectedVoiceId}
+                            onValueChange={setSelectedVoiceId}
+                          >
+                            <SelectTrigger id="voice-select" className="w-[180px]" disabled={videoDownloading}>
+                              <SelectValue placeholder="Pick a voice" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {VOICE_PRESETS.map((v) => (
+                                <SelectItem key={v.id} value={v.voiceId}>
+                                  {v.name}
+                                  {v.description ? ` — ${v.description}` : ""}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Label htmlFor="voice-speed" className="text-sm text-muted-foreground whitespace-nowrap">
+                            Voice speed
+                          </Label>
+                          <Select
+                            value={String(voiceSpeed)}
+                            onValueChange={(v) => setVoiceSpeed(Number(v))}
+                            disabled={videoDownloading}
+                          >
+                            <SelectTrigger id="voice-speed" className="w-[100px]">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="0.75">0.75×</SelectItem>
+                              <SelectItem value="1">1×</SelectItem>
+                              <SelectItem value="1.25">1.25×</SelectItem>
+                              <SelectItem value="1.5">1.5×</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Label htmlFor="caption-pos" className="text-sm text-muted-foreground whitespace-nowrap">
+                            Caption position
+                          </Label>
+                          <Select
+                            value={captionPosition}
+                            onValueChange={(v) => setCaptionPosition(v as CaptionPosition)}
+                          >
+                            <SelectTrigger id="caption-pos" className="w-[160px]" disabled={videoDownloading}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="bottom_center">Bottom center</SelectItem>
+                              <SelectItem value="lower_third">Lower third</SelectItem>
+                              <SelectItem value="center">Center</SelectItem>
+                              <SelectItem value="safe_lower">Safe lower (above platform buttons)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </>
+                    )}
                   </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="voiceover"
-                      checked={withVoiceover}
-                      onChange={(e) => setWithVoiceover(e.target.checked)}
-                      disabled={videoDownloading}
-                      className="rounded border-input accent-primary"
-                    />
-                    <Label htmlFor="voiceover" className="text-sm font-medium cursor-pointer">
-                      With voiceover
-                    </Label>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="with-caption"
-                      checked={withCaption}
-                      disabled={!withVoiceover || videoDownloading}
-                      onChange={(e) => setWithCaption(e.target.checked)}
-                      className="rounded border-input accent-primary disabled:opacity-50"
-                    />
-                    <Label htmlFor="with-caption" className={`text-sm font-medium cursor-pointer ${!withVoiceover ? "text-muted-foreground" : ""}`}>
-                      With caption
-                    </Label>
-                  </div>
-                  {withVoiceover && (
-                    <>
-                      <div className="flex items-center gap-2">
-                        <Label htmlFor="voice-select" className="text-sm text-muted-foreground whitespace-nowrap">
-                          Voice
-                        </Label>
-                        <Select
-                          value={selectedVoiceId}
-                          onValueChange={setSelectedVoiceId}
-                        >
-                          <SelectTrigger id="voice-select" className="w-[180px]" disabled={videoDownloading}>
-                            <SelectValue placeholder="Pick a voice" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {VOICE_PRESETS.map((v) => (
-                              <SelectItem key={v.id} value={v.voiceId}>
-                                {v.name}
-                                {v.description ? ` — ${v.description}` : ""}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Label htmlFor="voice-speed" className="text-sm text-muted-foreground whitespace-nowrap">
-                          Voice speed
-                        </Label>
-                        <Select
-                          value={String(voiceSpeed)}
-                          onValueChange={(v) => setVoiceSpeed(Number(v))}
-                          disabled={videoDownloading}
-                        >
-                          <SelectTrigger id="voice-speed" className="w-[100px]">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="0.75">0.75×</SelectItem>
-                            <SelectItem value="1">1×</SelectItem>
-                            <SelectItem value="1.25">1.25×</SelectItem>
-                            <SelectItem value="1.5">1.5×</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Label htmlFor="caption-pos" className="text-sm text-muted-foreground whitespace-nowrap">
-                          Caption position
-                        </Label>
-                        <Select
-                          value={captionPosition}
-                          onValueChange={(v) => setCaptionPosition(v as CaptionPosition)}
-                        >
-                          <SelectTrigger id="caption-pos" className="w-[160px]" disabled={videoDownloading}>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="bottom_center">Bottom center</SelectItem>
-                            <SelectItem value="lower_third">Lower third</SelectItem>
-                            <SelectItem value="center">Center</SelectItem>
-                            <SelectItem value="safe_lower">Safe lower (above platform buttons)</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </>
-                  )}
-                </div>
+                )}
                 <div className={`flex items-center gap-2 flex-wrap justify-center ${videoDownloading ? "pointer-events-none opacity-50" : ""}`}>
-                  {generatedVideoUrl && (
+                  {generatedVideoUrl ? (
                     <>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => videoRef.current?.play()}
-                        aria-label="Play"
-                      >
-                        <PlayIcon className="mr-2 size-4" />
-                        Play
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => videoRef.current?.pause()}
-                        aria-label="Pause"
-                      >
-                        <Pause className="mr-2 size-4" />
-                        Pause
-                      </Button>
                       <Button
                         size="sm"
                         variant="outline"
@@ -603,9 +591,20 @@ export function EditorExportSection({
                         <DownloadIcon className="mr-2 size-4" />
                         Download MP4
                       </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setGeneratedVideoUrl(null);
+                          setGeneratedVideoBlob(null);
+                          setVideoDownloadError(null);
+                        }}
+                      >
+                        <RefreshCwIcon className="mr-2 size-4" />
+                        Regenerate
+                      </Button>
                     </>
-                  )}
-                  {!generatedVideoUrl && (
+                  ) : (
                     <Button
                       size="sm"
                       onClick={handleDownloadVideo}
@@ -634,7 +633,7 @@ export function EditorExportSection({
                   {videoDownloading
                     ? "Keep this window open until the video finishes generating."
                     : generatedVideoUrl
-                      ? "Use the video controls to play, pause, and seek. Download again if needed."
+                      ? "Download again if needed. Click Regenerate to change settings and create a new video."
                       : "Encodes in browser · Open this dialog first for faster download"}
                 </p>
               </div>

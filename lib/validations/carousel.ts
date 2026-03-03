@@ -21,6 +21,11 @@ export const generateCarouselInputSchema = z.object({
     .string()
     .optional()
     .transform((v) => v === "true" || v === "1"),
+  /** When true and use_ai_backgrounds is true, images are generated via OpenAI (gpt-image-1-mini) instead of Brave/Unsplash. */
+  use_ai_generate: z
+    .string()
+    .optional()
+    .transform((v) => v === "true" || v === "1"),
   /** When true, model can use web search for current info (URLs, recent topics). Uses Responses API with gpt-5-mini. */
   use_web_search: z
     .string()

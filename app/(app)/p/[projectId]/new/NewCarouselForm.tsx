@@ -17,7 +17,7 @@ import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { createCheckoutSession } from "@/app/actions/subscription/createCheckoutSession";
 import { WaitingGamesDialog } from "@/components/waiting/WaitingGamesDialog";
-import { GlobeIcon, ImageIcon, LayoutTemplateIcon, Loader2Icon, SparklesIcon } from "lucide-react";
+import { Gem, GlobeIcon, ImageIcon, LayoutTemplateIcon, Loader2Icon } from "lucide-react";
 
 const TEMPLATE_PAGE_SIZE = 8;
 /** Diverse Unsplash sample images for template preview when "Let AI suggest background images" is on. */
@@ -46,12 +46,14 @@ const GENERATION_STEPS = [
   "Writing headlines…",
   "Formatting slides…",
   "Applying templates…",
+  "Generating images…",
   "Almost there…",
 ] as const;
 
 export function NewCarouselForm({
   projectId,
   isPro = true,
+  isAdmin: isAdminUser = false,
   hasFullAccess: hasFullAccessProp,
   freeGenerationsUsed = 0,
   freeGenerationsTotal = 3,
@@ -62,6 +64,7 @@ export function NewCarouselForm({
   initialInputValue,
   initialUseAiBackgrounds,
   initialUseUnsplashOnly,
+  initialUseAiGenerate,
   initialUseWebSearch,
   templateOptions = [],
   defaultTemplateId = null,
@@ -70,6 +73,8 @@ export function NewCarouselForm({
 }: {
   projectId: string;
   isPro?: boolean;
+  /** When true, user can use AI Generate (OpenAI) for backgrounds; otherwise option is disabled (still in development). */
+  isAdmin?: boolean;
   /** When true, user can use AI backgrounds and web search (Pro or within 3 free generations). */
   hasFullAccess?: boolean;
   freeGenerationsUsed?: number;
@@ -83,6 +88,7 @@ export function NewCarouselForm({
   /** Pre-fill from carousel.generation_options so regenerate matches original checkboxes. */
   initialUseAiBackgrounds?: boolean;
   initialUseUnsplashOnly?: boolean;
+  initialUseAiGenerate?: boolean;
   initialUseWebSearch?: boolean;
   /** Templates the user can choose before generating (with parsed config for preview). */
   templateOptions?: TemplateOption[];
@@ -96,7 +102,9 @@ export function NewCarouselForm({
   const [numberOfSlides, setNumberOfSlides] = useState<string>("");
   const [backgroundAssetIds, setBackgroundAssetIds] = useState<string[]>([]);
   const [useAiBackgrounds, setUseAiBackgrounds] = useState(initialUseAiBackgrounds ?? (!!regenerateCarouselId));
-  const [useUnsplashOnly, setUseUnsplashOnly] = useState(initialUseUnsplashOnly ?? false);
+  const [imageSource, setImageSource] = useState<"brave" | "unsplash" | "ai_generate">(
+    initialUseAiGenerate && isAdminUser ? "ai_generate" : initialUseUnsplashOnly ? "unsplash" : "brave"
+  );
   const [useWebSearch, setUseWebSearch] = useState(initialUseWebSearch ?? false);
   const [viralShortsStyle, setViralShortsStyle] = useState(false);
   const [notes, setNotes] = useState("");
@@ -134,13 +142,14 @@ export function NewCarouselForm({
       setGenerationStep(0);
       return;
     }
+    const stepMs = imageSource === "ai_generate" ? 8000 : 2200;
     const interval = setInterval(() => {
       setGenerationStep((prev) =>
         prev >= GENERATION_STEPS.length - 1 ? prev : prev + 1
       );
-    }, 2200);
+    }, stepMs);
     return () => clearInterval(interval);
-  }, [isPending]);
+  }, [isPending, imageSource]);
 
   useEffect(() => {
     if (templateModalOpen) setVisibleTemplateCount(TEMPLATE_PAGE_SIZE);
@@ -167,7 +176,8 @@ export function NewCarouselForm({
       }
       if (backgroundAssetIds.length) formData.set("background_asset_ids", JSON.stringify(backgroundAssetIds));
       if (useAiBackgrounds || regenerateCarouselId) formData.set("use_ai_backgrounds", "true");
-      if (useUnsplashOnly) formData.set("use_unsplash_only", "true");
+      if (imageSource === "unsplash") formData.set("use_unsplash_only", "true");
+      if (imageSource === "ai_generate" && isAdminUser) formData.set("use_ai_generate", "true");
       if (useWebSearch) formData.set("use_web_search", "true");
       if (viralShortsStyle) formData.set("viral_shorts_style", "true");
       if (notes.trim()) formData.set("notes", notes.trim());
@@ -216,7 +226,9 @@ export function NewCarouselForm({
                   {GENERATION_STEPS[generationStep]}
                 </p>
                 <p className="text-xs text-muted-foreground/80">
-                  Usually 15–30 seconds
+                  {imageSource === "ai_generate"
+                    ? "Can take 1–5 minutes with AI images"
+                    : "Usually 30–60 seconds"}
                 </p>
                 <WaitingGamesDialog
                   loadingMessage="Your carousel is still generating…"
@@ -236,7 +248,7 @@ export function NewCarouselForm({
             </p>
             {!isPro && (
               <Button type="button" variant="outline" size="sm" onClick={handleUpgrade} disabled={upgradeLoading}>
-                {upgradeLoading ? <Loader2Icon className="mr-2 size-4 animate-spin" /> : <SparklesIcon className="mr-2 size-4" />}
+                {upgradeLoading ? <Loader2Icon className="mr-2 size-4 animate-spin" /> : <Gem className="mr-2 size-4" />}
                 Upgrade to Pro
               </Button>
             )}
@@ -331,15 +343,19 @@ export function NewCarouselForm({
           />
           </div>
 
-          <label className="flex items-center gap-3 rounded-lg py-2 text-sm cursor-pointer hover:bg-muted/50">
+          <label className="flex items-start gap-3 rounded-lg py-2 text-sm cursor-pointer hover:bg-muted/50">
             <input
               type="checkbox"
               checked={viralShortsStyle}
               onChange={(e) => setViralShortsStyle(e.target.checked)}
+              className="mt-0.5"
             />
-            <span>
-              <span className="font-medium">Viral Shorts style</span>
-              <span className="text-muted-foreground ml-1">— Bait hook, story, mid-carousel engagement CTA (e.g. &quot;Comment what you think&quot;), then payoff and end CTA.</span>
+            <span className="flex flex-col gap-0.5">
+              <span>
+                <span className="font-medium">Viral Shorts style</span>
+                <span className="text-muted-foreground ml-1">— Bait hook, story, mid-carousel engagement CTA (e.g. &quot;Comment what you think&quot;), then payoff and end CTA.</span>
+              </span>
+              <span className="text-muted-foreground text-xs">Not recommended for professional or brand accounts.</span>
             </span>
           </label>
 
@@ -363,30 +379,55 @@ export function NewCarouselForm({
                 setBackgroundAssetIds([]);
                 setDriveFolderError(null);
               }
-              if (!checked) setUseUnsplashOnly(false);
+              if (!checked) setImageSource("brave");
             }}
               disabled={!hasFullAccess}
               className="rounded border-input accent-primary"
             />
-            <SparklesIcon className="size-4 text-muted-foreground" />
+            <Gem className="size-4 text-muted-foreground" />
             <span>Let AI suggest background images{!hasFullAccess && " — Pro"}</span>
           </label>
           {useAiBackgrounds && (
-            <label className="flex items-center gap-3 rounded-lg py-2 pl-7 text-sm cursor-pointer hover:bg-muted/50">
-              <input
-                type="checkbox"
-                checked={useUnsplashOnly}
-                onChange={(e) => setUseUnsplashOnly(e.target.checked)}
-                className="rounded border-input accent-primary"
-              />
-              <ImageIcon className="size-4 text-muted-foreground" />
-              <span>Only use Unsplash</span>
-            </label>
-          )}
-          {useAiBackgrounds && (
-            <p className="text-muted-foreground text-xs pl-7 -mt-1">
-              Unsplash: high quality, mostly generic (nature, cityscapes, abstracts, lifestyle, objects).
-            </p>
+            <div className="space-y-2 pl-7">
+              <p className="text-muted-foreground text-xs font-medium">Image source</p>
+              <div className="flex flex-wrap gap-4">
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="radio"
+                    name="imageSource"
+                    checked={imageSource === "brave"}
+                    onChange={() => setImageSource("brave")}
+                    className="accent-primary"
+                  />
+                  <span>Brave (search web)</span>
+                </label>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="radio"
+                    name="imageSource"
+                    checked={imageSource === "unsplash"}
+                    onChange={() => setImageSource("unsplash")}
+                    className="accent-primary"
+                  />
+                  <span>Unsplash</span>
+                </label>
+                <label className={`flex items-center gap-2 text-sm ${isAdminUser ? "cursor-pointer" : "cursor-not-allowed opacity-70"}`}>
+                  <input
+                    type="radio"
+                    name="imageSource"
+                    checked={imageSource === "ai_generate"}
+                    onChange={() => isAdminUser && setImageSource("ai_generate")}
+                    disabled={!isAdminUser}
+                    className="accent-primary"
+                  />
+                  <span>AI Generate (OpenAI){!isAdminUser && " — Still in development"}</span>
+                </label>
+              </div>
+              <p className="text-muted-foreground text-xs">
+                Brave: broad coverage. Unsplash: high quality, mostly generic.
+                {isAdminUser ? " AI Generate: creates unique images per slide (fast, gpt-image-1-mini)." : " AI Generate is still in development."}
+              </p>
+            </div>
           )}
           <label className={`flex items-center gap-3 rounded-lg py-2 text-sm ${hasFullAccess ? "cursor-pointer hover:bg-muted/50" : "opacity-70"}`}>
             <input
@@ -563,7 +604,7 @@ export function NewCarouselForm({
           </Button>
           {carouselCount >= carouselLimit && !isPro && (
             <Button type="button" variant="default" size="sm" onClick={handleUpgrade} disabled={upgradeLoading}>
-              {upgradeLoading ? <Loader2Icon className="mr-2 size-4 animate-spin" /> : <SparklesIcon className="mr-2 size-4" />}
+              {upgradeLoading ? <Loader2Icon className="mr-2 size-4 animate-spin" /> : <Gem className="mr-2 size-4" />}
               Upgrade to Pro
             </Button>
           )}

@@ -28,6 +28,13 @@ export const aiSlideSchema = z.object({
   image_query: z.string().max(80).optional(),
   /** Optional array of image search phrases (one per image). E.g. ["Elon Musk portrait", "Jeff Bezos portrait"] for 2 images. Max 4 per slide. Fetched via Brave or Unsplash. */
   image_queries: z.array(z.string().max(80)).max(4).optional(),
+  /** Optional context for AI image generation: era/year and location so images match the right time and setting. Used only when use_ai_generate is true. */
+  image_context: z
+    .object({
+      year: z.string().max(30).optional(),
+      location: z.string().max(60).optional(),
+    })
+    .optional(),
   // Legacy: accept old field names from cached or older AI output
   unsplash_query: z.string().max(80).optional(),
   unsplash_queries: z.array(z.string().max(80)).max(4).optional(),

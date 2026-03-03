@@ -2,9 +2,31 @@
  * ElevenLabs TTS: cheap starter ($5/mo), very good quality.
  * Docs: https://elevenlabs.io/docs/api-reference/text-to-speech
  * With timestamps: https://elevenlabs.io/docs/api-reference/text-to-speech/convert-with-timestamps
+ * Concurrency: subscription limit is 5 concurrent requests; we cap at 4 per process to avoid 429.
  */
 
 const API_BASE = "https://api.elevenlabs.io/v1";
+
+/** Max concurrent ElevenLabs requests (subscription limit is 5). */
+const MAX_CONCURRENT = 4;
+let activeCount = 0;
+const queue: Array<() => void> = [];
+
+async function withConcurrencyLimit<T>(fn: () => Promise<T>): Promise<T> {
+  while (activeCount >= MAX_CONCURRENT) {
+    await new Promise<void>((resolve) => {
+      queue.push(resolve);
+    });
+  }
+  activeCount++;
+  try {
+    return await fn();
+  } finally {
+    activeCount--;
+    const next = queue.shift();
+    if (next) next();
+  }
+}
 
 export type ElevenLabsOptions = {
   voiceId: string;
@@ -36,27 +58,53 @@ export async function textToSpeech(options: ElevenLabsOptions): Promise<ArrayBuf
   const { voiceId, text, modelId = "eleven_multilingual_v2" } = options;
   if (!text.trim()) return null;
 
-  const res = await fetch(`${API_BASE}/text-to-speech/${encodeURIComponent(voiceId)}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "xi-api-key": apiKey,
-      Accept: "audio/mpeg",
-    },
-    body: JSON.stringify({
-      text: text.trim(),
-      model_id: modelId,
-    }),
-    signal: AbortSignal.timeout(60000),
-  });
+  const doFetch = async (): Promise<ArrayBuffer | null> => {
+    const res = await fetch(`${API_BASE}/text-to-speech/${encodeURIComponent(voiceId)}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "xi-api-key": apiKey,
+        Accept: "audio/mpeg",
+      },
+      body: JSON.stringify({
+        text: text.trim(),
+        model_id: modelId,
+      }),
+      signal: AbortSignal.timeout(60000),
+    });
+    if (res.status === 429) {
+      await new Promise((r) => setTimeout(r, 2500));
+      const retry = await fetch(`${API_BASE}/text-to-speech/${encodeURIComponent(voiceId)}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "xi-api-key": apiKey,
+          Accept: "audio/mpeg",
+        },
+        body: JSON.stringify({
+          text: text.trim(),
+          model_id: modelId,
+        }),
+        signal: AbortSignal.timeout(60000),
+      });
+      if (!retry.ok) return null;
+      return retry.arrayBuffer();
+    }
+    if (!res.ok) return null;
+    return res.arrayBuffer();
+  };
 
-  if (!res.ok) return null;
-  return res.arrayBuffer();
+  return withConcurrencyLimit(doFetch);
 }
 
 export type TtsWithTimestampsResult =
   | { ok: true; audio: ArrayBuffer; alignment: Alignment }
   | { ok: false; status: number; message: string };
+
+function parseElevenLabsError(res: Response, body: unknown): string {
+  const obj = body as { detail?: { message?: string }; message?: string };
+  return obj?.detail?.message ?? obj?.message ?? res.statusText;
+}
 
 /**
  * Generate speech with character-level timestamps.
@@ -72,52 +120,92 @@ export async function textToSpeechWithTimestamps(
   const { voiceId, text, modelId = "eleven_multilingual_v2" } = options;
   if (!text.trim()) return { ok: false, status: 0, message: "No text to speak" };
 
-  let res: Response;
-  try {
-    res = await fetch(
-      `${API_BASE}/text-to-speech/${encodeURIComponent(voiceId)}/with-timestamps`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "xi-api-key": apiKey,
-          Accept: "application/json",
-        },
-        body: JSON.stringify({
-          text: text.trim(),
-          model_id: modelId,
-        }),
-        signal: AbortSignal.timeout(60000),
-      }
-    );
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return { ok: false, status: 0, message: `Request failed: ${msg}` };
-  }
-
-  if (!res.ok) {
-    let message: string;
+  const doRequest = async (): Promise<TtsWithTimestampsResult> => {
+    let res: Response;
     try {
-      const body = (await res.json()) as { detail?: { message?: string }; message?: string };
-      message = body.detail?.message ?? body.message ?? res.statusText;
-    } catch {
-      message = res.statusText;
+      res = await fetch(
+        `${API_BASE}/text-to-speech/${encodeURIComponent(voiceId)}/with-timestamps`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "xi-api-key": apiKey,
+            Accept: "application/json",
+          },
+          body: JSON.stringify({
+            text: text.trim(),
+            model_id: modelId,
+          }),
+          signal: AbortSignal.timeout(60000),
+        }
+      );
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { ok: false, status: 0, message: `Request failed: ${msg}` };
     }
-    return { ok: false, status: res.status, message: `ElevenLabs ${res.status}: ${message}` };
-  }
 
-  const data = (await res.json()) as {
-    audio_base64?: string;
-    alignment?: Alignment;
+    if (res.status === 429) {
+      await new Promise((r) => setTimeout(r, 2500));
+      try {
+        const retry = await fetch(
+          `${API_BASE}/text-to-speech/${encodeURIComponent(voiceId)}/with-timestamps`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "xi-api-key": apiKey,
+              Accept: "application/json",
+            },
+            body: JSON.stringify({
+              text: text.trim(),
+              model_id: modelId,
+            }),
+            signal: AbortSignal.timeout(60000),
+          }
+        );
+        if (!retry.ok) {
+          let message: string;
+          try {
+            const body = await retry.json().catch(() => ({}));
+            message = parseElevenLabsError(retry, body);
+          } catch {
+            message = retry.statusText;
+          }
+          return { ok: false, status: retry.status, message: `ElevenLabs ${retry.status}: ${message}` };
+        }
+        res = retry;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return { ok: false, status: 0, message: `Retry failed: ${msg}` };
+      }
+    }
+
+    if (!res.ok) {
+      let message: string;
+      try {
+        const body = await res.json().catch(() => ({}));
+        message = parseElevenLabsError(res, body);
+      } catch {
+        message = res.statusText;
+      }
+      return { ok: false, status: res.status, message: `ElevenLabs ${res.status}: ${message}` };
+    }
+
+    const data = (await res.json()) as {
+      audio_base64?: string;
+      alignment?: Alignment;
+    };
+    if (!data.audio_base64 || !data.alignment) {
+      return { ok: false, status: 200, message: "ElevenLabs response missing audio_base64 or alignment" };
+    }
+
+    const binary = atob(data.audio_base64);
+    const audio = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) audio[i] = binary.charCodeAt(i);
+    return { ok: true, audio: audio.buffer, alignment: data.alignment };
   };
-  if (!data.audio_base64 || !data.alignment) {
-    return { ok: false, status: 200, message: "ElevenLabs response missing audio_base64 or alignment" };
-  }
 
-  const binary = atob(data.audio_base64);
-  const audio = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) audio[i] = binary.charCodeAt(i);
-  return { ok: true, audio: audio.buffer, alignment: data.alignment };
+  return withConcurrencyLimit(doRequest);
 }
 
 /** Group character alignment into words (split on spaces). */
@@ -159,12 +247,14 @@ export async function listVoices(): Promise<{ voice_id: string; name: string }[]
   const apiKey = process.env.ELEVENLABS_API_KEY;
   if (!apiKey) return [];
 
-  const res = await fetch(`${API_BASE}/voices`, {
-    headers: { "xi-api-key": apiKey },
-    signal: AbortSignal.timeout(10000),
-  });
-  if (!res.ok) return [];
-
-  const data = (await res.json()) as { voices?: { voice_id: string; name: string }[] };
-  return (data.voices ?? []).map((v) => ({ voice_id: v.voice_id, name: v.name }));
+  const doFetch = async (): Promise<{ voice_id: string; name: string }[]> => {
+    const res = await fetch(`${API_BASE}/voices`, {
+      headers: { "xi-api-key": apiKey },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as { voices?: { voice_id: string; name: string }[] };
+    return (data.voices ?? []).map((v) => ({ voice_id: v.voice_id, name: v.name }));
+  };
+  return withConcurrencyLimit(doFetch);
 }

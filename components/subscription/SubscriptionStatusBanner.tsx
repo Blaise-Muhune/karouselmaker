@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useCallback } from "react";
 import { createCheckoutSession } from "@/app/actions/subscription/createCheckoutSession";
-import { CheckIcon, SparklesIcon, XIcon } from "lucide-react";
+import { CheckIcon, Gem, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const MESSAGES: Record<string, { message: string; variant: "success" | "info" | "muted"; showUpgrade?: boolean }> = {
@@ -101,7 +101,7 @@ export function SubscriptionStatusBanner() {
           <Button size="sm" onClick={handleUpgrade} disabled={loading} loading={loading}>
             {loading ? "Loading…" : (
               <>
-                <SparklesIcon className="mr-2 size-4" />
+                <Gem className="mr-2 size-4" />
                 Upgrade to Pro
               </>
             )}

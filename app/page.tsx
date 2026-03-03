@@ -10,8 +10,11 @@ import {
   Package,
   ArrowRight,
   ChevronsRight,
+  Gem,
+  Check,
 } from "lucide-react";
 import { HeroCarouselPreview } from "@/components/landing/HeroCarouselPreview";
+import { PRO_PRICE_DISPLAY, PLAN_LIMITS } from "@/lib/constants";
 
 export default async function Home() {
   const { user } = await getOptionalUser();
@@ -27,6 +30,12 @@ export default async function Home() {
           </Link>
           <nav className="flex items-center gap-1 sm:gap-2">
             <ThemeToggle />
+            <Button variant="outline" size="sm" className="hidden sm:inline-flex gap-1.5" asChild>
+              <Link href="/signup">
+                <Gem className="size-4" />
+                Go Pro
+              </Link>
+            </Button>
             <Button variant="ghost" size="sm" className="hidden sm:inline-flex" asChild>
               <Link href="/login">Sign in</Link>
             </Button>
@@ -168,6 +177,55 @@ export default async function Home() {
               </p>
             </li>
           </ul>
+        </div>
+
+        {/* Premium / Pricing */}
+        <div className="scroll-reveal [content-visibility:auto] mx-auto mt-14 sm:mt-16 md:mt-20 max-w-lg w-full px-4">
+          <p className="text-muted-foreground text-center mb-3 text-xs font-medium uppercase tracking-wider">
+            Premium
+          </p>
+          <div className="rounded-xl sm:rounded-2xl border-2 border-primary/30 bg-primary/5 p-6 sm:p-8 transition-colors hover:border-primary/40">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                <Gem className="size-5" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-foreground text-lg">Pro</h3>
+                <p className="text-2xl font-bold text-foreground">
+                  {PRO_PRICE_DISPLAY}
+                  <span className="text-sm font-normal text-muted-foreground">/month</span>
+                </p>
+              </div>
+            </div>
+            <ul className="space-y-2.5 text-sm text-muted-foreground mb-6">
+              <li className="flex items-center gap-2">
+                <Check className="size-4 shrink-0 text-primary" />
+                {PLAN_LIMITS.pro.carouselsPerMonth} carousels per month
+              </li>
+              <li className="flex items-center gap-2">
+                <Check className="size-4 shrink-0 text-primary" />
+                {PLAN_LIMITS.pro.exportsPerMonth} exports per month
+              </li>
+              <li className="flex items-center gap-2">
+                <Check className="size-4 shrink-0 text-primary" />
+                {PLAN_LIMITS.pro.assets} images in asset library
+              </li>
+              <li className="flex items-center gap-2">
+                <Check className="size-4 shrink-0 text-primary" />
+                {PLAN_LIMITS.pro.customTemplates} custom templates
+              </li>
+              <li className="flex items-center gap-2">
+                <Check className="size-4 shrink-0 text-primary" />
+                AI backgrounds, full editor
+              </li>
+            </ul>
+            <Button size="lg" className="w-full gap-2" asChild>
+              <Link href="/signup">
+                <Gem className="size-4" />
+                Get started with Pro
+              </Link>
+            </Button>
+          </div>
         </div>
 
         {/* Outcome hook */}

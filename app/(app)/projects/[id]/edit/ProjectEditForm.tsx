@@ -60,9 +60,11 @@ const LANGUAGE_OPTIONS = [
 export function ProjectEditForm({
   projectId,
   defaultValues,
+  isAdmin = false,
 }: {
   projectId: string;
   defaultValues: ProjectFormInput;
+  isAdmin?: boolean;
 }) {
   const [isPending, setIsPending] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
@@ -89,6 +91,12 @@ export function ProjectEditForm({
     fd.set("secondary_color", data.brand_kit.secondary_color ?? "");
     fd.set("watermark_text", data.brand_kit.watermark_text ?? "");
     fd.set("logo_storage_path", data.brand_kit.logo_storage_path ?? "");
+    const pt = data.post_to_platforms ?? {};
+    if (pt.facebook) fd.set("post_facebook", "true");
+    if (pt.tiktok) fd.set("post_tiktok", "true");
+    if (pt.instagram) fd.set("post_instagram", "true");
+    if (pt.linkedin) fd.set("post_linkedin", "true");
+    if (pt.youtube) fd.set("post_youtube", "true");
     try {
       const result = await updateProject(projectId, fd);
       if (result && "error" in result) {
@@ -200,6 +208,39 @@ export function ProjectEditForm({
           )}
         />
         <p className="text-muted-foreground text-xs">Default number of slides per carousel is set when you create a new carousel.</p>
+        {isAdmin && (
+          <div className="space-y-2">
+            <FormLabel>Post to (optional)</FormLabel>
+            <p className="text-muted-foreground text-xs">
+              Choose platforms you plan to post this project&apos;s content to. Shown on each carousel. YouTube is video-only; others support video and carousel.
+            </p>
+            <div className="flex flex-wrap gap-4 pt-1">
+              {[
+                { key: "facebook" as const, label: "Facebook" },
+                { key: "tiktok" as const, label: "TikTok" },
+                { key: "instagram" as const, label: "Instagram" },
+                { key: "linkedin" as const, label: "LinkedIn" },
+                { key: "youtube" as const, label: "YouTube (video only)" },
+              ].map(({ key, label }) => (
+                <label key={key} className="flex items-center gap-2 cursor-pointer">
+                  <FormField
+                    control={form.control}
+                    name={`post_to_platforms.${key}`}
+                    render={({ field }) => (
+                      <input
+                        type="checkbox"
+                        checked={!!field.value}
+                        onChange={(e) => field.onChange(e.target.checked)}
+                        className="rounded border-input"
+                      />
+                    )}
+                  />
+                  <span className="text-sm">{label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="space-y-2">
           <FormLabel>Voice rules (optional)</FormLabel>
           <p className="text-muted-foreground text-xs">

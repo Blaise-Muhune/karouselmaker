@@ -2,6 +2,7 @@
 
 import OpenAI from "openai";
 import { getUser } from "@/lib/server/auth/getUser";
+import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { getSubscription, getPlanLimits } from "@/lib/server/subscription";
 import { getProject } from "@/lib/server/db/projects";
 import { getDefaultTemplateForNewCarousel, getTemplate } from "@/lib/server/db/templates";
@@ -19,6 +20,8 @@ import {
 } from "@/lib/server/ai/prompts";
 import { searchImage } from "@/lib/server/imageSearch";
 import { searchUnsplashPhotosMultiple, searchUnsplashPhotoRandom, trackUnsplashDownload } from "@/lib/server/unsplash";
+import { generateImageFromPrompt } from "@/lib/server/openaiImageGenerate";
+import { uploadGeneratedImage } from "@/lib/server/storage/uploadGeneratedImage";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
 import { generateCarouselInputSchema } from "@/lib/validations/carousel";
 import { FREE_FULL_ACCESS_GENERATIONS } from "@/lib/constants";
@@ -107,6 +110,7 @@ export async function generateCarousel(formData: FormData): Promise<
     })(),
     use_ai_backgrounds: formData.get("use_ai_backgrounds") ?? undefined,
     use_unsplash_only: formData.get("use_unsplash_only") ?? undefined,
+    use_ai_generate: formData.get("use_ai_generate") ?? undefined,
     use_web_search: formData.get("use_web_search") ?? undefined,
     notes: ((formData.get("notes") as string | null) ?? "").trim() || undefined,
     template_id: (formData.get("template_id") as string | null)?.trim() || undefined,
@@ -172,6 +176,7 @@ export async function generateCarousel(formData: FormData): Promise<
   const creatorHandle = brandKit?.watermark_text?.trim() || undefined;
 
   const useUnsplashOnly = !!parsed.data.use_unsplash_only;
+  const useAiGenerate = !!parsed.data.use_ai_generate && isAdmin(user.email);
   const userAskedWebSearch = !!data.use_web_search;
   const autoNewsWebSearch = hasFullAccess && looksLikeNewsOrTimeSensitive(data.input_value, data.input_type);
   const useWebSearch = hasFullAccess && (userAskedWebSearch || autoNewsWebSearch);
@@ -185,6 +190,7 @@ export async function generateCarousel(formData: FormData): Promise<
     input_value: data.input_value,
     use_ai_backgrounds: hasFullAccess ? (data.use_ai_backgrounds ?? false) : false,
     use_unsplash_only: useUnsplashOnly,
+    use_ai_generate: useAiGenerate,
     use_web_search: useWebSearch,
     creator_handle: creatorHandle,
     project_niche: project.niche?.trim() || undefined,
@@ -251,10 +257,29 @@ export async function generateCarousel(formData: FormData): Promise<
     return { error: "Generation failed" };
   }
 
-  // Fallback: ensure CTA slide includes creator handle if AI omitted it
-  if (creatorHandle && validated.slides.length > 0) {
+  // Fallback: ensure last slide always has a follow/subscribe CTA
+  if (validated.slides.length > 0) {
     const lastSlide = validated.slides.reduce((a, b) => (a.slide_index > b.slide_index ? a : b));
-    if (lastSlide.slide_type === "cta" && !lastSlide.headline?.includes(creatorHandle) && !lastSlide.headline?.includes(creatorHandle.replace(/^@/, ""))) {
+    const headline = (lastSlide.headline ?? "").trim().toLowerCase();
+    const hasFollowSubscribe =
+      /\b(follow|subscribe|more\s+(like\s+this|every\s+week|content)|@\w+)/i.test(headline) ||
+      (!!creatorHandle && (headline.includes(creatorHandle.toLowerCase()) || headline.includes(creatorHandle.replace(/^@/, "").toLowerCase())));
+    if (lastSlide.slide_type === "cta" && !hasFollowSubscribe) {
+      const handle = creatorHandle?.trim()
+        ? (creatorHandle.startsWith("@") ? creatorHandle : `@${creatorHandle}`)
+        : null;
+      const newHeadline = handle ? `Follow ${handle} for more` : "Subscribe for more";
+      const newBody = lastSlide.body?.trim() || (handle ? undefined : "More content every week.");
+      validated = {
+        ...validated,
+        slides: validated.slides.map((s) =>
+          s.slide_index === lastSlide.slide_index
+            ? { ...s, headline: newHeadline, ...(newBody !== undefined ? { body: newBody } : {}) }
+            : s
+        ),
+      };
+    } else if (lastSlide.slide_type === "cta" && creatorHandle && !headline.includes(creatorHandle.toLowerCase()) && !headline.includes(creatorHandle.replace(/^@/, "").toLowerCase())) {
+      // Has follow/subscribe vibe but missing handle—inject it
       const handle = creatorHandle.startsWith("@") ? creatorHandle : `@${creatorHandle}`;
       validated = {
         ...validated,
@@ -273,6 +298,7 @@ export async function generateCarousel(formData: FormData): Promise<
     generation_options: {
       use_ai_backgrounds: !!data.use_ai_backgrounds,
       use_unsplash_only: !!data.use_unsplash_only,
+      use_ai_generate: useAiGenerate,
       use_web_search: useWebSearch,
     },
   };
@@ -382,6 +408,68 @@ export async function generateCarousel(formData: FormData): Promise<
       const aiSlide = aiSlideByIndex.get(slide.slide_index);
       const queries = aiSlide?.image_queries?.filter((q) => q?.trim()) ?? aiSlide?.unsplash_queries?.filter((q) => q?.trim()) ?? (aiSlide?.image_query?.trim() ? [aiSlide.image_query.trim()] : aiSlide?.unsplash_query?.trim() ? [aiSlide.unsplash_query.trim()] : []);
       if (queries.length === 0) continue;
+
+      const firstQuery = queries[0]!;
+
+      if (useAiGenerate) {
+        const slideContext = aiSlide?.image_context;
+        const isHookSlide = aiSlide?.slide_index === 1;
+        const imageContext = {
+          carouselTitle: validated.title?.trim() || undefined,
+          topic: data.input_value?.trim() || undefined,
+          slideHeadline: aiSlide?.headline?.trim() || undefined,
+          slideBody: aiSlide?.body?.trim() || undefined,
+          year: slideContext?.year?.trim() || undefined,
+          location: slideContext?.location?.trim() || undefined,
+          isHookSlide: isHookSlide || undefined,
+          userNotes: data.notes?.trim() || undefined,
+        };
+        const genResult = await generateImageFromPrompt(firstQuery, { context: imageContext });
+        if (genResult.ok) {
+          const storagePath = await uploadGeneratedImage(user.id, carousel.id, slide.id, genResult.buffer);
+          if (storagePath) {
+            slidesWithImage.add(slide.id);
+            await updateSlide(user.id, slide.id, {
+              background: {
+                mode: "image",
+                storage_path: storagePath,
+                fit: "cover",
+                overlay: defaultOverlay,
+              },
+            });
+          }
+        }
+        if (!genResult.ok || !slidesWithImage.has(slide.id)) {
+          const topicFallback =
+            (validated.title?.trim() || data.input_value?.trim() || "").slice(0, 60) || "a compelling scene";
+          const fallbackQuery = `Dramatic atmospheric scene related to: ${topicFallback}. No text.`;
+          const fallbackResult = await generateImageFromPrompt(fallbackQuery, {
+            context: {
+              carouselTitle: validated.title?.trim(),
+              topic: data.input_value?.trim(),
+              slideHeadline: aiSlide?.headline?.trim(),
+              slideBody: aiSlide?.body?.trim(),
+              userNotes: data.notes?.trim() || undefined,
+            },
+          });
+          if (fallbackResult.ok) {
+            const storagePath = await uploadGeneratedImage(user.id, carousel.id, slide.id, fallbackResult.buffer);
+            if (storagePath) {
+              slidesWithImage.add(slide.id);
+              await updateSlide(user.id, slide.id, {
+                background: {
+                  mode: "image",
+                  storage_path: storagePath,
+                  fit: "cover",
+                  overlay: defaultOverlay,
+                },
+              });
+            }
+          }
+        }
+        continue;
+      }
+
       const imageResults: Awaited<ReturnType<typeof searchImage>>[] = [];
       for (const query of queries.slice(0, 4)) {
         let result: Awaited<ReturnType<typeof searchImage>> | null;
@@ -404,9 +492,11 @@ export async function generateCarousel(formData: FormData): Promise<
         }
         if (result) imageResults.push(result);
       }
-      // Fallback: if all queries failed, try a generic query so we don't end up with no image
+      // Fallback: if all queries failed, try a topic-based query so we don't end up with no image
       if (imageResults.length === 0) {
-        const fallbackQuery = "nature landscape peaceful";
+        const topicFallback =
+          (validated.title?.trim() || data.input_value?.trim() || "").slice(0, 50) || "nature landscape peaceful";
+        const fallbackQuery = topicFallback;
         let fallback: Awaited<ReturnType<typeof searchImage>> | null;
         if (useUnsplashOnly) {
           const unsplashList = await searchUnsplashPhotosMultiple(fallbackQuery, 15);

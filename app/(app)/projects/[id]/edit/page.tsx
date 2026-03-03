@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getUser } from "@/lib/server/auth/getUser";
+import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { getProject } from "@/lib/server/db";
 import { Button } from "@/components/ui/button";
 import { Breadcrumbs } from "@/components/ui/breadcrumbs";
@@ -24,6 +25,7 @@ export default async function EditProjectPage({
     watermark_text?: string;
     logo_storage_path?: string;
   } | undefined;
+  const postTo = project.post_to_platforms as { facebook?: boolean; tiktok?: boolean; instagram?: boolean; linkedin?: boolean; youtube?: boolean } | undefined;
 
   const projectWithLang = project as { language?: string };
   const defaultValues = {
@@ -41,6 +43,13 @@ export default async function EditProjectPage({
       secondary_color: brandKit?.secondary_color ?? "",
       watermark_text: brandKit?.watermark_text ?? "",
       logo_storage_path: brandKit?.logo_storage_path ?? "",
+    },
+    post_to_platforms: {
+      facebook: !!postTo?.facebook,
+      tiktok: !!postTo?.tiktok,
+      instagram: !!postTo?.instagram,
+      linkedin: !!postTo?.linkedin,
+      youtube: !!postTo?.youtube,
     },
   };
 
@@ -63,7 +72,7 @@ export default async function EditProjectPage({
           </Button>
           <h1 className="text-xl font-semibold tracking-tight">Edit project</h1>
         </div>
-        <ProjectEditForm projectId={project.id} defaultValues={defaultValues} />
+        <ProjectEditForm projectId={project.id} defaultValues={defaultValues} isAdmin={isAdmin(user.email ?? null)} />
       </div>
     </div>
   );

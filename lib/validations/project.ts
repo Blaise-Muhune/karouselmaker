@@ -32,6 +32,14 @@ export const brandKitSchema = z.object({
 
 const languageCode = z.string().min(1).max(10).default("en");
 
+export const postToPlatformsSchema = z.object({
+  facebook: z.boolean().optional().default(false),
+  tiktok: z.boolean().optional().default(false),
+  instagram: z.boolean().optional().default(false),
+  linkedin: z.boolean().optional().default(false),
+  youtube: z.boolean().optional().default(false),
+});
+
 export const projectFormSchema = z.object({
   name: z.string().min(1, "Name is required").max(200),
   niche: z.string().max(200).optional().default(""),
@@ -44,6 +52,13 @@ export const projectFormSchema = z.object({
     secondary_color: "",
     watermark_text: "",
     logo_storage_path: "",
+  }),
+  post_to_platforms: postToPlatformsSchema.default({
+    facebook: false,
+    tiktok: false,
+    instagram: false,
+    linkedin: false,
+    youtube: false,
   }),
 });
 
@@ -60,7 +75,9 @@ export function projectFormToDbPayload(
   slide_structure: Record<string, unknown>;
   brand_kit: Record<string, unknown>;
   sources: Record<string, unknown>;
+  post_to_platforms: Record<string, boolean>;
 } {
+  const p = input.post_to_platforms ?? {};
   return {
     name: input.name.trim(),
     niche: input.niche?.trim() || null,
@@ -80,5 +97,12 @@ export function projectFormToDbPayload(
       logo_storage_path: input.brand_kit.logo_storage_path ?? "",
     },
     sources: {},
+    post_to_platforms: {
+      facebook: !!p.facebook,
+      tiktok: !!p.tiktok,
+      instagram: !!p.instagram,
+      linkedin: !!p.linkedin,
+      youtube: !!p.youtube,
+    },
   };
 }

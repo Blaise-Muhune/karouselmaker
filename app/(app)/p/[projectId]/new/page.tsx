@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getUser } from "@/lib/server/auth/getUser";
+import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { getSubscription, getPlanLimits } from "@/lib/server/subscription";
 import { getProject, getCarousel, countCarouselsThisMonth, countCarouselsLifetime, listTemplatesForUser, getDefaultTemplateForNewCarousel } from "@/lib/server/db";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
@@ -86,6 +87,7 @@ export default async function NewCarouselPage({
         <NewCarouselForm
           projectId={projectId}
           isPro={subscription.isPro}
+          isAdmin={isAdmin(user.email ?? null)}
           hasFullAccess={hasFullAccess}
           freeGenerationsUsed={freeGenerationsUsed}
           freeGenerationsTotal={FREE_FULL_ACCESS_GENERATIONS}
@@ -96,6 +98,7 @@ export default async function NewCarouselPage({
           initialInputValue={regenerateCarousel?.input_value}
           initialUseAiBackgrounds={regenerateCarousel?.generation_options?.use_ai_backgrounds}
           initialUseUnsplashOnly={regenerateCarousel?.generation_options?.use_unsplash_only}
+          initialUseAiGenerate={regenerateCarousel?.generation_options?.use_ai_generate}
           initialUseWebSearch={regenerateCarousel?.generation_options?.use_web_search}
           templateOptions={templateOptions}
           defaultTemplateId={defaultTemplateId}

@@ -2,7 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getUser } from "@/lib/server/auth/getUser";
 import { getSubscription } from "@/lib/server/subscription";
-import { getCarousel, getProject, listSlides, listTemplatesForUser, listExportsByCarousel, countExportsThisMonth, getAsset, countCarouselsLifetime } from "@/lib/server/db";
+import { getCarousel, getProject, listSlides, listTemplatesForUser, listExportsByCarousel, countExportsThisMonth, getAsset, countCarouselsLifetime, getPlatformConnections } from "@/lib/server/db";
+import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { resolveBrandKitLogo } from "@/lib/server/brandKit";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
@@ -14,6 +15,7 @@ import { ShuffleCarouselBackgroundsButton } from "@/components/carousels/Shuffle
 import { EditorCaptionSection } from "@/components/editor/EditorCaptionSection";
 import { EditorExportSection } from "@/components/editor/EditorExportSection";
 import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
+import { GoProBar } from "@/components/subscription/GoProBar";
 import type { BrandKit } from "@/lib/renderer/renderModel";
 import type { ExportFormat, ExportSize } from "@/lib/server/db/types";
 import { FREE_FULL_ACCESS_GENERATIONS } from "@/lib/constants";
@@ -34,7 +36,7 @@ export default async function CarouselEditorPage({
   const { user } = await getUser();
   const { projectId, carouselId } = await params;
 
-  const [carousel, project, slides, templatesRaw, recentExports, subscription, exportCount, lifetimeCarouselCount] = await Promise.all([
+  const [carousel, project, slides, templatesRaw, recentExports, subscription, exportCount, lifetimeCarouselCount, connections] = await Promise.all([
     getCarousel(user.id, carouselId),
     getProject(user.id, projectId),
     listSlides(user.id, carouselId),
@@ -43,7 +45,10 @@ export default async function CarouselEditorPage({
     getSubscription(user.id, user.email),
     countExportsThisMonth(user.id),
     countCarouselsLifetime(user.id),
+    getPlatformConnections(user.id),
   ]);
+  const connectedPlatforms = new Set(connections.map((c) => c.platform));
+  const userIsAdmin = isAdmin(user.email ?? null);
 
   const hasFullAccess = subscription.isPro || lifetimeCarouselCount < FREE_FULL_ACCESS_GENERATIONS;
   const freeGenerationsLeft = hasFullAccess && !subscription.isPro
@@ -154,6 +159,7 @@ export default async function CarouselEditorPage({
   return (
     <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">
       <div className="mx-auto max-w-4xl space-y-10">
+        {!subscription.isPro && <GoProBar />}
         {hasFullAccess && !subscription.isPro && (
           <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-2 text-sm text-foreground">
             You have full access for your <strong>{FREE_FULL_ACCESS_GENERATIONS} free carousel generations</strong>. {freeGenerationsLeft} {freeGenerationsLeft === 1 ? "generation" : "generations"} left—then upgrade to Pro to keep editing and exporting.
@@ -218,6 +224,69 @@ export default async function CarouselEditorPage({
             created_at: ex.created_at,
           }))}
         />
+
+        {/* Post to (admin only) */}
+        {userIsAdmin && (() => {
+          const pt = (project.post_to_platforms ?? {}) as Record<string, boolean>;
+          const enabled = (["facebook", "tiktok", "instagram", "linkedin", "youtube"] as const).filter((k) => pt[k]);
+          if (enabled.length === 0) return null;
+          const labels: Record<string, string> = {
+            facebook: "Facebook",
+            tiktok: "TikTok",
+            instagram: "Instagram",
+            linkedin: "LinkedIn",
+            youtube: "YouTube (video only)",
+          };
+          // Share or upload URLs (open in new tab). For FB/LinkedIn we pass this carousel page URL; others open upload/feed.
+          const baseUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? "";
+          const pageUrl = baseUrl ? `${baseUrl}${editorPath}` : "";
+          const shareUrl = (key: string) => {
+            switch (key) {
+              case "facebook":
+                return pageUrl ? `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(pageUrl)}` : "https://www.facebook.com/";
+              case "linkedin":
+                return pageUrl ? `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(pageUrl)}` : "https://www.linkedin.com/feed/";
+              case "tiktok":
+                return "https://www.tiktok.com/upload";
+              case "instagram":
+                return "https://www.instagram.com/";
+              case "youtube":
+                return "https://studio.youtube.com/";
+              default:
+                return "#";
+            }
+          };
+          return (
+            <section>
+              <p className="text-muted-foreground mb-2 text-xs font-medium uppercase tracking-wider">
+                Post to
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {enabled.map((key) => {
+                  const connected = connectedPlatforms.has(key);
+                  const href = connected ? shareUrl(key) : `/api/oauth/${key}/connect`;
+                  const label = connected ? labels[key] : `${labels[key]} (Connect)`;
+                  return (
+                    <a
+                      key={key}
+                      href={href}
+                      target={connected ? "_blank" : undefined}
+                      rel={connected ? "noopener noreferrer" : undefined}
+                      className="inline-flex items-center rounded-md border border-border bg-muted/50 px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted hover:border-primary/50 transition-colors"
+                    >
+                      {label}
+                    </a>
+                  );
+                })}
+              </div>
+              <p className="text-muted-foreground mt-1.5 text-xs">
+                {connectedPlatforms.size > 0
+                  ? "Connected accounts open share or upload in a new tab. Download your export above first."
+                  : "Connect accounts in Settings → Connected accounts, or click a platform above to connect with OAuth."}
+              </p>
+            </section>
+          );
+        })()}
 
         {/* Slides */}
         <section>

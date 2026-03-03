@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getUser } from "@/lib/server/auth/getUser";
 import { isAdmin } from "@/lib/server/auth/isAdmin";
-import { getAdminStats } from "@/lib/server/db/admin";
+import { getAdminStats, getAdminUsers } from "@/lib/server/db/admin";
 import {
   UsersIcon,
   FolderIcon,
@@ -45,7 +45,7 @@ export default async function AdminPage() {
     redirect("/projects");
   }
 
-  const stats = await getAdminStats();
+  const [stats, users] = await Promise.all([getAdminStats(), getAdminUsers()]);
   if (!stats) {
     return (
       <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">
@@ -136,6 +136,45 @@ export default async function AdminPage() {
           </div>
         </div>
           </div>
+        </section>
+
+        {/* Users list */}
+        <section>
+          <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
+            Users
+          </p>
+          <div className="rounded-xl border border-border/50 bg-muted/5 overflow-hidden">
+            <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border/50">
+                  <tr>
+                    <th className="text-left font-medium text-muted-foreground px-4 py-3">Name</th>
+                    <th className="text-left font-medium text-muted-foreground px-4 py-3">Email</th>
+                    <th className="text-left font-medium text-muted-foreground px-4 py-3">Plan</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(users ?? []).map((u) => (
+                    <tr key={u.id} className="border-b border-border/30 last:border-0 hover:bg-muted/30">
+                      <td className="px-4 py-2.5 font-medium text-foreground">{u.name}</td>
+                      <td className="px-4 py-2.5 text-muted-foreground">{u.email ?? "—"}</td>
+                      <td className="px-4 py-2.5">
+                        <span className={u.plan === "pro" ? "text-primary font-medium" : "text-muted-foreground"}>
+                          {u.plan ?? "—"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {(users ?? []).length === 0 && (
+              <p className="text-muted-foreground text-sm px-4 py-6 text-center">No users</p>
+            )}
+          </div>
+          {(users ?? []).length >= 500 && (
+            <p className="text-muted-foreground text-xs mt-2">Showing latest 500 users.</p>
+          )}
         </section>
 
         {/* Activity chart */}

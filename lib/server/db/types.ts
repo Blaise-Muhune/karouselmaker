@@ -15,6 +15,15 @@ export interface Profile {
   updated_at: string;
 }
 
+/** Enabled post destinations: video + carousel (except YouTube = video only). */
+export interface PostToPlatforms {
+  facebook?: boolean;
+  tiktok?: boolean;
+  instagram?: boolean;
+  linkedin?: boolean;
+  youtube?: boolean;
+}
+
 export interface Project {
   id: string;
   user_id: string;
@@ -27,6 +36,8 @@ export interface Project {
   slide_structure: Json;
   brand_kit: Json;
   sources: Json;
+  /** Which platforms to post to from this project. YouTube = video only; others = video + carousel. */
+  post_to_platforms?: PostToPlatforms | null;
   created_at: string;
   updated_at: string;
 }
@@ -63,8 +74,8 @@ export interface Carousel {
   include_first_slide?: boolean;
   /** When true, "Apply to all" includes the last slide. Default true. */
   include_last_slide?: boolean;
-  /** Options from the generate form (use_ai_backgrounds, use_unsplash_only, use_web_search). Pre-fill regenerate form. */
-  generation_options?: { use_ai_backgrounds?: boolean; use_unsplash_only?: boolean; use_web_search?: boolean };
+  /** Options from the generate form (use_ai_backgrounds, use_unsplash_only, use_ai_generate, use_web_search). Pre-fill regenerate form. */
+  generation_options?: { use_ai_backgrounds?: boolean; use_unsplash_only?: boolean; use_ai_generate?: boolean; use_web_search?: boolean };
   created_at: string;
   updated_at: string;
 }
@@ -117,6 +128,23 @@ export interface SlidePreset {
   created_at: string;
 }
 
+export type PlatformName = "facebook" | "tiktok" | "instagram" | "linkedin" | "youtube";
+
+export interface PlatformConnection {
+  id: string;
+  user_id: string;
+  platform: PlatformName;
+  access_token: string;
+  refresh_token: string | null;
+  expires_at: string | null;
+  scope: string | null;
+  platform_user_id: string | null;
+  platform_username: string | null;
+  meta: Json;
+  created_at: string;
+  updated_at: string;
+}
+
 // Insert/update payloads (partial)
 export type ProjectInsert = Omit<Project, "id" | "created_at" | "updated_at"> & {
   id?: string;
@@ -137,6 +165,12 @@ export type SlideInsert = Omit<Slide, "id" | "created_at" | "updated_at"> & {
   updated_at?: string;
 };
 export type SlideUpdate = Partial<Omit<Slide, "id" | "carousel_id" | "created_at">>;
+
+export type PlatformConnectionInsert = Omit<PlatformConnection, "id" | "created_at" | "updated_at"> & {
+  id?: string;
+  created_at?: string;
+  updated_at?: string;
+};
 
 export type AssetInsert = Omit<Asset, "id" | "created_at"> & {
   id?: string;

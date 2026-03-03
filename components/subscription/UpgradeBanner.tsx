@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { createCheckoutSession } from "@/app/actions/subscription/createCheckoutSession";
 import { PRO_PRICE_DISPLAY } from "@/lib/constants";
-import { SparklesIcon, Loader2Icon } from "lucide-react";
+import { Gem, Loader2Icon } from "lucide-react";
 
 type UpgradeBannerProps = {
   message?: string;
@@ -41,7 +41,7 @@ export function UpgradeBanner({
           {loading ? (
             <Loader2Icon className="mr-2 size-4 animate-spin" />
           ) : (
-            <SparklesIcon className="mr-2 size-4" />
+            <Gem className="mr-2 size-4" />
           )}
           Upgrade to Pro ({PRO_PRICE_DISPLAY}/mo)
         </Button>
@@ -57,7 +57,7 @@ export function UpgradeBanner({
           {loading ? (
             <Loader2Icon className="mr-2 size-4 animate-spin" />
           ) : (
-            <SparklesIcon className="mr-2 size-4" />
+            <Gem className="mr-2 size-4" />
           )}
           Upgrade to Pro ({PRO_PRICE_DISPLAY}/mo)
         </Button>

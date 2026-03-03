@@ -54,5 +54,8 @@ export async function regenerateCarousel(
   formData.set("input_type", carousel.input_type);
   formData.set("input_value", carousel.input_value);
   formData.set("use_ai_backgrounds", "true");
+  const opts = carousel.generation_options as { use_unsplash_only?: boolean; use_ai_generate?: boolean } | undefined;
+  if (opts?.use_unsplash_only) formData.set("use_unsplash_only", "true");
+  if (opts?.use_ai_generate) formData.set("use_ai_generate", "true");
   return generateCarousel(formData);
 }
