@@ -6,8 +6,12 @@ import { Gem, Check } from "lucide-react";
 /**
  * Premium / Pro plan card for auth and landing pages.
  * Matches the design: PREMIUM label, Pro + price, feature list (no voiceover video), CTA.
+ * @param onAuthPage When true (login/signup), show "Sign up or log in first, then go Pro" instead of a signup link.
  */
-export function PremiumCard({ className }: { className?: string }) {
+export function PremiumCard({
+  className,
+  onAuthPage = false,
+}: { className?: string; onAuthPage?: boolean }) {
   return (
     <div className={className}>
       <p className="text-muted-foreground mb-2 text-center text-xs font-medium uppercase tracking-wider">
@@ -48,12 +52,18 @@ export function PremiumCard({ className }: { className?: string }) {
             AI backgrounds, full editor
           </li>
         </ul>
-        <Button size="lg" className="w-full gap-2" asChild>
-          <Link href="/signup">
-            <Gem className="size-4" />
-            Get started with Pro
-          </Link>
-        </Button>
+        {onAuthPage ? (
+          <p className="text-muted-foreground rounded-lg border border-border bg-muted/30 px-4 py-3 text-center text-sm">
+            Sign up or log in first, then go Pro from the app after you’re in.
+          </p>
+        ) : (
+          <Button size="lg" className="w-full gap-2" asChild>
+            <Link href="/signup">
+              <Gem className="size-4" />
+              Get started with Pro
+            </Link>
+          </Button>
+        )}
       </div>
     </div>
   );

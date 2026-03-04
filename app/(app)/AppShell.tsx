@@ -28,6 +28,7 @@ import { ConnectedAccountsModal } from "@/components/settings/ConnectedAccountsM
 import { OPEN_CONNECTED_ACCOUNTS_EVENT } from "@/lib/constants/connectedAccounts";
 import { cn } from "@/lib/utils";
 import type { Project } from "@/lib/server/db/types";
+import { LogoutButtonWithOverlay } from "@/components/auth/LogoutButtonWithOverlay";
 import { ChevronDownIcon, CreditCardIcon, Gem, Loader2Icon, LogOutIcon, MenuIcon, PlusCircleIcon, ShieldIcon, UserIcon } from "lucide-react";
 
 const ADMIN_EMAILS = ["blaisemu007@gmail.com", "muyumba@andrews.edu"];
@@ -350,10 +351,7 @@ export function AppShell({
                 )}
                 <DropdownMenuItem asChild>
                   <form action={signOut}>
-                    <button type="submit" className="flex w-full items-center">
-                      <LogOutIcon className="mr-2 size-4" />
-                      Log out
-                    </button>
+                    <LogoutButtonWithOverlay />
                   </form>
                 </DropdownMenuItem>
               </DropdownMenuContent>

@@ -117,7 +117,7 @@ function LoginForm() {
           </Link>
         </p>
       </div>
-      <PremiumCard className="lg:sticky lg:top-8" />
+      <PremiumCard className="lg:sticky lg:top-8" onAuthPage />
     </div>
   );
 }
