@@ -63,10 +63,11 @@ export function PostToInstagramVideoButton({
         href={postUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className="inline-flex items-center rounded-md border border-border bg-muted/50 px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted hover:border-primary/50 transition-colors"
-        title="View on Instagram"
+        className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/50 px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted hover:border-primary/50 transition-colors"
+        title="View post on Instagram"
       >
         <PlatformIcon platform="instagram" className="size-3.5" />
+        <span>View post</span>
       </a>
     );
   }

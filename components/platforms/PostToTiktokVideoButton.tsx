@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { getTiktokUploadPath } from "@/app/actions/platforms/getTiktokUploadPath";
 import { postToTiktok } from "@/app/actions/platforms/postToTiktok";
+import { PlatformIcon } from "@/components/platforms/PlatformIcon";
 import { createClient } from "@/lib/supabase/client";
 import { Loader2Icon } from "lucide-react";
 
@@ -56,9 +57,16 @@ export function PostToTiktokVideoButton({
 
   if (success) {
     return (
-      <span className="text-xs text-green-600 dark:text-green-400">
-        Sent to TikTok inbox. Open the app to post.
-      </span>
+      <a
+        href="https://www.tiktok.com/"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/50 px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted hover:border-primary/50 transition-colors"
+        title="Open TikTok to finish posting"
+      >
+        <PlatformIcon platform="tiktok" className="size-3.5" />
+        <span>View post</span>
+      </a>
     );
   }
 
@@ -70,10 +78,14 @@ export function PostToTiktokVideoButton({
         variant="outline"
         disabled={loading || !videoBlob}
         onClick={handlePost}
-        className="inline-flex items-center"
+        className="inline-flex items-center justify-center"
+        title="Post video to TikTok"
       >
-        {loading ? <Loader2Icon className="mr-1.5 size-3.5 animate-spin" /> : null}
-        Post to TikTok
+        {loading ? (
+          <Loader2Icon className="size-3.5 animate-spin" />
+        ) : (
+          <PlatformIcon platform="tiktok" className="size-3.5" />
+        )}
       </Button>
       {error && <span className="text-xs text-destructive">{error}</span>}
     </span>
