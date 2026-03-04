@@ -2,15 +2,15 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { getTiktokUploadPath } from "@/app/actions/platforms/getTiktokUploadPath";
-import { postToTiktok } from "@/app/actions/platforms/postToTiktok";
+import { getVideoUploadPath } from "@/app/actions/platforms/getVideoUploadPath";
+import { postVideoToYouTube } from "@/app/actions/platforms/postVideoToYouTube";
 import { PlatformIcon } from "@/components/platforms/PlatformIcon";
 import { createClient } from "@/lib/supabase/client";
 import { Loader2Icon } from "lucide-react";
 
 const BUCKET = "carousel-assets";
 
-export function PostToTiktokVideoButton({
+export function PostToYouTubeVideoButton({
   carouselId,
   videoBlob,
 }: {
@@ -20,6 +20,7 @@ export function PostToTiktokVideoButton({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [postUrl, setPostUrl] = useState<string | null>(null);
 
   async function handlePost() {
     if (!videoBlob) {
@@ -29,7 +30,7 @@ export function PostToTiktokVideoButton({
     setError(null);
     setLoading(true);
     try {
-      const pathRes = await getTiktokUploadPath(carouselId);
+      const pathRes = await getVideoUploadPath(carouselId, "youtube");
       if (!pathRes.ok) {
         setError(pathRes.error);
         return;
@@ -39,12 +40,13 @@ export function PostToTiktokVideoButton({
         .from(BUCKET)
         .upload(pathRes.path, videoBlob, { contentType: "video/mp4", upsert: true });
       if (uploadError) {
-        setError("Upload failed. Try again or check storage settings.");
+        setError("Upload failed. Try again.");
         return;
       }
-      const result = await postToTiktok(carouselId, pathRes.path);
+      const result = await postVideoToYouTube(carouselId, pathRes.path);
       if (result.ok) {
         setSuccess(true);
+        setPostUrl(result.video_url);
       } else {
         setError(result.error);
       }
@@ -55,15 +57,18 @@ export function PostToTiktokVideoButton({
     }
   }
 
-  if (success) {
+  if (success && postUrl) {
     return (
-      <span
-        className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/50 px-2.5 py-1.5 text-xs font-medium text-muted-foreground"
-        title="Video sent to your TikTok inbox. Open the app to finish posting."
+      <a
+        href={postUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/50 px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted hover:border-primary/50 transition-colors"
+        title="View video on YouTube"
       >
-        <PlatformIcon platform="tiktok" className="size-3.5" />
-        <span>Drafted</span>
-      </span>
+        <PlatformIcon platform="youtube" className="size-3.5" />
+        <span>View post</span>
+      </a>
     );
   }
 
@@ -76,12 +81,12 @@ export function PostToTiktokVideoButton({
         disabled={loading || !videoBlob}
         onClick={handlePost}
         className="inline-flex items-center justify-center"
-        title="Post video to TikTok"
+        title="Post video to YouTube"
       >
         {loading ? (
           <Loader2Icon className="size-3.5 animate-spin" />
         ) : (
-          <PlatformIcon platform="tiktok" className="size-3.5" />
+          <PlatformIcon platform="youtube" className="size-3.5" />
         )}
       </Button>
       {error && <span className="text-xs text-destructive">{error}</span>}

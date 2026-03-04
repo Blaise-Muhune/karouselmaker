@@ -96,10 +96,25 @@ export async function exchangeCode(
       const expiresAt = data.expires_in
         ? new Date(Date.now() + data.expires_in * 1000).toISOString()
         : undefined;
+      let platform_user_id: string | undefined;
+      let platform_username: string | undefined;
+      const userRes = await fetch("https://open.tiktokapis.com/v2/user/info/?fields=open_id,display_name", {
+        headers: { Authorization: `Bearer ${data.access_token}` },
+      });
+      if (userRes.ok) {
+        const userData = (await userRes.json()) as { data?: { user?: { open_id?: string; display_name?: string } } };
+        const user = userData.data?.user;
+        if (user) {
+          platform_user_id = user.open_id;
+          platform_username = user.display_name ?? undefined;
+        }
+      }
       return {
         access_token: data.access_token,
         refresh_token: data.refresh_token,
         expires_at: expiresAt,
+        platform_user_id,
+        platform_username,
       };
     }
     case "linkedin": {
@@ -150,10 +165,25 @@ export async function exchangeCode(
       const expiresAt = data.expires_in
         ? new Date(Date.now() + data.expires_in * 1000).toISOString()
         : undefined;
+      let platform_username: string | undefined;
+      const channelRes = await fetch("https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true", {
+        headers: { Authorization: `Bearer ${data.access_token}` },
+      });
+      if (channelRes.ok) {
+        const channelData = (await channelRes.json()) as {
+          items?: Array<{ id?: string; snippet?: { title?: string } }>;
+        };
+        const channel = channelData.items?.[0];
+        if (channel?.snippet?.title) {
+          platform_username = channel.snippet.title;
+        }
+      }
       return {
         access_token: data.access_token,
         refresh_token: data.refresh_token,
         expires_at: expiresAt,
+        platform_user_id: undefined,
+        platform_username,
       };
     }
     case "instagram": {

@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getUser } from "@/lib/server/auth/getUser";
+
+// Allow long-running carousel generation (LLM + optional per-slide AI images). Requires Vercel Pro (60s+); 300s max.
+export const maxDuration = 300;
 import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { getSubscription, getPlanLimits } from "@/lib/server/subscription";
 import { getProject, getCarousel, countCarouselsThisMonth, countCarouselsLifetime, listTemplatesForUser, getDefaultTemplateForNewCarousel } from "@/lib/server/db";

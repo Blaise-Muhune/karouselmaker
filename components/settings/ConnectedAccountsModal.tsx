@@ -23,6 +23,20 @@ const LABELS: Record<PlatformName, string> = {
   youtube: "YouTube",
 };
 
+/** Display name for the connected account (username, page name, channel title, etc.) when available. */
+function getConnectionDisplayName(platform: PlatformName, conn: PlatformConnection): string | null {
+  if (platform === "facebook") {
+    const pageName = (conn.meta as { page_name?: string })?.page_name;
+    return pageName ?? null;
+  }
+  if (platform === "instagram") {
+    const ig = (conn.meta as { ig_username?: string })?.ig_username;
+    return ig ? `@${ig}` : null;
+  }
+  if (conn.platform_username) return conn.platform_username;
+  return null;
+}
+
 const POPUP_SPEC = "width=600,height=700,scrollbars=yes";
 
 type MessageParams = {
@@ -165,6 +179,7 @@ export function ConnectedAccountsModal({
           {(["facebook", "tiktok", "instagram", "linkedin", "youtube"] as PlatformName[]).map((platform) => {
             const conn = connectionMap.get(platform);
             const isSupported = data?.supported.includes(platform) ?? false;
+            const displayName = conn ? getConnectionDisplayName(platform, conn) : null;
             return (
               <div
                 key={platform}
@@ -173,14 +188,9 @@ export function ConnectedAccountsModal({
                 <div>
                   <p className="font-medium">{LABELS[platform]}</p>
                   {platform === "youtube" && <p className="text-muted-foreground text-xs">Video only</p>}
-                  {platform === "facebook" && conn && (conn.meta as { page_name?: string })?.page_name && (
-                    <p className="text-muted-foreground text-xs">Page: {(conn.meta as { page_name: string }).page_name}</p>
-                  )}
+                  {displayName && <p className="text-muted-foreground text-xs">{displayName}</p>}
                   {platform === "facebook" && conn && !(conn.meta as { page_id?: string; no_page?: boolean })?.page_id && (
                     <p className="text-xs text-amber-600 dark:text-amber-400">No Page linked — reconnect with an account that is an admin of a Facebook Page to post.</p>
-                  )}
-                  {platform === "instagram" && conn && (conn.meta as { ig_username?: string })?.ig_username && (
-                    <p className="text-muted-foreground text-xs">@{((conn.meta as { ig_username: string }).ig_username)}</p>
                   )}
                   {platform === "instagram" && conn && !(conn.meta as { ig_account_id?: string; no_page?: boolean })?.ig_account_id && (
                     <p className="text-xs text-amber-600 dark:text-amber-400">No Instagram account linked — connect an Instagram Business/Creator account to a Facebook Page you manage, then reconnect.</p>
@@ -190,11 +200,7 @@ export function ConnectedAccountsModal({
                   {conn ? (
                     <>
                       <span className="text-muted-foreground text-sm">
-                        {platform === "instagram" && (conn.meta as { ig_username?: string })?.ig_username
-                          ? `@${(conn.meta as { ig_username: string }).ig_username}`
-                          : conn.platform_username
-                            ? `@${conn.platform_username}`
-                            : (conn.meta as { page_name?: string })?.page_name ?? ((conn.meta as { no_page?: boolean })?.no_page ? "Connected (no Page)" : "Connected")}
+                        {displayName ?? ((conn.meta as { no_page?: boolean })?.no_page ? "Connected (no Page)" : "Connected")}
                       </span>
                       <DisconnectPlatformButton platform={platform} onSuccess={fetchData} />
                     </>

@@ -35,6 +35,7 @@ import { PLAN_LIMITS } from "@/lib/constants";
 import { PostToTiktokVideoButton } from "@/components/platforms/PostToTiktokVideoButton";
 import { PostToFacebookVideoButton } from "@/components/platforms/PostToFacebookVideoButton";
 import { PostToInstagramVideoButton } from "@/components/platforms/PostToInstagramVideoButton";
+import { PostToYouTubeVideoButton } from "@/components/platforms/PostToYouTubeVideoButton";
 import { PlatformIcon } from "@/components/platforms/PlatformIcon";
 
 export type ExportRowDisplay = {
@@ -691,6 +692,15 @@ export function EditorExportSection({
                             />
                           );
                         }
+                        if (key === "youtube" && connected) {
+                          return (
+                            <PostToYouTubeVideoButton
+                              key={key}
+                              carouselId={carouselId}
+                              videoBlob={generatedVideoBlob}
+                            />
+                          );
+                        }
                         const href = connected ? VIDEO_POST_URLS[key] ?? "#" : `/api/oauth/${key}/connect`;
                         const label = connected ? VIDEO_POST_LABELS[key] ?? key : `${VIDEO_POST_LABELS[key] ?? key} (Connect)`;
                         return (
@@ -708,8 +718,8 @@ export function EditorExportSection({
                       })}
                     </div>
                     <p className="text-muted-foreground text-xs text-center">
-                      {connectedSet.has("tiktok") || connectedSet.has("facebook") || connectedSet.has("instagram")
-                        ? "TikTok, Facebook, and Instagram: post directly. LinkedIn & YouTube: open in new tab, then upload the MP4."
+                      {connectedSet.has("tiktok") || connectedSet.has("facebook") || connectedSet.has("instagram") || connectedSet.has("youtube")
+                        ? "TikTok, Facebook, Instagram, and YouTube: post directly. LinkedIn: open in new tab, then upload the MP4."
                         : "Connect accounts in Settings to post directly. Or download the MP4 and upload on the platform."}
                     </p>
                   </div>

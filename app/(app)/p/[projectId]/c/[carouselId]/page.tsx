@@ -235,27 +235,11 @@ export default async function CarouselEditorPage({
         {/* Post to (admin only) */}
         {userIsAdmin && (() => {
           const pt = (project.post_to_platforms ?? {}) as Record<string, boolean>;
-          const enabled = (["facebook", "tiktok", "instagram", "linkedin", "youtube"] as const).filter((k) => pt[k]);
+          const enabled = (["facebook", "instagram"] as const).filter((k) => pt[k]);
           if (enabled.length === 0) return null;
           const labels: Record<string, string> = {
             facebook: "Facebook",
-            tiktok: "TikTok",
             instagram: "Instagram",
-            linkedin: "LinkedIn",
-            youtube: "YouTube (video only)",
-          };
-          // Post buttons for Facebook/Instagram; TikTok uses Video preview; LinkedIn/YouTube open in new tab.
-          const baseUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? "";
-          const pageUrl = baseUrl ? `${baseUrl}${editorPath}` : "";
-          const shareUrl = (key: string) => {
-            switch (key) {
-              case "linkedin":
-                return pageUrl ? `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(pageUrl)}` : "https://www.linkedin.com/feed/";
-              case "youtube":
-                return "https://studio.youtube.com/";
-              default:
-                return "#";
-            }
           };
           return (
             <section>
@@ -265,61 +249,30 @@ export default async function CarouselEditorPage({
               <div className="flex flex-wrap items-center gap-2">
                 {enabled.map((key) => {
                   const connected = connectedPlatforms.has(key);
-                  const isFacebook = key === "facebook";
-                  const isInstagram = key === "instagram";
-                  const isTiktok = key === "tiktok";
-                  if (isFacebook && connected) {
+                  if (key === "facebook" && connected) {
                     return <PostToFacebookButton key={key} carouselId={carouselId} />;
                   }
-                  if (isInstagram && connected) {
+                  if (key === "instagram" && connected) {
                     return <PostToInstagramButton key={key} carouselId={carouselId} />;
                   }
-                  if (isTiktok && connected) {
-                    return (
-                      <span
-                        key={key}
-                        className="inline-flex items-center justify-center rounded-md border border-border bg-muted/50 px-2.5 py-1.5 text-foreground"
-                        title="TikTok — use Video preview to post"
-                        aria-label="TikTok — use Video preview to post"
-                      >
-                        <PlatformIcon platform="tiktok" />
-                      </span>
-                    );
-                  }
-                  const href = connected ? shareUrl(key) : `/api/oauth/${key}/connect`;
                   const label = connected ? labels[key] : `${labels[key]} (Connect)`;
                   const pillClass = "inline-flex items-center justify-center rounded-md border border-border bg-muted/50 px-2.5 py-1.5 text-foreground hover:bg-muted hover:border-primary/50 transition-colors";
-                  if (!connected) {
-                    return (
-                      <ConnectInPopupLink key={key} href={href} className={pillClass} title={label} aria-label={label}>
-                        <PlatformIcon platform={key as PlatformName} />
-                      </ConnectInPopupLink>
-                    );
-                  }
                   return (
-                    <a
+                    <ConnectInPopupLink
                       key={key}
-                      href={href}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                      href={connected ? "#" : `/api/oauth/${key}/connect`}
                       className={pillClass}
                       title={label}
                       aria-label={label}
                     >
-                      <PlatformIcon platform={key as PlatformName} />
-                    </a>
+                      <PlatformIcon platform={key} />
+                    </ConnectInPopupLink>
                   );
                 })}
                 <ConnectedAccountsModalTrigger />
               </div>
               <p className="text-muted-foreground mt-1.5 text-xs">
-                {connectedPlatforms.has("facebook") || connectedPlatforms.has("instagram")
-                  ? "Post to Facebook and Post to Instagram publish your latest export (carousel images) to the connected account. Export the carousel above first. After posting, use View on Facebook / View on Instagram to open the post."
-                  : connectedPlatforms.has("tiktok")
-                    ? "TikTok: generate a video in Video preview above, then click Post to TikTok in the modal to upload to your TikTok inbox."
-                    : connectedPlatforms.size > 0
-                      ? "LinkedIn and YouTube open in a new tab. Download your export above first."
-                      : "Connect opens in a popup so you don’t lose your video or export. Or open Connected accounts to manage all."}
+                Post to Facebook and Post to Instagram publish your latest export (carousel images). Export above first, then use View on Facebook / View on Instagram after posting.
               </p>
             </section>
           );

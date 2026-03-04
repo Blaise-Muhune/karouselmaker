@@ -36,8 +36,8 @@ async function initVideoUpload(
       source_info: {
         source: "FILE_UPLOAD",
         video_size: Math.floor(videoSize),
-        chunk_size: chunkSize,
-        total_chunk_count: totalChunkCount,
+        chunk_size: Math.floor(chunkSize),
+        total_chunk_count: Math.floor(totalChunkCount),
       },
     }),
   });
@@ -69,7 +69,7 @@ export async function uploadVideoToTiktok(
   const videoSize = videoBuffer.length;
   if (videoSize === 0) return { ok: false, error: "Video is empty." };
 
-  // TikTok expects total_chunk_count = floor(video_size / chunk_size). The last chunk may be oversized (up to 128MB).
+  // TikTok: total_chunk_count = floor(video_size / chunk_size). Each chunk 5–64 MB except final (up to 128 MB). Videos <5 MB: one chunk, chunk_size = video_size.
   let chunkSize: number;
   let totalChunkCount: number;
   if (videoSize < MIN_CHUNK) {
@@ -82,15 +82,19 @@ export async function uploadVideoToTiktok(
       chunkSize = Math.min(MAX_CHUNK, Math.ceil(videoSize / MAX_CHUNK_COUNT));
       totalChunkCount = Math.max(1, Math.floor(videoSize / chunkSize));
     }
+    // When only one chunk, chunk_size must equal video_size (TikTok expects consistent init vs upload).
+    if (totalChunkCount === 1) {
+      chunkSize = videoSize;
+    }
   }
-  totalChunkCount = Math.max(1, Math.floor(totalChunkCount));
-  chunkSize = Math.floor(chunkSize);
+  const totalChunkCountInt = Math.max(1, Math.floor(totalChunkCount));
+  const chunkSizeInt = Math.floor(chunkSize);
 
-  const { publish_id, upload_url } = await initVideoUpload(accessToken, videoSize, chunkSize, totalChunkCount);
+  const { publish_id, upload_url } = await initVideoUpload(accessToken, videoSize, chunkSizeInt, totalChunkCountInt);
 
-  for (let i = 0; i < totalChunkCount; i++) {
-    const start = i * chunkSize;
-    const end = i === totalChunkCount - 1 ? videoSize - 1 : start + chunkSize - 1;
+  for (let i = 0; i < totalChunkCountInt; i++) {
+    const start = i * chunkSizeInt;
+    const end = i === totalChunkCountInt - 1 ? videoSize - 1 : start + chunkSizeInt - 1;
     const chunk = videoBuffer.subarray(start, end + 1);
     const res = await fetch(upload_url, {
       method: "PUT",
@@ -105,7 +109,7 @@ export async function uploadVideoToTiktok(
       const text = await res.text();
       return { ok: false, error: `Upload chunk failed: ${res.status} ${text}` };
     }
-    const expectedStatus = i === totalChunkCount - 1 ? 201 : 206;
+    const expectedStatus = i === totalChunkCountInt - 1 ? 201 : 206;
     if (res.status !== expectedStatus) {
       return { ok: false, error: `Unexpected status ${res.status} (expected ${expectedStatus})` };
     }

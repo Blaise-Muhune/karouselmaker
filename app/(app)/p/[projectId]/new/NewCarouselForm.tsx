@@ -189,7 +189,17 @@ export function NewCarouselForm({
       }
       router.push(`/p/${projectId}/c/${result.carouselId}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+      const message = err instanceof Error ? err.message : "Something went wrong. Please try again.";
+      const isTimeout =
+        message.includes("504") ||
+        message.toLowerCase().includes("timeout") ||
+        message.toLowerCase().includes("gateway") ||
+        (message.toLowerCase().includes("fetch") && message.toLowerCase().includes("fail"));
+      setError(
+        isTimeout
+          ? "The request took too long (server timeout). Try fewer slides, or use Unsplash/Brave for images instead of AI generate, then try again."
+          : message
+      );
     } finally {
       setIsPending(false);
     }
