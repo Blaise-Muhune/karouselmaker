@@ -146,3 +146,35 @@ export async function postMultiPhotoToPage(
 
   return { post_id: fullId, post_url: postUrl };
 }
+
+/**
+ * Post a video to a Facebook Page by URL.
+ * Facebook fetches the video from file_url; it must be publicly accessible (e.g. signed URL valid for several minutes).
+ * @see https://developers.facebook.com/docs/video-api/guides/publishing/
+ */
+export async function postVideoToPage(
+  pageId: string,
+  pageAccessToken: string,
+  videoUrl: string,
+  description?: string
+): Promise<{ post_id: string; post_url: string }> {
+  const params = new URLSearchParams();
+  params.set("file_url", videoUrl);
+  params.set("published", "true");
+  if (description?.trim()) params.set("description", description.trim());
+  params.set("access_token", pageAccessToken);
+
+  const res = await fetch(`${GRAPH_BASE}/${pageId}/videos`, {
+    method: "POST",
+    body: params,
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+  });
+
+  const body = (await res.json()) as { id?: string; error?: { message: string } };
+  if (body.error) throw new Error(body.error.message || "Facebook API error");
+  const videoId = body.id;
+  if (!videoId) throw new Error("Facebook did not return a video ID");
+
+  const postUrl = `https://www.facebook.com/${pageId}/videos/${videoId}`;
+  return { post_id: videoId, post_url: postUrl };
+}

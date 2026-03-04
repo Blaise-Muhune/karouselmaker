@@ -6,6 +6,7 @@ import { getPlatformConnection } from "@/lib/server/db/platformConnections";
 import { getCarousel, listExportsByCarousel, listSlides } from "@/lib/server/db";
 import { getExportStoragePaths } from "@/lib/server/db/exports";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
+import { getCaptionAndHashtagsForPost } from "@/lib/server/captionForPost";
 import { postMultiPhotoToPage } from "@/lib/facebook/postToPage";
 
 const BUCKET = "carousel-assets";
@@ -63,8 +64,10 @@ export async function postToFacebook(carouselId: string, message?: string): Prom
     return { ok: false, error: "Could not get image URLs. Try re-exporting the carousel." };
   }
 
+  const messageToPost = message?.trim() || getCaptionAndHashtagsForPost(carousel);
+
   try {
-    const result = await postMultiPhotoToPage(pageId, pageToken, imageUrls, message);
+    const result = await postMultiPhotoToPage(pageId, pageToken, imageUrls, messageToPost || undefined);
     return { ok: true, post_id: result.post_id, post_url: result.post_url };
   } catch (e) {
     const errMsg = e instanceof Error ? e.message : String(e);

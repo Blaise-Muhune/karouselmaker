@@ -69,17 +69,18 @@ export async function uploadVideoToTiktok(
   const videoSize = videoBuffer.length;
   if (videoSize === 0) return { ok: false, error: "Video is empty." };
 
+  // TikTok expects total_chunk_count = floor(video_size / chunk_size). The last chunk may be oversized (up to 128MB).
   let chunkSize: number;
   let totalChunkCount: number;
   if (videoSize < MIN_CHUNK) {
     chunkSize = videoSize;
     totalChunkCount = 1;
   } else {
-    chunkSize = PREFERRED_CHUNK; // 10MB; last chunk can be smaller
-    totalChunkCount = Math.ceil(videoSize / chunkSize);
+    chunkSize = PREFERRED_CHUNK; // 10MB
+    totalChunkCount = Math.max(1, Math.floor(videoSize / chunkSize));
     if (totalChunkCount > MAX_CHUNK_COUNT) {
       chunkSize = Math.min(MAX_CHUNK, Math.ceil(videoSize / MAX_CHUNK_COUNT));
-      totalChunkCount = Math.ceil(videoSize / chunkSize);
+      totalChunkCount = Math.max(1, Math.floor(videoSize / chunkSize));
     }
   }
   totalChunkCount = Math.max(1, Math.floor(totalChunkCount));

@@ -33,6 +33,9 @@ import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
 import { WaitingGamesDialog } from "@/components/waiting/WaitingGamesDialog";
 import { PLAN_LIMITS } from "@/lib/constants";
 import { PostToTiktokVideoButton } from "@/components/platforms/PostToTiktokVideoButton";
+import { PostToFacebookVideoButton } from "@/components/platforms/PostToFacebookVideoButton";
+import { PostToInstagramVideoButton } from "@/components/platforms/PostToInstagramVideoButton";
+import { PlatformIcon } from "@/components/platforms/PlatformIcon";
 
 export type ExportRowDisplay = {
   id: string;
@@ -670,6 +673,24 @@ export function EditorExportSection({
                             />
                           );
                         }
+                        if (key === "facebook" && connected) {
+                          return (
+                            <PostToFacebookVideoButton
+                              key={key}
+                              carouselId={carouselId}
+                              videoBlob={generatedVideoBlob}
+                            />
+                          );
+                        }
+                        if (key === "instagram" && connected) {
+                          return (
+                            <PostToInstagramVideoButton
+                              key={key}
+                              carouselId={carouselId}
+                              videoBlob={generatedVideoBlob}
+                            />
+                          );
+                        }
                         const href = connected ? VIDEO_POST_URLS[key] ?? "#" : `/api/oauth/${key}/connect`;
                         const label = connected ? VIDEO_POST_LABELS[key] ?? key : `${VIDEO_POST_LABELS[key] ?? key} (Connect)`;
                         return (
@@ -678,18 +699,18 @@ export function EditorExportSection({
                             href={href}
                             target={connected ? "_blank" : undefined}
                             rel={connected ? "noopener noreferrer" : undefined}
-                            className="inline-flex items-center rounded-md border border-border bg-muted/50 px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted hover:border-primary/50 transition-colors"
+                            className="inline-flex items-center justify-center rounded-md border border-border bg-muted/50 px-2.5 py-1.5 text-foreground hover:bg-muted hover:border-primary/50 transition-colors"
+                            title={label}
                           >
-                            <ExternalLinkIcon className="mr-1.5 size-3.5" />
-                            {label}
+                            <PlatformIcon platform={key as "facebook" | "tiktok" | "instagram" | "linkedin" | "youtube"} className="size-3.5" />
                           </a>
                         );
                       })}
                     </div>
                     <p className="text-muted-foreground text-xs text-center">
-                      {connectedSet.has("tiktok")
-                        ? "TikTok: video uploads to your inbox. Others: download the MP4, then upload on the platform."
-                        : "Download the MP4 above, then upload it on the platform you open."}
+                      {connectedSet.has("tiktok") || connectedSet.has("facebook") || connectedSet.has("instagram")
+                        ? "TikTok, Facebook, and Instagram: post directly. LinkedIn & YouTube: open in new tab, then upload the MP4."
+                        : "Connect accounts in Settings to post directly. Or download the MP4 and upload on the platform."}
                     </p>
                   </div>
                 )}

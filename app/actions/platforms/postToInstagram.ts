@@ -6,6 +6,7 @@ import { getPlatformConnection } from "@/lib/server/db/platformConnections";
 import { getCarousel, listExportsByCarousel, listSlides } from "@/lib/server/db";
 import { getExportStoragePaths } from "@/lib/server/db/exports";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
+import { getCaptionAndHashtagsForPost } from "@/lib/server/captionForPost";
 import { postCarouselToInstagram } from "@/lib/instagram/postCarousel";
 
 const BUCKET = "carousel-assets";
@@ -71,8 +72,10 @@ export async function postToInstagram(
     return { ok: false, error: "Could not get image URLs. Try re-exporting the carousel." };
   }
 
+  const captionToPost = caption?.trim() || getCaptionAndHashtagsForPost(carousel);
+
   try {
-    const result = await postCarouselToInstagram(igAccountId, pageToken, imageUrls, caption);
+    const result = await postCarouselToInstagram(igAccountId, pageToken, imageUrls, captionToPost || undefined);
     return {
       ok: true,
       media_id: result.media_id,
