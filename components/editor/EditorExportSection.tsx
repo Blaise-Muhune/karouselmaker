@@ -626,6 +626,7 @@ export function EditorExportSection({
                           setGeneratedVideoUrl(null);
                           setGeneratedVideoBlob(null);
                           setVideoDownloadError(null);
+                          setCaptionPosition("safe_lower");
                         }}
                       >
                         <RefreshCwIcon className="mr-2 size-4" />
