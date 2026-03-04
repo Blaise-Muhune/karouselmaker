@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { postToInstagram } from "@/app/actions/platforms/postToInstagram";
-import { ExternalLinkIcon, Loader2Icon } from "lucide-react";
+import { PlatformIcon } from "@/components/platforms/PlatformIcon";
+import { Loader2Icon } from "lucide-react";
 
 export function PostToInstagramButton({ carouselId }: { carouselId: string }) {
   const [loading, setLoading] = useState(false);
@@ -32,9 +33,15 @@ export function PostToInstagramButton({ carouselId }: { carouselId: string }) {
   if (postUrl) {
     return (
       <Button size="sm" variant="outline" asChild>
-        <a href={postUrl} target="_blank" rel="noopener noreferrer">
-          <ExternalLinkIcon className="mr-2 size-4" />
-          View on Instagram
+        <a
+          href={postUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center justify-center"
+          title="View on Instagram"
+          aria-label="View on Instagram"
+        >
+          <PlatformIcon platform="instagram" />
         </a>
       </Button>
     );
@@ -48,11 +55,15 @@ export function PostToInstagramButton({ carouselId }: { carouselId: string }) {
         variant="default"
         disabled={loading}
         onClick={handlePost}
+        className="inline-flex items-center justify-center"
+        title="Post to Instagram"
+        aria-label="Post to Instagram"
       >
         {loading ? (
-          <Loader2Icon className="mr-2 size-4 animate-spin" />
-        ) : null}
-        Post to Instagram
+          <Loader2Icon className="size-4 animate-spin" />
+        ) : (
+          <PlatformIcon platform="instagram" />
+        )}
       </Button>
       {error && (
         <span className="text-xs text-destructive">

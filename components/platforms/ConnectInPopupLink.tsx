@@ -10,16 +10,22 @@ export function ConnectInPopupLink({
   href,
   children,
   className,
+  title,
+  "aria-label": ariaLabel,
 }: {
   href: string;
   children: React.ReactNode;
   className?: string;
+  title?: string;
+  "aria-label"?: string;
 }) {
   return (
     <button
       type="button"
       className={className}
       onClick={() => window.open(href, "oauth", POPUP_SPEC)}
+      title={title}
+      aria-label={ariaLabel}
     >
       {children}
     </button>

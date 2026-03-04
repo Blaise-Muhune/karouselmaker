@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { postToFacebook } from "@/app/actions/platforms/postToFacebook";
-import { ExternalLinkIcon, Loader2Icon } from "lucide-react";
+import { PlatformIcon } from "@/components/platforms/PlatformIcon";
+import { Loader2Icon } from "lucide-react";
 
 export function PostToFacebookButton({ carouselId }: { carouselId: string }) {
   const [loading, setLoading] = useState(false);
@@ -30,9 +31,15 @@ export function PostToFacebookButton({ carouselId }: { carouselId: string }) {
   if (postUrl) {
     return (
       <Button size="sm" variant="outline" asChild>
-        <a href={postUrl} target="_blank" rel="noopener noreferrer">
-          <ExternalLinkIcon className="mr-2 size-4" />
-          View on Facebook
+        <a
+          href={postUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center justify-center"
+          title="View on Facebook"
+          aria-label="View on Facebook"
+        >
+          <PlatformIcon platform="facebook" />
         </a>
       </Button>
     );
@@ -46,11 +53,15 @@ export function PostToFacebookButton({ carouselId }: { carouselId: string }) {
         variant="default"
         disabled={loading}
         onClick={handlePost}
+        className="inline-flex items-center justify-center"
+        title="Post to Facebook"
+        aria-label="Post to Facebook"
       >
         {loading ? (
-          <Loader2Icon className="mr-2 size-4 animate-spin" />
-        ) : null}
-        Post to Facebook
+          <Loader2Icon className="size-4 animate-spin" />
+        ) : (
+          <PlatformIcon platform="facebook" />
+        )}
       </Button>
       {error && (
         <span className="text-muted-foreground text-xs text-destructive">

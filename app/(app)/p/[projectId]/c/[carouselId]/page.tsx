@@ -17,11 +17,12 @@ import { EditorExportSection } from "@/components/editor/EditorExportSection";
 import { PostToFacebookButton } from "@/components/platforms/PostToFacebookButton";
 import { PostToInstagramButton } from "@/components/platforms/PostToInstagramButton";
 import { ConnectInPopupLink } from "@/components/platforms/ConnectInPopupLink";
+import { PlatformIcon } from "@/components/platforms/PlatformIcon";
 import { ConnectedAccountsModalTrigger } from "@/components/settings/ConnectedAccountsModalTrigger";
 import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
 import { GoProBar } from "@/components/subscription/GoProBar";
 import type { BrandKit } from "@/lib/renderer/renderModel";
-import type { ExportFormat, ExportSize } from "@/lib/server/db/types";
+import type { ExportFormat, ExportSize, PlatformName } from "@/lib/server/db/types";
 import { FREE_FULL_ACCESS_GENERATIONS } from "@/lib/constants";
 import { ArrowLeftIcon } from "lucide-react";
 
@@ -277,20 +278,21 @@ export default async function CarouselEditorPage({
                     return (
                       <span
                         key={key}
-                        className="inline-flex flex-col rounded-md border border-border bg-muted/50 px-2.5 py-1.5 text-xs font-medium text-foreground"
-                        title="Generate a video in Video preview above, then click Post to TikTok there."
+                        className="inline-flex items-center justify-center rounded-md border border-border bg-muted/50 px-2.5 py-1.5 text-foreground"
+                        title="TikTok — use Video preview to post"
+                        aria-label="TikTok — use Video preview to post"
                       >
-                        {labels[key]} — use Video preview to post
+                        <PlatformIcon platform="tiktok" />
                       </span>
                     );
                   }
                   const href = connected ? shareUrl(key) : `/api/oauth/${key}/connect`;
                   const label = connected ? labels[key] : `${labels[key]} (Connect)`;
-                  const pillClass = "inline-flex items-center rounded-md border border-border bg-muted/50 px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted hover:border-primary/50 transition-colors";
+                  const pillClass = "inline-flex items-center justify-center rounded-md border border-border bg-muted/50 px-2.5 py-1.5 text-foreground hover:bg-muted hover:border-primary/50 transition-colors";
                   if (!connected) {
                     return (
-                      <ConnectInPopupLink key={key} href={href} className={pillClass}>
-                        {label}
+                      <ConnectInPopupLink key={key} href={href} className={pillClass} title={label} aria-label={label}>
+                        <PlatformIcon platform={key as PlatformName} />
                       </ConnectInPopupLink>
                     );
                   }
@@ -301,8 +303,10 @@ export default async function CarouselEditorPage({
                       target="_blank"
                       rel="noopener noreferrer"
                       className={pillClass}
+                      title={label}
+                      aria-label={label}
                     >
-                      {label}
+                      <PlatformIcon platform={key as PlatformName} />
                     </a>
                   );
                 })}
