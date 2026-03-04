@@ -85,16 +85,20 @@ export async function exchangeCode(
           redirect_uri: redirectUri,
         }),
       });
-      if (!res.ok) return null;
-      const data = (await res.json()) as { data?: { access_token?: string; refresh_token?: string; expires_in?: number } };
-      const d = data.data;
-      if (!d?.access_token) return null;
-      const expiresAt = d.expires_in
-        ? new Date(Date.now() + d.expires_in * 1000).toISOString()
+      const data = (await res.json()) as {
+        access_token?: string;
+        refresh_token?: string;
+        expires_in?: number;
+        error?: string;
+        error_description?: string;
+      };
+      if (!res.ok || data.error || !data.access_token) return null;
+      const expiresAt = data.expires_in
+        ? new Date(Date.now() + data.expires_in * 1000).toISOString()
         : undefined;
       return {
-        access_token: d.access_token,
-        refresh_token: d.refresh_token,
+        access_token: data.access_token,
+        refresh_token: data.refresh_token,
         expires_at: expiresAt,
       };
     }
