@@ -20,7 +20,7 @@ import {
   type LayeredSlideInput,
 } from "@/lib/video/createVideoFromImages";
 import { VOICE_PRESETS } from "@/lib/video/voices";
-import { DownloadIcon, Loader2Icon, PlayIcon, RefreshCwIcon, VideoIcon } from "lucide-react";
+import { DownloadIcon, ExternalLinkIcon, Loader2Icon, PlayIcon, RefreshCwIcon, VideoIcon } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -32,6 +32,7 @@ import {
 import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
 import { WaitingGamesDialog } from "@/components/waiting/WaitingGamesDialog";
 import { PLAN_LIMITS } from "@/lib/constants";
+import { PostToTiktokVideoButton } from "@/components/platforms/PostToTiktokVideoButton";
 
 export type ExportRowDisplay = {
   id: string;
@@ -71,6 +72,23 @@ function videoSizeToDimensions(size: VideoSize): { width: number; height: number
   }
 }
 
+/** Video upload URLs (open in new tab to upload the downloaded MP4). */
+const VIDEO_POST_URLS: Record<string, string> = {
+  facebook: "https://www.facebook.com/",
+  tiktok: "https://www.tiktok.com/upload",
+  instagram: "https://www.instagram.com/",
+  linkedin: "https://www.linkedin.com/feed/",
+  youtube: "https://studio.youtube.com/",
+};
+
+const VIDEO_POST_LABELS: Record<string, string> = {
+  facebook: "Facebook",
+  tiktok: "TikTok",
+  instagram: "Instagram",
+  linkedin: "LinkedIn",
+  youtube: "YouTube",
+};
+
 type EditorExportSectionProps = {
   carouselId: string;
   isPro?: boolean;
@@ -81,6 +99,10 @@ type EditorExportSectionProps = {
   exportFormat?: "png" | "jpeg";
   exportSize?: "1080x1080" | "1080x1350" | "1080x1920";
   recentExports: ExportRowDisplay[];
+  /** When set (e.g. admin), show "Post video to" in the video preview modal when video is ready. */
+  postToPlatforms?: Record<string, boolean>;
+  /** Platform keys the user has connected (e.g. from getPlatformConnections). */
+  connectedPlatforms?: string[];
 };
 
 export function EditorExportSection({
@@ -91,7 +113,13 @@ export function EditorExportSection({
   exportFormat = "png",
   exportSize = "1080x1350",
   recentExports,
+  postToPlatforms,
+  connectedPlatforms = [],
 }: EditorExportSectionProps) {
+  const connectedSet = new Set(connectedPlatforms);
+  const enabledVideoPostPlatforms = postToPlatforms
+    ? (["facebook", "tiktok", "instagram", "linkedin", "youtube"] as const).filter((k) => postToPlatforms[k])
+    : [];
   const limit = exportsLimit ?? (isPro ? PLAN_LIMITS.pro.exportsPerMonth : PLAN_LIMITS.free.exportsPerMonth);
   const canExport = exportsUsedThisMonth < limit;
   const router = useRouter();
@@ -626,6 +654,44 @@ export function EditorExportSection({
                     </Button>
                   )}
                 </div>
+                {generatedVideoUrl && enabledVideoPostPlatforms.length > 0 && (
+                  <div className="flex flex-col items-center gap-2 w-full mt-2 pt-3 border-t border-border">
+                    <p className="text-muted-foreground text-xs font-medium">Post video to</p>
+                    <div className="flex flex-wrap items-center justify-center gap-2">
+                      {enabledVideoPostPlatforms.map((key) => {
+                        const connected = connectedSet.has(key);
+                        if (key === "tiktok" && connected) {
+                          return (
+                            <PostToTiktokVideoButton
+                              key={key}
+                              carouselId={carouselId}
+                              videoBlob={generatedVideoBlob}
+                            />
+                          );
+                        }
+                        const href = connected ? VIDEO_POST_URLS[key] ?? "#" : `/api/oauth/${key}/connect`;
+                        const label = connected ? VIDEO_POST_LABELS[key] ?? key : `${VIDEO_POST_LABELS[key] ?? key} (Connect)`;
+                        return (
+                          <a
+                            key={key}
+                            href={href}
+                            target={connected ? "_blank" : undefined}
+                            rel={connected ? "noopener noreferrer" : undefined}
+                            className="inline-flex items-center rounded-md border border-border bg-muted/50 px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted hover:border-primary/50 transition-colors"
+                          >
+                            <ExternalLinkIcon className="mr-1.5 size-3.5" />
+                            {label}
+                          </a>
+                        );
+                      })}
+                    </div>
+                    <p className="text-muted-foreground text-xs text-center">
+                      {connectedSet.has("tiktok")
+                        ? "TikTok: video uploads to your inbox. Others: download the MP4, then upload on the platform."
+                        : "Download the MP4 above, then upload it on the platform you open."}
+                    </p>
+                  </div>
+                )}
                 {videoDownloadError && (
                   <p className="text-destructive text-xs">{videoDownloadError}</p>
                 )}

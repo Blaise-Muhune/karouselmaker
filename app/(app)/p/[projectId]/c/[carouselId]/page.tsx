@@ -14,6 +14,9 @@ import { CarouselMenuDropdown } from "@/components/carousels/CarouselMenuDropdow
 import { ShuffleCarouselBackgroundsButton } from "@/components/carousels/ShuffleCarouselBackgroundsButton";
 import { EditorCaptionSection } from "@/components/editor/EditorCaptionSection";
 import { EditorExportSection } from "@/components/editor/EditorExportSection";
+import { PostToFacebookButton } from "@/components/platforms/PostToFacebookButton";
+import { ConnectInPopupLink } from "@/components/platforms/ConnectInPopupLink";
+import { ConnectedAccountsModalTrigger } from "@/components/settings/ConnectedAccountsModalTrigger";
 import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
 import { GoProBar } from "@/components/subscription/GoProBar";
 import type { BrandKit } from "@/lib/renderer/renderModel";
@@ -223,6 +226,8 @@ export default async function CarouselEditorPage({
             storage_path: ex.storage_path,
             created_at: ex.created_at,
           }))}
+          postToPlatforms={userIsAdmin ? (project.post_to_platforms as Record<string, boolean> | undefined) : undefined}
+          connectedPlatforms={userIsAdmin ? Array.from(connectedPlatforms) : undefined}
         />
 
         {/* Post to (admin only) */}
@@ -261,28 +266,57 @@ export default async function CarouselEditorPage({
               <p className="text-muted-foreground mb-2 text-xs font-medium uppercase tracking-wider">
                 Post to
               </p>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {enabled.map((key) => {
                   const connected = connectedPlatforms.has(key);
+                  const isFacebook = key === "facebook";
+                  const isTiktok = key === "tiktok";
+                  if (isFacebook && connected) {
+                    return <PostToFacebookButton key={key} carouselId={carouselId} />;
+                  }
+                  if (isTiktok && connected) {
+                    return (
+                      <span
+                        key={key}
+                        className="inline-flex flex-col rounded-md border border-border bg-muted/50 px-2.5 py-1.5 text-xs font-medium text-foreground"
+                        title="Generate a video in Video preview above, then click Post to TikTok there."
+                      >
+                        {labels[key]} — use Video preview to post
+                      </span>
+                    );
+                  }
                   const href = connected ? shareUrl(key) : `/api/oauth/${key}/connect`;
                   const label = connected ? labels[key] : `${labels[key]} (Connect)`;
+                  const pillClass = "inline-flex items-center rounded-md border border-border bg-muted/50 px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted hover:border-primary/50 transition-colors";
+                  if (!connected) {
+                    return (
+                      <ConnectInPopupLink key={key} href={href} className={pillClass}>
+                        {label}
+                      </ConnectInPopupLink>
+                    );
+                  }
                   return (
                     <a
                       key={key}
                       href={href}
-                      target={connected ? "_blank" : undefined}
-                      rel={connected ? "noopener noreferrer" : undefined}
-                      className="inline-flex items-center rounded-md border border-border bg-muted/50 px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted hover:border-primary/50 transition-colors"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={pillClass}
                     >
                       {label}
                     </a>
                   );
                 })}
+                <ConnectedAccountsModalTrigger />
               </div>
               <p className="text-muted-foreground mt-1.5 text-xs">
-                {connectedPlatforms.size > 0
-                  ? "Connected accounts open share or upload in a new tab. Download your export above first."
-                  : "Connect accounts in Settings → Connected accounts, or click a platform above to connect with OAuth."}
+                {connectedPlatforms.has("facebook")
+                  ? "Post to Facebook publishes all carousel images from your latest export as one post. Export the carousel above first. After posting, use View on Facebook to open the post."
+                  : connectedPlatforms.has("tiktok")
+                    ? "TikTok: generate a video in Video preview above, then click Post to TikTok in the modal to upload to your TikTok inbox."
+                    : connectedPlatforms.size > 0
+                      ? "Connected accounts open share or upload in a new tab. Download your export above first."
+                      : "Connect opens in a popup so you don’t lose your video or export. Or open Connected accounts to manage all."}
               </p>
             </section>
           );

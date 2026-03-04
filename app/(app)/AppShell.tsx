@@ -22,6 +22,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { OAuthPopupListener } from "@/components/settings/OAuthPopupListener";
 import { cn } from "@/lib/utils";
 import type { Project } from "@/lib/server/db/types";
 import { ChevronDownIcon, CreditCardIcon, Gem, Loader2Icon, LogOutIcon, MenuIcon, PlusCircleIcon, ShieldIcon, UserIcon } from "lucide-react";
@@ -337,6 +338,7 @@ export function AppShell({
         </div>
       </header>
       <main className="flex-1 pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">{children}</main>
+      <OAuthPopupListener />
       {!isSlideEditPage(pathname) && (
         <footer className="border-t border-border/60 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           <div className="flex flex-col items-center gap-2 px-4 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]">

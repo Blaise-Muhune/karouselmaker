@@ -6,7 +6,10 @@ import { disconnectPlatform } from "@/app/actions/platforms/disconnectPlatform";
 import type { PlatformName } from "@/lib/server/db/types";
 import { Loader2Icon, UnlinkIcon } from "lucide-react";
 
-export function DisconnectPlatformButton({ platform }: { platform: PlatformName }) {
+export function DisconnectPlatformButton({
+  platform,
+  onSuccess,
+}: { platform: PlatformName; onSuccess?: () => void }) {
   const [loading, setLoading] = useState(false);
   return (
     <Button
@@ -18,7 +21,8 @@ export function DisconnectPlatformButton({ platform }: { platform: PlatformName 
         setLoading(true);
         const result = await disconnectPlatform(platform);
         if (result.ok) {
-          window.location.reload();
+          if (onSuccess) onSuccess();
+          else window.location.reload();
         } else {
           alert(result.error ?? "Failed to disconnect");
           setLoading(false);

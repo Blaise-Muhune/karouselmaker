@@ -21,12 +21,18 @@ export function getAuthUrl(platform: PlatformName, state: string): string | null
     case "tiktok": {
       const clientKey = process.env.TIKTOK_CLIENT_KEY;
       if (!clientKey) return null;
-      const scope = encodeURIComponent("user.info.basic,video.publish");
+      const scope = encodeURIComponent("user.info.basic,video.upload");
       return `https://www.tiktok.com/auth/authorize/?client_key=${clientKey}&scope=${scope}&response_type=code&redirect_uri=${redirectUri}&state=${encodeURIComponent(state)}`;
     }
-    case "instagram":
-      // Instagram uses Meta/Facebook app; same as Facebook with instagram scopes
-      return getAuthUrl("facebook", state);
+    case "instagram": {
+      // Same Meta app; request Instagram + Page scopes so we can list IG Business accounts linked to Pages
+      const clientId = process.env.FACEBOOK_APP_ID;
+      if (!clientId) return null;
+      const scope = encodeURIComponent(
+        "pages_show_list,pages_read_engagement,instagram_basic,instagram_content_publish"
+      );
+      return `https://www.facebook.com/v21.0/dialog/oauth?client_id=${clientId}&redirect_uri=${redirectUri}&state=${encodeURIComponent(state)}&scope=${scope}&response_type=code`;
+    }
     case "linkedin": {
       const clientId = process.env.LINKEDIN_CLIENT_ID;
       if (!clientId) return null;
@@ -146,9 +152,22 @@ export async function exchangeCode(
         expires_at: expiresAt,
       };
     }
-    case "instagram":
-      // Same token as Facebook when using Facebook Login with Instagram scopes
-      return exchangeCode("facebook", code);
+    case "instagram": {
+      // Same Meta app as Facebook; must use Instagram redirect_uri (must match auth request)
+      const instagramRedirectUri = getRedirectUri("instagram");
+      const clientId = process.env.FACEBOOK_APP_ID;
+      const clientSecret = process.env.FACEBOOK_APP_SECRET;
+      if (!clientId || !clientSecret) return null;
+      const url = `https://graph.facebook.com/v21.0/oauth/access_token?client_id=${clientId}&redirect_uri=${encodeURIComponent(instagramRedirectUri)}&client_secret=${clientSecret}&code=${encodeURIComponent(code)}`;
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      const data = (await res.json()) as { access_token?: string; expires_in?: number };
+      if (!data.access_token) return null;
+      const expiresAt = data.expires_in
+        ? new Date(Date.now() + data.expires_in * 1000).toISOString()
+        : undefined;
+      return { access_token: data.access_token, expires_at: expiresAt };
+    }
     default:
       return null;
   }
