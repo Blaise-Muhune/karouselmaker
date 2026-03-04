@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { ContactUsModal } from "@/components/admin/ContactUsModal";
 import { usePathname } from "next/navigation";
 import { signOut } from "@/app/actions/auth";
@@ -23,6 +24,8 @@ import {
 } from "@/components/ui/sheet";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { OAuthPopupListener } from "@/components/settings/OAuthPopupListener";
+import { ConnectedAccountsModal } from "@/components/settings/ConnectedAccountsModal";
+import { OPEN_CONNECTED_ACCOUNTS_EVENT } from "@/lib/constants/connectedAccounts";
 import { cn } from "@/lib/utils";
 import type { Project } from "@/lib/server/db/types";
 import { ChevronDownIcon, CreditCardIcon, Gem, Loader2Icon, LogOutIcon, MenuIcon, PlusCircleIcon, ShieldIcon, UserIcon } from "lucide-react";
@@ -168,14 +171,16 @@ function NavContent({
         Assets
       </NavLink>
       {isAdmin && (
-        <NavLink
-          href="/settings/connected-accounts"
-          isActive={pathname.startsWith("/settings/connected-accounts")}
-          onClick={() => setSheetOpen?.(false)}
-          className="w-full justify-start md:w-auto md:inline-flex"
+        <button
+          type="button"
+          onClick={() => {
+            setSheetOpen?.(false);
+            window.dispatchEvent(new CustomEvent(OPEN_CONNECTED_ACCOUNTS_EVENT));
+          }}
+          className="rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors w-full justify-start md:w-auto md:inline-flex text-left text-muted-foreground hover:text-foreground"
         >
           Connected accounts
-        </NavLink>
+        </button>
       )}
           <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -250,6 +255,7 @@ export function AppShell({
   isPro?: boolean;
 }) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const currentProjectId = getCurrentProjectId(pathname);
   const isAdmin = ADMIN_EMAILS.includes(userEmail);
 
@@ -258,6 +264,22 @@ export function AppShell({
     : undefined;
 
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [connectedAccountsOpen, setConnectedAccountsOpen] = useState(false);
+
+  useEffect(() => {
+    function onOpen() {
+      setConnectedAccountsOpen(true);
+    }
+    window.addEventListener(OPEN_CONNECTED_ACCOUNTS_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_CONNECTED_ACCOUNTS_EVENT, onOpen);
+  }, []);
+
+  useEffect(() => {
+    if (pathname === "/projects" && searchParams.get("openConnectedAccounts") === "1") {
+      setConnectedAccountsOpen(true);
+      window.history.replaceState(null, "", "/projects");
+    }
+  }, [pathname, searchParams]);
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -315,8 +337,10 @@ export function AppShell({
                   {userEmail}
                 </DropdownMenuItem>
                 {isAdmin && (
-                  <DropdownMenuItem asChild>
-                    <Link href="/settings/connected-accounts">Connected accounts</Link>
+                  <DropdownMenuItem
+                    onClick={() => window.dispatchEvent(new CustomEvent(OPEN_CONNECTED_ACCOUNTS_EVENT))}
+                  >
+                    Connected accounts
                   </DropdownMenuItem>
                 )}
                 {isPro && (
@@ -338,6 +362,10 @@ export function AppShell({
         </div>
       </header>
       <main className="flex-1 pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">{children}</main>
+      <ConnectedAccountsModal
+        open={connectedAccountsOpen}
+        onOpenChange={setConnectedAccountsOpen}
+      />
       <OAuthPopupListener />
       {!isSlideEditPage(pathname) && (
         <footer className="border-t border-border/60 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
