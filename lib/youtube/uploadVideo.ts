@@ -67,7 +67,7 @@ export async function uploadVideoToYouTube(
       "Content-Length": String(size),
       "Content-Range": `bytes 0-${size - 1}/${size}`,
     },
-    body: buffer,
+    body: new Uint8Array(buffer),
   });
 
   if (!putRes.ok) {
