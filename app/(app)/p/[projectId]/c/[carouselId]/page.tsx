@@ -15,6 +15,7 @@ import { ShuffleCarouselBackgroundsButton } from "@/components/carousels/Shuffle
 import { EditorCaptionSection } from "@/components/editor/EditorCaptionSection";
 import { EditorExportSection } from "@/components/editor/EditorExportSection";
 import { PostToFacebookButton } from "@/components/platforms/PostToFacebookButton";
+import { PostToInstagramButton } from "@/components/platforms/PostToInstagramButton";
 import { ConnectInPopupLink } from "@/components/platforms/ConnectInPopupLink";
 import { ConnectedAccountsModalTrigger } from "@/components/settings/ConnectedAccountsModalTrigger";
 import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
@@ -242,19 +243,13 @@ export default async function CarouselEditorPage({
             linkedin: "LinkedIn",
             youtube: "YouTube (video only)",
           };
-          // Share or upload URLs (open in new tab). For FB/LinkedIn we pass this carousel page URL; others open upload/feed.
+          // Post buttons for Facebook/Instagram; TikTok uses Video preview; LinkedIn/YouTube open in new tab.
           const baseUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? "";
           const pageUrl = baseUrl ? `${baseUrl}${editorPath}` : "";
           const shareUrl = (key: string) => {
             switch (key) {
-              case "facebook":
-                return pageUrl ? `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(pageUrl)}` : "https://www.facebook.com/";
               case "linkedin":
                 return pageUrl ? `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(pageUrl)}` : "https://www.linkedin.com/feed/";
-              case "tiktok":
-                return "https://www.tiktok.com/upload";
-              case "instagram":
-                return "https://www.instagram.com/";
               case "youtube":
                 return "https://studio.youtube.com/";
               default:
@@ -270,9 +265,13 @@ export default async function CarouselEditorPage({
                 {enabled.map((key) => {
                   const connected = connectedPlatforms.has(key);
                   const isFacebook = key === "facebook";
+                  const isInstagram = key === "instagram";
                   const isTiktok = key === "tiktok";
                   if (isFacebook && connected) {
                     return <PostToFacebookButton key={key} carouselId={carouselId} />;
+                  }
+                  if (isInstagram && connected) {
+                    return <PostToInstagramButton key={key} carouselId={carouselId} />;
                   }
                   if (isTiktok && connected) {
                     return (
@@ -310,12 +309,12 @@ export default async function CarouselEditorPage({
                 <ConnectedAccountsModalTrigger />
               </div>
               <p className="text-muted-foreground mt-1.5 text-xs">
-                {connectedPlatforms.has("facebook")
-                  ? "Post to Facebook publishes all carousel images from your latest export as one post. Export the carousel above first. After posting, use View on Facebook to open the post."
+                {connectedPlatforms.has("facebook") || connectedPlatforms.has("instagram")
+                  ? "Post to Facebook and Post to Instagram publish your latest export (carousel images) to the connected account. Export the carousel above first. After posting, use View on Facebook / View on Instagram to open the post."
                   : connectedPlatforms.has("tiktok")
                     ? "TikTok: generate a video in Video preview above, then click Post to TikTok in the modal to upload to your TikTok inbox."
                     : connectedPlatforms.size > 0
-                      ? "Connected accounts open share or upload in a new tab. Download your export above first."
+                      ? "LinkedIn and YouTube open in a new tab. Download your export above first."
                       : "Connect opens in a popup so you don’t lose your video or export. Or open Connected accounts to manage all."}
               </p>
             </section>

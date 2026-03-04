@@ -7,9 +7,11 @@
 
 const TIKTOK_API = "https://open.tiktokapis.com";
 
-/** Min chunk 5MB, max 64MB; last chunk can be up to 128MB. Videos <5MB must be one chunk. */
+/** Min chunk 5MB, max 64MB; last chunk can be up to 128MB. Videos <5MB must be one chunk. Max 1000 chunks. */
 const MIN_CHUNK = 5 * 1024 * 1024;
+const MAX_CHUNK = 64 * 1024 * 1024;
 const PREFERRED_CHUNK = 10 * 1024 * 1024;
+const MAX_CHUNK_COUNT = 1000;
 
 export type TikTokUploadResult =
   | { ok: true; publish_id: string }
@@ -33,7 +35,7 @@ async function initVideoUpload(
     body: JSON.stringify({
       source_info: {
         source: "FILE_UPLOAD",
-        video_size: videoSize,
+        video_size: Math.floor(videoSize),
         chunk_size: chunkSize,
         total_chunk_count: totalChunkCount,
       },
@@ -75,7 +77,13 @@ export async function uploadVideoToTiktok(
   } else {
     chunkSize = PREFERRED_CHUNK; // 10MB; last chunk can be smaller
     totalChunkCount = Math.ceil(videoSize / chunkSize);
+    if (totalChunkCount > MAX_CHUNK_COUNT) {
+      chunkSize = Math.min(MAX_CHUNK, Math.ceil(videoSize / MAX_CHUNK_COUNT));
+      totalChunkCount = Math.ceil(videoSize / chunkSize);
+    }
   }
+  totalChunkCount = Math.max(1, Math.floor(totalChunkCount));
+  chunkSize = Math.floor(chunkSize);
 
   const { publish_id, upload_url } = await initVideoUpload(accessToken, videoSize, chunkSize, totalChunkCount);
 

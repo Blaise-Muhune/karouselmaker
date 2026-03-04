@@ -27,3 +27,5 @@ export const VOICE_PRESETS: VoicePreset[] = [
 ];
 
 export const DEFAULT_VOICE_ID = VOICE_PRESETS[0]!.voiceId;
+/** Default voice for video preview (Adam). */
+export const ADAM_VOICE_ID = VOICE_PRESETS.find((p) => p.id === "adam")?.voiceId ?? VOICE_PRESETS[0]!.voiceId;

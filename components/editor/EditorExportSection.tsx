@@ -19,7 +19,7 @@ import {
   type CaptionPosition,
   type LayeredSlideInput,
 } from "@/lib/video/createVideoFromImages";
-import { VOICE_PRESETS } from "@/lib/video/voices";
+import { ADAM_VOICE_ID, VOICE_PRESETS } from "@/lib/video/voices";
 import { DownloadIcon, ExternalLinkIcon, Loader2Icon, PlayIcon, RefreshCwIcon, VideoIcon } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import {
@@ -134,11 +134,11 @@ export function EditorExportSection({
   const [videoDownloadProgress, setVideoDownloadProgress] = useState(0);
   const [videoDownloadStep, setVideoDownloadStep] = useState<string>("");
   const [videoDownloadError, setVideoDownloadError] = useState<string | null>(null);
-  const [captionPosition, setCaptionPosition] = useState<CaptionPosition>("bottom_center");
+  const [captionPosition, setCaptionPosition] = useState<CaptionPosition>("safe_lower");
   const [withCaption, setWithCaption] = useState(false);
   const [zipDownloading, setZipDownloading] = useState(false);
-  const [withVoiceover, setWithVoiceover] = useState(false);
-  const [selectedVoiceId, setSelectedVoiceId] = useState(VOICE_PRESETS[0]!.voiceId);
+  const [withVoiceover, setWithVoiceover] = useState(true);
+  const [selectedVoiceId, setSelectedVoiceId] = useState(ADAM_VOICE_ID);
   const [voiceSpeed, setVoiceSpeed] = useState(1);
   const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(null);
   const [generatedVideoBlob, setGeneratedVideoBlob] = useState<Blob | null>(null);
