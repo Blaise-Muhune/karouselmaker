@@ -22,7 +22,7 @@ export function getAuthUrl(platform: PlatformName, state: string): string | null
       const clientKey = process.env.TIKTOK_CLIENT_KEY;
       if (!clientKey) return null;
       const scope = encodeURIComponent("user.info.basic,video.upload");
-      return `https://www.tiktok.com/auth/authorize/?client_key=${clientKey}&scope=${scope}&response_type=code&redirect_uri=${redirectUri}&state=${encodeURIComponent(state)}`;
+      return `https://www.tiktok.com/v2/auth/authorize/?client_key=${clientKey}&scope=${scope}&response_type=code&redirect_uri=${redirectUri}&state=${encodeURIComponent(state)}`;
     }
     case "instagram": {
       // Same Meta app; request Instagram + Page scopes so we can list IG Business accounts linked to Pages
