@@ -403,7 +403,7 @@ export function NewCarouselForm({
               <span className="flex flex-col gap-1">
                 <span className="font-medium text-foreground">Viral Shorts style</span>
                 <span className="text-muted-foreground text-xs leading-relaxed">
-                  Bait hook, story, mid-carousel CTA (&quot;Comment what you think&quot;), payoff and end CTA. Not recommended for professional or brand accounts.
+                  Curiosity-gap or contrarian hook, story build-up, one natural mid-carousel question (e.g. &quot;What would you add?&quot;), payoff, then follow CTA. Not recommended for professional or brand accounts.
                 </span>
               </span>
             </label>

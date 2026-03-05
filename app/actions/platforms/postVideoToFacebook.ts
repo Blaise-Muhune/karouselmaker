@@ -7,6 +7,7 @@ import { getCarousel } from "@/lib/server/db";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
 import { getCaptionAndHashtagsForPost } from "@/lib/server/captionForPost";
 import { postVideoToPage } from "@/lib/facebook/postToPage";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 const BUCKET = "carousel-assets";
 const SIGNED_URL_EXPIRES = 600; // 10 min for Facebook to fetch video
@@ -59,6 +60,7 @@ export async function postVideoToFacebook(
 
   try {
     const result = await postVideoToPage(pageId, pageToken, videoUrl, description || undefined);
+    await createAdminClient().storage.from(BUCKET).remove([videoStoragePath]);
     return { ok: true, post_url: result.post_url };
   } catch (e) {
     const errMsg = e instanceof Error ? e.message : String(e);

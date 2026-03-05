@@ -19,8 +19,18 @@ export async function POST() {
   });
 
   if (error) {
+    const isMissingFunction =
+      error.message?.includes("acquire_video_gen_lock") &&
+      (error.message?.includes("does not exist") || error.message?.includes("could not find"));
+    if (isMissingFunction) {
+      return new Response(null, { status: 200 });
+    }
+    const message =
+      process.env.NODE_ENV === "development"
+        ? error.message
+        : "Failed to acquire lock";
     return NextResponse.json(
-      { error: "Failed to acquire lock" },
+      { error: message },
       { status: 500 }
     );
   }

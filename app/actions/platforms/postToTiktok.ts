@@ -4,22 +4,18 @@ import { getUser } from "@/lib/server/auth/getUser";
 import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { getPlatformConnection } from "@/lib/server/db/platformConnections";
 import { getCarousel } from "@/lib/server/db";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { uploadVideoToTiktok } from "@/lib/tiktok/uploadVideo";
-
-const BUCKET = "carousel-assets";
 
 export type PostToTiktokResult =
   | { ok: true; publish_id: string; message: string }
   | { ok: false; error: string };
 
 /**
- * Upload the video at the given storage path to the user's TikTok inbox via Content Posting API.
- * User will see it in TikTok app and can finish posting there.
+ * Post the video (from FormData) to the user's TikTok inbox. No storage: client sends blob, we forward to TikTok.
  */
 export async function postToTiktok(
   carouselId: string,
-  videoStoragePath: string
+  formData: FormData
 ): Promise<PostToTiktokResult> {
   const { user } = await getUser();
   if (!isAdmin(user.email ?? null)) {
@@ -36,20 +32,11 @@ export async function postToTiktok(
     return { ok: false, error: "Carousel not found." };
   }
 
-  if (!videoStoragePath.startsWith(`user/${user.id}/tiktok-uploads/${carouselId}/`)) {
-    return { ok: false, error: "Invalid video path." };
+  const file = formData.get("video");
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, error: "No video file. Generate the video and try again." };
   }
-
-  const supabase = createAdminClient();
-  const { data: blob, error: downloadError } = await supabase.storage
-    .from(BUCKET)
-    .download(videoStoragePath);
-
-  if (downloadError || !blob) {
-    return { ok: false, error: "Could not read video. Upload it again from the video preview, then Post to TikTok." };
-  }
-
-  const buffer = Buffer.from(await blob.arrayBuffer());
+  const buffer = Buffer.from(await file.arrayBuffer());
   const accessToken = connection.access_token;
 
   try {

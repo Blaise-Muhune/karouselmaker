@@ -95,7 +95,7 @@ const PEOPLE_INTENT_PATTERNS = [
 /** Fictional character / franchise: prefer Brave, use "wallpaper" (or "poster") refiners—avoid "images", "artwork", "key art". */
 const FICTIONAL_CHARACTER_PATTERNS = [
   /\b(anime|character|fanart|fan\s+art)\b/i,
-  /\b(wallpaper|concept\s+art|poster)\b/i,
+  /\b(wallpaper|full\s+body)\b/i,
   /\b(marvel|dc\s+comics|disney|pixar|star\s+wars|harry\s+potter|lotr|game\s+of\s+thrones)\b/i,
 ];
 
@@ -179,7 +179,6 @@ const BRAVE_PEOPLE_REFINERS = [
 /** Brave refiners for fictional characters (no "press photo"; avoid "artwork", "key art"—return canvas/drawn or merchandise). */
 const BRAVE_FICTIONAL_REFINERS = [
   (q: string) => `${q} wallpaper`,
-  (q: string) => `${q} poster`,
   (q: string) => `${q} concept art`,
 ];
 

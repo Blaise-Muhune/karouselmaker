@@ -2,13 +2,9 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { getTiktokUploadPath } from "@/app/actions/platforms/getTiktokUploadPath";
 import { postToTiktok } from "@/app/actions/platforms/postToTiktok";
 import { PlatformIcon } from "@/components/platforms/PlatformIcon";
-import { createClient } from "@/lib/supabase/client";
 import { Loader2Icon } from "lucide-react";
-
-const BUCKET = "carousel-assets";
 
 export function PostToTiktokVideoButton({
   carouselId,
@@ -29,20 +25,9 @@ export function PostToTiktokVideoButton({
     setError(null);
     setLoading(true);
     try {
-      const pathRes = await getTiktokUploadPath(carouselId);
-      if (!pathRes.ok) {
-        setError(pathRes.error);
-        return;
-      }
-      const supabase = createClient();
-      const { error: uploadError } = await supabase.storage
-        .from(BUCKET)
-        .upload(pathRes.path, videoBlob, { contentType: "video/mp4", upsert: true });
-      if (uploadError) {
-        setError("Upload failed. Try again or check storage settings.");
-        return;
-      }
-      const result = await postToTiktok(carouselId, pathRes.path);
+      const formData = new FormData();
+      formData.set("video", videoBlob, "video.mp4");
+      const result = await postToTiktok(carouselId, formData);
       if (result.ok) {
         setSuccess(true);
       } else {

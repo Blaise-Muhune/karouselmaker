@@ -150,7 +150,12 @@ export function EditorExportSection({
     exportSize === "1080x1080" || exportSize === "1080x1350" || exportSize === "1080x1920" ? exportSize : "1080x1350"
   );
   const videoRef = useRef<HTMLVideoElement>(null);
-  const loadVideoUrlsPromiseRef = useRef<Promise<{ urls: string[]; videoData: LayeredSlideInput[] | null }> | null>(null);
+  const loadVideoUrlsPromiseRef = useRef<Promise<{
+    urls: string[];
+    videoData: LayeredSlideInput[] | null;
+    runId: string | null;
+  }> | null>(null);
+  const videoRenderRunIdRef = useRef<string | null>(null);
   const isStandalonePWA = useIsStandalonePWA();
 
   // Video no longer depends on export: we use render-for-video when slide URLs are needed.
@@ -177,6 +182,9 @@ export function EditorExportSection({
     }
   }, [videoSize, withVoiceover, withCaption, captionPosition, selectedVoiceId, voiceSpeed]);
 
+  /** Clean up stored export files when user navigates away or after delay. */
+  const cleanupExportStorageRef = useRef<{ exportId: string; timeoutId: ReturnType<typeof setTimeout> } | null>(null);
+
   const handleExport = async () => {
     setExporting(true);
     setError(null);
@@ -185,15 +193,52 @@ export function EditorExportSection({
     setSlideVideoData(null);
     try {
       const res = await fetch(`/api/export/${carouselId}`, { method: "POST" });
-      const data = await res.json().catch(() => ({}));
+      const contentType = res.headers.get("content-type") ?? "";
       if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
         setError(data.error ?? "Export failed");
         return;
       }
-      if (data.downloadUrl) {
-        setDownloadUrl(data.downloadUrl);
-        if (data.slideUrls?.length) setSlideUrls(data.slideUrls);
+      if (contentType.includes("application/zip")) {
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "carousel.zip";
+        a.click();
+        URL.revokeObjectURL(url);
         router.refresh();
+
+        const exportId = res.headers.get("X-Export-Id");
+        if (exportId) {
+          const cleanup = () => {
+            fetch(`/api/export/${carouselId}/cleanup`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ exportId }),
+            }).catch(() => {});
+          };
+          if (cleanupExportStorageRef.current?.timeoutId) {
+            clearTimeout(cleanupExportStorageRef.current.timeoutId);
+          }
+          const EXPORT_CLEANUP_DELAY_MS = 60 * 60 * 1000;
+          const timeoutId = setTimeout(() => {
+            cleanup();
+            onNavigateAway();
+          }, EXPORT_CLEANUP_DELAY_MS);
+          cleanupExportStorageRef.current = { exportId, timeoutId };
+          const onNavigateAway = () => {
+            cleanup();
+            if (cleanupExportStorageRef.current?.timeoutId) {
+              clearTimeout(cleanupExportStorageRef.current.timeoutId);
+              cleanupExportStorageRef.current = null;
+            }
+            window.removeEventListener("beforeunload", onNavigateAway);
+            window.removeEventListener("pagehide", onNavigateAway);
+          };
+          window.addEventListener("beforeunload", onNavigateAway);
+          window.addEventListener("pagehide", onNavigateAway);
+        }
       }
     } catch {
       setError("Export failed");
@@ -202,13 +247,17 @@ export function EditorExportSection({
     }
   };
 
-  const loadVideoUrls = async (): Promise<{ urls: string[]; videoData: LayeredSlideInput[] | null }> => {
+  const loadVideoUrls = async (): Promise<{
+    urls: string[];
+    videoData: LayeredSlideInput[] | null;
+    runId: string | null;
+  }> => {
     const hasCompleteVideoData =
       slideVideoData != null &&
       slideVideoData.length === slideUrls.length &&
       slideVideoData.every((s) => s.backgroundUrls?.length);
-    if (slideUrls.length > 0 && hasCompleteVideoData) {
-      return { urls: slideUrls, videoData: slideVideoData };
+    if (slideUrls.length > 0 && hasCompleteVideoData && videoRenderRunIdRef.current) {
+      return { urls: slideUrls, videoData: slideVideoData, runId: videoRenderRunIdRef.current };
     }
     if (loadVideoUrlsPromiseRef.current) {
       return loadVideoUrlsPromiseRef.current;
@@ -221,6 +270,8 @@ export function EditorExportSection({
         if (!res.ok) {
           throw new Error(data.error ?? "Failed to prepare slides for video");
         }
+        const runId = (data.runId as string) ?? null;
+        if (runId) videoRenderRunIdRef.current = runId;
         if (data.slideUrls?.length) {
           setSlideUrls(data.slideUrls);
           const vd =
@@ -228,9 +279,9 @@ export function EditorExportSection({
               ? (data.slideVideoData as LayeredSlideInput[])
               : null;
           setSlideVideoData(vd);
-          return { urls: data.slideUrls as string[], videoData: vd };
+          return { urls: data.slideUrls as string[], videoData: vd, runId };
         }
-        return { urls: slideUrls.length > 0 ? slideUrls : [], videoData: null };
+        return { urls: slideUrls.length > 0 ? slideUrls : [], videoData: null, runId };
       } finally {
         setVideoUrlsLoading(false);
         loadVideoUrlsPromiseRef.current = null;
@@ -262,7 +313,7 @@ export function EditorExportSection({
       setVideoDownloadError("Could not start video generation. Try again.");
       return;
     }
-    const { urls, videoData } = await loadVideoUrls();
+    const { urls, videoData, runId } = await loadVideoUrls();
     if (urls.length === 0) {
       await fetch("/api/video-gen/end", { method: "POST" });
       setVideoDownloading(false);
@@ -338,6 +389,9 @@ export function EditorExportSection({
       setVideoDownloadError(e instanceof Error ? e.message : "Video download failed");
     } finally {
       await fetch("/api/video-gen/end", { method: "POST" });
+      if (runId) {
+        await fetch(`/api/carousel/${carouselId}/video-render/${runId}/cleanup`, { method: "POST" }).catch(() => {});
+      }
       setVideoDownloading(false);
       setVideoDownloadProgress(0);
       setVideoDownloadStep("");

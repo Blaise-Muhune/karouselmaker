@@ -9,9 +9,9 @@ import {
   listSlides,
   createExport,
   updateExport,
-  getExportStoragePaths,
   countExportsThisMonth,
 } from "@/lib/server/db";
+import { getExportStoragePaths } from "@/lib/server/db/exports";
 import { getDefaultTemplateId } from "@/lib/server/db/templates";
 import { getSubscription, getPlanLimits } from "@/lib/server/subscription";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
@@ -19,23 +19,16 @@ import { renderSlideHtml } from "@/lib/server/renderer/renderSlideHtml";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
 import { resolveBrandKitLogo } from "@/lib/server/brandKit";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
-import { getSignedDownloadUrl } from "@/lib/server/storage/signedUrl";
 import { formatUnsplashAttributionLine } from "@/lib/server/unsplash";
 import {
   normalizeSlideMetaForRender,
   getTemplateDefaultOverrides,
   mergeWithTemplateDefaults,
 } from "@/lib/server/export/normalizeSlideMetaForRender";
-import { resolveSlideBackgroundUrls } from "@/lib/server/export/resolveSlideBackgroundUrls";
-import {
-  isExternalImageUrl,
-  materializeImageUrl,
-} from "@/lib/server/export/materializeImageUrl";
 import type { BrandKit } from "@/lib/renderer/renderModel";
 import JSZip from "jszip";
 
 const BUCKET = "carousel-assets";
-const VIDEO_ASSET_EXPIRES = 600;
 /** Delay after load before screenshot so layout/fonts/images settle. Prevents pitch-black frames. */
 const SCREENSHOT_DELAY_MS = 500;
 /** Short pause between processing slides in production to reduce browser memory pressure and "browser closed" errors. */
@@ -111,30 +104,8 @@ export async function POST(
     }
 
     const defaultTemplateId = await getDefaultTemplateId(userId);
-    const paths = getExportStoragePaths(userId, carouselId, exportId);
-
-    // Resolve video URLs per slide: materialize externals, collect signed URLs so we can render each variant the same way as main (screenshot).
-    const backgroundData = await resolveSlideBackgroundUrls(slides);
-    const resolvedVideoUrls: string[][] = [];
-    for (let i = 0; i < slides.length; i++) {
-      const raw = backgroundData[i]!.backgroundUrls;
-      const urls: string[] = [];
-      for (let bgIdx = 0; bgIdx < raw.length; bgIdx++) {
-        const u = raw[bgIdx]!;
-        if (isExternalImageUrl(u)) {
-          const signed = await materializeImageUrl(
-            u,
-            null,
-            paths.videoBgPath(i, bgIdx),
-            VIDEO_ASSET_EXPIRES
-          );
-          if (signed) urls.push(signed);
-        } else {
-          urls.push(u);
-        }
-      }
-      resolvedVideoUrls.push(urls.length > 0 ? urls : []);
-    }
+    /** Collect slide PNG/JPEG buffers in memory; we do not persist to storage. */
+    const slideBuffers: Buffer[] = [];
 
     const unsplashAttributions = new Map<
       string,
@@ -370,111 +341,8 @@ export async function POST(
           await new Promise((r) => setTimeout(r, SCREENSHOT_DELAY_MS));
           const buffer = await page.locator(".slide-wrap").screenshot({ type: format, timeout: SELECTOR_TIMEOUT_MS });
           const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
-          const { error: uploadError } = await supabase.storage
-            .from(BUCKET)
-            .upload(paths.slidePath(i), buf, {
-              contentType: format === "jpeg" ? "image/jpeg" : "image/png",
-              upsert: true,
-            });
-          if (uploadError) {
-            throw new Error(`Upload slide ${i + 1} failed: ${uploadError.message}`);
-          }
+          slideBuffers.push(buf);
           await page.setContent("about:blank", { waitUntil: "domcontentloaded" });
-
-          // Overlay-only PNG (transparent + gradient + text + chrome) for video: backgrounds cycle, overlay stays
-          const overlayHtml = renderSlideHtml(
-            {
-              headline: slide.headline,
-              body: slide.body ?? null,
-              slide_index: slide.slide_index,
-              slide_type: slide.slide_type,
-...(merged.headline_highlights?.length && { headline_highlights: merged.headline_highlights }),
-            ...(merged.body_highlights?.length && { body_highlights: merged.body_highlights }),
-            },
-            config.data,
-            brandKit,
-            slides.length,
-            backgroundOverride,
-            undefined,
-            undefined,
-            undefined,
-            showCounterOverride,
-            showWatermarkOverride,
-            showMadeWithOverride,
-            fontOverrides,
-            zoneOverrides,
-            chromeOverrides,
-            highlightStyles,
-            borderedFrame,
-            imageDisplayParam,
-            dimensions,
-            true
-          );
-          await page.setContent(overlayHtml, { waitUntil: "load", timeout: CONTENT_TIMEOUT_MS });
-          await page.waitForSelector(".slide-wrap", { state: "visible", timeout: SELECTOR_TIMEOUT_MS });
-          await waitForImagesInPage(page, CONTENT_TIMEOUT_MS).catch(() => {});
-          await new Promise((r) => setTimeout(r, SCREENSHOT_DELAY_MS));
-          const overlayBuffer = await page.locator(".slide-wrap").screenshot({ type: "png", timeout: SELECTOR_TIMEOUT_MS });
-          const overlayBuf = Buffer.isBuffer(overlayBuffer) ? overlayBuffer : Buffer.from(overlayBuffer);
-          const { error: overlayUploadError } = await supabase.storage
-            .from(BUCKET)
-            .upload(paths.overlayPath(i), overlayBuf, {
-              contentType: "image/png",
-              upsert: true,
-            });
-          if (overlayUploadError) {
-            throw new Error(`Upload overlay ${i + 1} failed: ${overlayUploadError.message}`);
-          }
-          await page.setContent("about:blank", { waitUntil: "domcontentloaded" });
-
-          // Video variants: background-only (no title/body) so voiceover video can use Cathy-style burned-in captions.
-          const variants = resolvedVideoUrls[i] ?? [];
-          for (let v = 0; v < variants.length; v++) {
-            const singleBgUrl = variants[v]!;
-            const variantHtml = renderSlideHtml(
-              {
-                headline: "",
-                body: null,
-                slide_index: slide.slide_index,
-                slide_type: slide.slide_type,
-              },
-              config.data,
-              brandKit,
-              slides.length,
-              backgroundOverride,
-              singleBgUrl,
-              null,
-              null,
-              false,
-              false,
-              false,
-              fontOverrides,
-              zoneOverrides,
-              chromeOverrides,
-              highlightStyles,
-              borderedFrame,
-              imageDisplayParam,
-              dimensions,
-              undefined,
-              true
-            );
-            await page.setContent(variantHtml, { waitUntil: "load", timeout: CONTENT_TIMEOUT_MS });
-            await page.waitForSelector(".slide-wrap", { state: "visible", timeout: SELECTOR_TIMEOUT_MS });
-            await waitForImagesInPage(page, CONTENT_TIMEOUT_MS).catch(() => {});
-            await new Promise((r) => setTimeout(r, SCREENSHOT_DELAY_MS));
-            const variantBuffer = await page.locator(".slide-wrap").screenshot({ type: "png", timeout: SELECTOR_TIMEOUT_MS });
-            const variantBuf = Buffer.isBuffer(variantBuffer) ? variantBuffer : Buffer.from(variantBuffer);
-            const { error: variantUploadError } = await supabase.storage
-              .from(BUCKET)
-              .upload(paths.videoSlidePath(i, v), variantBuf, {
-                contentType: "image/png",
-                upsert: true,
-              });
-            if (variantUploadError) {
-              throw new Error(`Upload video variant ${i + 1}-${v + 1} failed: ${variantUploadError.message}`);
-            }
-            await page.setContent("about:blank", { waitUntil: "domcontentloaded" });
-          }
         } finally {
           try {
             await page.close();
@@ -512,11 +380,9 @@ export async function POST(
     const captionText = captionSections.filter(Boolean).join("\n\n");
 
     const zip = new JSZip();
-    for (let i = 0; i < slides.length; i++) {
-      const path = paths.slidePath(i);
-      const { data: blob } = await supabase.storage.from(BUCKET).download(path);
-      if (blob) {
-        const buf = Buffer.from(await blob.arrayBuffer());
+    for (let i = 0; i < slideBuffers.length; i++) {
+      const buf = slideBuffers[i];
+      if (buf) {
         const filename = `${String(i + 1).padStart(2, "0")}.${format === "jpeg" ? "jpg" : "png"}`;
         zip.file(filename, buf);
       }
@@ -534,28 +400,39 @@ export async function POST(
     }
 
     const zipBuffer = await zip.generateAsync({ type: "nodebuffer" });
-    const { error: zipUploadError } = await supabase.storage
-      .from(BUCKET)
-      .upload(paths.zipPath, zipBuffer, {
-        contentType: "application/zip",
-        upsert: true,
-      });
-    if (zipUploadError) {
-      throw new Error(`Upload ZIP failed: ${zipUploadError.message}`);
+
+    // Store slide images so Post to Facebook/Instagram can use them
+    const paths = getExportStoragePaths(userId, carouselId, exportId);
+    const contentType = format === "jpeg" ? "image/jpeg" : "image/png";
+    for (let i = 0; i < slideBuffers.length; i++) {
+      const buf = slideBuffers[i];
+      if (buf) {
+        const storagePath = paths.slidePath(i);
+        const { error: uploadError } = await supabase.storage
+          .from(BUCKET)
+          .upload(storagePath, buf, { contentType, upsert: true });
+        if (uploadError) {
+          try {
+            await updateExport(userId, exportId, { status: "failed" });
+          } catch {
+            // ignore
+          }
+          return NextResponse.json(
+            { error: `Failed to store slide image: ${uploadError.message}` },
+            { status: 500 }
+          );
+        }
+      }
     }
+    await updateExport(userId, exportId, { status: "ready", storage_path: paths.slidesDir });
 
-    await updateExport(userId, exportId, { status: "ready", storage_path: paths.zipPath });
-
-    const downloadUrl = await getSignedDownloadUrl(BUCKET, paths.zipPath, 600);
-    const slideUrls = await Promise.all(
-      slides.map((_, i) => getSignedImageUrl(BUCKET, paths.slidePath(i), 600))
-    );
-
-    return NextResponse.json({
-      exportId,
-      status: "ready",
-      downloadUrl,
-      slideUrls,
+    return new NextResponse(new Uint8Array(zipBuffer), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/zip",
+        "Content-Disposition": 'attachment; filename="carousel.zip"',
+        "X-Export-Id": exportId,
+      },
     });
       } catch (e) {
         lastError = e;

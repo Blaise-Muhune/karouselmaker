@@ -47,6 +47,9 @@ export async function postToFacebook(carouselId: string, message?: string): Prom
   if (!readyExport) {
     return { ok: false, error: "No export ready yet. Export this carousel first (Export section above)." };
   }
+  if (!readyExport.storage_path) {
+    return { ok: false, error: "Export files are not stored. Use the downloaded ZIP and upload the images to Facebook manually, or use Post video to Facebook with a generated video." };
+  }
 
   const slides = await listSlides(user.id, carouselId);
   if (slides.length === 0) {

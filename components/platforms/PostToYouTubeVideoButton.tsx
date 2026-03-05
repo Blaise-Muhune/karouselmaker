@@ -2,13 +2,9 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { getVideoUploadPath } from "@/app/actions/platforms/getVideoUploadPath";
 import { postVideoToYouTube } from "@/app/actions/platforms/postVideoToYouTube";
 import { PlatformIcon } from "@/components/platforms/PlatformIcon";
-import { createClient } from "@/lib/supabase/client";
 import { Loader2Icon } from "lucide-react";
-
-const BUCKET = "carousel-assets";
 
 export function PostToYouTubeVideoButton({
   carouselId,
@@ -30,20 +26,9 @@ export function PostToYouTubeVideoButton({
     setError(null);
     setLoading(true);
     try {
-      const pathRes = await getVideoUploadPath(carouselId, "youtube");
-      if (!pathRes.ok) {
-        setError(pathRes.error);
-        return;
-      }
-      const supabase = createClient();
-      const { error: uploadError } = await supabase.storage
-        .from(BUCKET)
-        .upload(pathRes.path, videoBlob, { contentType: "video/mp4", upsert: true });
-      if (uploadError) {
-        setError("Upload failed. Try again.");
-        return;
-      }
-      const result = await postVideoToYouTube(carouselId, pathRes.path);
+      const formData = new FormData();
+      formData.set("video", videoBlob, "video.mp4");
+      const result = await postVideoToYouTube(carouselId, formData);
       if (result.ok) {
         setSuccess(true);
         setPostUrl(result.video_url);

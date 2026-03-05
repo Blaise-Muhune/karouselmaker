@@ -7,6 +7,7 @@ import { getCarousel } from "@/lib/server/db";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
 import { getCaptionAndHashtagsForPost } from "@/lib/server/captionForPost";
 import { postReelToInstagram } from "@/lib/instagram/postReel";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 const BUCKET = "carousel-assets";
 const SIGNED_URL_EXPIRES = 600; // 10 min for Instagram to fetch video
@@ -59,6 +60,7 @@ export async function postVideoToInstagram(
 
   try {
     const result = await postReelToInstagram(igAccountId, pageToken, videoUrl, caption || undefined);
+    await createAdminClient().storage.from(BUCKET).remove([videoStoragePath]);
     return { ok: true, permalink: result.permalink };
   } catch (e) {
     const errMsg = e instanceof Error ? e.message : String(e);
