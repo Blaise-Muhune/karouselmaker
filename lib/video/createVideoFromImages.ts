@@ -37,6 +37,33 @@ async function getFFmpeg(): Promise<FFmpeg> {
 }
 
 /**
+ * Fetch an image URL and wait for it to be fully loaded and decoded before returning the buffer.
+ * Prevents pitch-black or corrupt frames when images are still loading or incomplete.
+ */
+async function fetchImageDecoded(url: string): Promise<ArrayBuffer> {
+  const res = await fetch(url, { mode: "cors" });
+  if (!res.ok) throw new Error(`Failed to fetch image: ${res.status}`);
+  const arrayBuffer = await res.arrayBuffer();
+  const blob = new Blob([arrayBuffer], { type: res.headers.get("content-type") ?? "image/png" });
+  const objectUrl = URL.createObjectURL(blob);
+  try {
+    const img = new Image();
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error("Image failed to load"));
+      img.src = objectUrl;
+    });
+    if (img.naturalWidth === 0 || img.naturalHeight === 0) {
+      throw new Error("Image decoded but has zero size");
+    }
+    if (img.decode) await img.decode();
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+  return arrayBuffer;
+}
+
+/**
  * Create an MP4 from slide image URLs with:
  * - 2 segments per slide (same image): first slow zoom in, second slow zoom out / pan
  * - Ken Burns (zoompan) for motion
@@ -55,11 +82,7 @@ export async function createVideoFromImages(
   });
 
   const buffers = await Promise.all(
-    imageUrls.map(async (url, i) => {
-      const res = await fetch(url, { mode: "cors" });
-      if (!res.ok) throw new Error(`Failed to fetch image ${i + 1}`);
-      return res.arrayBuffer();
-    })
+    imageUrls.map(async (url, i) => fetchImageDecoded(url).catch((e) => { throw new Error(`Image ${i + 1}: ${e instanceof Error ? e.message : String(e)}`); }))
   );
 
   for (let i = 0; i < buffers.length; i++) {
@@ -428,22 +451,18 @@ export async function createVideoFromLayeredSlides(
   }
 
   options?.onStep?.("Loading images…");
-  // Fetch and write all assets (same order as inputArgs below)
+  // Fetch and write all assets (same order as inputArgs below). Decode each image so we don't pass partial/black frames.
   for (let i = 0; i < n; i++) {
     const urls = slides[i]!.backgroundUrls;
     const count = K[i]!;
     for (let k = 0; k < count; k++) {
       const url = urls[k % urls.length];
       if (!url) throw new Error(`Missing background URL for slide ${i + 1}, image ${k + 1}`);
-      const res = await fetch(url, { mode: "cors" });
-      if (!res.ok) throw new Error(`Failed to fetch background ${i + 1}/${k + 1}`);
-      const buf = await res.arrayBuffer();
+      const buf = await fetchImageDecoded(url).catch((e) => { throw new Error(`Background ${i + 1}/${k + 1}: ${e instanceof Error ? e.message : String(e)}`); });
       await ffmpeg.writeFile(`bg_${i}_${k}.png`, new Uint8Array(buf));
     }
     if (hasOverlay[i] && slides[i]!.overlayUrl) {
-      const res = await fetch(slides[i]!.overlayUrl!, { mode: "cors" });
-      if (!res.ok) throw new Error(`Failed to fetch overlay ${i + 1}`);
-      const buf = await res.arrayBuffer();
+      const buf = await fetchImageDecoded(slides[i]!.overlayUrl!).catch((e) => { throw new Error(`Overlay ${i + 1}: ${e instanceof Error ? e.message : String(e)}`); });
       await ffmpeg.writeFile(`overlay_${i}.png`, new Uint8Array(buf));
     }
   }

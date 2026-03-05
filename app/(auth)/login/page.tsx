@@ -86,9 +86,9 @@ function LoginForm() {
                 </FormItem>
               )}
             />
-            <Button type="submit" className="w-full">
+            <FormSubmitButton className="w-full" loadingText="Logging in…">
               Log in
-            </Button>
+            </FormSubmitButton>
           </form>
           <div className="relative">
             <div className="absolute inset-0 flex items-center">

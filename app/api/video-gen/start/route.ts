@@ -1,0 +1,37 @@
+import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
+
+export const dynamic = "force-dynamic";
+
+/** Acquire the "one video generation at a time" lock for the current user. Returns 200 if acquired, 429 if another tab/session is already generating. */
+export async function POST() {
+  const supabase = await createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const userId = session.user.id;
+
+  const { data: acquired, error } = await supabase.rpc("acquire_video_gen_lock", {
+    p_user_id: userId,
+  });
+
+  if (error) {
+    return NextResponse.json(
+      { error: "Failed to acquire lock" },
+      { status: 500 }
+    );
+  }
+  if (!acquired) {
+    return NextResponse.json(
+      {
+        error:
+          "Another video is being generated (e.g. in another tab). Please wait for it to finish, then try again.",
+      },
+      { status: 429 }
+    );
+  }
+  return new Response(null, { status: 200 });
+}

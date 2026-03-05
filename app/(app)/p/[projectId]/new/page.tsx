@@ -1,9 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getUser } from "@/lib/server/auth/getUser";
-
-// Allow long-running carousel generation (LLM + optional per-slide AI images). Requires Vercel Pro (60s+); 300s max.
-export const maxDuration = 300;
 import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { getSubscription, getPlanLimits } from "@/lib/server/subscription";
 import { getProject, getCarousel, countCarouselsThisMonth, countCarouselsLifetime, listTemplatesForUser, getDefaultTemplateForNewCarousel } from "@/lib/server/db";
@@ -14,6 +11,9 @@ import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
 import { Button } from "@/components/ui/button";
 import type { TemplateOption } from "@/components/carousels/TemplateSelectCards";
 import { ArrowLeftIcon } from "lucide-react";
+
+// Long-running carousel generation (LLM + per-slide AI images). Vercel Pro allows up to 300s; also set in vercel.json.
+export const maxDuration = 300;
 
 export default async function NewCarouselPage({
   params,
@@ -73,18 +73,29 @@ export default async function NewCarouselPage({
             You have <strong>{FREE_FULL_ACCESS_GENERATIONS} free generations</strong> with full access (AI backgrounds, web search). {freeGenerationsLeft} left.
           </p>
         )}
-        <header className="flex items-start gap-2">
+        <header className="flex items-start gap-3">
           <Button variant="ghost" size="icon-sm" className="-ml-1 shrink-0" asChild>
             <Link href={`/p/${projectId}`}>
               <ArrowLeftIcon className="size-4" />
               <span className="sr-only">Back</span>
             </Link>
           </Button>
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight">{regenerateCarousel ? "Regenerate carousel" : "New carousel"}</h1>
-            <p className="mt-1 text-muted-foreground text-sm">
-              {carouselCount}/{carouselLimit} this month
-            </p>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-xl font-semibold tracking-tight">{regenerateCarousel ? "Regenerate carousel" : "New carousel"}</h1>
+              <span
+                className="rounded-full border border-border/60 bg-muted/50 px-2.5 py-0.5 text-xs font-medium text-muted-foreground"
+                title="Carousels created this month"
+              >
+                {carouselCount}/{carouselLimit} this month
+              </span>
+            </div>
+            <div className="mt-2 h-1 w-full max-w-[140px] overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-primary/70 transition-all duration-300"
+                style={{ width: `${Math.min(100, (carouselCount / carouselLimit) * 100)}%` }}
+              />
+            </div>
           </div>
         </header>
         <NewCarouselForm

@@ -15,9 +15,10 @@ import { TemplateSelectCards } from "@/components/carousels/TemplateSelectCards"
 import type { TemplateOption } from "@/components/carousels/TemplateSelectCards";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { createCheckoutSession } from "@/app/actions/subscription/createCheckoutSession";
 import { WaitingGamesDialog } from "@/components/waiting/WaitingGamesDialog";
-import { Gem, GlobeIcon, ImageIcon, LayoutTemplateIcon, Loader2Icon } from "lucide-react";
+import { Gem, GlobeIcon, ImageIcon, LayoutTemplateIcon, Loader2Icon, Link2Icon, FileTextIcon, SparklesIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react";
 
 const TEMPLATE_PAGE_SIZE = 8;
 /** Diverse Unsplash sample images for template preview when "Let AI suggest background images" is on. */
@@ -35,9 +36,9 @@ const TEMPLATE_PREVIEW_IMAGE_URLS = [
 ];
 
 const INPUT_TYPES = [
-  { value: "topic", label: "Topic" },
-  { value: "url", label: "URL" },
-  { value: "text", label: "Paste text" },
+  { value: "topic", label: "Topic", icon: SparklesIcon },
+  { value: "url", label: "URL", icon: Link2Icon },
+  { value: "text", label: "Paste text", icon: FileTextIcon },
 ] as const;
 
 const GENERATION_STEPS = [
@@ -171,7 +172,7 @@ export function NewCarouselForm({
       formData.set("input_type", inputType);
       formData.set("input_value", trimmed);
       const numSlides = numberOfSlides.trim() ? parseInt(numberOfSlides, 10) : NaN;
-      if (!isNaN(numSlides) && numSlides >= 1 && numSlides <= 30) {
+      if (!isNaN(numSlides) && numSlides >= 3 && numSlides <= 12) {
         formData.set("number_of_slides", String(numSlides));
       }
       if (backgroundAssetIds.length) formData.set("background_asset_ids", JSON.stringify(backgroundAssetIds));
@@ -265,281 +266,336 @@ export function NewCarouselForm({
           </div>
         )}
 
-        <section>
-          <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
-            Input
-          </p>
-          <div className="space-y-4">
-          <div className="flex rounded-lg border border-input p-0.5 bg-muted/30">
-            {INPUT_TYPES.map((o) => (
-              <button
-                key={o.value}
-                type="button"
-                onClick={() => setInputType(o.value)}
-                className={`flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                  inputType === o.value
-                    ? "bg-background text-primary shadow-sm ring-1 ring-primary/20"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {o.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="space-y-2">
-          <Label htmlFor="input_value" className="text-sm">
-            {inputType === "text"
-              ? "Paste your text"
-              : inputType === "url"
-                ? "URL"
-                : "Topic"}
-          </Label>
-          {inputType === "text" ? (
-            <Textarea
-              id="input_value"
-              placeholder="Paste or type your content..."
-              className="min-h-32"
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              required
-            />
-          ) : (
-            <Input
-              id="input_value"
-              type={inputType === "url" ? "url" : "text"}
-              placeholder={
-                inputType === "url"
-                  ? "https://..."
-                  : "e.g. 5 habits of successful creators"
-              }
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              required
-            />
-          )}
-          </div>
-          </div>
-        </section>
-
-        <section>
-          <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
-            Options
-          </p>
-          <div className="space-y-4">
-          <div className="space-y-2">
-          <Label htmlFor="number_of_slides" className="text-sm">Number of slides (optional)</Label>
-          <Input
-            id="number_of_slides"
-            type="number"
-            min={1}
-            max={30}
-            placeholder="AI decides if empty"
-            value={numberOfSlides}
-            onChange={(e) => setNumberOfSlides(e.target.value)}
-            className="w-full"
-          />
-          <p className="text-muted-foreground text-xs">Leave empty for AI to choose.</p>
-          </div>
-
-          <div className="space-y-2">
-          <Label htmlFor="notes" className="text-sm">Notes (optional)</Label>
-          <Textarea
-            id="notes"
-            placeholder="e.g. Use 2 images per slide, use images.nasa.gov, focus on beginners… (overrides other rules)"
-            className="min-h-20"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-          />
-          </div>
-
-          <label className="flex items-start gap-3 rounded-lg py-2 text-sm cursor-pointer hover:bg-muted/50">
-            <input
-              type="checkbox"
-              checked={viralShortsStyle}
-              onChange={(e) => setViralShortsStyle(e.target.checked)}
-              className="mt-0.5"
-            />
-            <span className="flex flex-col gap-0.5">
-              <span>
-                <span className="font-medium">Viral Shorts style</span>
-                <span className="text-muted-foreground ml-1">— Bait hook, story, mid-carousel engagement CTA (e.g. &quot;Comment what you think&quot;), then payoff and end CTA.</span>
-              </span>
-              <span className="text-muted-foreground text-xs">Not recommended for professional or brand accounts.</span>
-            </span>
-          </label>
-
-          <div>
-            <p className="text-muted-foreground mb-2 text-xs font-medium">Background images</p>
-            <p className="text-muted-foreground mb-3 text-xs">
-              Pick from library or let AI suggest. Leave unchecked for project colors.
-              {hasFullAccess && !isPro && (
-                <> You have <strong>{freeGenerationsTotal} free generations</strong> with full access ({freeGenerationsTotal - freeGenerationsUsed} left).</>
-              )}
-            </p>
-          <label className={`flex items-center gap-3 rounded-lg py-2 text-sm ${hasFullAccess ? "cursor-pointer hover:bg-muted/50" : "opacity-70"}`}>
-            <input
-              type="checkbox"
-              checked={useAiBackgrounds}
-              onChange={(e) => {
-              if (!hasFullAccess) return;
-              const checked = e.target.checked;
-              setUseAiBackgrounds(checked);
-              if (checked) {
-                setBackgroundAssetIds([]);
-                setDriveFolderError(null);
-              }
-              if (!checked) setImageSource("brave");
-            }}
-              disabled={!hasFullAccess}
-              className="rounded border-input accent-primary"
-            />
-            <Gem className="size-4 text-muted-foreground" />
-            <span>Let AI suggest background images{!hasFullAccess && " — Pro"}</span>
-          </label>
-          {useAiBackgrounds && (
-            <div className="space-y-2 pl-7">
-              <p className="text-muted-foreground text-xs font-medium">Image source</p>
-              <div className="flex flex-wrap gap-4">
-                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                  <input
-                    type="radio"
-                    name="imageSource"
-                    checked={imageSource === "brave"}
-                    onChange={() => setImageSource("brave")}
-                    className="accent-primary"
-                  />
-                  <span>Brave (search web)</span>
-                </label>
-                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                  <input
-                    type="radio"
-                    name="imageSource"
-                    checked={imageSource === "unsplash"}
-                    onChange={() => setImageSource("unsplash")}
-                    className="accent-primary"
-                  />
-                  <span>Unsplash</span>
-                </label>
-                <label className={`flex items-center gap-2 text-sm ${isAdminUser ? "cursor-pointer" : "cursor-not-allowed opacity-70"}`}>
-                  <input
-                    type="radio"
-                    name="imageSource"
-                    checked={imageSource === "ai_generate"}
-                    onChange={() => isAdminUser && setImageSource("ai_generate")}
-                    disabled={!isAdminUser}
-                    className="accent-primary"
-                  />
-                  <span>AI Generate (OpenAI){!isAdminUser && " — Still in development"}</span>
-                </label>
-              </div>
-              <p className="text-muted-foreground text-xs">
-                Brave: broad coverage. Unsplash: high quality, mostly generic.
-                {isAdminUser ? " AI Generate: creates unique images per slide (fast, gpt-image-1-mini)." : " AI Generate is still in development."}
-              </p>
+        <Card className="py-4 gap-4">
+          <CardHeader className="pb-0 px-5">
+            <CardTitle className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
+              What&apos;s it about?
+            </CardTitle>
+            <CardDescription>Topic, a URL to pull from, or paste your own text.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4 px-5 pt-0">
+            <div className="flex rounded-lg border border-input p-0.5 bg-muted/30">
+              {INPUT_TYPES.map((o) => {
+                const Icon = o.icon;
+                return (
+                  <button
+                    key={o.value}
+                    type="button"
+                    onClick={() => setInputType(o.value)}
+                    className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-2.5 text-sm font-medium transition-colors ${
+                      inputType === o.value
+                        ? "bg-background text-primary shadow-sm ring-1 ring-primary/20"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <Icon className="size-3.5 shrink-0" />
+                    {o.label}
+                  </button>
+                );
+              })}
             </div>
-          )}
-          <label className={`flex items-center gap-3 rounded-lg py-2 text-sm ${hasFullAccess ? "cursor-pointer hover:bg-muted/50" : "opacity-70"}`}>
-            <input
-              type="checkbox"
-              checked={useWebSearch}
-              onChange={(e) => hasFullAccess && setUseWebSearch(e.target.checked)}
-              disabled={!hasFullAccess}
-              className="rounded border-input accent-primary"
-            />
-            <GlobeIcon className="size-4 text-muted-foreground" />
-            <span>Use web search for current info (URLs, recent topics){!hasFullAccess && " — Pro"}</span>
-          </label>
-          <div className={useAiBackgrounds ? "pointer-events-none opacity-60" : undefined}>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setBackgroundPickerOpen(true)}
-                disabled={useAiBackgrounds || driveFolderImporting}
-              >
-                <ImageIcon className="mr-1.5 size-4" />
-                {backgroundAssetIds.length ? `${backgroundAssetIds.length} image(s) selected` : "Pick from library"}
-              </Button>
-              <GoogleDriveFolderPicker
-                onFolderPicked={async (folderId, accessToken) => {
-                  setDriveFolderError(null);
-                  setDriveFolderImporting(true);
-                  const result = await importFromGoogleDrive(folderId, accessToken, projectId);
-                  setDriveFolderImporting(false);
-                  if (result.ok && result.assets.length > 0) {
-                    setBackgroundAssetIds(result.assets.map((a) => a.id));
-                  } else if (!result.ok) {
-                    setDriveFolderError(result.error);
-                  } else {
-                    setDriveFolderError("No images found in that folder.");
+            <div className="space-y-2">
+              <Label htmlFor="input_value" className="text-sm font-medium">
+                {inputType === "text"
+                  ? "Paste your text"
+                  : inputType === "url"
+                    ? "URL"
+                    : "Topic"}
+              </Label>
+              {inputType === "text" ? (
+                <Textarea
+                  id="input_value"
+                  placeholder="Paste or type your content..."
+                  className="min-h-32 resize-y"
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  required
+                />
+              ) : (
+                <Input
+                  id="input_value"
+                  type={inputType === "url" ? "url" : "text"}
+                  placeholder={
+                    inputType === "url"
+                      ? "https://..."
+                      : "e.g. 5 habits of successful creators"
                   }
-                }}
-                onError={setDriveFolderError}
-                variant="outline"
-                size="sm"
-                disabled={driveFolderImporting || useAiBackgrounds}
-              >
-                {driveFolderImporting ? (
-                  <Loader2Icon className="mr-1.5 size-4 animate-spin" />
-                ) : (
-                  <ImageIcon className="mr-1.5 size-4" />
-                )}
-                Import folder from Drive
-              </GoogleDriveFolderPicker>
-              <GoogleDriveMultiFilePicker
-                onFilesPicked={async (fileIds, accessToken) => {
-                  setDriveFolderError(null);
-                  setDriveFolderImporting(true);
-                  const result = await importFilesFromGoogleDrive(fileIds, accessToken, projectId);
-                  setDriveFolderImporting(false);
-                  if (result.ok && result.assets.length > 0) {
-                    setBackgroundAssetIds(result.assets.map((a) => a.id));
-                  } else if (!result.ok) {
-                    setDriveFolderError(result.error);
-                  } else {
-                    setDriveFolderError("No images could be imported.");
-                  }
-                }}
-                onError={setDriveFolderError}
-                variant="outline"
-                size="sm"
-                disabled={driveFolderImporting || useAiBackgrounds}
-              >
-                <ImageIcon className="mr-1.5 size-4" />
-                Pick images from Drive
-              </GoogleDriveMultiFilePicker>
-              {backgroundAssetIds.length > 0 && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setBackgroundAssetIds([])}
-                  disabled={useAiBackgrounds}
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  required
+                />
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="py-4 gap-4">
+          <CardHeader className="pb-0 px-5">
+            <CardTitle className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
+              Options
+            </CardTitle>
+            <CardDescription>Slides count, instructions, and tone.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5 px-5 pt-0">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label id="number_of_slides_label" className="text-sm font-medium">Number of slides</Label>
+                <div
+                  id="number_of_slides"
+                  role="group"
+                  aria-labelledby="number_of_slides_label"
+                  className="flex h-10 w-full items-center rounded-lg border border-input bg-background"
                 >
-                  Clear
-                </Button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (numberOfSlides === "") return;
+                      const n = parseInt(numberOfSlides, 10);
+                      if (n <= 3) setNumberOfSlides("");
+                      else setNumberOfSlides(String(n - 1));
+                    }}
+                    disabled={numberOfSlides === ""}
+                    className="flex h-full w-10 shrink-0 items-center justify-center border-r border-input text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50 disabled:hover:bg-transparent"
+                    aria-label="Decrease slides"
+                  >
+                    <ChevronDownIcon className="size-5" />
+                  </button>
+                  <span className="flex flex-1 items-center justify-center text-sm font-medium tabular-nums">
+                    {numberOfSlides === "" ? "AI decides" : numberOfSlides}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (numberOfSlides === "") {
+                        setNumberOfSlides("3");
+                        return;
+                      }
+                      const n = parseInt(numberOfSlides, 10);
+                      if (n < 12) setNumberOfSlides(String(n + 1));
+                    }}
+                    disabled={numberOfSlides !== "" && parseInt(numberOfSlides, 10) >= 12}
+                    className="flex h-full w-10 shrink-0 items-center justify-center border-l border-input text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50 disabled:hover:bg-transparent"
+                    aria-label="Increase slides"
+                  >
+                    <ChevronUpIcon className="size-5" />
+                  </button>
+                </div>
+                <p className="text-muted-foreground text-xs">Use arrows or leave as AI decides.</p>
+              </div>
+              <div className="space-y-2 sm:col-span-2 sm:col-start-1">
+                <Label htmlFor="notes" className="text-sm font-medium">Notes (optional)</Label>
+                <Textarea
+                  id="notes"
+                  placeholder="Add more context about your carousel…"
+                  className="min-h-20 resize-y"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                />
+              </div>
+            </div>
+            <label className="flex items-start gap-3 rounded-lg border border-transparent p-3 text-sm cursor-pointer hover:bg-muted/40 hover:border-border/50 transition-colors">
+              <input
+                type="checkbox"
+                checked={viralShortsStyle}
+                onChange={(e) => setViralShortsStyle(e.target.checked)}
+                className="mt-0.5 rounded border-input accent-primary"
+              />
+              <span className="flex flex-col gap-1">
+                <span className="font-medium text-foreground">Viral Shorts style</span>
+                <span className="text-muted-foreground text-xs leading-relaxed">
+                  Bait hook, story, mid-carousel CTA (&quot;Comment what you think&quot;), payoff and end CTA. Not recommended for professional or brand accounts.
+                </span>
+              </span>
+            </label>
+          </CardContent>
+        </Card>
+
+        <Card className="py-4 gap-4">
+          <CardHeader className="pb-0 px-5">
+            <CardTitle className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
+              Background images
+            </CardTitle>
+            <CardDescription>
+              Choose AI-suggested images or your own. Uncheck for project colors.
+              {hasFullAccess && !isPro && (
+                <> <strong>{freeGenerationsTotal - freeGenerationsUsed} of {freeGenerationsTotal} free</strong> full-access generations left.</>
+              )}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4 px-5 pt-0">
+            <label className={`flex items-center gap-3 rounded-lg p-3 text-sm transition-colors ${hasFullAccess ? "cursor-pointer hover:bg-muted/40" : "opacity-70"}`}>
+              <input
+                type="checkbox"
+                checked={useAiBackgrounds}
+                onChange={(e) => {
+                  if (!hasFullAccess) return;
+                  const checked = e.target.checked;
+                  setUseAiBackgrounds(checked);
+                  if (checked) {
+                    setBackgroundAssetIds([]);
+                    setDriveFolderError(null);
+                  }
+                  if (!checked) setImageSource("brave");
+                }}
+                disabled={!hasFullAccess}
+                className="rounded border-input accent-primary size-4"
+              />
+              <Gem className="size-4 text-muted-foreground shrink-0" />
+              <span className="font-medium">Let AI suggest background images{!hasFullAccess && " — Pro"}</span>
+            </label>
+            {useAiBackgrounds && (
+              <div className="rounded-lg border border-border/60 bg-muted/20 p-4 space-y-3">
+                <p className="text-muted-foreground text-xs font-medium">Image source</p>
+                <div className="flex flex-wrap gap-4">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="radio"
+                      name="imageSource"
+                      checked={imageSource === "brave"}
+                      onChange={() => setImageSource("brave")}
+                      className="accent-primary"
+                    />
+                    <span>Brave (search web)</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="radio"
+                      name="imageSource"
+                      checked={imageSource === "unsplash"}
+                      onChange={() => setImageSource("unsplash")}
+                      className="accent-primary"
+                    />
+                    <span>Unsplash</span>
+                  </label>
+                  <label className={`flex items-center gap-2 text-sm ${isAdminUser ? "cursor-pointer" : "cursor-not-allowed opacity-70"}`}>
+                    <input
+                      type="radio"
+                      name="imageSource"
+                      checked={imageSource === "ai_generate"}
+                      onChange={() => isAdminUser && setImageSource("ai_generate")}
+                      disabled={!isAdminUser}
+                      className="accent-primary"
+                    />
+                    <span>AI Generate (OpenAI){!isAdminUser && " — In development"}</span>
+                  </label>
+                </div>
+                <p className="text-muted-foreground text-xs">
+                  Brave: broad coverage. Unsplash: high quality.
+                  {isAdminUser && " AI Generate: unique images per slide."}
+                </p>
+                {isAdminUser && imageSource === "ai_generate" && (
+                  <p className="text-amber-600 dark:text-amber-400 text-xs">
+                    Can take 2–5 min. Use fewer slides (5–8) to avoid timeout.
+                  </p>
+                )}
+              </div>
+            )}
+            <label className={`flex items-center gap-3 rounded-lg p-3 text-sm transition-colors ${hasFullAccess ? "cursor-pointer hover:bg-muted/40" : "opacity-70"}`}>
+              <input
+                type="checkbox"
+                checked={useWebSearch}
+                onChange={(e) => hasFullAccess && setUseWebSearch(e.target.checked)}
+                disabled={!hasFullAccess}
+                className="rounded border-input accent-primary size-4"
+              />
+              <GlobeIcon className="size-4 text-muted-foreground shrink-0" />
+              <span className="font-medium">Use web search for current info (URLs, recent topics){!hasFullAccess && " — Pro"}</span>
+            </label>
+            <div className="pt-2 border-t border-border/60">
+              <p className="text-muted-foreground text-xs font-medium mb-2">Or use your own images</p>
+              <div className={useAiBackgrounds ? "pointer-events-none opacity-60" : undefined}>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setBackgroundPickerOpen(true)}
+                    disabled={useAiBackgrounds || driveFolderImporting}
+                  >
+                    <ImageIcon className="mr-1.5 size-4" />
+                    {backgroundAssetIds.length ? `${backgroundAssetIds.length} selected` : "Pick from library"}
+                  </Button>
+                  <GoogleDriveFolderPicker
+                    onFolderPicked={async (folderId, accessToken) => {
+                      setDriveFolderError(null);
+                      setDriveFolderImporting(true);
+                      const result = await importFromGoogleDrive(folderId, accessToken, projectId);
+                      setDriveFolderImporting(false);
+                      if (result.ok && result.assets.length > 0) {
+                        setBackgroundAssetIds(result.assets.map((a) => a.id));
+                      } else if (!result.ok) {
+                        setDriveFolderError(result.error);
+                      } else {
+                        setDriveFolderError("No images found in that folder.");
+                      }
+                    }}
+                    onError={setDriveFolderError}
+                    variant="outline"
+                    size="sm"
+                    disabled={driveFolderImporting || useAiBackgrounds}
+                  >
+                    {driveFolderImporting ? (
+                      <Loader2Icon className="mr-1.5 size-4 animate-spin" />
+                    ) : (
+                      <ImageIcon className="mr-1.5 size-4" />
+                    )}
+                    Import folder from Drive
+                  </GoogleDriveFolderPicker>
+                  <GoogleDriveMultiFilePicker
+                    onFilesPicked={async (fileIds, accessToken) => {
+                      setDriveFolderError(null);
+                      setDriveFolderImporting(true);
+                      const result = await importFilesFromGoogleDrive(fileIds, accessToken, projectId);
+                      setDriveFolderImporting(false);
+                      if (result.ok && result.assets.length > 0) {
+                        setBackgroundAssetIds(result.assets.map((a) => a.id));
+                      } else if (!result.ok) {
+                        setDriveFolderError(result.error);
+                      } else {
+                        setDriveFolderError("No images could be imported.");
+                      }
+                    }}
+                    onError={setDriveFolderError}
+                    variant="outline"
+                    size="sm"
+                    disabled={driveFolderImporting || useAiBackgrounds}
+                  >
+                    <ImageIcon className="mr-1.5 size-4" />
+                    Pick images from Drive
+                  </GoogleDriveMultiFilePicker>
+                  {backgroundAssetIds.length > 0 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setBackgroundAssetIds([])}
+                      disabled={useAiBackgrounds}
+                    >
+                      Clear
+                    </Button>
+                  )}
+                </div>
+              </div>
+              {!useAiBackgrounds && driveFolderError && (
+                <p className="text-destructive text-xs mt-2">{driveFolderError}</p>
               )}
             </div>
-          </div>
-          {!useAiBackgrounds && driveFolderError && (
-            <p className="text-destructive text-xs mt-1">{driveFolderError}</p>
-          )}
-          </div>
-          </div>
-        </section>
+          </CardContent>
+        </Card>
 
         {(templateOptions.length > 0 || defaultTemplateConfig) && (
-          <section>
-            <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
-              Template (optional)
-            </p>
-            <p className="text-muted-foreground mb-3 text-xs">
-              {useAiBackgrounds
-                ? "Previews show how each template looks with a sample image. Choose the layout for your slides."
-                : "Choose the layout for your slides. Default uses your recommended template."}
-            </p>
+          <Card className="py-4 gap-4">
+            <CardHeader className="pb-0 px-5">
+              <CardTitle className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
+                Template (optional)
+              </CardTitle>
+              <CardDescription>
+                {useAiBackgrounds
+                  ? "Previews use a sample image. Pick the layout for your slides."
+                  : "Pick the layout. Default uses your recommended template."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="px-5 pt-0">
             <Button
               type="button"
               variant="outline"
@@ -588,7 +644,8 @@ export function NewCarouselForm({
                 )}
               </DialogContent>
             </Dialog>
-          </section>
+            </CardContent>
+          </Card>
         )}
 
         <BackgroundImagesPickerModal
@@ -599,8 +656,13 @@ export function NewCarouselForm({
           projectId={projectId}
         />
 
-        <div className="flex flex-wrap items-center gap-3 pt-2">
-          <Button type="submit" disabled={isPending || carouselCount >= carouselLimit}>
+        <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center">
+          <Button
+            type="submit"
+            size="lg"
+            className="w-full sm:w-auto min-w-[180px]"
+            disabled={isPending || carouselCount >= carouselLimit}
+          >
             {isPending ? (
               <>
                 <Loader2Icon className="mr-2 size-4 animate-spin" />
@@ -613,7 +675,7 @@ export function NewCarouselForm({
             )}
           </Button>
           {carouselCount >= carouselLimit && !isPro && (
-            <Button type="button" variant="default" size="sm" onClick={handleUpgrade} disabled={upgradeLoading}>
+            <Button type="button" variant="default" size="lg" onClick={handleUpgrade} disabled={upgradeLoading}>
               {upgradeLoading ? <Loader2Icon className="mr-2 size-4 animate-spin" /> : <Gem className="mr-2 size-4" />}
               Upgrade to Pro
             </Button>

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { launchChromium } from "@/lib/server/browser/launchChromium";
+import { waitForImagesInPage } from "@/lib/server/browser/waitForImages";
 import { createClient } from "@/lib/supabase/server";
 import { getSlide, getTemplate, getCarousel, getProject, listSlides } from "@/lib/server/db";
 import { getDefaultTemplateId } from "@/lib/server/db/templates";
@@ -242,10 +243,9 @@ export async function GET(
     const page = await browser.newPage();
     try {
       await page.setViewportSize({ width: dimensions.w, height: dimensions.h });
-      // waitUntil: "load" ensures all images (including CSS background-image) are fully loaded before screenshot
       await page.setContent(html, { waitUntil: "load", timeout: CONTENT_TIMEOUT_MS });
       await page.waitForSelector(".slide-wrap", { state: "visible", timeout: SELECTOR_TIMEOUT_MS });
-      // Brief delay so decoded images are painted (avoids half-loaded background in export)
+      await waitForImagesInPage(page, CONTENT_TIMEOUT_MS).catch(() => {});
       await new Promise((r) => setTimeout(r, 500));
       const buffer = await page.locator(".slide-wrap").screenshot({ type: format, timeout: SELECTOR_TIMEOUT_MS });
       const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);

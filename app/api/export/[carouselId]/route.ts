@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { launchChromium } from "@/lib/server/browser/launchChromium";
+import { waitForImagesInPage } from "@/lib/server/browser/waitForImages";
 import { createClient } from "@/lib/supabase/server";
 import {
   getCarousel,
@@ -35,8 +36,8 @@ import JSZip from "jszip";
 
 const BUCKET = "carousel-assets";
 const VIDEO_ASSET_EXPIRES = 600;
-/** Delay after load before screenshot so layout/fonts settle. Lower = faster export, higher = safer for slow assets. */
-const SCREENSHOT_DELAY_MS = 200;
+/** Delay after load before screenshot so layout/fonts/images settle. Prevents pitch-black frames. */
+const SCREENSHOT_DELAY_MS = 500;
 /** Short pause between processing slides in production to reduce browser memory pressure and "browser closed" errors. */
 const INTER_SLIDE_DELAY_MS = 150;
 export const dynamic = "force-dynamic";
@@ -365,6 +366,7 @@ export async function POST(
           await page.setViewportSize({ width: dimensions.w, height: dimensions.h });
           await page.setContent(html, { waitUntil: "load", timeout: CONTENT_TIMEOUT_MS });
           await page.waitForSelector(".slide-wrap", { state: "visible", timeout: SELECTOR_TIMEOUT_MS });
+          await waitForImagesInPage(page, CONTENT_TIMEOUT_MS).catch(() => {});
           await new Promise((r) => setTimeout(r, SCREENSHOT_DELAY_MS));
           const buffer = await page.locator(".slide-wrap").screenshot({ type: format, timeout: SELECTOR_TIMEOUT_MS });
           const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
@@ -410,6 +412,7 @@ export async function POST(
           );
           await page.setContent(overlayHtml, { waitUntil: "load", timeout: CONTENT_TIMEOUT_MS });
           await page.waitForSelector(".slide-wrap", { state: "visible", timeout: SELECTOR_TIMEOUT_MS });
+          await waitForImagesInPage(page, CONTENT_TIMEOUT_MS).catch(() => {});
           await new Promise((r) => setTimeout(r, SCREENSHOT_DELAY_MS));
           const overlayBuffer = await page.locator(".slide-wrap").screenshot({ type: "png", timeout: SELECTOR_TIMEOUT_MS });
           const overlayBuf = Buffer.isBuffer(overlayBuffer) ? overlayBuffer : Buffer.from(overlayBuffer);
@@ -457,6 +460,7 @@ export async function POST(
             );
             await page.setContent(variantHtml, { waitUntil: "load", timeout: CONTENT_TIMEOUT_MS });
             await page.waitForSelector(".slide-wrap", { state: "visible", timeout: SELECTOR_TIMEOUT_MS });
+            await waitForImagesInPage(page, CONTENT_TIMEOUT_MS).catch(() => {});
             await new Promise((r) => setTimeout(r, SCREENSHOT_DELAY_MS));
             const variantBuffer = await page.locator(".slide-wrap").screenshot({ type: "png", timeout: SELECTOR_TIMEOUT_MS });
             const variantBuf = Buffer.isBuffer(variantBuffer) ? variantBuffer : Buffer.from(variantBuffer);

@@ -8,7 +8,7 @@ export const generateCarouselInputSchema = z.object({
   input_value: z.string().min(1, "Input is required").max(10000),
   title: z.string().max(200).optional(),
   /** Optional. If set, AI generates exactly this many slides. If omitted, AI decides the best number. */
-  number_of_slides: z.coerce.number().int().min(1).max(30).optional(),
+  number_of_slides: z.coerce.number().int().min(3).max(12).optional(),
   /** Optional asset IDs to use as slide backgrounds (round-robin). Max 30 per carousel (one per slide). */
   background_asset_ids: z.array(z.string().uuid()).max(30).optional(),
   /** When true, AI suggests Unsplash search queries per slide and we fetch those images as backgrounds. */

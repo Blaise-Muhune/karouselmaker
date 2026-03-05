@@ -245,8 +245,26 @@ export function EditorExportSection({
     setVideoDownloadError(null);
     setVideoDownloadProgress(0);
     setVideoDownloadStep("");
+    try {
+      const startRes = await fetch("/api/video-gen/start", { method: "POST" });
+      if (startRes.status === 429) {
+        const data = await startRes.json().catch(() => ({}));
+        setVideoDownloadError(
+          data.error ?? "Another video is being generated. Please wait and try again."
+        );
+        return;
+      }
+      if (!startRes.ok) {
+        setVideoDownloadError("Could not start video generation. Try again.");
+        return;
+      }
+    } catch {
+      setVideoDownloadError("Could not start video generation. Try again.");
+      return;
+    }
     const { urls, videoData } = await loadVideoUrls();
     if (urls.length === 0) {
+      await fetch("/api/video-gen/end", { method: "POST" });
       setVideoDownloading(false);
       return;
     }
@@ -319,6 +337,7 @@ export function EditorExportSection({
     } catch (e) {
       setVideoDownloadError(e instanceof Error ? e.message : "Video download failed");
     } finally {
+      await fetch("/api/video-gen/end", { method: "POST" });
       setVideoDownloading(false);
       setVideoDownloadProgress(0);
       setVideoDownloadStep("");

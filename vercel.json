@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "app/(app)/p/[projectId]/new/page.tsx": {
+      "maxDuration": 300
+    }
+  }
+}
