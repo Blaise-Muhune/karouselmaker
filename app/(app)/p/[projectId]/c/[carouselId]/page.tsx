@@ -20,7 +20,6 @@ import { ConnectInPopupLink } from "@/components/platforms/ConnectInPopupLink";
 import { PlatformIcon } from "@/components/platforms/PlatformIcon";
 import { ConnectedAccountsModalTrigger } from "@/components/settings/ConnectedAccountsModalTrigger";
 import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
-import { GoProBar } from "@/components/subscription/GoProBar";
 import type { BrandKit } from "@/lib/renderer/renderModel";
 import type { ExportFormat, ExportSize, PlatformName } from "@/lib/server/db/types";
 import { FREE_FULL_ACCESS_GENERATIONS } from "@/lib/constants";
@@ -170,16 +169,16 @@ export default async function CarouselEditorPage({
 
   return (
     <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">
-      <div className="mx-auto max-w-4xl space-y-10">
-        {!subscription.isPro && <GoProBar />}
+      <div className="mx-auto max-w-4xl space-y-6">
         {showGenerationPartial && <GenerationPartialBanner />}
-        {hasFullAccess && !subscription.isPro && (
-          <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-2 text-sm text-foreground">
-            You have full access for your <strong>{FREE_FULL_ACCESS_GENERATIONS} free carousel generations</strong>. {freeGenerationsLeft} {freeGenerationsLeft === 1 ? "generation" : "generations"} left—then upgrade to Pro to keep editing and exporting.
-          </div>
-        )}
-        {!hasFullAccess && (
-          <UpgradeBanner message="You've used your 3 free generations with full access. Upgrade to Pro to edit carousels, export, and unlock AI backgrounds." />
+        {!subscription.isPro && (
+          hasFullAccess ? (
+            <p className="text-sm text-muted-foreground">
+              <strong>{freeGenerationsLeft}</strong> of {FREE_FULL_ACCESS_GENERATIONS} free generations left. Upgrade to Pro for more.
+            </p>
+          ) : (
+            <UpgradeBanner message="You've used all 3 free generations. Upgrade to Pro to edit carousels, export, and unlock AI backgrounds." />
+          )
         )}
 
         {/* Header */}
@@ -236,8 +235,11 @@ export default async function CarouselEditorPage({
             storage_path: ex.storage_path,
             created_at: ex.created_at,
           }))}
+          isAdmin={userIsAdmin}
           postToPlatforms={userIsAdmin ? (project.post_to_platforms as Record<string, boolean> | undefined) : undefined}
           connectedPlatforms={userIsAdmin ? Array.from(connectedPlatforms) : undefined}
+          captionVariants={captionVariants}
+          hashtags={hashtags}
         />
 
         {/* Post to (admin only) */}
@@ -286,10 +288,10 @@ export default async function CarouselEditorPage({
           );
         })()}
 
-        {/* Slides */}
+        {/* Frames */}
         <section>
-          <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
-            Slides · Click to edit, drag to reorder
+          <p className="text-muted-foreground mb-2 text-xs">
+            Click to edit, drag to reorder
           </p>
           <SlideGrid
             slides={slides}

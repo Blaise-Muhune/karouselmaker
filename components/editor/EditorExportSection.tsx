@@ -37,6 +37,7 @@ import { PostToFacebookVideoButton } from "@/components/platforms/PostToFacebook
 import { PostToInstagramVideoButton } from "@/components/platforms/PostToInstagramVideoButton";
 import { PostToYouTubeVideoButton } from "@/components/platforms/PostToYouTubeVideoButton";
 import { PlatformIcon } from "@/components/platforms/PlatformIcon";
+import { InstagramPostPreviewDialog } from "@/components/editor/InstagramPostPreviewDialog";
 
 export type ExportRowDisplay = {
   id: string;
@@ -103,10 +104,16 @@ type EditorExportSectionProps = {
   exportFormat?: "png" | "jpeg";
   exportSize?: "1080x1080" | "1080x1350" | "1080x1920";
   recentExports: ExportRowDisplay[];
+  /** When true, show Video preview button. Admin only. */
+  isAdmin?: boolean;
   /** When set (e.g. admin), show "Post video to" in the video preview modal when video is ready. */
   postToPlatforms?: Record<string, boolean>;
   /** Platform keys the user has connected (e.g. from getPlatformConnections). */
   connectedPlatforms?: string[];
+  /** Caption variants for Post view (Instagram-style preview). */
+  captionVariants?: { short?: string; medium?: string; spicy?: string };
+  /** Hashtags for Post view. */
+  hashtags?: string[];
 };
 
 export function EditorExportSection({
@@ -117,8 +124,11 @@ export function EditorExportSection({
   exportFormat = "png",
   exportSize = "1080x1350",
   recentExports,
+  isAdmin = false,
   postToPlatforms,
   connectedPlatforms = [],
+  captionVariants = {},
+  hashtags = [],
 }: EditorExportSectionProps) {
   const connectedSet = new Set(connectedPlatforms);
   const enabledVideoPostPlatforms = postToPlatforms
@@ -486,6 +496,7 @@ export function EditorExportSection({
             </>
           )}
         </Button>
+        {isAdmin && (
         <Dialog open={videoPreviewOpen} onOpenChange={(open) => {
             setVideoPreviewOpen(open);
             if (open) {
@@ -810,6 +821,13 @@ export function EditorExportSection({
               </div>
             </DialogContent>
           </Dialog>
+        )}
+        <InstagramPostPreviewDialog
+          carouselId={carouselId}
+          captionVariants={captionVariants}
+          hashtags={hashtags}
+          disabled={exporting}
+        />
         {canExport && (
           <span className="text-muted-foreground text-xs">
             {exportsUsedThisMonth}/{limit} this month

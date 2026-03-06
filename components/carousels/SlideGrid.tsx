@@ -15,13 +15,15 @@ import { setSlideTemplate } from "@/app/actions/slides/setSlideTemplate";
 import { getTemplateConfigAction } from "@/app/actions/templates/getTemplateConfig";
 import { reorderSlides } from "@/app/actions/slides/reorderSlides";
 import { shuffleSlideBackgrounds } from "@/app/actions/slides/shuffleCarouselBackgrounds";
+import { deleteSlide as deleteSlideAction } from "@/app/actions/slides/deleteSlide";
+import { createSlide as createSlideAction } from "@/app/actions/slides/createSlide";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
 import type { BrandKit } from "@/lib/renderer/renderModel";
 import type { SlideBackgroundOverride } from "@/components/renderer/SlidePreview";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import type { Slide, Template } from "@/lib/server/db/types";
 import { useRouter } from "next/navigation";
-import { DownloadIcon, GripVerticalIcon, Images, Loader2Icon, PencilIcon, Shuffle } from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon, DownloadIcon, GripVerticalIcon, Images, Loader2Icon, PencilIcon, PlusIcon, Shuffle, Trash2Icon } from "lucide-react";
 
 const PREVIEW_SCALE = 0.25;
 
@@ -330,6 +332,8 @@ export function SlideGrid({
   const [reorderPending, setReorderPending] = useState(false);
   const [shufflingSlideId, setShufflingSlideId] = useState<string | null>(null);
   const [downloadingSlideId, setDownloadingSlideId] = useState<string | null>(null);
+  const [deletingSlideId, setDeletingSlideId] = useState<string | null>(null);
+  const [addingSlide, setAddingSlide] = useState(false);
   const router = useRouter();
   const editorPath = `/p/${projectId}/c/${carouselId}`;
   const [fetchedTemplateConfigs, setFetchedTemplateConfigs] = useState<Record<string, TemplateConfig>>({});
@@ -398,10 +402,38 @@ export function SlideGrid({
     setDragOverId(null);
   };
 
+  const handleMoveLeft = (slideId: string) => {
+    const idx = slidesOrder.findIndex((s) => s.id === slideId);
+    if (idx <= 0 || reorderPending) return;
+    const next = [...slidesOrder];
+    [next[idx - 1], next[idx]] = [next[idx]!, next[idx - 1]!];
+    const reordered = next.map((s, i) => ({ ...s, slide_index: i + 1 }));
+    setSlidesOrder(reordered);
+    setReorderPending(true);
+    startTransition(async () => {
+      await reorderSlides(carouselId, reordered.map((s) => s.id), editorPath);
+      setReorderPending(false);
+    });
+  };
+
+  const handleMoveRight = (slideId: string) => {
+    const idx = slidesOrder.findIndex((s) => s.id === slideId);
+    if (idx < 0 || idx >= slidesOrder.length - 1 || reorderPending) return;
+    const next = [...slidesOrder];
+    [next[idx], next[idx + 1]] = [next[idx + 1]!, next[idx]!];
+    const reordered = next.map((s, i) => ({ ...s, slide_index: i + 1 }));
+    setSlidesOrder(reordered);
+    setReorderPending(true);
+    startTransition(async () => {
+      await reorderSlides(carouselId, reordered.map((s) => s.id), editorPath);
+      setReorderPending(false);
+    });
+  };
+
   return (
     <>
       <ul className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        {slidesOrder.map((slide) => {
+        {slidesOrder.map((slide, index) => {
           const templateConfigFromList = getTemplateConfig(slide, templates);
           const effectiveTemplateConfig = templateConfigFromList ?? fetchedTemplateConfigs[slide.id] ?? null;
           const templateDefaults = getZoneAndFontOverridesFromTemplate(effectiveTemplateConfig);
@@ -427,7 +459,7 @@ export function SlideGrid({
               <div className="flex items-start gap-1">
                 {canEdit && (
                   <div
-                    className="cursor-grab active:cursor-grabbing mt-2 p-1 rounded text-muted-foreground hover:text-foreground touch-none"
+                    className="cursor-grab active:cursor-grabbing mt-2 p-1 rounded text-muted-foreground hover:text-foreground touch-none shrink-0"
                     draggable
                     onDragStart={(e) => {
                       e.stopPropagation();
@@ -440,15 +472,16 @@ export function SlideGrid({
                 )}
                 <div className="flex-1 min-w-0 flex flex-col gap-2">
                   {canEdit ? (
-                    <Link
-                      href={`/p/${projectId}/c/${carouselId}/s/${slide.id}`}
-                      className="relative overflow-hidden rounded-lg border border-border bg-muted/30 text-left transition-colors hover:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/50 block"
-                      style={{
-                        width: previewDims.w,
-                        height: previewDims.h,
-                      }}
-                    >
-                      {effectiveTemplateConfig ? (
+                    <div className="relative" style={{ width: previewDims.w, height: previewDims.h }}>
+                      <Link
+                        href={`/p/${projectId}/c/${carouselId}/s/${slide.id}`}
+                        className="relative overflow-hidden rounded-lg border border-border bg-muted/30 text-left transition-colors hover:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/50 block"
+                        style={{
+                          width: previewDims.w,
+                          height: previewDims.h,
+                        }}
+                      >
+                        {effectiveTemplateConfig ? (
                         <div
                           className="absolute left-0 top-0 shrink-0"
                           style={{
@@ -495,7 +528,36 @@ export function SlideGrid({
                           No template
                         </div>
                       )}
-                    </Link>
+                      </Link>
+                      <Button
+                        variant="secondary"
+                        size="icon-sm"
+                        className="absolute left-1 top-1/2 -translate-y-1/2 h-7 w-7 rounded-full border border-border/50 bg-background/40 hover:bg-background/90 text-muted-foreground/60 hover:text-foreground z-10 opacity-60 hover:opacity-100 transition-opacity"
+                        title="Move left"
+                        disabled={index === 0 || isPending || reorderPending}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleMoveLeft(slide.id);
+                        }}
+                      >
+                        <ChevronLeftIcon className="size-4" />
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="icon-sm"
+                        className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 rounded-full border border-border/50 bg-background/40 hover:bg-background/90 text-muted-foreground/60 hover:text-foreground z-10 opacity-60 hover:opacity-100 transition-opacity"
+                        title="Move right"
+                        disabled={index === slidesOrder.length - 1 || isPending || reorderPending}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleMoveRight(slide.id);
+                        }}
+                      >
+                        <ChevronRightIcon className="size-4" />
+                      </Button>
+                    </div>
                   ) : (
                     <Link
                       href={`/p/${projectId}/c/${carouselId}/s/${slide.id}`}
@@ -670,12 +732,70 @@ export function SlideGrid({
                         </Link>
                       </Button>
                     ) : null}
+                    {canEdit && slidesOrder.length > 1 ? (
+                      <Button
+                        variant="outline"
+                        size="icon-sm"
+                        title="Delete this frame"
+                        disabled={deletingSlideId === slide.id || isPending || reorderPending}
+                        onClick={() => {
+                          if (deletingSlideId) return;
+                          if (!confirm("Delete this frame? This cannot be undone.")) return;
+                          setDeletingSlideId(slide.id);
+                          startTransition(async () => {
+                            const result = await deleteSlideAction(slide.id, editorPath);
+                            setDeletingSlideId(null);
+                            if (result.ok) router.refresh();
+                          });
+                        }}
+                      >
+                        {deletingSlideId === slide.id ? (
+                          <Loader2Icon className="size-4 animate-spin" aria-hidden />
+                        ) : (
+                          <Trash2Icon className="size-4" />
+                        )}
+                        <span className="sr-only">Delete this frame</span>
+                      </Button>
+                    ) : null}
                   </div>
                 </div>
               </div>
             </li>
           );
         })}
+        {canEdit ? (
+          <li className="flex flex-col gap-2">
+            <div className="flex items-start gap-1">
+              <div className="flex-1 min-w-0" style={{ width: previewDims.w }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (addingSlide || isPending) return;
+                    setAddingSlide(true);
+                    startTransition(async () => {
+                      const result = await createSlideAction(carouselId, {
+                        revalidatePathname: editorPath,
+                        defaultTemplateId: templates[0]?.id ?? null,
+                      });
+                      setAddingSlide(false);
+                      if (result.ok) router.refresh();
+                    });
+                  }}
+                  disabled={addingSlide || isPending || reorderPending}
+                  className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-muted-foreground/40 bg-muted/20 text-muted-foreground hover:border-primary/50 hover:bg-muted/40 hover:text-foreground transition-colors disabled:opacity-50 disabled:pointer-events-none outline-none focus:ring-2 focus:ring-primary/50"
+                  style={{ width: previewDims.w, height: previewDims.h }}
+                >
+                  {addingSlide ? (
+                    <Loader2Icon className="size-8 animate-spin" aria-hidden />
+                  ) : (
+                    <PlusIcon className="size-8" />
+                  )}
+                  <span className="text-sm font-medium">Add frame</span>
+                </button>
+              </div>
+            </div>
+          </li>
+        ) : null}
       </ul>
     </>
   );

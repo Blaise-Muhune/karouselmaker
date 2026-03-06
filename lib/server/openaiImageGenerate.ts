@@ -30,7 +30,7 @@ export type ImagePromptContext = {
   slideHeadline?: string;
   /** This slide's body text—image must illustrate this slide's content. */
   slideBody?: string;
-  /** True for the first slide (hook): image must be striking, memorable, scroll-stopping—pink elephant vibes, not basic. */
+  /** True for the first slide (hook): image must be striking, memorable, scroll-stopping, not basic. */
   isHookSlide?: boolean;
   /** User's optional notes (e.g. "focus on accuracy" or "stylized is ok"). When notes ask for a different style we follow that; otherwise we aim for accurate, realistic depictions of real things. */
   userNotes?: string;
@@ -163,7 +163,7 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
 
   if (context?.isHookSlide) {
     parts.push(
-      "This is the FIRST SLIDE (the hook). The image must be striking, memorable, and scroll-stopping—pink elephant vibes: unexpected, eye-catching, impossible to scroll past. Not generic, safe, or basic. Bold composition, strong visual interest, or a surprising angle that makes viewers stop."
+      "This is the FIRST SLIDE (the hook). The image must be striking, memorable, and scroll-stopping: unexpected, eye-catching, impossible to scroll past. Not generic, safe, or basic. Bold composition, strong visual interest, or a surprising angle that makes viewers stop. Sometimes use a famous public figure (celebrity, athlete, leader) doing something or associated with the topic—even when the topic isn't about them, a recognizable face can stop the scroll."
     );
     if (isBibleChristianTopic) {
       parts.push(
