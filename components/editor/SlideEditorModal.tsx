@@ -149,10 +149,11 @@ export function SlideEditorModal({
   const handleRewriteHook = async () => {
     setRewriting(true);
     setHookVariants([]);
+    const originalHeadline = headline.trim() || (slide.headline ?? "");
     const result = await rewriteHook(slide.id, 5);
     setRewriting(false);
     if (result.ok && result.variants.length > 0) {
-      setHookVariants(result.variants);
+      setHookVariants([originalHeadline, ...result.variants]);
     }
   };
 
@@ -372,7 +373,7 @@ export function SlideEditorModal({
 
         {hookVariants.length > 0 && (
           <div className="rounded-lg border border-border bg-muted/30 p-3">
-            <Label className="text-xs">Pick a hook variant</Label>
+            <Label className="text-xs">Pick a hook variant (first is current)</Label>
             <ul className="mt-2 space-y-1">
               {hookVariants.map((v, i) => (
                 <li key={i}>
@@ -384,6 +385,9 @@ export function SlideEditorModal({
                       setHookVariants([]);
                     }}
                   >
+                    {i === 0 ? (
+                      <span className="text-muted-foreground">Original — </span>
+                    ) : null}
                     {v}
                   </button>
                 </li>

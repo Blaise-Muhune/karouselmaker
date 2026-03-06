@@ -6,7 +6,7 @@ import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { getSubscription, getPlanLimits } from "@/lib/server/subscription";
 import { getProject } from "@/lib/server/db/projects";
 import { getDefaultTemplateForNewCarousel, getTemplate } from "@/lib/server/db/templates";
-import { createCarousel, getCarousel, updateCarousel, countCarouselsThisMonth, countCarouselsLifetime } from "@/lib/server/db/carousels";
+import { createCarousel, getCarousel, updateCarousel, countCarouselsThisMonth, countCarouselsLifetime, countAiGenerateCarouselsThisMonth } from "@/lib/server/db/carousels";
 import { replaceSlides, updateSlide } from "@/lib/server/db/slides";
 import type { Json } from "@/lib/server/db/types";
 import { getAsset } from "@/lib/server/db/assets";
@@ -24,7 +24,7 @@ import { generateImageFromPrompt } from "@/lib/server/openaiImageGenerate";
 import { uploadGeneratedImage } from "@/lib/server/storage/uploadGeneratedImage";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
 import { generateCarouselInputSchema } from "@/lib/validations/carousel";
-import { FREE_FULL_ACCESS_GENERATIONS } from "@/lib/constants";
+import { FREE_FULL_ACCESS_GENERATIONS, AI_GENERATE_LIMIT_PRO } from "@/lib/constants";
 
 const MAX_RETRIES = 2;
 /** Max concurrent AI image generations to cut total time without hitting rate limits. */
@@ -181,7 +181,18 @@ export async function generateCarousel(formData: FormData): Promise<
   const creatorHandle = brandKit?.watermark_text?.trim() || undefined;
 
   const useUnsplashOnly = !!parsed.data.use_unsplash_only;
-  const useAiGenerate = !!parsed.data.use_ai_generate && isAdmin(user.email);
+  const requestedAiGenerate = !!parsed.data.use_ai_generate;
+  const userIsAdmin = isAdmin(user.email ?? null);
+  if (requestedAiGenerate && !userIsAdmin && !isPro) {
+    return { error: "AI-generated images are only available for Pro. Upgrade to use this feature." };
+  }
+  if (requestedAiGenerate && !userIsAdmin && isPro) {
+    const aiGenerateCount = await countAiGenerateCarouselsThisMonth(user.id);
+    if (aiGenerateCount >= AI_GENERATE_LIMIT_PRO) {
+      return { error: `You've used your ${AI_GENERATE_LIMIT_PRO} AI-generated image carousels this month. Limit resets next month.` };
+    }
+  }
+  const useAiGenerate = requestedAiGenerate && (isPro || userIsAdmin);
   const userAskedWebSearch = !!data.use_web_search;
   const autoNewsWebSearch = hasFullAccess && looksLikeNewsOrTimeSensitive(data.input_value, data.input_type);
   const useWebSearch = hasFullAccess && (userAskedWebSearch || autoNewsWebSearch);
@@ -201,7 +212,7 @@ export async function generateCarousel(formData: FormData): Promise<
     project_niche: project.niche?.trim() || undefined,
     language: projectLanguage,
     notes: data.notes,
-    viral_shorts_style: !!parsed.data.viral_shorts_style && isAdmin(user.email ?? null),
+    viral_shorts_style: !!parsed.data.viral_shorts_style && userIsAdmin,
   } as const;
 
   let lastRaw = "";
@@ -273,7 +284,7 @@ export async function generateCarousel(formData: FormData): Promise<
       const handle = creatorHandle?.trim()
         ? (creatorHandle.startsWith("@") ? creatorHandle : `@${creatorHandle}`)
         : null;
-      const newHeadline = handle ? `Follow ${handle} for more` : "Subscribe for more";
+      const newHeadline = handle ? `Follow ${handle} for more` : "Follow for more";
       const newBody = lastSlide.body?.trim() || (handle ? undefined : "More content every week.");
       validated = {
         ...validated,

@@ -76,7 +76,7 @@ import {
 import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { ColorPicker } from "@/components/ui/color-picker";
 import { OVERLAY_PRESETS, PRESET_CUSTOM_ID, type OverlayPreset } from "@/lib/editor/overlayPresets";
-import { HIGHLIGHT_COLORS, expandSelectionToWordBoundaries, normalizeHighlightSpansToWords, clampHighlightSpansToText, getAutoHighlightSpans, getHighlightSpansFromWords, type HighlightSpan } from "@/lib/editor/inlineFormat";
+import { HIGHLIGHT_COLORS, expandSelectionToWordBoundaries, normalizeHighlightSpansToWords, clampHighlightSpansToText, getAutoHighlightSpans, getHighlightSpansFromWords, ensureHighlightCoverage, type HighlightSpan } from "@/lib/editor/inlineFormat";
 
 /** +/- stepper with long-press: hold to repeat, interval speeds up over time. */
 function StepperWithLongPress({
@@ -1081,10 +1081,12 @@ export function SlideEditForm({
         }
       }
       const wordsToUse = target === "headline" ? headlineWords : bodyWords;
-      const spans =
+      const opts = { style: target, defaultColor: color };
+      const rawSpans =
         wordsToUse?.length
           ? getHighlightSpansFromWords(text, wordsToUse, color)
-          : getAutoHighlightSpans(text, { style: target, defaultColor: color });
+          : getAutoHighlightSpans(text, opts);
+      const spans = ensureHighlightCoverage(text, rawSpans, opts);
       const normalized = normalizeHighlightSpansToWords(text, spans);
       if (target === "headline") {
         setHeadlineHighlights(normalized);

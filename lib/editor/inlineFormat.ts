@@ -212,59 +212,60 @@ function getWordRanges(text: string): { start: number; end: number; word: string
   return ranges;
 }
 
+const TARGET_HIGHLIGHT_FRACTION = 0.8;
+
 export type AutoHighlightOptions = {
-  /** "headline" = first/last words; "body" = first + key words (skip stop words). */
+  /** "headline" = words to ~80% coverage; "body" = same, skip stop words first then fill. */
   style: "headline" | "body";
   /** Default color for all spans (e.g. HIGHLIGHT_COLORS.yellow). */
   defaultColor?: string;
-  /** Max spans to return (headline: 3, body: 5 if not set). */
+  /** Max spans (optional). If not set, target ~80% of words. */
   maxSpans?: number;
 };
 
 /**
- * Picks words to highlight in a smart way so text "pops" like common carousel style.
- * - Headline: first word, optionally second if short line, optionally last word if different.
- * - Body: first word + a few "key" words (skip stop words, prefer content words/numbers).
+ * Picks words to highlight so that roughly 80% of words are covered (or up to maxSpans).
+ * - Headline: include words in order until we reach ~80% of word count (skip single-letter if it would look odd).
+ * - Body: include first word, then content words (skip stop words), until ~80% coverage.
  */
 export function getAutoHighlightSpans(text: string, options: AutoHighlightOptions): HighlightSpan[] {
-  const { style, defaultColor = HIGHLIGHT_COLORS.yellow ?? "#facc15", maxSpans = style === "headline" ? 3 : 5 } = options;
   const words = getWordRanges(text);
   if (!words.length) return [];
 
-  const color = defaultColor.startsWith("#") ? defaultColor : (HIGHLIGHT_COLORS[defaultColor] ?? "#facc15");
+  const targetCount = Math.max(1, Math.ceil(words.length * TARGET_HIGHLIGHT_FRACTION));
+  const maxSpans = options.maxSpans ?? targetCount;
+  const effectiveMax = Math.min(maxSpans, targetCount, words.length);
+
+  const color = (options.defaultColor?.startsWith("#") ? options.defaultColor : HIGHLIGHT_COLORS[options.defaultColor ?? "yellow"]) ?? "#facc15";
   const spans: HighlightSpan[] = [];
 
-  if (style === "headline") {
-    // First word (skip if single letter to avoid bad line breaks like "A" alone)
-    const first = words[0]!;
-    if (first.word.length > 1) spans.push({ start: first.start, end: first.end, color });
-    if (words.length >= 2 && spans.length < maxSpans) {
-      if (words.length <= 5) {
-        const second = words[1]!;
-        if (second.word.length > 1) spans.push({ start: second.start, end: second.end, color });
+  if (options.style === "headline") {
+    for (let i = 0; i < words.length && spans.length < effectiveMax; i++) {
+      const w = words[i]!;
+      if (w.word.length > 1 || words.length <= 3) {
+        spans.push({ start: w.start, end: w.end, color });
       }
     }
-    if (words.length >= 3 && spans.length < maxSpans) {
-      const last = words[words.length - 1]!;
-      const firstStart = words[0]!.start;
-      if (last.word.length > 1 && last.start > firstStart && !spans.some((s) => s.start === last.start)) {
-        spans.push({ start: last.start, end: last.end, color });
-      }
-    }
-    return spans.slice(0, maxSpans);
+    return spans.slice(0, effectiveMax);
   }
 
-  // Body: first word + key words (skip stop words)
+  // Body: first word always, then add content words (skip stop words) until ~80%
   spans.push({ start: words[0]!.start, end: words[0]!.end, color });
-  for (let i = 1; i < words.length && spans.length < maxSpans; i++) {
+  for (let i = 1; i < words.length && spans.length < effectiveMax; i++) {
     const w = words[i]!;
     if (STOP_WORDS.has(w.word)) continue;
     const isNumber = /^\d+$/.test(w.word);
     const isContentWord = w.word.length >= 2 || isNumber;
-    if (!isContentWord) continue;
+    if (isContentWord) spans.push({ start: w.start, end: w.end, color });
+  }
+  // If we're under 80% because of stop words, add remaining words to hit target
+  for (let i = 1; spans.length < effectiveMax && i < words.length; i++) {
+    const w = words[i]!;
+    if (spans.some((s) => s.start === w.start)) continue;
     spans.push({ start: w.start, end: w.end, color });
   }
-  return spans.slice(0, maxSpans);
+  spans.sort((a, b) => a.start - b.start);
+  return spans.slice(0, effectiveMax);
 }
 
 /**
@@ -301,4 +302,39 @@ export function getHighlightSpansFromWords(
   }
   spans.sort((a, b) => a.start - b.start);
   return spans;
+}
+
+function wordRangesCoveredBySpans(wordRanges: { start: number; end: number }[], spans: HighlightSpan[]): number {
+  return wordRanges.filter(
+    (w) => spans.some((s) => w.start < s.end && w.end > s.start)
+  ).length;
+}
+
+/**
+ * If initial spans cover less than target fraction of words, add spans from getAutoHighlightSpans (non-overlapping) until ~80%.
+ */
+export function ensureHighlightCoverage(
+  text: string,
+  initialSpans: HighlightSpan[],
+  options: AutoHighlightOptions & { targetFraction?: number }
+): HighlightSpan[] {
+  const wordRanges = getWordRanges(text);
+  const total = wordRanges.length;
+  if (total === 0) return initialSpans;
+  const targetFraction = options.targetFraction ?? TARGET_HIGHLIGHT_FRACTION;
+  const covered = wordRangesCoveredBySpans(
+    wordRanges.map((r) => ({ start: r.start, end: r.end })),
+    initialSpans
+  );
+  if (covered / total >= targetFraction) return initialSpans;
+  const autoSpans = getAutoHighlightSpans(text, options);
+  const merged = [...initialSpans];
+  for (const s of autoSpans) {
+    const overlaps = merged.some(
+      (m) => s.start < m.end && s.end > m.start
+    );
+    if (!overlaps) merged.push(s);
+  }
+  merged.sort((a, b) => a.start - b.start);
+  return merged;
 }

@@ -141,12 +141,16 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
   }
   const subject = softenStylePhrases(q || "Clean, well-lit photo, clear background, natural lighting");
   const hasDramaCue = /\b(dramatic|cinematic|golden hour|atmospheric|bokeh|backlight|intense|mysterious|celebratory)\b/i.test(subject);
+  const suggestsIndoor = /\b(desk|office|room|indoor|kitchen|interior|workspace|lamp|windowless|inside)\b/i.test(subject);
+  const lightingCue = suggestsIndoor
+    ? "Lighting appropriate for indoor setting (soft window light, lamp, or overhead); no golden hour."
+    : "Subtle cinematic feel; a touch of golden hour only if outdoor/sun fits; not overly heavy.";
   const base =
     subject.length > 50 && (hasDramaCue || /(of|in|with|on|at)\s+\w+/i.test(subject))
-      ? `${subject}. Subtle cinematic feel, a touch of golden hour; not overly heavy. No text, no logos.`
-      : `Professional photo: ${subject}. Subtle cinematic lighting, a touch of golden hour, suitable as a background. No text, no logos.`;
+      ? `${subject}. ${lightingCue} No text, no logos.`
+      : `Professional photo: ${subject}. ${lightingCue} Suitable as a background. No text, no logos.`;
 
-  const styleNote = "Subtle cinematic look; a little golden hour is fine, but not heavy.";
+  const styleNote = "Match lighting to setting: do not always use golden hour. For indoor or windowless settings use indoor-appropriate lighting (soft window light, lamp, overhead, warm interior). For outdoor you may use subtle cinematic or golden hour. No racial bias—depict people in an inclusive, diverse way; do not default to one ethnicity or skin tone unless the topic specifies a person or group.";
 
   const parts: string[] = [];
 
@@ -154,7 +158,7 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
   const notesAskForStyle = /\b(stylized|stylise|artistic|art style|cartoon|illustration|animated|painting|drawing|abstract|creative style|different style)\b/i.test(notesLower);
   if (!notesAskForStyle) {
     parts.push(
-      "When the topic or slide refers to real people, real events, or real places: generate an accurate, realistic depiction—photorealistic and true to life. Do not stylize, reinterpret, or fictionalize; aim for accuracy unless the user has asked otherwise in their notes."
+      "When the topic or slide refers to real people, real events, or real places: generate an accurate, realistic depiction—photorealistic and true to life. Do not stylize, reinterpret, or fictionalize; aim for accuracy unless the user has asked otherwise in their notes. No racial bias: depict people inclusively and diversely; do not default to one ethnicity or stereotype."
     );
   }
   if (context?.userNotes?.trim()) {
@@ -163,7 +167,7 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
 
   if (context?.isHookSlide) {
     parts.push(
-      "This is the FIRST SLIDE (the hook). The image must be striking, memorable, and scroll-stopping: unexpected, eye-catching, impossible to scroll past. Not generic, safe, or basic. Bold composition, strong visual interest, or a surprising angle that makes viewers stop. Sometimes use a famous public figure (celebrity, athlete, leader) doing something or associated with the topic—even when the topic isn't about them, a recognizable face can stop the scroll."
+      "This is the FIRST SLIDE (the hook). The image must be striking, memorable, and scroll-stopping. VARY the approach—do not always use a close-up face. Rotate among: close-up face with emotion or eye contact; full-body or mid-shot action (person in mid-motion doing something); bold scale contrast (giant/tiny, unexpected object); bright saturated color as accent; micro-story (emotion + object interaction); or before/after split when it fits. Use one or two of these, not always close-up. Prefer a famous public figure when it fits the topic; otherwise a recognizable archetype. No racial bias—inclusive, diverse depiction; do not default to one ethnicity. AVOID generic stock clichés: no person from behind at window/sunset, no hands with coffee and notebook, no silhouette at sunrise, no generic person at city skyline, no steaming cup by window alone. Match lighting to setting: no golden hour for indoor/windowless scenes—use indoor lighting (soft window, lamp, overhead). Bold composition; not safe or basic."
     );
     if (isBibleChristianTopic) {
       parts.push(
@@ -178,7 +182,9 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
   }
 
   if (!context?.isHookSlide) {
-    parts.push("The image MUST relate to the user's topic and to THIS slide's content—do not generate a generic or off-topic image.");
+    parts.push(
+      "The image MUST relate to the user's topic and to THIS slide's content—do not generate a generic or off-topic image. Avoid stock clichés: no person from behind at window, no hands with coffee and notebook, no silhouette at sunrise, no steaming cup by window alone; use a specific moment, angle, or detail that fits this slide. Match lighting to setting: for indoor or windowless scenes use indoor-appropriate lighting, not golden hour."
+    );
   }
   if (context.carouselTitle?.trim()) parts.push(`Carousel: ${context.carouselTitle.trim()}`);
   if (context.topic?.trim()) parts.push(`User topic: ${truncateForContext(context.topic, 120)}`);

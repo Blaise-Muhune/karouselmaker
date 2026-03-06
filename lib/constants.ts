@@ -4,6 +4,9 @@ export const PRO_PRICE_DISPLAY = "$15.99";
 /** Free users get this many carousel generations with full Pro features (AI backgrounds, web search); after that, features are locked until they upgrade. */
 export const FREE_FULL_ACCESS_GENERATIONS = 3;
 
+/** Pro users can use AI-generated images for this many carousels per month (beta). Free users cannot use it. */
+export const AI_GENERATE_LIMIT_PRO = 2;
+
 /** Tester account: 500 carousel generations, double pro limits for assets/exports/templates. */
 export const TESTER_EMAIL = "muyumba@andrews.edu";
 

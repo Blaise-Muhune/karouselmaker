@@ -3,9 +3,9 @@ import { notFound } from "next/navigation";
 import { getUser } from "@/lib/server/auth/getUser";
 import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { getSubscription, getPlanLimits } from "@/lib/server/subscription";
-import { getProject, getCarousel, countCarouselsThisMonth, countCarouselsLifetime, listTemplatesForUser, getDefaultTemplateForNewCarousel } from "@/lib/server/db";
+import { getProject, getCarousel, countCarouselsThisMonth, countCarouselsLifetime, countAiGenerateCarouselsThisMonth, listTemplatesForUser, getDefaultTemplateForNewCarousel } from "@/lib/server/db";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
-import { PLAN_LIMITS, FREE_FULL_ACCESS_GENERATIONS } from "@/lib/constants";
+import { PLAN_LIMITS, FREE_FULL_ACCESS_GENERATIONS, AI_GENERATE_LIMIT_PRO } from "@/lib/constants";
 import { NewCarouselForm } from "./NewCarouselForm";
 import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
 import { Button } from "@/components/ui/button";
@@ -25,12 +25,13 @@ export default async function NewCarouselPage({
   const { user } = await getUser();
   const { projectId } = await params;
   const { regenerate: regenerateCarouselId } = await searchParams;
-  const [project, subscription, limits, carouselCount, lifetimeCarouselCount, regenerateCarousel, templatesRaw, defaultTemplate] = await Promise.all([
+  const [project, subscription, limits, carouselCount, lifetimeCarouselCount, aiGenerateUsed, regenerateCarousel, templatesRaw, defaultTemplate] = await Promise.all([
     getProject(user.id, projectId),
     getSubscription(user.id, user.email),
     getPlanLimits(user.id, user.email),
     countCarouselsThisMonth(user.id),
     countCarouselsLifetime(user.id),
+    countAiGenerateCarouselsThisMonth(user.id),
     regenerateCarouselId ? getCarousel(user.id, regenerateCarouselId) : Promise.resolve(null),
     listTemplatesForUser(user.id, { includeSystem: true }),
     getDefaultTemplateForNewCarousel(user.id),
@@ -99,6 +100,8 @@ export default async function NewCarouselPage({
           freeGenerationsTotal={FREE_FULL_ACCESS_GENERATIONS}
           carouselCount={carouselCount}
           carouselLimit={carouselLimit}
+          aiGenerateUsed={aiGenerateUsed}
+          aiGenerateLimit={AI_GENERATE_LIMIT_PRO}
           regenerateCarouselId={regenerateCarousel?.id}
           initialInputType={regenerateCarousel && (regenerateCarousel.input_type === "url" || regenerateCarousel.input_type === "text") ? regenerateCarousel.input_type : regenerateCarousel ? "topic" : undefined}
           initialInputValue={regenerateCarousel?.input_value}

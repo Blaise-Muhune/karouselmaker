@@ -60,6 +60,8 @@ export function NewCarouselForm({
   freeGenerationsTotal = 3,
   carouselCount = 0,
   carouselLimit = 50,
+  aiGenerateUsed = 0,
+  aiGenerateLimit = 2,
   regenerateCarouselId,
   initialInputType,
   initialInputValue,
@@ -74,7 +76,7 @@ export function NewCarouselForm({
 }: {
   projectId: string;
   isPro?: boolean;
-  /** When true, user can use AI Generate (OpenAI) for backgrounds; otherwise option is disabled (still in development). */
+  /** When true, shows admin-only options (e.g. viral shorts style). */
   isAdmin?: boolean;
   /** When true, user can use AI backgrounds and web search (Pro or within 3 free generations). */
   hasFullAccess?: boolean;
@@ -82,6 +84,10 @@ export function NewCarouselForm({
   freeGenerationsTotal?: number;
   carouselCount?: number;
   carouselLimit?: number;
+  /** AI-generated images: number of carousels using it this month (Pro only). */
+  aiGenerateUsed?: number;
+  /** AI-generated images: max per month for Pro (e.g. 2). */
+  aiGenerateLimit?: number;
   /** When set, form pre-fills from this carousel and submit regenerates it in place. */
   regenerateCarouselId?: string;
   initialInputType?: "topic" | "url" | "text";
@@ -104,7 +110,7 @@ export function NewCarouselForm({
   const [backgroundAssetIds, setBackgroundAssetIds] = useState<string[]>([]);
   const [useAiBackgrounds, setUseAiBackgrounds] = useState(initialUseAiBackgrounds ?? (!!regenerateCarouselId));
   const [imageSource, setImageSource] = useState<"brave" | "unsplash" | "ai_generate">(
-    initialUseAiGenerate && isAdminUser ? "ai_generate" : initialUseUnsplashOnly ? "unsplash" : "brave"
+    initialUseAiGenerate && (isAdminUser || (isPro && aiGenerateUsed < aiGenerateLimit)) ? "ai_generate" : initialUseUnsplashOnly ? "unsplash" : "brave"
   );
   const [useWebSearch, setUseWebSearch] = useState(initialUseWebSearch ?? false);
   const [viralShortsStyle, setViralShortsStyle] = useState(false);
@@ -122,6 +128,7 @@ export function NewCarouselForm({
   const [showMoreOptions, setShowMoreOptions] = useState(false);
 
   const hasFullAccess = hasFullAccessProp ?? isPro;
+  const canUseAiGenerate = isAdminUser || (isPro && aiGenerateUsed < aiGenerateLimit);
 
   const handleUpgrade = async () => {
     setUpgradeLoading(true);
@@ -179,7 +186,7 @@ export function NewCarouselForm({
       if (backgroundAssetIds.length) formData.set("background_asset_ids", JSON.stringify(backgroundAssetIds));
       if (useAiBackgrounds || regenerateCarouselId) formData.set("use_ai_backgrounds", "true");
       if (imageSource === "unsplash") formData.set("use_unsplash_only", "true");
-      if (imageSource === "ai_generate" && isAdminUser) formData.set("use_ai_generate", "true");
+      if (imageSource === "ai_generate" && canUseAiGenerate) formData.set("use_ai_generate", "true");
       if (useWebSearch) formData.set("use_web_search", "true");
       if (viralShortsStyle) formData.set("viral_shorts_style", "true");
       if (notes.trim()) formData.set("notes", notes.trim());
@@ -557,28 +564,38 @@ export function NewCarouselForm({
             {useAiBackgrounds && (
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs text-muted-foreground mr-1">Source:</span>
-                {(["brave", "unsplash", "ai_generate"] as const).map((src) => (
+                {(["brave", "unsplash", ...(isPro || isAdminUser ? (["ai_generate"] as const) : [])] as const).map((src) => (
                   <label
                     key={src}
-                    className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs cursor-pointer transition-colors ${
+                    className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
                       imageSource === src
                         ? "border-primary/40 bg-primary/10 text-foreground"
                         : "border-border/60 bg-muted/30 text-muted-foreground hover:border-border hover:text-foreground/80"
-                    } ${src === "ai_generate" && !isAdminUser ? "opacity-60 cursor-not-allowed" : ""}`}
+                    } ${src === "ai_generate" && !canUseAiGenerate ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
                   >
                     <input
                       type="radio"
                       name="imageSource"
                       checked={imageSource === src}
-                      onChange={() => (src !== "ai_generate" || isAdminUser) && setImageSource(src)}
-                      disabled={src === "ai_generate" && !isAdminUser}
+                      onChange={() => (src !== "ai_generate" || canUseAiGenerate) && setImageSource(src)}
+                      disabled={src === "ai_generate" && !canUseAiGenerate}
                       className="sr-only"
                     />
-                    {src === "brave" ? "Brave" : src === "unsplash" ? "Unsplash" : "AI Generate"}
+                    {src === "brave" ? "Brave" : src === "unsplash" ? "Unsplash" : (
+                      <>
+                        AI Generate <span className="rounded bg-amber-500/20 px-1 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400">Beta</span>
+                      </>
+                    )}
                   </label>
                 ))}
-                {isAdminUser && imageSource === "ai_generate" && (
-                  <span className="text-[11px] text-amber-600 dark:text-amber-400 ml-1">2–5 min</span>
+                {canUseAiGenerate && imageSource === "ai_generate" && (
+                  <span className="text-[11px] text-muted-foreground ml-1">
+                    2–5 min
+                    {!isAdminUser && ` · ${aiGenerateUsed}/${aiGenerateLimit} used this month`}
+                  </span>
+                )}
+                {isPro && !isAdminUser && !canUseAiGenerate && imageSource === "ai_generate" && (
+                  <span className="text-[11px] text-amber-600 dark:text-amber-400 ml-1">{aiGenerateUsed}/{aiGenerateLimit} used — resets next month</span>
                 )}
               </div>
             )}
