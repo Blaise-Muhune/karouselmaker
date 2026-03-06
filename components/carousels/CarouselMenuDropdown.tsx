@@ -35,12 +35,14 @@ type CarouselMenuDropdownProps = {
   carouselId: string;
   projectId: string;
   isFavorite?: boolean;
+  disabled?: boolean;
 };
 
 export function CarouselMenuDropdown({
   carouselId,
   projectId,
   isFavorite = false,
+  disabled = false,
 }: CarouselMenuDropdownProps) {
   const router = useRouter();
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -71,8 +73,8 @@ export function CarouselMenuDropdown({
   return (
     <>
       <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon-sm" className="size-8">
+        <DropdownMenuTrigger asChild disabled={disabled}>
+          <Button variant="ghost" size="icon-sm" className="size-8" disabled={disabled}>
             <MoreVerticalIcon className="size-4" />
             <span className="sr-only">Carousel options</span>
           </Button>

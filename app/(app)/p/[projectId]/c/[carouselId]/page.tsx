@@ -24,6 +24,7 @@ import type { BrandKit } from "@/lib/renderer/renderModel";
 import type { ExportFormat, ExportSize, PlatformName } from "@/lib/server/db/types";
 import { FREE_FULL_ACCESS_GENERATIONS } from "@/lib/constants";
 import { GenerationPartialBanner } from "@/components/carousels/GenerationPartialBanner";
+import { CarouselGeneratingBanner, CarouselGeneratingTrigger } from "@/components/carousels/CarouselGeneratingTrigger";
 import { ArrowLeftIcon } from "lucide-react";
 
 function getExportFormat(c: { export_format?: unknown }): ExportFormat {
@@ -167,9 +168,17 @@ export default async function CarouselEditorPage({
 
   const editorPath = `/p/${projectId}/c/${carouselId}`;
 
+  const isGenerating = carousel.status === "generating";
+
   return (
     <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">
       <div className="mx-auto max-w-4xl space-y-6">
+        {isGenerating && (
+          <>
+            <CarouselGeneratingBanner />
+            <CarouselGeneratingTrigger projectId={projectId} carouselId={carouselId} />
+          </>
+        )}
         {showGenerationPartial && <GenerationPartialBanner />}
         {!subscription.isPro && (
           hasFullAccess ? (
@@ -186,18 +195,24 @@ export default async function CarouselEditorPage({
           <div className="flex flex-col gap-2 min-w-0">
             <Breadcrumbs
               items={[
-                { label: project.name, href: `/p/${projectId}` },
+                { label: project.name, href: isGenerating ? undefined : `/p/${projectId}` },
                 { label: carousel.title },
               ]}
               className="mb-0.5"
             />
             <div className="flex items-center gap-2 flex-wrap">
-              <Button variant="ghost" size="icon-sm" className="-ml-1 shrink-0" asChild>
-                <Link href={`/p/${projectId}`}>
+              {isGenerating ? (
+                <Button variant="ghost" size="icon-sm" className="-ml-1 shrink-0 size-8" disabled aria-label="Back to project (disabled while generating)">
                   <ArrowLeftIcon className="size-4" />
-                  <span className="sr-only">Back to project</span>
-                </Link>
-              </Button>
+                </Button>
+              ) : (
+                <Button variant="ghost" size="icon-sm" className="-ml-1 shrink-0" asChild>
+                  <Link href={`/p/${projectId}`}>
+                    <ArrowLeftIcon className="size-4" />
+                    <span className="sr-only">Back to project</span>
+                  </Link>
+                </Button>
+              )}
               <div className="min-w-0">
                 <h1 className="text-xl font-semibold tracking-tight truncate">{carousel.title}</h1>
                 <p className="text-muted-foreground text-sm">
@@ -211,12 +226,13 @@ export default async function CarouselEditorPage({
                 projectId={projectId}
                 pathname={editorPath}
                 hasShuffleableSlides={hasShuffleableSlides}
-                disabled={!subscription.isPro}
+                disabled={isGenerating || !subscription.isPro}
               />
               <CarouselMenuDropdown
                 carouselId={carouselId}
                 projectId={projectId}
                 isFavorite={!!carousel.is_favorite}
+                disabled={isGenerating}
               />
             </div>
           </div>
@@ -226,6 +242,7 @@ export default async function CarouselEditorPage({
         <EditorExportSection
           carouselId={carouselId}
           isPro={subscription.isPro}
+          disabled={isGenerating}
           exportsUsedThisMonth={exportCount}
           exportFormat={getExportFormat(carousel)}
           exportSize={getExportSize(carousel)}
@@ -243,7 +260,7 @@ export default async function CarouselEditorPage({
         />
 
         {/* Post to (admin only) */}
-        {userIsAdmin && (() => {
+        {userIsAdmin && !isGenerating && (() => {
           const pt = (project.post_to_platforms ?? {}) as Record<string, boolean>;
           const enabled = (["facebook", "instagram"] as const).filter((k) => pt[k]);
           if (enabled.length === 0) return null;
@@ -289,9 +306,9 @@ export default async function CarouselEditorPage({
         })()}
 
         {/* Frames */}
-        <section>
+        <section className={isGenerating ? "pointer-events-none opacity-70" : ""} aria-disabled={isGenerating}>
           <p className="text-muted-foreground mb-2 text-xs">
-            Click to edit, drag to reorder
+            {isGenerating ? "Generating…" : "Click to edit, drag to reorder"}
           </p>
           <SlideGrid
             slides={slides}
@@ -303,6 +320,7 @@ export default async function CarouselEditorPage({
             exportSize={getExportSize(carousel)}
             exportFormat={getExportFormat(carousel)}
             isPro={subscription.isPro}
+            disabled={isGenerating}
           />
         </section>
 
@@ -313,6 +331,7 @@ export default async function CarouselEditorPage({
           hashtags={hashtags}
           unsplashAttributions={unsplashAttributions}
           editorPath={editorPath}
+          disabled={isGenerating}
         />
       </div>
     </div>

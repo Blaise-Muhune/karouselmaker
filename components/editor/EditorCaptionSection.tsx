@@ -25,6 +25,8 @@ type EditorCaptionSectionProps = {
   hashtags: string[];
   unsplashAttributions?: UnsplashAttribution[];
   editorPath: string;
+  /** When true (e.g. carousel is generating), disable edit and copy actions. */
+  disabled?: boolean;
 };
 
 export function EditorCaptionSection({
@@ -33,6 +35,7 @@ export function EditorCaptionSection({
   hashtags,
   unsplashAttributions = [],
   editorPath,
+  disabled = false,
 }: EditorCaptionSectionProps) {
   const [editOpen, setEditOpen] = useState(false);
   const [copied, setCopied] = useState<"short" | "medium" | "spicy" | "hashtags" | "credits" | null>(null);
@@ -59,7 +62,7 @@ export function EditorCaptionSection({
           <p className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
             Caption & hashtags
           </p>
-          <Button variant="ghost" size="sm" className="text-muted-foreground -mr-1 h-8" onClick={() => setEditOpen(true)}>
+          <Button variant="ghost" size="sm" className="text-muted-foreground -mr-1 h-8" onClick={() => setEditOpen(true)} disabled={disabled}>
             Edit
           </Button>
         </div>
@@ -76,6 +79,7 @@ export function EditorCaptionSection({
                 className="text-muted-foreground shrink-0 gap-1.5 h-8"
                 onClick={() => copyToClipboard(captionVariants.short!, "short")}
                 title="Copy short caption"
+                disabled={disabled}
               >
                 {copied === "short" ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
                 Copy
@@ -94,6 +98,7 @@ export function EditorCaptionSection({
                 className="text-muted-foreground shrink-0 gap-1.5 h-8"
                 onClick={() => copyToClipboard(captionVariants.medium!, "medium")}
                 title="Copy medium caption"
+                disabled={disabled}
               >
                 {copied === "medium" ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
                 Copy
@@ -136,7 +141,7 @@ export function EditorCaptionSection({
               size="sm"
               className="text-muted-foreground shrink-0 gap-1.5 h-8"
               onClick={() => copyToClipboard(hashtagText, "hashtags")}
-              disabled={!hashtagText}
+              disabled={disabled || !hashtagText}
               title="Copy hashtags"
             >
               {copied === "hashtags" ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
@@ -179,6 +184,7 @@ export function EditorCaptionSection({
                 className="text-muted-foreground shrink-0 gap-1.5 h-8"
                 onClick={() => copyToClipboard(creditsText, "credits")}
                 title="Copy credits"
+                disabled={disabled}
               >
                 {copied === "credits" ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
                 Copy

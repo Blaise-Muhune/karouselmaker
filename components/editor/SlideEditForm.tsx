@@ -339,9 +339,9 @@ type SlideEditFormProps = {
   /** Multiple images (2–4) for content slides: grid layout. */
   initialBackgroundImageUrls?: string[] | null;
   /** Source of single AI image: brave or unsplash (fallback). */
-  initialImageSource?: "brave" | "unsplash" | "google" | null;
+  initialImageSource?: "brave" | "unsplash" | "google" | "pixabay" | "pexels" | null;
   /** Source per image for multi-image slides. */
-  initialImageSources?: ("brave" | "unsplash" | "google")[] | null;
+  initialImageSources?: ("brave" | "unsplash" | "google" | "pixabay" | "pexels")[] | null;
   /** Hook only: resolved URL for second image (circle). */
   initialSecondaryBackgroundImageUrl?: string | null;
   /** Default suffix after "Made with KarouselMaker.com " for Pro (e.g. "follow @username"). Used when slide has no made_with_text. */
@@ -531,9 +531,9 @@ export function SlideEditForm({
   });
   const [backgroundImageUrlForPreview, setBackgroundImageUrlForPreview] = useState<string | null>(() => initialBackgroundImageUrl ?? null);
   const [secondaryBackgroundImageUrlForPreview, setSecondaryBackgroundImageUrlForPreview] = useState<string | null>(() => initialSecondaryBackgroundImageUrl ?? null);
-  type ImageUrlItem = { url: string; source?: "brave" | "unsplash" | "google"; unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string }; /** Other approved URLs from the same search (per-slot shuffle). */ alternates?: string[]; /** Stable order for count display (not persisted). */ _pool?: string[]; /** Index in _pool of current image (not persisted). */ _index?: number };
+  type ImageUrlItem = { url: string; source?: "brave" | "unsplash" | "google" | "pixabay" | "pexels"; unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string }; pixabay_attribution?: { userName: string; userId: number; pageURL: string; photoURL: string }; pexels_attribution?: { photographer: string; photographer_url: string; photo_url: string }; alternates?: string[]; _pool?: string[]; _index?: number };
   const [imageUrls, setImageUrls] = useState<ImageUrlItem[]>(() => {
-    const bg = slide.background as { asset_id?: string; image_url?: string; image_source?: string; unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string }; images?: { image_url?: string; source?: "brave" | "google" | "unsplash"; unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string }; alternates?: string[] }[] } | null;
+    const bg = slide.background as { asset_id?: string; image_url?: string; image_source?: string; unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string }; pixabay_attribution?: { userName: string; userId: number; pageURL: string; photoURL: string }; pexels_attribution?: { photographer: string; photographer_url: string; photo_url: string }; images?: { image_url?: string; source?: "brave" | "google" | "unsplash" | "pixabay" | "pexels"; unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string }; pixabay_attribution?: { userName: string; userId: number; pageURL: string; photoURL: string }; pexels_attribution?: { photographer: string; photographer_url: string; photo_url: string }; alternates?: string[] }[] } | null;
     if (bg?.asset_id) return [{ url: "", source: undefined }];
     // Prefer slide.background.images so we show one input per slot (e.g. 2 pics → 2 rows). Shuffle cycles that slot’s alternates only.
     if (bg?.images?.length) {
@@ -543,13 +543,13 @@ export function SlideEditForm({
         // Legacy: one search stored as flat list [url1, url2, ...]. Coalesce into one slot.
         const first = images[0]!;
         const pool = [first.image_url ?? "", ...images.slice(1).map((img) => img.image_url ?? "").filter((u) => u.trim() && /^https?:\/\//i.test(u))];
-        return [{ url: pool[0] ?? "", source: (first.source === "brave" || first.source === "unsplash" || first.source === "google" ? first.source : undefined) as ImageUrlItem["source"], unsplash_attribution: first.unsplash_attribution, alternates: pool.slice(1), _pool: pool.length > 0 ? pool : undefined, _index: 0 }];
+        return [{ url: pool[0] ?? "", source: (first.source === "brave" || first.source === "unsplash" || first.source === "google" || first.source === "pixabay" || first.source === "pexels" ? first.source : undefined) as ImageUrlItem["source"], unsplash_attribution: first.unsplash_attribution, pixabay_attribution: first.pixabay_attribution, pexels_attribution: first.pexels_attribution, alternates: pool.slice(1), _pool: pool.length > 0 ? pool : undefined, _index: 0 }];
       }
       return images.map((img) => {
         const url = img.image_url ?? "";
         const alts = (img as { alternates?: string[] }).alternates ?? [];
         const pool = [url, ...alts].filter((u) => u.trim() && /^https?:\/\//i.test(u));
-        return { url, source: (img.source === "brave" || img.source === "unsplash" || img.source === "google" ? img.source : undefined) as ImageUrlItem["source"], unsplash_attribution: img.unsplash_attribution, alternates: alts, _pool: pool.length > 0 ? pool : undefined, _index: 0 };
+        return { url, source: (img.source === "brave" || img.source === "unsplash" || img.source === "google" || img.source === "pixabay" || img.source === "pexels" ? img.source : undefined) as ImageUrlItem["source"], unsplash_attribution: img.unsplash_attribution, pixabay_attribution: img.pixabay_attribution, pexels_attribution: img.pexels_attribution, alternates: alts, _pool: pool.length > 0 ? pool : undefined, _index: 0 };
       });
     }
     if (initialBackgroundImageUrls?.length) {
@@ -557,24 +557,24 @@ export function SlideEditForm({
       // Page passed flat URL list (no bg.images): one slot with rest as alternates so Shuffle works.
       if (urls.length > 1) {
         const firstSource = initialImageSources?.[0];
-        const source = firstSource === "brave" || firstSource === "unsplash" || firstSource === "google" ? firstSource : undefined;
+        const source = firstSource === "brave" || firstSource === "unsplash" || firstSource === "google" || firstSource === "pixabay" || firstSource === "pexels" ? firstSource : undefined;
         const pool = urls.filter((u) => u.trim() && /^https?:\/\//i.test(u));
         return [{ url: pool[0] ?? "", source, unsplash_attribution: bg?.images?.[0]?.unsplash_attribution, alternates: pool.slice(1), _pool: pool.length > 0 ? pool : undefined, _index: 0 }];
       }
       return urls.map((url, i): ImageUrlItem => {
         const src = initialImageSources?.[i];
-        const source = src === "brave" || src === "unsplash" || src === "google" ? src : undefined;
+        const source = src === "brave" || src === "unsplash" || src === "google" || src === "pixabay" || src === "pexels" ? src : undefined;
         return { url, source, unsplash_attribution: bg?.images?.[i]?.unsplash_attribution };
       });
     }
     if (initialBackgroundImageUrl) {
       const src = initialImageSource ?? undefined;
-      const source = src === "brave" || src === "unsplash" || src === "google" ? src : undefined;
+      const source = src === "brave" || src === "unsplash" || src === "google" || src === "pixabay" || src === "pexels" ? src : undefined;
       return [{ url: initialBackgroundImageUrl, source, unsplash_attribution: bg?.unsplash_attribution }];
     }
     if (bg?.image_url) {
       const src = bg.image_source;
-      const source = src === "brave" || src === "unsplash" || src === "google" ? src : undefined;
+      const source = src === "brave" || src === "unsplash" || src === "google" || src === "pixabay" || src === "pexels" ? src : undefined;
       return [{ url: bg.image_url, source, unsplash_attribution: bg.unsplash_attribution }];
     }
     return [{ url: "", source: undefined }];
@@ -1240,9 +1240,9 @@ export function SlideEditForm({
     const bgPayload =
       background.mode === "image" || validUrls.length > 0
         ? useImagesArray
-          ? { mode: "image", images: validUrls.map((i) => ({ image_url: i.url, source: i.source, unsplash_attribution: i.unsplash_attribution, alternates: i.alternates ?? [] })), fit: background.fit ?? "cover", overlay: overlayPayload, ...(imageDisplayPayload && { image_display: imageDisplayPayload }) }
+          ? { mode: "image", images: validUrls.map((i) => ({ image_url: i.url, source: i.source, unsplash_attribution: i.unsplash_attribution, pixabay_attribution: i.pixabay_attribution, pexels_attribution: i.pexels_attribution, alternates: i.alternates ?? [] })), fit: background.fit ?? "cover", overlay: overlayPayload, ...(imageDisplayPayload && { image_display: imageDisplayPayload }) }
           : validUrls.length === 1
-            ? { mode: "image", image_url: validUrls[0]!.url, image_source: validUrls[0]!.source, unsplash_attribution: validUrls[0]!.unsplash_attribution, fit: background.fit ?? "cover", overlay: overlayPayload, ...(imageDisplayPayload && { image_display: imageDisplayPayload }) }
+            ? { mode: "image", image_url: validUrls[0]!.url, image_source: validUrls[0]!.source, unsplash_attribution: validUrls[0]!.unsplash_attribution, pixabay_attribution: validUrls[0]!.pixabay_attribution, pexels_attribution: validUrls[0]!.pexels_attribution, fit: background.fit ?? "cover", overlay: overlayPayload, ...(imageDisplayPayload && { image_display: imageDisplayPayload }) }
             : { mode: "image", asset_id: background.asset_id, storage_path: background.storage_path, image_url: background.image_url || undefined, fit: background.fit ?? "cover", overlay: overlayPayload, ...(imageDisplayPayload && { image_display: imageDisplayPayload }) }
         : { style: background.style, color: background.color, gradientOn: background.gradientOn, overlay: overlayPayload };
     const result = await updateSlide(
@@ -1404,9 +1404,9 @@ export function SlideEditForm({
     const useImagesArray = validUrls.length >= 2 || (validUrls.length === 1 && (validUrls[0]?.alternates?.length ?? 0) > 0);
     return background.mode === "image" || validUrls.length > 0
       ? useImagesArray
-        ? { mode: "image", images: validUrls.map((i) => ({ image_url: i.url, source: i.source, unsplash_attribution: i.unsplash_attribution, alternates: i.alternates ?? [] })), fit: background.fit ?? "cover", overlay: overlayPayload }
+        ? { mode: "image", images: validUrls.map((i) => ({ image_url: i.url, source: i.source, unsplash_attribution: i.unsplash_attribution, pixabay_attribution: i.pixabay_attribution, pexels_attribution: i.pexels_attribution, alternates: i.alternates ?? [] })), fit: background.fit ?? "cover", overlay: overlayPayload }
         : validUrls.length === 1
-          ? { mode: "image", image_url: validUrls[0]!.url, image_source: validUrls[0]!.source, unsplash_attribution: validUrls[0]!.unsplash_attribution, fit: background.fit ?? "cover", overlay: overlayPayload }
+          ? { mode: "image", image_url: validUrls[0]!.url, image_source: validUrls[0]!.source, unsplash_attribution: validUrls[0]!.unsplash_attribution, pixabay_attribution: validUrls[0]!.pixabay_attribution, pexels_attribution: validUrls[0]!.pexels_attribution, fit: background.fit ?? "cover", overlay: overlayPayload }
           : {
               mode: "image",
               asset_id: background.asset_id,
@@ -3242,7 +3242,7 @@ export function SlideEditForm({
                                 : "bg-emerald-500/20 text-emerald-700 dark:text-emerald-400"
                             }`}
                           >
-                            {item.source === "unsplash" ? "Fallback" : "Brave"}
+                            {item.source === "unsplash" ? "Unsplash" : item.source === "pixabay" ? "Pixabay" : item.source === "pexels" ? "Pexels" : "Brave"}
                           </span>
                         )}
                         <Button

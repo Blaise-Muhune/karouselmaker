@@ -111,7 +111,15 @@ export async function POST(
     const unsplashAttributions = new Map<
       string,
       { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string }
-   >();
+    >();
+    const pixabayAttributions = new Map<
+      string,
+      { userName: string; userId: number; pageURL: string; photoURL: string }
+    >();
+    const pexelsAttributions = new Map<
+      string,
+      { photographer: string; photographer_url: string; photo_url: string }
+    >();
 
     const CONTENT_TIMEOUT_MS = 25000;
     const SELECTOR_TIMEOUT_MS = 30000;
@@ -169,6 +177,8 @@ export async function POST(
                 image_url?: string;
                 storage_path?: string;
                 unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string };
+                pixabay_attribution?: { userName: string; userId: number; pageURL: string; photoURL: string };
+                pexels_attribution?: { photographer: string; photographer_url: string; photo_url: string };
               }>;
               image_display?: Record<string, unknown>;
               overlay?: {
@@ -181,6 +191,8 @@ export async function POST(
                 solidSize?: number;
               };
               unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string };
+              pixabay_attribution?: { userName: string; userId: number; pageURL: string; photoURL: string };
+              pexels_attribution?: { photographer: string; photographer_url: string; photo_url: string };
             }
           | null
           | undefined;
@@ -245,9 +257,15 @@ export async function POST(
               }
               if (img.unsplash_attribution) {
                 const key = img.unsplash_attribution.photographerUsername;
-                if (!unsplashAttributions.has(key)) {
-                  unsplashAttributions.set(key, img.unsplash_attribution);
-                }
+                if (!unsplashAttributions.has(key)) unsplashAttributions.set(key, img.unsplash_attribution);
+              }
+              if (img.pixabay_attribution) {
+                const key = `${img.pixabay_attribution.userName}-${img.pixabay_attribution.userId}`;
+                if (!pixabayAttributions.has(key)) pixabayAttributions.set(key, img.pixabay_attribution);
+              }
+              if (img.pexels_attribution) {
+                const key = img.pexels_attribution.photo_url;
+                if (!pexelsAttributions.has(key)) pexelsAttributions.set(key, img.pexels_attribution);
               }
             }
             if (urls.length === 1) backgroundImageUrl = urls[0] ?? null;
@@ -263,9 +281,15 @@ export async function POST(
           }
           if (slideBg.unsplash_attribution) {
             const key = slideBg.unsplash_attribution.photographerUsername;
-            if (!unsplashAttributions.has(key)) {
-              unsplashAttributions.set(key, slideBg.unsplash_attribution);
-            }
+            if (!unsplashAttributions.has(key)) unsplashAttributions.set(key, slideBg.unsplash_attribution);
+          }
+          if (slideBg.pixabay_attribution) {
+            const key = `${slideBg.pixabay_attribution.userName}-${slideBg.pixabay_attribution.userId}`;
+            if (!pixabayAttributions.has(key)) pixabayAttributions.set(key, slideBg.pixabay_attribution);
+          }
+          if (slideBg.pexels_attribution) {
+            const key = slideBg.pexels_attribution.photo_url;
+            if (!pexelsAttributions.has(key)) pexelsAttributions.set(key, slideBg.pexels_attribution);
           }
           if (slide.slide_type === "hook" && !backgroundImageUrls) {
             if (slideBg.secondary_image_url) {
@@ -362,13 +386,26 @@ export async function POST(
       hashtags.length > 0
         ? hashtags.map((h) => (h.startsWith("#") ? h : `#${h}`)).join(" ")
         : "";
-    const creditsLines =
-      unsplashAttributions.size > 0
-        ? [
-            "Image credits (Unsplash):",
-            ...Array.from(unsplashAttributions.values()).map(formatUnsplashAttributionLine),
-          ]
-        : [];
+    const creditsLines: string[] = [];
+    if (unsplashAttributions.size > 0) {
+      creditsLines.push("Image credits (Unsplash):", ...Array.from(unsplashAttributions.values()).map(formatUnsplashAttributionLine));
+    }
+    if (pixabayAttributions.size > 0) {
+      creditsLines.push(
+        "Image credits (Pixabay):",
+        ...Array.from(pixabayAttributions.values()).map(
+          (a) => `Image by ${a.userName} on Pixabay — ${a.photoURL}`
+        )
+      );
+    }
+    if (pexelsAttributions.size > 0) {
+      creditsLines.push(
+        "Image credits (Pexels):",
+        ...Array.from(pexelsAttributions.values()).map(
+          (a) => `Photo by ${a.photographer} on Pexels — ${a.photo_url}`
+        )
+      );
+    }
     const shortBlock = captionVariants?.short?.trim();
     const mediumBlock = captionVariants?.medium?.trim();
     const longBlock = captionVariants?.spicy?.trim();
@@ -389,15 +426,32 @@ export async function POST(
       }
     }
     if (captionText.trim()) zip.file("caption.txt", captionText.trim());
-    if (unsplashAttributions.size > 0) {
-      const creditsFileLines = [
-        "IMAGE CREDITS (Unsplash)",
-        "-----------------------",
-        "When publishing or distributing your carousel, you are responsible for providing proper attribution to photographers.",
+    const hasAnyCredits = unsplashAttributions.size > 0 || pixabayAttributions.size > 0 || pexelsAttributions.size > 0;
+    if (hasAnyCredits) {
+      const creditsFileLines: string[] = [
+        "IMAGE CREDITS",
+        "-------------",
+        "When publishing or distributing your carousel, you are responsible for providing proper attribution.",
         "",
-        ...Array.from(unsplashAttributions.values()).map(formatUnsplashAttributionLine),
       ];
-      zip.file("CREDITS.txt", creditsFileLines.join("\n"));
+      if (unsplashAttributions.size > 0) {
+        creditsFileLines.push("Unsplash:", ...Array.from(unsplashAttributions.values()).map(formatUnsplashAttributionLine), "");
+      }
+      if (pixabayAttributions.size > 0) {
+        creditsFileLines.push(
+          "Pixabay:",
+          ...Array.from(pixabayAttributions.values()).map((a) => `Image by ${a.userName} — ${a.photoURL}`),
+          ""
+        );
+      }
+      if (pexelsAttributions.size > 0) {
+        creditsFileLines.push(
+          "Pexels:",
+          ...Array.from(pexelsAttributions.values()).map((a) => `Photo by ${a.photographer} — ${a.photo_url}`),
+          ""
+        );
+      }
+      zip.file("CREDITS.txt", creditsFileLines.join("\n").trim());
     }
 
     const zipBuffer = await zip.generateAsync({ type: "nodebuffer" });

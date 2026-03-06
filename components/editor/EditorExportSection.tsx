@@ -114,6 +114,8 @@ type EditorExportSectionProps = {
   captionVariants?: { short?: string; medium?: string; spicy?: string };
   /** Hashtags for Post view. */
   hashtags?: string[];
+  /** When true (e.g. carousel is generating), disable all actions. */
+  disabled?: boolean;
 };
 
 export function EditorExportSection({
@@ -129,6 +131,7 @@ export function EditorExportSection({
   connectedPlatforms = [],
   captionVariants = {},
   hashtags = [],
+  disabled = false,
 }: EditorExportSectionProps) {
   const connectedSet = new Set(connectedPlatforms);
   const enabledVideoPostPlatforms = postToPlatforms
@@ -458,7 +461,7 @@ export function EditorExportSection({
           </div>
         </div>
       )}
-      <div className={`flex flex-wrap items-center gap-3 transition-opacity ${exporting ? "pointer-events-none opacity-50" : ""}`} aria-disabled={exporting}>
+      <div className={`flex flex-wrap items-center gap-3 transition-opacity ${exporting || disabled ? "pointer-events-none opacity-50" : ""}`} aria-disabled={exporting || disabled}>
         {downloadUrl && (
           <div className="flex flex-wrap items-center gap-2">
             {isStandalonePWA ? (

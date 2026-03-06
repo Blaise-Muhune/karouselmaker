@@ -35,6 +35,8 @@ export const aiSlideSchema = z.object({
       location: z.string().max(60).optional(),
     })
     .optional(),
+  /** When using stock photos (Unsplash/Pexels/Pixabay), which provider to use for this slide. AI chooses per slide. */
+  image_provider: z.enum(["unsplash", "pexels", "pixabay"]).optional(),
   // Legacy: accept old field names from cached or older AI output
   unsplash_query: z.string().max(80).optional(),
   unsplash_queries: z.array(z.string().max(80)).max(4).optional(),

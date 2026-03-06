@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { generateCarousel } from "@/app/actions/carousels/generateCarousel";
+import { startCarouselGeneration, generateCarousel } from "@/app/actions/carousels/generateCarousel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,7 +17,6 @@ import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { createCheckoutSession } from "@/app/actions/subscription/createCheckoutSession";
-import { WaitingGamesDialog } from "@/components/waiting/WaitingGamesDialog";
 import { Gem, GlobeIcon, ImageIcon, LayoutTemplateIcon, Loader2Icon, Link2Icon, FileTextIcon, SparklesIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react";
 
 const TEMPLATE_PAGE_SIZE = 8;
@@ -41,16 +40,6 @@ const INPUT_TYPES = [
   { value: "text", label: "Paste text", icon: FileTextIcon },
 ] as const;
 
-const GENERATION_STEPS = [
-  "Analyzing your input…",
-  "Outlining the structure…",
-  "Writing headlines…",
-  "Formatting carousel…",
-  "Applying templates…",
-  "Generating images…",
-  "Almost there…",
-] as const;
-
 export function NewCarouselForm({
   projectId,
   isPro = true,
@@ -66,7 +55,7 @@ export function NewCarouselForm({
   initialInputType,
   initialInputValue,
   initialUseAiBackgrounds,
-  initialUseUnsplashOnly,
+  initialUseStockPhotos,
   initialUseAiGenerate,
   initialUseWebSearch,
   templateOptions = [],
@@ -94,7 +83,8 @@ export function NewCarouselForm({
   initialInputValue?: string;
   /** Pre-fill from carousel.generation_options so regenerate matches original checkboxes. */
   initialUseAiBackgrounds?: boolean;
-  initialUseUnsplashOnly?: boolean;
+  /** When true, pre-select "Stock photos" (Unsplash + Pexels + Pixabay; AI picks per slide). */
+  initialUseStockPhotos?: boolean;
   initialUseAiGenerate?: boolean;
   initialUseWebSearch?: boolean;
   /** Templates the user can choose before generating (with parsed config for preview). */
@@ -109,9 +99,14 @@ export function NewCarouselForm({
   const [numberOfSlides, setNumberOfSlides] = useState<string>("");
   const [backgroundAssetIds, setBackgroundAssetIds] = useState<string[]>([]);
   const [useAiBackgrounds, setUseAiBackgrounds] = useState(initialUseAiBackgrounds ?? (!!regenerateCarouselId));
-  const [imageSource, setImageSource] = useState<"brave" | "unsplash" | "ai_generate">(
-    initialUseAiGenerate && (isAdminUser || (isPro && aiGenerateUsed < aiGenerateLimit)) ? "ai_generate" : initialUseUnsplashOnly ? "unsplash" : "brave"
-  );
+  const defaultImageSource = initialUseAiGenerate && (isAdminUser || (isPro && aiGenerateUsed < aiGenerateLimit))
+    ? "ai_generate"
+    : initialUseStockPhotos
+      ? "stock"
+      : isAdminUser
+        ? "brave"
+        : "stock";
+  const [imageSource, setImageSource] = useState<"stock" | "ai_generate" | "brave">(defaultImageSource);
   const [useWebSearch, setUseWebSearch] = useState(initialUseWebSearch ?? false);
   const [viralShortsStyle, setViralShortsStyle] = useState(false);
   const [notes, setNotes] = useState("");
@@ -120,7 +115,6 @@ export function NewCarouselForm({
   const [visibleTemplateCount, setVisibleTemplateCount] = useState(TEMPLATE_PAGE_SIZE);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
-  const [generationStep, setGenerationStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [upgradeLoading, setUpgradeLoading] = useState(false);
   const [driveFolderImporting, setDriveFolderImporting] = useState(false);
@@ -147,20 +141,6 @@ export function NewCarouselForm({
   };
 
   useEffect(() => {
-    if (!isPending) {
-      setGenerationStep(0);
-      return;
-    }
-    const stepMs = imageSource === "ai_generate" ? 8000 : 2200;
-    const interval = setInterval(() => {
-      setGenerationStep((prev) =>
-        prev >= GENERATION_STEPS.length - 1 ? prev : prev + 1
-      );
-    }, stepMs);
-    return () => clearInterval(interval);
-  }, [isPending, imageSource]);
-
-  useEffect(() => {
     if (templateModalOpen) setVisibleTemplateCount(TEMPLATE_PAGE_SIZE);
   }, [templateModalOpen]);
 
@@ -185,21 +165,32 @@ export function NewCarouselForm({
       }
       if (backgroundAssetIds.length) formData.set("background_asset_ids", JSON.stringify(backgroundAssetIds));
       if (useAiBackgrounds || regenerateCarouselId) formData.set("use_ai_backgrounds", "true");
-      if (imageSource === "unsplash") formData.set("use_unsplash_only", "true");
+      if (imageSource === "stock") formData.set("use_stock_photos", "true");
       if (imageSource === "ai_generate" && canUseAiGenerate) formData.set("use_ai_generate", "true");
       if (useWebSearch) formData.set("use_web_search", "true");
       if (viralShortsStyle) formData.set("viral_shorts_style", "true");
       if (notes.trim()) formData.set("notes", notes.trim());
       if (selectedTemplateId) formData.set("template_id", selectedTemplateId);
-      const result = await generateCarousel(formData);
-      if ("error" in result && !("carouselId" in result)) {
-        setError(result.error);
-        return;
-      }
-      const carouselId = "carouselId" in result ? result.carouselId : undefined;
-      if (carouselId) {
-        const hasPartialError = "partialError" in result && result.partialError;
-        router.push(hasPartialError ? `/p/${projectId}/c/${carouselId}?generation=partial` : `/p/${projectId}/c/${carouselId}`);
+      if (regenerateCarouselId) {
+        const result = await generateCarousel(formData);
+        if ("error" in result && !("carouselId" in result)) {
+          setError(result.error);
+          return;
+        }
+        const carouselId = "carouselId" in result ? result.carouselId : undefined;
+        if (carouselId) {
+          const hasPartialError = "partialError" in result && result.partialError;
+          router.push(hasPartialError ? `/p/${projectId}/c/${carouselId}?generation=partial` : `/p/${projectId}/c/${carouselId}`);
+        }
+      } else {
+        const result = await startCarouselGeneration(formData);
+        if ("error" in result) {
+          setError(result.error);
+          return;
+        }
+        if (result.carouselId) {
+          router.push(`/p/${projectId}/c/${result.carouselId}`);
+        }
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Something went wrong. Please try again.";
@@ -210,7 +201,7 @@ export function NewCarouselForm({
         (message.toLowerCase().includes("fetch") && message.toLowerCase().includes("fail"));
       setError(
         isTimeout
-          ? "The request took too long (server timeout). Try fewer frames, or use Unsplash/Brave for images instead of AI generate, then try again."
+          ? "The request took too long (server timeout). Try fewer frames, or use Stock photos or Brave for images instead of AI generate, then try again."
           : message
       );
     } finally {
@@ -226,39 +217,14 @@ export function NewCarouselForm({
           aria-live="polite"
           aria-busy="true"
         >
-          <div className="mx-auto max-w-sm space-y-8 px-6 text-center">
-            <div className="flex flex-col items-center gap-6">
-              <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 shadow-lg shadow-primary/5">
-                <Loader2Icon className="size-12 animate-spin text-primary" />
-              </div>
-              <div className="space-y-4">
-                <h3 className="font-semibold text-foreground text-lg">
-                  Generating your carousel
-                </h3>
-                <div className="flex justify-center">
-                  <div className="h-2 w-full max-w-xs overflow-hidden rounded-full bg-muted">
-                    <div
-                      className="h-full rounded-full bg-primary transition-all duration-500 ease-out"
-                      style={{
-                        width: `${((generationStep + 1) / GENERATION_STEPS.length) * 100}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-                <p className="text-sm text-muted-foreground transition-opacity duration-300">
-                  {GENERATION_STEPS[generationStep]}
-                </p>
-                <p className="text-xs text-muted-foreground/80">
-                  {imageSource === "ai_generate"
-                    ? "Can take 1–5 minutes with AI images"
-                    : "Usually 30–60 seconds"}
-                </p>
-                <WaitingGamesDialog
-                  loadingMessage="Your carousel is still generating…"
-                  triggerClassName="mt-2"
-                />
-              </div>
-            </div>
+          <div className="mx-auto max-w-sm space-y-6 px-6 text-center">
+            <Loader2Icon className="mx-auto size-12 animate-spin text-primary" />
+            <p className="text-sm font-medium text-foreground">
+              {regenerateCarouselId ? "Regenerating your carousel…" : "Taking you to your carousel…"}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {regenerateCarouselId ? "This may take a minute or two." : "Generation will continue on the next page."}
+            </p>
           </div>
         </div>
       )}
@@ -553,7 +519,7 @@ export function NewCarouselForm({
                       setBackgroundAssetIds([]);
                       setDriveFolderError(null);
                     }
-                    if (!checked) setImageSource("brave");
+                    if (!checked) setImageSource(isAdminUser ? "brave" : "stock");
                   }}
                   disabled={!hasFullAccess}
                   className="rounded border-input accent-primary size-4 shrink-0"
@@ -564,7 +530,11 @@ export function NewCarouselForm({
             {useAiBackgrounds && (
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs text-muted-foreground mr-1">Source:</span>
-                {(["brave", "unsplash", ...(isPro || isAdminUser ? (["ai_generate"] as const) : [])] as const).map((src) => (
+                {([
+                  "stock",
+                  ...(isPro || isAdminUser ? (["ai_generate"] as const) : []),
+                  ...(isAdminUser ? (["brave"] as const) : []),
+                ] as const).map((src) => (
                   <label
                     key={src}
                     className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
@@ -577,15 +547,19 @@ export function NewCarouselForm({
                       type="radio"
                       name="imageSource"
                       checked={imageSource === src}
-                      onChange={() => (src !== "ai_generate" || canUseAiGenerate) && setImageSource(src)}
+                      onChange={() => (src !== "ai_generate" || canUseAiGenerate) && setImageSource(src as typeof imageSource)}
                       disabled={src === "ai_generate" && !canUseAiGenerate}
                       className="sr-only"
                     />
-                    {src === "brave" ? "Brave" : src === "unsplash" ? "Unsplash" : (
-                      <>
-                        AI Generate <span className="rounded bg-amber-500/20 px-1 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400">Beta</span>
-                      </>
-                    )}
+                    {src === "brave"
+                      ? "Brave"
+                      : src === "stock"
+                        ? "Stock photos"
+                        : (
+                              <>
+                                AI Generate <span className="rounded bg-amber-500/20 px-1 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400">Beta</span>
+                              </>
+                            )}
                   </label>
                 ))}
                 {canUseAiGenerate && imageSource === "ai_generate" && (

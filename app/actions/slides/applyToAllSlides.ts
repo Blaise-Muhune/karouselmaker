@@ -161,7 +161,7 @@ export async function applyImageCountToAllSlides(
     const mode = bg.mode as string | undefined;
     if (mode !== "image") continue;
 
-    const images = bg.images as Array<{ image_url?: string; storage_path?: string; asset_id?: string; source?: string; unsplash_attribution?: unknown }> | undefined;
+    const images = bg.images as Array<{ image_url?: string; storage_path?: string; asset_id?: string; source?: string; unsplash_attribution?: unknown; pixabay_attribution?: unknown; pexels_attribution?: unknown }> | undefined;
     const imageUrl = bg.image_url as string | undefined;
     const storagePath = bg.storage_path as string | undefined;
     const secondaryImageUrl = bg.secondary_image_url as string | undefined;
@@ -184,6 +184,8 @@ export async function applyImageCountToAllSlides(
         image_url: first?.image_url ?? imageUrl,
         image_source: (first as { source?: string })?.source ?? (bg.image_source as string | undefined),
         unsplash_attribution: (first as { unsplash_attribution?: unknown })?.unsplash_attribution ?? bg.unsplash_attribution,
+        pixabay_attribution: (first as { pixabay_attribution?: unknown })?.pixabay_attribution ?? bg.pixabay_attribution,
+        pexels_attribution: (first as { pexels_attribution?: unknown })?.pexels_attribution ?? bg.pexels_attribution,
         storage_path: first?.storage_path ?? storagePath,
         asset_id: (first as { asset_id?: string })?.asset_id ?? bg.asset_id,
         images: undefined,

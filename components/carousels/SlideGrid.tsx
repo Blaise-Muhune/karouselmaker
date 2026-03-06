@@ -55,6 +55,8 @@ type SlideGridProps = {
   exportSize?: "1080x1080" | "1080x1350" | "1080x1920";
   exportFormat?: "png" | "jpeg";
   isPro?: boolean;
+  /** When true, disable editing and navigation (e.g. carousel is generating). */
+  disabled?: boolean;
 };
 
 /** Build overlay object from template gradient for optimistic UI update. */
@@ -322,8 +324,9 @@ export function SlideGrid({
   exportSize = "1080x1350",
   exportFormat = "png",
   isPro = true,
+  disabled = false,
 }: SlideGridProps) {
-  const canEdit = isPro;
+  const canEdit = isPro && !disabled;
   const previewDims = getPreviewDimensions(exportSize);
   const [isPending, startTransition] = useTransition();
   const [slidesOrder, setSlidesOrder] = useState<Slide[]>(slides);

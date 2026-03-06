@@ -106,7 +106,10 @@ export default async function NewCarouselPage({
           initialInputType={regenerateCarousel && (regenerateCarousel.input_type === "url" || regenerateCarousel.input_type === "text") ? regenerateCarousel.input_type : regenerateCarousel ? "topic" : undefined}
           initialInputValue={regenerateCarousel?.input_value}
           initialUseAiBackgrounds={regenerateCarousel?.generation_options?.use_ai_backgrounds}
-          initialUseUnsplashOnly={regenerateCarousel?.generation_options?.use_unsplash_only}
+          initialUseStockPhotos={(() => {
+            const opts = regenerateCarousel?.generation_options as { use_stock_photos?: boolean; use_unsplash_only?: boolean; use_pixabay_only?: boolean; use_pexels_only?: boolean } | undefined;
+            return opts?.use_stock_photos ?? !!(opts?.use_unsplash_only || opts?.use_pixabay_only || opts?.use_pexels_only);
+          })()}
           initialUseAiGenerate={regenerateCarousel?.generation_options?.use_ai_generate}
           initialUseWebSearch={regenerateCarousel?.generation_options?.use_web_search}
           templateOptions={templateOptions}

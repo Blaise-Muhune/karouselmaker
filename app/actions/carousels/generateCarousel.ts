@@ -19,7 +19,9 @@ import {
   buildValidationRetryPrompt,
 } from "@/lib/server/ai/prompts";
 import { searchImage } from "@/lib/server/imageSearch";
-import { searchUnsplashPhotosMultiple, searchUnsplashPhotoRandom, trackUnsplashDownload } from "@/lib/server/unsplash";
+import { searchUnsplashPhotosMultiple, trackUnsplashDownload } from "@/lib/server/unsplash";
+import { searchPixabayPhotos } from "@/lib/server/pixabay";
+import { searchPexelsPhotos } from "@/lib/server/pexels";
 import { generateImageFromPrompt } from "@/lib/server/openaiImageGenerate";
 import { uploadGeneratedImage } from "@/lib/server/storage/uploadGeneratedImage";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
@@ -114,7 +116,7 @@ export async function generateCarousel(formData: FormData): Promise<
       }
     })(),
     use_ai_backgrounds: formData.get("use_ai_backgrounds") ?? undefined,
-    use_unsplash_only: formData.get("use_unsplash_only") ?? undefined,
+    use_stock_photos: formData.get("use_stock_photos") ?? undefined,
     use_ai_generate: formData.get("use_ai_generate") ?? undefined,
     use_web_search: formData.get("use_web_search") ?? undefined,
     notes: ((formData.get("notes") as string | null) ?? "").trim() || undefined,
@@ -180,7 +182,7 @@ export async function generateCarousel(formData: FormData): Promise<
   const brandKit = project.brand_kit as { watermark_text?: string; primary_color?: string; secondary_color?: string } | null;
   const creatorHandle = brandKit?.watermark_text?.trim() || undefined;
 
-  const useUnsplashOnly = !!parsed.data.use_unsplash_only;
+  const useStockPhotos = !!parsed.data.use_stock_photos;
   const requestedAiGenerate = !!parsed.data.use_ai_generate;
   const userIsAdmin = isAdmin(user.email ?? null);
   if (requestedAiGenerate && !userIsAdmin && !isPro) {
@@ -205,7 +207,7 @@ export async function generateCarousel(formData: FormData): Promise<
     input_type: data.input_type as "topic" | "url" | "text",
     input_value: data.input_value,
     use_ai_backgrounds: hasFullAccess ? (data.use_ai_backgrounds ?? false) : false,
-    use_unsplash_only: useUnsplashOnly,
+    use_stock_photos: useStockPhotos,
     use_ai_generate: useAiGenerate,
     use_web_search: useWebSearch,
     creator_handle: creatorHandle,
@@ -313,7 +315,7 @@ export async function generateCarousel(formData: FormData): Promise<
     hashtags: validated.hashtags,
     generation_options: {
       use_ai_backgrounds: !!data.use_ai_backgrounds,
-      use_unsplash_only: !!data.use_unsplash_only,
+      use_stock_photos: useStockPhotos,
       use_ai_generate: useAiGenerate,
       use_web_search: useWebSearch,
     },
@@ -497,23 +499,34 @@ export async function generateCarousel(formData: FormData): Promise<
         await Promise.all(chunk.map(processOneAiSlide));
       }
     } else {
-      type SearchResult = Awaited<ReturnType<typeof searchImage>>;
-      const searchJobs: { slide: (typeof createdSlides)[number]; queries: string[] }[] = [];
+      type ImageResult = {
+        url: string;
+        source: "brave" | "unsplash" | "pixabay" | "pexels";
+        unsplashDownloadLocation?: string;
+        unsplashAttribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string };
+        pixabayAttribution?: { userName: string; userId: number; pageURL: string; photoURL: string };
+        pexelsAttribution?: { photographer: string; photographer_url: string; photo_url: string };
+        alternates?: string[];
+      };
+      type StockProvider = "unsplash" | "pexels" | "pixabay";
+      const searchJobs: { slide: (typeof createdSlides)[number]; queries: string[]; image_provider: StockProvider }[] = [];
       for (const slide of createdSlides) {
         if (slidesWithImage.has(slide.id)) continue;
         const aiSlide = aiSlideByIndex.get(slide.slide_index);
         const queries = aiSlide?.image_queries?.filter((q) => q?.trim()) ?? aiSlide?.unsplash_queries?.filter((q) => q?.trim()) ?? (aiSlide?.image_query?.trim() ? [aiSlide.image_query.trim()] : aiSlide?.unsplash_query?.trim() ? [aiSlide.unsplash_query.trim()] : []);
         if (queries.length === 0) continue;
-        searchJobs.push({ slide, queries });
+        const rawProvider = (aiSlide as { image_provider?: string } | undefined)?.image_provider;
+        const image_provider: StockProvider = rawProvider === "pexels" || rawProvider === "pixabay" ? rawProvider : "unsplash";
+        searchJobs.push({ slide, queries, image_provider });
       }
 
       const topicFallbackBase = (validated.title?.trim() || data.input_value?.trim() || "").slice(0, 50) || "nature landscape peaceful";
-      const applyImageResultsToSlide = async (slide: (typeof createdSlides)[number], imageResults: SearchResult[]) => {
+      const applyImageResultsToSlide = async (slide: (typeof createdSlides)[number], imageResults: ImageResult[]) => {
         if (imageResults.length === 0) return;
         slidesWithImage.add(slide.id);
         const firstResult = imageResults[0]!;
         for (const r of imageResults) {
-          if (r?.source === "unsplash" && r.unsplashDownloadLocation) {
+          if (r?.source === "unsplash" && "unsplashDownloadLocation" in r && r.unsplashDownloadLocation) {
             trackUnsplashDownload(r.unsplashDownloadLocation).catch(() => {});
           }
         }
@@ -525,6 +538,8 @@ export async function generateCarousel(formData: FormData): Promise<
               image_url: firstResult.url,
               image_source: firstResult.source,
               unsplash_attribution: firstResult.unsplashAttribution,
+              pixabay_attribution: firstResult.pixabayAttribution,
+              pexels_attribution: firstResult.pexelsAttribution,
               fit: "cover",
               overlay: defaultOverlay,
             },
@@ -533,16 +548,20 @@ export async function generateCarousel(formData: FormData): Promise<
           const imageItems =
             imageResults.length > 1
               ? imageResults.map((r) => ({
-                  image_url: r!.url,
-                  source: r!.source,
-                  unsplash_attribution: r!.unsplashAttribution,
-                  alternates: r!.alternates ?? [],
+                  image_url: r.url,
+                  source: r.source,
+                  unsplash_attribution: r.unsplashAttribution,
+                  pixabay_attribution: r.pixabayAttribution,
+                  pexels_attribution: r.pexelsAttribution,
+                  alternates: r.alternates ?? [],
                 }))
               : [
                   {
                     image_url: firstResult.url,
                     source: firstResult.source,
                     unsplash_attribution: firstResult.unsplashAttribution,
+                    pixabay_attribution: firstResult.pixabayAttribution,
+                    pexels_attribution: firstResult.pexelsAttribution,
                     alternates: firstResult.alternates ?? [],
                   },
                 ];
@@ -569,37 +588,58 @@ export async function generateCarousel(formData: FormData): Promise<
         }
       };
 
-      if (useUnsplashOnly) {
-        // Unsplash-only: process slides in parallel (like AI images); run all queries per slide in parallel.
-        const processOneSearchSlide = async (job: { slide: (typeof createdSlides)[number]; queries: string[] }) => {
-          const { slide, queries } = job;
-          const queryResults = await Promise.all(
-            queries.slice(0, 4).map(async (query) => {
-              const unsplashList = await searchUnsplashPhotosMultiple(query, 15);
-              if (unsplashList.length === 0) return null;
-              const [first, ...rest] = unsplashList;
-              return {
-                url: first!.url,
-                source: "unsplash" as const,
-                unsplashDownloadLocation: first!.downloadLocation,
-                unsplashAttribution: first!.attribution,
-                alternates: rest.map((r) => r.url),
-              } satisfies SearchResult;
-            })
-          );
-          let imageResults: SearchResult[] = queryResults.filter((r) => r != null);
+      if (useStockPhotos) {
+        const providers: StockProvider[] = ["unsplash", "pexels", "pixabay"];
+        /** Pick a random result from the top N to get variety (avoids always same image for similar queries). */
+        const pickRandomFrom = <T>(arr: T[]): { primary: T; rest: T[] } => {
+          if (arr.length === 0) throw new Error("empty");
+          const idx = Math.floor(Math.random() * arr.length);
+          const primary = arr[idx]!;
+          const rest = arr.filter((_, i) => i !== idx);
+          return { primary, rest };
+        };
+        const tryProvider = async (query: string, provider: StockProvider): Promise<ImageResult | null> => {
+          if (provider === "unsplash") {
+            const list = await searchUnsplashPhotosMultiple(query, 15);
+            if (list.length === 0) return null;
+            const { primary, rest } = pickRandomFrom(list);
+            return { url: primary.url, source: "unsplash" as const, unsplashDownloadLocation: primary.downloadLocation, unsplashAttribution: primary.attribution, alternates: rest.map((r) => r.url) };
+          }
+          if (provider === "pexels") {
+            const list = await searchPexelsPhotos(query, 15);
+            if (list.length === 0) return null;
+            const { primary, rest } = pickRandomFrom(list);
+            return { url: primary.url, source: "pexels" as const, pexelsAttribution: primary.attribution, alternates: rest.map((r) => r.url) };
+          }
+          const pixabayOrder = Math.random() < 0.5 ? "latest" : "popular";
+          const list = await searchPixabayPhotos(query, 15, 1, pixabayOrder);
+          if (list.length === 0) return null;
+          const { primary, rest } = pickRandomFrom(list);
+          return { url: primary.url, source: "pixabay" as const, pixabayAttribution: primary.attribution, alternates: rest.map((r) => r.url) };
+        };
+        const tryQueryWithFallback = async (query: string, preferred: StockProvider): Promise<ImageResult | null> => {
+          const order = [preferred, ...providers.filter((p) => p !== preferred)];
+          for (const p of order) {
+            const r = await tryProvider(query, p);
+            if (r) return r;
+          }
+          return null;
+        };
+        const dedupeByUrl = (results: ImageResult[]): ImageResult[] => {
+          const seen = new Set<string>();
+          return results.filter((r) => {
+            if (seen.has(r.url)) return false;
+            seen.add(r.url);
+            return true;
+          });
+        };
+        const processOneSearchSlide = async (job: { slide: (typeof createdSlides)[number]; queries: string[]; image_provider: StockProvider }) => {
+          const { slide, queries, image_provider } = job;
+          const queryResults = await Promise.all(queries.slice(0, 4).map((q) => tryQueryWithFallback(q, image_provider)));
+          let imageResults: ImageResult[] = dedupeByUrl(queryResults.filter((r) => r != null) as ImageResult[]);
           if (imageResults.length === 0) {
-            const unsplashList = await searchUnsplashPhotosMultiple(topicFallbackBase, 15);
-            if (unsplashList.length > 0) {
-              const [first, ...rest] = unsplashList;
-              imageResults = [{
-                url: first!.url,
-                source: "unsplash" as const,
-                unsplashDownloadLocation: first!.downloadLocation,
-                unsplashAttribution: first!.attribution,
-                alternates: rest.map((r) => r.url),
-              }];
-            }
+            const fallback = await tryQueryWithFallback(topicFallbackBase, image_provider);
+            if (fallback) imageResults = [fallback];
           }
           await applyImageResultsToSlide(slide, imageResults);
         };
@@ -608,17 +648,17 @@ export async function generateCarousel(formData: FormData): Promise<
           await Promise.all(chunk.map(processOneSearchSlide));
         }
       } else {
-        // Brave / mixed: stay sequential — Brave free tier is 1 request/sec; searchImage() rate-limits internally.
+        // Brave (admin only): sequential — 1 req/sec rate limit.
         for (const job of searchJobs) {
           const { slide, queries } = job;
-          const imageResults: SearchResult[] = [];
+          const imageResults: ImageResult[] = [];
           for (const query of queries.slice(0, 4)) {
             const result = await searchImage(query);
-            if (result) imageResults.push(result);
+            if (result) imageResults.push(result as ImageResult);
           }
           if (imageResults.length === 0) {
             const fallback = await searchImage(topicFallbackBase);
-            if (fallback) imageResults.push(fallback);
+            if (fallback) imageResults.push(fallback as ImageResult);
           }
           await applyImageResultsToSlide(slide, imageResults);
         }
@@ -647,4 +687,108 @@ export async function generateCarousel(formData: FormData): Promise<
       : "Some background images couldn't be generated. Your carousel was saved — you can edit the carousel or try again with different settings.";
     return { carouselId: carousel.id, partialError };
   }
+}
+
+/**
+ * Creates a carousel with status "generating" and stores form options so generation can be run
+ * in the background (e.g. from the carousel page). Returns carouselId so the client can redirect
+ * and show progress there.
+ */
+export async function startCarouselGeneration(formData: FormData): Promise<
+  | { carouselId: string }
+  | { error: string }
+> {
+  const { user } = await getUser();
+
+  const raw = {
+    project_id: (formData.get("project_id") as string | null) ?? "",
+    input_type: (formData.get("input_type") as string | null) ?? "",
+    input_value: ((formData.get("input_value") as string | null) ?? "").trim(),
+    title: ((formData.get("title") as string | null) ?? "").trim() || undefined,
+    number_of_slides: (() => {
+      const v = formData.get("number_of_slides");
+      if (v == null || v === "") return undefined;
+      const n = Number(v);
+      return !isNaN(n) && n >= 1 && n <= 30 ? n : undefined;
+    })(),
+    background_asset_ids: (() => {
+      const rawIds = formData.get("background_asset_ids") as string | null;
+      if (!rawIds) return undefined;
+      try {
+        const arr = JSON.parse(rawIds) as unknown;
+        return Array.isArray(arr) ? arr : undefined;
+      } catch {
+        return undefined;
+      }
+    })(),
+    use_ai_backgrounds: formData.get("use_ai_backgrounds") ?? undefined,
+    use_stock_photos: formData.get("use_stock_photos") ?? undefined,
+    use_ai_generate: formData.get("use_ai_generate") ?? undefined,
+    use_web_search: formData.get("use_web_search") ?? undefined,
+    notes: ((formData.get("notes") as string | null) ?? "").trim() || undefined,
+    template_id: (formData.get("template_id") as string | null)?.trim() || undefined,
+    viral_shorts_style: formData.get("viral_shorts_style") ?? undefined,
+  };
+
+  const parsed = generateCarouselInputSchema.safeParse(raw);
+  if (!parsed.success) {
+    const flat = parsed.error.flatten();
+    const formMsgs = flat.formErrors.filter(Boolean);
+    const fieldMsgs = Object.values(flat.fieldErrors).flat().filter(Boolean) as string[];
+    const msg = [...formMsgs, ...fieldMsgs].join("; ") || parsed.error.message;
+    return { error: msg };
+  }
+  const data = parsed.data;
+
+  const project = await getProject(user.id, data.project_id);
+  if (!project) return { error: "Project not found" };
+
+  const { isPro } = await getSubscription(user.id, user.email);
+  const limits = await getPlanLimits(user.id, user.email);
+  const [count, lifetimeCount] = await Promise.all([
+    countCarouselsThisMonth(user.id),
+    countCarouselsLifetime(user.id),
+  ]);
+  if (count >= limits.carouselsPerMonth) {
+    return {
+      error: `Generation limit: ${count}/${limits.carouselsPerMonth} carousels this month.${isPro ? "" : " Upgrade to Pro for more."}`,
+    };
+  }
+  const requestedAiGenerate = !!data.use_ai_generate;
+  const userIsAdmin = isAdmin(user.email ?? null);
+  if (requestedAiGenerate && !userIsAdmin && !isPro) {
+    return { error: "AI-generated images are only available for Pro. Upgrade to use this feature." };
+  }
+  if (requestedAiGenerate && !userIsAdmin) {
+    const aiGenerateCount = await countAiGenerateCarouselsThisMonth(user.id);
+    if (aiGenerateCount >= AI_GENERATE_LIMIT_PRO) {
+      return { error: `You've used your ${AI_GENERATE_LIMIT_PRO} AI-generated image carousels this month. Limit resets next month.` };
+    }
+  }
+
+  const carousel = await createCarousel(
+    user.id,
+    data.project_id,
+    data.input_type,
+    data.input_value,
+    "Generating…"
+  );
+  const generationOptions: Record<string, unknown> = {
+    use_ai_backgrounds: !!data.use_ai_backgrounds,
+    use_stock_photos: !!parsed.data.use_stock_photos,
+    use_ai_generate: !!data.use_ai_generate,
+    use_web_search: !!data.use_web_search,
+    generation_started: false,
+    number_of_slides: data.number_of_slides,
+    notes: data.notes,
+    template_id: data.template_id,
+    viral_shorts_style: !!parsed.data.viral_shorts_style,
+    background_asset_ids: data.background_asset_ids,
+  };
+  await updateCarousel(user.id, carousel.id, {
+    status: "generating",
+    generation_options: generationOptions,
+  });
+
+  return { carouselId: carousel.id };
 }

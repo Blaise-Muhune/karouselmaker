@@ -69,23 +69,23 @@ export default async function EditSlidePage({
 
   let initialBackgroundImageUrl: string | null = null;
   let initialBackgroundImageUrls: string[] | null = null;
-  let initialImageSource: "brave" | "unsplash" | "google" | null = null;
-  let initialImageSources: ("brave" | "unsplash" | "google")[] | null = null;
+  let initialImageSource: "brave" | "unsplash" | "google" | "pixabay" | "pexels" | null = null;
+  let initialImageSources: ("brave" | "unsplash" | "google" | "pixabay" | "pexels")[] | null = null;
   let initialSecondaryBackgroundImageUrl: string | null = null;
   const bg = slide.background as {
     mode?: string;
     storage_path?: string;
     image_url?: string;
-    image_source?: "brave" | "unsplash" | "google";
+    image_source?: "brave" | "unsplash" | "google" | "pixabay" | "pexels";
     unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string };
     secondary_storage_path?: string;
     secondary_image_url?: string;
-    images?: { image_url?: string; storage_path?: string; source?: "brave" | "google" | "unsplash"; unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string }; alternates?: string[] }[];
+    images?: { image_url?: string; storage_path?: string; source?: "brave" | "google" | "unsplash" | "pixabay" | "pexels"; unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string }; pixabay_attribution?: { userName: string; userId: number; pageURL: string; photoURL: string }; pexels_attribution?: { photographer: string; photographer_url: string; photo_url: string }; alternates?: string[] }[];
   } | null;
   if (bg?.mode === "image") {
     if (bg.images?.length) {
       const urls: string[] = [];
-      const sources: ("brave" | "unsplash" | "google")[] = [];
+      const sources: ("brave" | "unsplash" | "google" | "pixabay" | "pexels")[] = [];
       for (const img of bg.images) {
         if (img.image_url) {
           urls.push(img.image_url);

@@ -16,12 +16,12 @@ export const generateCarouselInputSchema = z.object({
     .string()
     .optional()
     .transform((v) => v === "true" || v === "1"),
-  /** When true and use_ai_backgrounds is true, only Unsplash is used for images (no Brave). Guaranteed quality but mostly generic. */
-  use_unsplash_only: z
+  /** When true and use_ai_backgrounds is true, images come from stock photo APIs (Unsplash, Pexels, Pixabay). AI chooses which provider per slide. */
+  use_stock_photos: z
     .string()
     .optional()
     .transform((v) => v === "true" || v === "1"),
-  /** When true and use_ai_backgrounds is true, images are generated via OpenAI (gpt-image-1-mini) instead of Brave/Unsplash. */
+  /** When true and use_ai_backgrounds is true, images are generated via OpenAI (gpt-image-1-mini) instead of search. */
   use_ai_generate: z
     .string()
     .optional()

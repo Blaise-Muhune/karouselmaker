@@ -158,7 +158,8 @@ export async function updateCarousel(
     is_favorite?: boolean;
     include_first_slide?: boolean;
     include_last_slide?: boolean;
-    generation_options?: { use_ai_backgrounds?: boolean; use_unsplash_only?: boolean; use_ai_generate?: boolean; use_web_search?: boolean };
+    /** Stored options; when status is "generating" may also include generation_started, number_of_slides, notes, template_id, etc. */
+    generation_options?: Record<string, unknown>;
   }
 ): Promise<Carousel> {
   const supabase = await createClient();

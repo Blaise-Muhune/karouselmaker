@@ -72,14 +72,27 @@ export const slideBackgroundSchema = z.object({
   storage_path: z.string().optional(),
   /** User-pasted image URL (alternative to asset). */
   image_url: z.string().url().optional(),
-  /** Source of AI-suggested single image: brave (primary) or unsplash (fallback). */
-  image_source: z.enum(["brave", "unsplash", "google"]).optional(),
-  /** Unsplash attribution for single image (photographer name, username, profile URL). */
+  /** Source of AI-suggested single image. */
+  image_source: z.enum(["brave", "unsplash", "google", "pixabay", "pexels"]).optional(),
+  /** Unsplash attribution for single image. */
   unsplash_attribution: z.object({
     photographerName: z.string(),
     photographerUsername: z.string(),
     profileUrl: z.string(),
     unsplashUrl: z.string(),
+  }).optional(),
+  /** Pixabay attribution for single image. */
+  pixabay_attribution: z.object({
+    userName: z.string(),
+    userId: z.number(),
+    pageURL: z.string(),
+    photoURL: z.string(),
+  }).optional(),
+  /** Pexels attribution for single image. */
+  pexels_attribution: z.object({
+    photographer: z.string(),
+    photographer_url: z.string(),
+    photo_url: z.string(),
   }).optional(),
   /** Hook only: second image (circle) from library. */
   secondary_asset_id: z.string().uuid().optional(),
@@ -91,14 +104,27 @@ export const slideBackgroundSchema = z.object({
     image_url: z.string().url().optional(),
     asset_id: z.string().uuid().optional(),
     storage_path: z.string().optional(),
-    /** Source: brave (primary) or unsplash (fallback). */
-    source: z.enum(["brave", "unsplash", "google"]).optional(),
+    /** Source of image. */
+    source: z.enum(["brave", "unsplash", "google", "pixabay", "pexels"]).optional(),
     /** Unsplash attribution when source is unsplash. */
     unsplash_attribution: z.object({
       photographerName: z.string(),
       photographerUsername: z.string(),
       profileUrl: z.string(),
       unsplashUrl: z.string(),
+    }).optional(),
+    /** Pixabay attribution when source is pixabay. */
+    pixabay_attribution: z.object({
+      userName: z.string(),
+      userId: z.number(),
+      pageURL: z.string(),
+      photoURL: z.string(),
+    }).optional(),
+    /** Pexels attribution when source is pexels. */
+    pexels_attribution: z.object({
+      photographer: z.string(),
+      photographer_url: z.string(),
+      photo_url: z.string(),
     }).optional(),
     /** Other approved URLs from the same search (per-slot shuffle). Must be preserved on save. */
     alternates: z.array(z.string()).optional(),
