@@ -51,19 +51,20 @@ export async function POST(
   const { carouselId } = await context.params;
   const supabase = await createClient();
   const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (!session?.user) {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+  if (authError || !user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const userId = session.user.id;
+  const userId = user.id;
 
   const carousel = await getCarousel(userId, carouselId);
   if (!carousel) {
     return NextResponse.json({ error: "Carousel not found" }, { status: 404 });
   }
 
-  const { isPro } = await getSubscription(userId, session.user.email);
+  const { isPro } = await getSubscription(userId, user.email);
   const project = await getProject(userId, carousel.project_id);
   if (!project) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 });

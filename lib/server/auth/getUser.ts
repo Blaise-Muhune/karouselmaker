@@ -1,35 +1,33 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import type { User, Session } from "@supabase/supabase-js";
+import type { User } from "@supabase/supabase-js";
 
-export async function getUser(): Promise<{ user: User; session: Session }> {
+/** Uses auth.getUser() so the server verifies the user with Supabase (recommended over getSession). */
+export async function getUser(): Promise<{ user: User }> {
   const supabase = await createClient();
   const {
-    data: { session },
+    data: { user },
     error,
-  } = await supabase.auth.getSession();
+  } = await supabase.auth.getUser();
 
-  if (error || !session) {
+  if (error || !user) {
     redirect("/login");
   }
 
-  return { user: session.user, session };
+  return { user };
 }
 
 /** Same as getUser but returns null when not authenticated (no redirect). Use on public pages like /. */
-export async function getOptionalUser(): Promise<{
-  user: User | null;
-  session: Session | null;
-}> {
+export async function getOptionalUser(): Promise<{ user: User | null }> {
   const supabase = await createClient();
   const {
-    data: { session },
+    data: { user },
     error,
-  } = await supabase.auth.getSession();
+  } = await supabase.auth.getUser();
 
-  if (error || !session) {
-    return { user: null, session: null };
+  if (error || !user) {
+    return { user: null };
   }
 
-  return { user: session.user, session };
+  return { user };
 }

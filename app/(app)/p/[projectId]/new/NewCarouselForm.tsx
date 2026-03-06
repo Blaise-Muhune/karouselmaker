@@ -119,6 +119,7 @@ export function NewCarouselForm({
   const [upgradeLoading, setUpgradeLoading] = useState(false);
   const [driveFolderImporting, setDriveFolderImporting] = useState(false);
   const [driveFolderError, setDriveFolderError] = useState<string | null>(null);
+  const [showMoreOptions, setShowMoreOptions] = useState(false);
 
   const hasFullAccess = hasFullAccessProp ?? isPro;
 
@@ -333,6 +334,30 @@ export function NewCarouselForm({
           </CardContent>
         </Card>
 
+        {/* More options: frame count, notes, template */}
+        <div className="space-y-4">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-foreground -ml-1"
+            onClick={() => setShowMoreOptions((v) => !v)}
+          >
+            {showMoreOptions ? (
+              <>
+                <ChevronUpIcon className="mr-1.5 size-4" />
+                Fewer options
+              </>
+            ) : (
+              <>
+                <ChevronDownIcon className="mr-1.5 size-4" />
+                More options
+              </>
+            )}
+          </Button>
+
+          {showMoreOptions && (
+            <>
         <Card className="py-4 gap-4">
           <CardHeader className="pb-0 px-5">
             <CardTitle className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
@@ -397,6 +422,17 @@ export function NewCarouselForm({
                 />
               </div>
             </div>
+            <label className={`flex items-center gap-2.5 cursor-pointer group ${hasFullAccess ? "" : "opacity-70"}`}>
+              <input
+                type="checkbox"
+                checked={useWebSearch}
+                onChange={(e) => hasFullAccess && setUseWebSearch(e.target.checked)}
+                disabled={!hasFullAccess}
+                className="rounded border-input accent-primary size-4 shrink-0"
+              />
+              <GlobeIcon className="size-3.5 text-muted-foreground shrink-0" />
+              <span className="text-sm">Web search (URLs, recent topics){!hasFullAccess && " — Pro"}</span>
+            </label>
             {isAdminUser && (
               <label className="flex items-start gap-3 rounded-lg border border-transparent p-3 text-sm cursor-pointer hover:bg-muted/40 hover:border-border/50 transition-colors">
                 <input
@@ -413,179 +449,6 @@ export function NewCarouselForm({
                 </span>
               </label>
             )}
-          </CardContent>
-        </Card>
-
-        <Card className="py-4 gap-4">
-          <CardHeader className="pb-0 px-5">
-            <CardTitle className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
-              Background images
-            </CardTitle>
-            <CardDescription>
-              Choose AI-suggested images or your own. Uncheck for project colors.
-              {hasFullAccess && !isPro && (
-                <> <strong>{freeGenerationsTotal - freeGenerationsUsed} of {freeGenerationsTotal} free</strong> full-access generations left.</>
-              )}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4 px-5 pt-0">
-            <label className={`flex items-center gap-3 rounded-lg p-3 text-sm transition-colors ${hasFullAccess ? "cursor-pointer hover:bg-muted/40" : "opacity-70"}`}>
-              <input
-                type="checkbox"
-                checked={useAiBackgrounds}
-                onChange={(e) => {
-                  if (!hasFullAccess) return;
-                  const checked = e.target.checked;
-                  setUseAiBackgrounds(checked);
-                  if (checked) {
-                    setBackgroundAssetIds([]);
-                    setDriveFolderError(null);
-                  }
-                  if (!checked) setImageSource("brave");
-                }}
-                disabled={!hasFullAccess}
-                className="rounded border-input accent-primary size-4"
-              />
-              <Gem className="size-4 text-muted-foreground shrink-0" />
-              <span className="font-medium">Let AI suggest background images{!hasFullAccess && " — Pro"}</span>
-            </label>
-            {useAiBackgrounds && (
-              <div className="rounded-lg border border-border/60 bg-muted/20 p-4 space-y-3">
-                <p className="text-muted-foreground text-xs font-medium">Image source</p>
-                <div className="flex flex-wrap gap-4">
-                  <label className="flex items-center gap-2 text-sm cursor-pointer">
-                    <input
-                      type="radio"
-                      name="imageSource"
-                      checked={imageSource === "brave"}
-                      onChange={() => setImageSource("brave")}
-                      className="accent-primary"
-                    />
-                    <span>Brave (search web)</span>
-                  </label>
-                  <label className="flex items-center gap-2 text-sm cursor-pointer">
-                    <input
-                      type="radio"
-                      name="imageSource"
-                      checked={imageSource === "unsplash"}
-                      onChange={() => setImageSource("unsplash")}
-                      className="accent-primary"
-                    />
-                    <span>Unsplash</span>
-                  </label>
-                  <label className={`flex items-center gap-2 text-sm ${isAdminUser ? "cursor-pointer" : "cursor-not-allowed opacity-70"}`}>
-                    <input
-                      type="radio"
-                      name="imageSource"
-                      checked={imageSource === "ai_generate"}
-                      onChange={() => isAdminUser && setImageSource("ai_generate")}
-                      disabled={!isAdminUser}
-                      className="accent-primary"
-                    />
-                    <span>AI Generate (OpenAI){!isAdminUser && " — In development"}</span>
-                  </label>
-                </div>
-                <p className="text-muted-foreground text-xs">
-                  Brave: broad coverage. Unsplash: high quality.
-                  {isAdminUser && " AI Generate: unique images per frame."}
-                </p>
-                {isAdminUser && imageSource === "ai_generate" && (
-                  <p className="text-amber-600 dark:text-amber-400 text-xs">
-                    Can take 2–5 min. Use fewer frames (5–8) to avoid timeout.
-                  </p>
-                )}
-              </div>
-            )}
-            <label className={`flex items-center gap-3 rounded-lg p-3 text-sm transition-colors ${hasFullAccess ? "cursor-pointer hover:bg-muted/40" : "opacity-70"}`}>
-              <input
-                type="checkbox"
-                checked={useWebSearch}
-                onChange={(e) => hasFullAccess && setUseWebSearch(e.target.checked)}
-                disabled={!hasFullAccess}
-                className="rounded border-input accent-primary size-4"
-              />
-              <GlobeIcon className="size-4 text-muted-foreground shrink-0" />
-              <span className="font-medium">Use web search for current info (URLs, recent topics){!hasFullAccess && " — Pro"}</span>
-            </label>
-            <div className="pt-2 border-t border-border/60">
-              <p className="text-muted-foreground text-xs font-medium mb-2">Or use your own images</p>
-              <div className={useAiBackgrounds ? "pointer-events-none opacity-60" : undefined}>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setBackgroundPickerOpen(true)}
-                    disabled={useAiBackgrounds || driveFolderImporting}
-                  >
-                    <ImageIcon className="mr-1.5 size-4" />
-                    {backgroundAssetIds.length ? `${backgroundAssetIds.length} selected` : "Pick from library"}
-                  </Button>
-                  <GoogleDriveFolderPicker
-                    onFolderPicked={async (folderId, accessToken) => {
-                      setDriveFolderError(null);
-                      setDriveFolderImporting(true);
-                      const result = await importFromGoogleDrive(folderId, accessToken, projectId);
-                      setDriveFolderImporting(false);
-                      if (result.ok && result.assets.length > 0) {
-                        setBackgroundAssetIds(result.assets.map((a) => a.id));
-                      } else if (!result.ok) {
-                        setDriveFolderError(result.error);
-                      } else {
-                        setDriveFolderError("No images found in that folder.");
-                      }
-                    }}
-                    onError={setDriveFolderError}
-                    variant="outline"
-                    size="sm"
-                    disabled={driveFolderImporting || useAiBackgrounds}
-                  >
-                    {driveFolderImporting ? (
-                      <Loader2Icon className="mr-1.5 size-4 animate-spin" />
-                    ) : (
-                      <ImageIcon className="mr-1.5 size-4" />
-                    )}
-                    Import folder from Drive
-                  </GoogleDriveFolderPicker>
-                  <GoogleDriveMultiFilePicker
-                    onFilesPicked={async (fileIds, accessToken) => {
-                      setDriveFolderError(null);
-                      setDriveFolderImporting(true);
-                      const result = await importFilesFromGoogleDrive(fileIds, accessToken, projectId);
-                      setDriveFolderImporting(false);
-                      if (result.ok && result.assets.length > 0) {
-                        setBackgroundAssetIds(result.assets.map((a) => a.id));
-                      } else if (!result.ok) {
-                        setDriveFolderError(result.error);
-                      } else {
-                        setDriveFolderError("No images could be imported.");
-                      }
-                    }}
-                    onError={setDriveFolderError}
-                    variant="outline"
-                    size="sm"
-                    disabled={driveFolderImporting || useAiBackgrounds}
-                  >
-                    <ImageIcon className="mr-1.5 size-4" />
-                    Pick images from Drive
-                  </GoogleDriveMultiFilePicker>
-                  {backgroundAssetIds.length > 0 && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setBackgroundAssetIds([])}
-                      disabled={useAiBackgrounds}
-                    >
-                      Clear
-                    </Button>
-                  )}
-                </div>
-              </div>
-              {!useAiBackgrounds && driveFolderError && (
-                <p className="text-destructive text-xs mt-2">{driveFolderError}</p>
-              )}
-            </div>
           </CardContent>
         </Card>
 
@@ -653,6 +516,155 @@ export function NewCarouselForm({
             </CardContent>
           </Card>
         )}
+            </>
+          )}
+        </div>
+
+        <Card className="py-4 gap-4 border-primary/10">
+          <CardHeader className="pb-2 px-5">
+            <CardTitle className="text-sm font-medium text-foreground">
+              Backgrounds
+            </CardTitle>
+            <CardDescription className="text-muted-foreground/90">
+              AI images or your own. Off = project colors.
+              {hasFullAccess && !isPro && (
+                <span className="block mt-1"> <strong>{freeGenerationsTotal - freeGenerationsUsed}/{freeGenerationsTotal} free</strong> AI gens left.</span>
+              )}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4 px-5 pt-0">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-6">
+              <label className={`flex items-center gap-2.5 cursor-pointer group ${hasFullAccess ? "" : "opacity-70"}`}>
+                <input
+                  type="checkbox"
+                  checked={useAiBackgrounds}
+                  onChange={(e) => {
+                    if (!hasFullAccess) return;
+                    const checked = e.target.checked;
+                    setUseAiBackgrounds(checked);
+                    if (checked) {
+                      setBackgroundAssetIds([]);
+                      setDriveFolderError(null);
+                    }
+                    if (!checked) setImageSource("brave");
+                  }}
+                  disabled={!hasFullAccess}
+                  className="rounded border-input accent-primary size-4 shrink-0"
+                />
+                <span className="font-medium text-sm group-hover:text-foreground/90">AI images{!hasFullAccess && " (Pro)"}</span>
+              </label>
+            </div>
+            {useAiBackgrounds && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-muted-foreground mr-1">Source:</span>
+                {(["brave", "unsplash", "ai_generate"] as const).map((src) => (
+                  <label
+                    key={src}
+                    className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs cursor-pointer transition-colors ${
+                      imageSource === src
+                        ? "border-primary/40 bg-primary/10 text-foreground"
+                        : "border-border/60 bg-muted/30 text-muted-foreground hover:border-border hover:text-foreground/80"
+                    } ${src === "ai_generate" && !isAdminUser ? "opacity-60 cursor-not-allowed" : ""}`}
+                  >
+                    <input
+                      type="radio"
+                      name="imageSource"
+                      checked={imageSource === src}
+                      onChange={() => (src !== "ai_generate" || isAdminUser) && setImageSource(src)}
+                      disabled={src === "ai_generate" && !isAdminUser}
+                      className="sr-only"
+                    />
+                    {src === "brave" ? "Brave" : src === "unsplash" ? "Unsplash" : "AI Generate"}
+                  </label>
+                ))}
+                {isAdminUser && imageSource === "ai_generate" && (
+                  <span className="text-[11px] text-amber-600 dark:text-amber-400 ml-1">2–5 min</span>
+                )}
+              </div>
+            )}
+            <div className="pt-3 border-t border-border/50">
+              <p className="text-xs text-muted-foreground mb-2">Your images</p>
+              <div className={`flex flex-wrap items-center gap-2 ${useAiBackgrounds ? "pointer-events-none opacity-50" : ""}`}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={() => setBackgroundPickerOpen(true)}
+                  disabled={useAiBackgrounds || driveFolderImporting}
+                >
+                  <ImageIcon className="mr-1.5 size-3.5" />
+                  {backgroundAssetIds.length ? `${backgroundAssetIds.length} selected` : "Library"}
+                </Button>
+                <GoogleDriveFolderPicker
+                  onFolderPicked={async (folderId, accessToken) => {
+                    setDriveFolderError(null);
+                    setDriveFolderImporting(true);
+                    const result = await importFromGoogleDrive(folderId, accessToken, projectId);
+                    setDriveFolderImporting(false);
+                    if (result.ok && result.assets.length > 0) {
+                      setBackgroundAssetIds(result.assets.map((a) => a.id));
+                    } else if (!result.ok) {
+                      setDriveFolderError(result.error);
+                    } else {
+                      setDriveFolderError("No images found in that folder.");
+                    }
+                  }}
+                  onError={setDriveFolderError}
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs"
+                  disabled={driveFolderImporting || useAiBackgrounds}
+                >
+                  {driveFolderImporting ? (
+                    <Loader2Icon className="mr-1.5 size-3.5 animate-spin" />
+                  ) : (
+                    <ImageIcon className="mr-1.5 size-3.5" />
+                  )}
+                  Drive folder
+                </GoogleDriveFolderPicker>
+                <GoogleDriveMultiFilePicker
+                  onFilesPicked={async (fileIds, accessToken) => {
+                    setDriveFolderError(null);
+                    setDriveFolderImporting(true);
+                    const result = await importFilesFromGoogleDrive(fileIds, accessToken, projectId);
+                    setDriveFolderImporting(false);
+                    if (result.ok && result.assets.length > 0) {
+                      setBackgroundAssetIds(result.assets.map((a) => a.id));
+                    } else if (!result.ok) {
+                      setDriveFolderError(result.error);
+                    } else {
+                      setDriveFolderError("No images could be imported.");
+                    }
+                  }}
+                  onError={setDriveFolderError}
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs"
+                  disabled={driveFolderImporting || useAiBackgrounds}
+                >
+                  <ImageIcon className="mr-1.5 size-3.5" />
+                  Drive files
+                </GoogleDriveMultiFilePicker>
+                {backgroundAssetIds.length > 0 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 text-xs text-muted-foreground"
+                    onClick={() => setBackgroundAssetIds([])}
+                    disabled={useAiBackgrounds}
+                  >
+                    Clear
+                  </Button>
+                )}
+              </div>
+              {!useAiBackgrounds && driveFolderError && (
+                <p className="text-destructive text-xs mt-2">{driveFolderError}</p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
 
         <BackgroundImagesPickerModal
           open={backgroundPickerOpen}

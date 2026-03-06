@@ -49,8 +49,8 @@ export async function GET(
   }
 
   const supabase = await createClient();
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session?.user || session.user.id !== payload.userId) {
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user || user.id !== payload.userId) {
     return NextResponse.redirect(`${RETURN_BASE}?error=session`);
   }
 
@@ -109,7 +109,7 @@ export async function GET(
     }
   }
 
-  await upsertPlatformConnection(session.user.id, {
+  await upsertPlatformConnection(user.id, {
     platform: platform as PlatformName,
     access_token: token.access_token,
     refresh_token: token.refresh_token ?? null,

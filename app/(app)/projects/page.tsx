@@ -61,7 +61,7 @@ export default async function ProjectsPage({
               {projects.length === 0 ? (
                 <>
                   <p className="text-base font-medium text-foreground">
-                    Create a project, add a topic, hit Generate. Your first carousel is free.
+                    Create a project, add a topic, hit Generate. Your first 3 carousels are free with full access.
                   </p>
                   <Button asChild className="mt-4">
                     <Link href="/projects/new">

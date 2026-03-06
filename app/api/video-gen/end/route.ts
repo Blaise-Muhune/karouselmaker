@@ -7,12 +7,13 @@ export const dynamic = "force-dynamic";
 export async function POST() {
   const supabase = await createClient();
   const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (!session?.user) {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+  if (authError || !user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const userId = session.user.id;
+  const userId = user.id;
 
   await supabase.rpc("release_video_gen_lock", { p_user_id: userId });
   return new Response(null, { status: 200 });

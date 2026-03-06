@@ -18,11 +18,11 @@ export async function GET(
   }
 
   const supabase = await createClient();
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session?.user) {
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) {
     return NextResponse.redirect(`${base}/login`);
   }
-  if (!isAdmin(session.user.email ?? null)) {
+  if (!isAdmin(user.email ?? null)) {
     return NextResponse.redirect(`${base}/settings/connected-accounts?error=admin_only`);
   }
 
@@ -32,7 +32,7 @@ export async function GET(
     return NextResponse.redirect(`${base}/settings/connected-accounts?error=not_configured`);
   }
 
-  const statePayload = JSON.stringify({ state, userId: session.user.id, platform });
+  const statePayload = JSON.stringify({ state, userId: user.id, platform });
   const res = NextResponse.redirect(authUrl);
   res.cookies.set("oauth_state", statePayload, {
     httpOnly: true,

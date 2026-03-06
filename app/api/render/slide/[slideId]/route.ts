@@ -21,12 +21,13 @@ export async function GET(
   const { slideId } = await context.params;
   const supabase = await createClient();
   const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (!session?.user) {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+  if (authError || !user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const userId = session.user.id;
+  const userId = user.id;
 
   const slide = await getSlide(userId, slideId);
   if (!slide) {
@@ -58,7 +59,7 @@ export async function GET(
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
 
-  const { isPro } = await getSubscription(userId, session.user.email);
+  const { isPro } = await getSubscription(userId, user.email);
   const brandKit: BrandKit = await resolveBrandKitLogo(project.brand_kit as Record<string, unknown> | null);
   const carouselSlides = await listSlides(userId, slide.carousel_id);
   const totalSlides = carouselSlides.length || 1;

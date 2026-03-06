@@ -60,8 +60,8 @@ export default async function NewCarouselPage({
   const freeGenerationsLeft = FREE_FULL_ACCESS_GENERATIONS - freeGenerationsUsed;
 
   return (
-    <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">
-      <div className="mx-auto max-w-xl space-y-10">
+    <div className="p-6 md:p-8">
+      <div className="mx-auto max-w-xl space-y-6">
         {!subscription.isPro && !hasFullAccess && (
           <UpgradeBanner message="You've used your 3 free generations with full access. Upgrade to Pro for AI backgrounds, web search, and more carousels." />
         )}
@@ -73,31 +73,23 @@ export default async function NewCarouselPage({
             You have <strong>{FREE_FULL_ACCESS_GENERATIONS} free generations</strong> with full access (AI backgrounds, web search). {freeGenerationsLeft} left.
           </p>
         )}
-        <header className="flex items-start gap-3">
-          <Button variant="ghost" size="icon-sm" className="-ml-1 shrink-0" asChild>
-            <Link href={`/p/${projectId}`}>
-              <ArrowLeftIcon className="size-4" />
-              <span className="sr-only">Back</span>
-            </Link>
-          </Button>
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-xl font-semibold tracking-tight">{regenerateCarousel ? "Regenerate carousel" : "New carousel"}</h1>
-              <span
-                className="rounded-full border border-border/60 bg-muted/50 px-2.5 py-0.5 text-xs font-medium text-muted-foreground"
-                title="Carousels created this month"
-              >
-                {carouselCount}/{carouselLimit} this month
-              </span>
-            </div>
-            <div className="mt-2 h-1 w-full max-w-[140px] overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full rounded-full bg-primary/70 transition-all duration-300"
-                style={{ width: `${Math.min(100, (carouselCount / carouselLimit) * 100)}%` }}
-              />
-            </div>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <Button variant="ghost" size="icon-sm" className="shrink-0" asChild>
+              <Link href={`/p/${projectId}`}>
+                <ArrowLeftIcon className="size-4" />
+                <span className="sr-only">Back</span>
+              </Link>
+            </Button>
+            <h1 className="text-xl font-semibold tracking-tight truncate">{regenerateCarousel ? "Regenerate carousel" : "New carousel"}</h1>
           </div>
-        </header>
+          <span
+            className="rounded-full border border-border/60 bg-muted/50 px-2.5 py-0.5 text-xs font-medium text-muted-foreground shrink-0"
+            title="Carousels this month"
+          >
+            {carouselCount}/{carouselLimit}
+          </span>
+        </div>
         <NewCarouselForm
           projectId={projectId}
           isPro={subscription.isPro}

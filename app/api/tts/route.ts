@@ -47,9 +47,10 @@ function slideDurationsFromAlignment(
 export async function POST(request: Request) {
   const supabase = await createClient();
   const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (!session?.user) {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+  if (authError || !user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -65,7 +66,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Missing carouselId" }, { status: 400 });
   }
 
-  const userId = session.user.id;
+  const userId = user.id;
   const carousel = await getCarousel(userId, carouselId);
   if (!carousel) {
     return NextResponse.json({ error: "Carousel not found" }, { status: 404 });
