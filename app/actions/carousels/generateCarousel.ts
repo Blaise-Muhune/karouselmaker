@@ -29,6 +29,8 @@ import { FREE_FULL_ACCESS_GENERATIONS } from "@/lib/constants";
 const MAX_RETRIES = 2;
 /** Max concurrent AI image generations to cut total time without hitting rate limits. */
 const AI_IMAGE_CONCURRENCY = 3;
+/** Max concurrent slides when fetching from Unsplash/search (Unsplash-only path). Brave path stays sequential (1 req/s limit). */
+const SEARCH_IMAGE_CONCURRENCY = 3;
 
 /** Heuristic: true when input looks like news or time-sensitive so we auto-enable web search for current facts. */
 function looksLikeNewsOrTimeSensitive(inputValue: string, inputType: string): boolean {
@@ -482,123 +484,133 @@ export async function generateCarousel(formData: FormData): Promise<
         await Promise.all(chunk.map(processOneAiSlide));
       }
     } else {
+      type SearchResult = Awaited<ReturnType<typeof searchImage>>;
+      const searchJobs: { slide: (typeof createdSlides)[number]; queries: string[] }[] = [];
       for (const slide of createdSlides) {
         if (slidesWithImage.has(slide.id)) continue;
         const aiSlide = aiSlideByIndex.get(slide.slide_index);
         const queries = aiSlide?.image_queries?.filter((q) => q?.trim()) ?? aiSlide?.unsplash_queries?.filter((q) => q?.trim()) ?? (aiSlide?.image_query?.trim() ? [aiSlide.image_query.trim()] : aiSlide?.unsplash_query?.trim() ? [aiSlide.unsplash_query.trim()] : []);
         if (queries.length === 0) continue;
+        searchJobs.push({ slide, queries });
+      }
 
-        const firstQuery = queries[0]!;
-
-      const imageResults: Awaited<ReturnType<typeof searchImage>>[] = [];
-      for (const query of queries.slice(0, 4)) {
-        let result: Awaited<ReturnType<typeof searchImage>> | null;
-        if (useUnsplashOnly) {
-          const unsplashList = await searchUnsplashPhotosMultiple(query, 15);
-          if (unsplashList.length > 0) {
-            const [first, ...rest] = unsplashList;
-            result = {
-              url: first!.url,
-              source: "unsplash" as const,
-              unsplashDownloadLocation: first!.downloadLocation,
-              unsplashAttribution: first!.attribution,
-              alternates: rest.map((r) => r.url),
-            };
-          } else {
-            result = null;
+      const topicFallbackBase = (validated.title?.trim() || data.input_value?.trim() || "").slice(0, 50) || "nature landscape peaceful";
+      const applyImageResultsToSlide = async (slide: (typeof createdSlides)[number], imageResults: SearchResult[]) => {
+        if (imageResults.length === 0) return;
+        slidesWithImage.add(slide.id);
+        const firstResult = imageResults[0]!;
+        for (const r of imageResults) {
+          if (r?.source === "unsplash" && r.unsplashDownloadLocation) {
+            trackUnsplashDownload(r.unsplashDownloadLocation).catch(() => {});
           }
-        } else {
-          result = await searchImage(query);
         }
-        if (result) imageResults.push(result);
-      }
-      // Fallback: if all queries failed, try a topic-based query so we don't end up with no image
-      if (imageResults.length === 0) {
-        const topicFallback =
-          (validated.title?.trim() || data.input_value?.trim() || "").slice(0, 50) || "nature landscape peaceful";
-        const fallbackQuery = topicFallback;
-        let fallback: Awaited<ReturnType<typeof searchImage>> | null;
-        if (useUnsplashOnly) {
-          const unsplashList = await searchUnsplashPhotosMultiple(fallbackQuery, 15);
-          if (unsplashList.length > 0) {
-            const [first, ...rest] = unsplashList;
-            fallback = {
-              url: first!.url,
-              source: "unsplash" as const,
-              unsplashDownloadLocation: first!.downloadLocation,
-              unsplashAttribution: first!.attribution,
-              alternates: rest.map((r) => r.url),
-            };
-          } else {
-            fallback = null;
-          }
-        } else {
-          fallback = await searchImage(fallbackQuery);
-        }
-        if (fallback) imageResults.push(fallback);
-      }
-      if (imageResults.length === 0) continue;
-      slidesWithImage.add(slide.id);
-      const firstResult = imageResults[0];
-      // Trigger Unsplash download tracking when image is used (async, non-blocking)
-      for (const r of imageResults) {
-        if (r?.source === "unsplash" && r.unsplashDownloadLocation) {
-          trackUnsplashDownload(r.unsplashDownloadLocation).catch(() => {});
-        }
-      }
-      const hasAlternates = firstResult?.alternates?.length;
-      if (imageResults.length === 1 && firstResult && !hasAlternates) {
-        await updateSlide(user.id, slide.id, {
-          background: {
-            mode: "image",
-            image_url: firstResult.url,
-            image_source: firstResult.source,
-            unsplash_attribution: firstResult.unsplashAttribution,
-            fit: "cover",
-            overlay: defaultOverlay,
-          },
-        });
-      } else {
-        // One result with alternates, or multiple queries: store one item per slot, each with its own alternates for per-slot shuffle.
-        const imageItems =
-          imageResults.length > 1
-            ? imageResults.map((r) => ({
-                image_url: r!.url,
-                source: r!.source,
-                unsplash_attribution: r!.unsplashAttribution,
-                alternates: r!.alternates ?? [],
-              }))
-            : [
-                {
-                  image_url: firstResult!.url,
-                  source: firstResult!.source,
-                  unsplash_attribution: firstResult!.unsplashAttribution,
-                  alternates: firstResult!.alternates ?? [],
-                },
-              ];
-        await updateSlide(user.id, slide.id, {
-          background: {
-            mode: "image",
-            images: imageItems,
-            overlay: defaultOverlay,
-            image_display: {
-              position: "top",
+        const hasAlternates = firstResult?.alternates?.length;
+        if (imageResults.length === 1 && !hasAlternates) {
+          await updateSlide(user.id, slide.id, {
+            background: {
+              mode: "image",
+              image_url: firstResult.url,
+              image_source: firstResult.source,
+              unsplash_attribution: firstResult.unsplashAttribution,
               fit: "cover",
-              frame: "none",
-              frameRadius: 0,
-              frameColor: "#ffffff",
-              frameShape: "squircle",
-              layout: "auto",
-              gap: 8,
-              dividerStyle: "wave",
-              dividerColor: "#ffffff",
-              dividerWidth: 48,
+              overlay: defaultOverlay,
             },
-          },
-        });
+          });
+        } else {
+          const imageItems =
+            imageResults.length > 1
+              ? imageResults.map((r) => ({
+                  image_url: r!.url,
+                  source: r!.source,
+                  unsplash_attribution: r!.unsplashAttribution,
+                  alternates: r!.alternates ?? [],
+                }))
+              : [
+                  {
+                    image_url: firstResult.url,
+                    source: firstResult.source,
+                    unsplash_attribution: firstResult.unsplashAttribution,
+                    alternates: firstResult.alternates ?? [],
+                  },
+                ];
+          await updateSlide(user.id, slide.id, {
+            background: {
+              mode: "image",
+              images: imageItems,
+              overlay: defaultOverlay,
+              image_display: {
+                position: "top",
+                fit: "cover",
+                frame: "none",
+                frameRadius: 0,
+                frameColor: "#ffffff",
+                frameShape: "squircle",
+                layout: "auto",
+                gap: 8,
+                dividerStyle: "wave",
+                dividerColor: "#ffffff",
+                dividerWidth: 48,
+              },
+            },
+          });
+        }
+      };
+
+      if (useUnsplashOnly) {
+        // Unsplash-only: process slides in parallel (like AI images); run all queries per slide in parallel.
+        const processOneSearchSlide = async (job: { slide: (typeof createdSlides)[number]; queries: string[] }) => {
+          const { slide, queries } = job;
+          const queryResults = await Promise.all(
+            queries.slice(0, 4).map(async (query) => {
+              const unsplashList = await searchUnsplashPhotosMultiple(query, 15);
+              if (unsplashList.length === 0) return null;
+              const [first, ...rest] = unsplashList;
+              return {
+                url: first!.url,
+                source: "unsplash" as const,
+                unsplashDownloadLocation: first!.downloadLocation,
+                unsplashAttribution: first!.attribution,
+                alternates: rest.map((r) => r.url),
+              } satisfies SearchResult;
+            })
+          );
+          let imageResults: SearchResult[] = queryResults.filter((r) => r != null);
+          if (imageResults.length === 0) {
+            const unsplashList = await searchUnsplashPhotosMultiple(topicFallbackBase, 15);
+            if (unsplashList.length > 0) {
+              const [first, ...rest] = unsplashList;
+              imageResults = [{
+                url: first!.url,
+                source: "unsplash" as const,
+                unsplashDownloadLocation: first!.downloadLocation,
+                unsplashAttribution: first!.attribution,
+                alternates: rest.map((r) => r.url),
+              }];
+            }
+          }
+          await applyImageResultsToSlide(slide, imageResults);
+        };
+        for (let i = 0; i < searchJobs.length; i += SEARCH_IMAGE_CONCURRENCY) {
+          const chunk = searchJobs.slice(i, i + SEARCH_IMAGE_CONCURRENCY);
+          await Promise.all(chunk.map(processOneSearchSlide));
+        }
+      } else {
+        // Brave / mixed: stay sequential — Brave free tier is 1 request/sec; searchImage() rate-limits internally.
+        for (const job of searchJobs) {
+          const { slide, queries } = job;
+          const imageResults: SearchResult[] = [];
+          for (const query of queries.slice(0, 4)) {
+            const result = await searchImage(query);
+            if (result) imageResults.push(result);
+          }
+          if (imageResults.length === 0) {
+            const fallback = await searchImage(topicFallbackBase);
+            if (fallback) imageResults.push(fallback);
+          }
+          await applyImageResultsToSlide(slide, imageResults);
+        }
       }
     }
-  }
   }
 
   // Apply solid color (project primary) to any slide that has no background image
