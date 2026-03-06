@@ -24,6 +24,7 @@ import { GoProBar } from "@/components/subscription/GoProBar";
 import type { BrandKit } from "@/lib/renderer/renderModel";
 import type { ExportFormat, ExportSize, PlatformName } from "@/lib/server/db/types";
 import { FREE_FULL_ACCESS_GENERATIONS } from "@/lib/constants";
+import { GenerationPartialBanner } from "@/components/carousels/GenerationPartialBanner";
 import { ArrowLeftIcon } from "lucide-react";
 
 function getExportFormat(c: { export_format?: unknown }): ExportFormat {
@@ -37,9 +38,15 @@ function getExportSize(c: { export_size?: unknown }): ExportSize {
 
 export default async function CarouselEditorPage({
   params,
-}: Readonly<{ params: Promise<{ projectId: string; carouselId: string }> }>) {
+  searchParams,
+}: Readonly<{
+  params: Promise<{ projectId: string; carouselId: string }>;
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}>) {
   const { user } = await getUser();
   const { projectId, carouselId } = await params;
+  const resolvedSearchParams = await searchParams;
+  const showGenerationPartial = resolvedSearchParams?.generation === "partial";
 
   const [carousel, project, slides, templatesRaw, recentExports, subscription, exportCount, lifetimeCarouselCount, connections] = await Promise.all([
     getCarousel(user.id, carouselId),
@@ -165,6 +172,7 @@ export default async function CarouselEditorPage({
     <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">
       <div className="mx-auto max-w-4xl space-y-10">
         {!subscription.isPro && <GoProBar />}
+        {showGenerationPartial && <GenerationPartialBanner />}
         {hasFullAccess && !subscription.isPro && (
           <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-2 text-sm text-foreground">
             You have full access for your <strong>{FREE_FULL_ACCESS_GENERATIONS} free carousel generations</strong>. {freeGenerationsLeft} {freeGenerationsLeft === 1 ? "generation" : "generations"} left—then upgrade to Pro to keep editing and exporting.

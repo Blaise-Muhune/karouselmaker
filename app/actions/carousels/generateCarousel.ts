@@ -87,6 +87,7 @@ function parseAndValidate(raw: string): CarouselOutput | { error: string } {
 
 export async function generateCarousel(formData: FormData): Promise<
   | { carouselId: string }
+  | { carouselId: string; partialError: string }
   | { error: string }
 > {
   const { user } = await getUser();
@@ -374,6 +375,7 @@ export async function generateCarousel(formData: FormData): Promise<
     : { gradient: true, darken: 0.5, color: overlayColor, textColor: overlayTextColor };
   const slidesWithImage = new Set<string>();
 
+  try {
   if (parsed.data.background_asset_ids?.length && createdSlides.length) {
     const assetIds = parsed.data.background_asset_ids;
     const assets: { id: string; storage_path: string }[] = [];
@@ -623,4 +625,15 @@ export async function generateCarousel(formData: FormData): Promise<
   }
 
   return { carouselId: carousel.id };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const isTimeout =
+      msg.includes("504") ||
+      msg.toLowerCase().includes("timeout") ||
+      msg.toLowerCase().includes("gateway");
+    const partialError = isTimeout
+      ? "Generation was interrupted (server timeout). Your carousel was saved — some slides may have images. You can edit slides or try regenerating with fewer slides or Unsplash/Brave instead of AI generate."
+      : "Some background images couldn't be generated. Your carousel was saved — you can edit slides or try again with different settings.";
+    return { carouselId: carousel.id, partialError };
+  }
 }

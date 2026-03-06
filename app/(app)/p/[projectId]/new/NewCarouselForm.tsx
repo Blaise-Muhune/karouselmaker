@@ -184,11 +184,15 @@ export function NewCarouselForm({
       if (notes.trim()) formData.set("notes", notes.trim());
       if (selectedTemplateId) formData.set("template_id", selectedTemplateId);
       const result = await generateCarousel(formData);
-      if ("error" in result) {
+      if ("error" in result && !("carouselId" in result)) {
         setError(result.error);
         return;
       }
-      router.push(`/p/${projectId}/c/${result.carouselId}`);
+      const carouselId = "carouselId" in result ? result.carouselId : undefined;
+      if (carouselId) {
+        const hasPartialError = "partialError" in result && result.partialError;
+        router.push(hasPartialError ? `/p/${projectId}/c/${carouselId}?generation=partial` : `/p/${projectId}/c/${carouselId}`);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Something went wrong. Please try again.";
       const isTimeout =
