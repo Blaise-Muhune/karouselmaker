@@ -27,6 +27,8 @@ import { generateCarouselInputSchema } from "@/lib/validations/carousel";
 import { FREE_FULL_ACCESS_GENERATIONS } from "@/lib/constants";
 
 const MAX_RETRIES = 2;
+/** Max concurrent AI image generations to cut total time without hitting rate limits. */
+const AI_IMAGE_CONCURRENCY = 3;
 
 /** Heuristic: true when input looks like news or time-sensitive so we auto-enable web search for current facts. */
 function looksLikeNewsOrTimeSensitive(inputValue: string, inputType: string): boolean {
@@ -403,15 +405,22 @@ export async function generateCarousel(formData: FormData): Promise<
     const aiSlideByIndex = new Map(
       validated.slides.map((s) => [s.slide_index, s])
     );
-    for (const slide of createdSlides) {
-      if (slidesWithImage.has(slide.id)) continue;
-      const aiSlide = aiSlideByIndex.get(slide.slide_index);
-      const queries = aiSlide?.image_queries?.filter((q) => q?.trim()) ?? aiSlide?.unsplash_queries?.filter((q) => q?.trim()) ?? (aiSlide?.image_query?.trim() ? [aiSlide.image_query.trim()] : aiSlide?.unsplash_query?.trim() ? [aiSlide.unsplash_query.trim()] : []);
-      if (queries.length === 0) continue;
 
-      const firstQuery = queries[0]!;
-
-      if (useAiGenerate) {
+    if (useAiGenerate) {
+      const aiGenJobs: { slide: (typeof createdSlides)[number]; aiSlide: (typeof validated.slides)[number] }[] = [];
+      for (const slide of createdSlides) {
+        if (slidesWithImage.has(slide.id)) continue;
+        const aiSlide = aiSlideByIndex.get(slide.slide_index);
+        const queries = aiSlide?.image_queries?.filter((q) => q?.trim()) ?? aiSlide?.unsplash_queries?.filter((q) => q?.trim()) ?? (aiSlide?.image_query?.trim() ? [aiSlide.image_query.trim()] : aiSlide?.unsplash_query?.trim() ? [aiSlide.unsplash_query.trim()] : []);
+        if (queries.length === 0) continue;
+        if (aiSlide) aiGenJobs.push({ slide, aiSlide });
+      }
+      const processOneAiSlide = async ({
+        slide,
+        aiSlide,
+      }: { slide: (typeof createdSlides)[number]; aiSlide: (typeof validated.slides)[number] }) => {
+        const queries = aiSlide?.image_queries?.filter((q) => q?.trim()) ?? aiSlide?.unsplash_queries?.filter((q) => q?.trim()) ?? (aiSlide?.image_query?.trim() ? [aiSlide.image_query.trim()] : aiSlide?.unsplash_query?.trim() ? [aiSlide.unsplash_query.trim()] : []);
+        const firstQuery = queries[0]!;
         const slideContext = aiSlide?.image_context;
         const isHookSlide = aiSlide?.slide_index === 1;
         const imageContext = {
@@ -467,8 +476,19 @@ export async function generateCarousel(formData: FormData): Promise<
             }
           }
         }
-        continue;
+      };
+      for (let i = 0; i < aiGenJobs.length; i += AI_IMAGE_CONCURRENCY) {
+        const chunk = aiGenJobs.slice(i, i + AI_IMAGE_CONCURRENCY);
+        await Promise.all(chunk.map(processOneAiSlide));
       }
+    } else {
+      for (const slide of createdSlides) {
+        if (slidesWithImage.has(slide.id)) continue;
+        const aiSlide = aiSlideByIndex.get(slide.slide_index);
+        const queries = aiSlide?.image_queries?.filter((q) => q?.trim()) ?? aiSlide?.unsplash_queries?.filter((q) => q?.trim()) ?? (aiSlide?.image_query?.trim() ? [aiSlide.image_query.trim()] : aiSlide?.unsplash_query?.trim() ? [aiSlide.unsplash_query.trim()] : []);
+        if (queries.length === 0) continue;
+
+        const firstQuery = queries[0]!;
 
       const imageResults: Awaited<ReturnType<typeof searchImage>>[] = [];
       for (const query of queries.slice(0, 4)) {
