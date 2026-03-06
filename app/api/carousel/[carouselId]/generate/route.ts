@@ -66,6 +66,8 @@ export async function POST(
   if (opts.template_id && typeof opts.template_id === "string")
     formData.set("template_id", opts.template_id);
   if (opts.viral_shorts_style) formData.set("viral_shorts_style", "true");
+  if (opts.carousel_for === "linkedin" || opts.carousel_for === "instagram")
+    formData.set("carousel_for", opts.carousel_for);
 
   const result = await generateCarousel(formData);
   if ("error" in result && !("carouselId" in result)) {

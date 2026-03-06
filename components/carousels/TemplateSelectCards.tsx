@@ -16,6 +16,8 @@ export type TemplateOption = {
   id: string;
   name: string;
   parsedConfig: TemplateConfig;
+  /** Template category (e.g. 'hook', 'point', 'linkedin'). Used to filter by platform. */
+  category?: string;
 };
 
 export type TemplateSelectCardsProps = {

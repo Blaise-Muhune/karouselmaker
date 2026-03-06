@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { getUser } from "@/lib/server/auth/getUser";
 import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { getSubscription, getPlanLimits } from "@/lib/server/subscription";
-import { getProject, getCarousel, countCarouselsThisMonth, countCarouselsLifetime, countAiGenerateCarouselsThisMonth, listTemplatesForUser, getDefaultTemplateForNewCarousel } from "@/lib/server/db";
+import { getProject, getCarousel, countCarouselsThisMonth, countCarouselsLifetime, countAiGenerateCarouselsThisMonth, listTemplatesForUser, getDefaultTemplateForNewCarousel, getDefaultLinkedInTemplate } from "@/lib/server/db";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { PLAN_LIMITS, FREE_FULL_ACCESS_GENERATIONS, AI_GENERATE_LIMIT_PRO } from "@/lib/constants";
 import { NewCarouselForm } from "./NewCarouselForm";
@@ -25,7 +25,7 @@ export default async function NewCarouselPage({
   const { user } = await getUser();
   const { projectId } = await params;
   const { regenerate: regenerateCarouselId } = await searchParams;
-  const [project, subscription, limits, carouselCount, lifetimeCarouselCount, aiGenerateUsed, regenerateCarousel, templatesRaw, defaultTemplate] = await Promise.all([
+  const [project, subscription, limits, carouselCount, lifetimeCarouselCount, aiGenerateUsed, regenerateCarousel, templatesRaw, defaultTemplate, defaultLinkedInTemplate] = await Promise.all([
     getProject(user.id, projectId),
     getSubscription(user.id, user.email),
     getPlanLimits(user.id, user.email),
@@ -35,13 +35,14 @@ export default async function NewCarouselPage({
     regenerateCarouselId ? getCarousel(user.id, regenerateCarouselId) : Promise.resolve(null),
     listTemplatesForUser(user.id, { includeSystem: true }),
     getDefaultTemplateForNewCarousel(user.id),
+    getDefaultLinkedInTemplate(user.id),
   ]);
 
   const templateOptions: TemplateOption[] = [];
   for (const t of templatesRaw) {
     const parsed = templateConfigSchema.safeParse(t.config);
     if (parsed.success) {
-      templateOptions.push({ id: t.id, name: t.name, parsedConfig: parsed.data });
+      templateOptions.push({ id: t.id, name: t.name, parsedConfig: parsed.data, category: t.category });
     }
   }
   const defaultTemplateId = defaultTemplate?.templateId ?? null;
@@ -49,6 +50,11 @@ export default async function NewCarouselPage({
     defaultTemplateId != null
       ? templateOptions.find((o) => o.id === defaultTemplateId)?.parsedConfig ?? null
       : templateOptions[0]?.parsedConfig ?? null;
+  const defaultLinkedInTemplateId = defaultLinkedInTemplate?.templateId ?? null;
+  const defaultLinkedInTemplateConfig =
+    defaultLinkedInTemplateId != null
+      ? templateOptions.find((o) => o.id === defaultLinkedInTemplateId)?.parsedConfig ?? null
+      : null;
 
   if (!project) notFound();
   if (regenerateCarouselId && (!regenerateCarousel || regenerateCarousel.project_id !== projectId)) notFound();
@@ -112,9 +118,12 @@ export default async function NewCarouselPage({
           })()}
           initialUseAiGenerate={regenerateCarousel?.generation_options?.use_ai_generate}
           initialUseWebSearch={regenerateCarousel?.generation_options?.use_web_search}
+          initialCarouselFor={(regenerateCarousel?.generation_options as { carousel_for?: "instagram" | "linkedin" } | undefined)?.carousel_for}
           templateOptions={templateOptions}
           defaultTemplateId={defaultTemplateId}
           defaultTemplateConfig={defaultTemplateConfig}
+          defaultLinkedInTemplateId={defaultLinkedInTemplateId}
+          defaultLinkedInTemplateConfig={defaultLinkedInTemplateConfig}
           primaryColor={primaryColor}
         />
       </div>

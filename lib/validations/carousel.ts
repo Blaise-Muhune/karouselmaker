@@ -40,6 +40,8 @@ export const generateCarouselInputSchema = z.object({
     .string()
     .optional()
     .transform((v) => v === "true" || v === "1"),
+  /** Target platform: instagram (default) or linkedin. LinkedIn uses B2B-optimized content and disables AI-generated images. */
+  carousel_for: z.enum(["instagram", "linkedin"]).optional(),
 });
 
 export type GenerateCarouselInput = z.output<typeof generateCarouselInputSchema>;

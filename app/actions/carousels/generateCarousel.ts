@@ -5,7 +5,7 @@ import { getUser } from "@/lib/server/auth/getUser";
 import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { getSubscription, getPlanLimits } from "@/lib/server/subscription";
 import { getProject } from "@/lib/server/db/projects";
-import { getDefaultTemplateForNewCarousel, getTemplate } from "@/lib/server/db/templates";
+import { getDefaultTemplateForNewCarousel, getDefaultLinkedInTemplate, getTemplate } from "@/lib/server/db/templates";
 import { createCarousel, getCarousel, updateCarousel, countCarouselsThisMonth, countCarouselsLifetime, countAiGenerateCarouselsThisMonth } from "@/lib/server/db/carousels";
 import { replaceSlides, updateSlide } from "@/lib/server/db/slides";
 import type { Json } from "@/lib/server/db/types";
@@ -31,8 +31,8 @@ import { FREE_FULL_ACCESS_GENERATIONS, AI_GENERATE_LIMIT_PRO } from "@/lib/const
 const MAX_RETRIES = 2;
 /** Max concurrent AI image generations to cut total time without hitting rate limits. */
 const AI_IMAGE_CONCURRENCY = 3;
-/** Max concurrent slides when fetching from Unsplash/search (Unsplash-only path). Brave path stays sequential (1 req/s limit). */
-const SEARCH_IMAGE_CONCURRENCY = 3;
+/** Max concurrent slides when fetching from stock APIs (Pexels/Unsplash/Pixabay). Higher = faster but more parallel load on providers. */
+const SEARCH_IMAGE_CONCURRENCY = 6;
 
 /** Heuristic: true when input looks like news or time-sensitive so we auto-enable web search for current facts. */
 function looksLikeNewsOrTimeSensitive(inputValue: string, inputType: string): boolean {
@@ -122,6 +122,7 @@ export async function generateCarousel(formData: FormData): Promise<
     notes: ((formData.get("notes") as string | null) ?? "").trim() || undefined,
     template_id: (formData.get("template_id") as string | null)?.trim() || undefined,
     viral_shorts_style: formData.get("viral_shorts_style") ?? undefined,
+    carousel_for: (formData.get("carousel_for") as string | null)?.trim() || undefined,
   };
 
   const parsed = generateCarouselInputSchema.safeParse(raw);
@@ -182,8 +183,11 @@ export async function generateCarousel(formData: FormData): Promise<
   const brandKit = project.brand_kit as { watermark_text?: string; primary_color?: string; secondary_color?: string } | null;
   const creatorHandle = brandKit?.watermark_text?.trim() || undefined;
 
+  const carouselFor = (parsed.data.carousel_for === "linkedin" || parsed.data.carousel_for === "instagram")
+    ? parsed.data.carousel_for
+    : undefined;
   const useStockPhotos = !!parsed.data.use_stock_photos;
-  const requestedAiGenerate = !!parsed.data.use_ai_generate;
+  const requestedAiGenerate = carouselFor !== "linkedin" && !!parsed.data.use_ai_generate;
   const userIsAdmin = isAdmin(user.email ?? null);
   if (requestedAiGenerate && !userIsAdmin && !isPro) {
     return { error: "AI-generated images are only available for Pro. Upgrade to use this feature." };
@@ -215,6 +219,7 @@ export async function generateCarousel(formData: FormData): Promise<
     language: projectLanguage,
     notes: data.notes,
     viral_shorts_style: !!parsed.data.viral_shorts_style && userIsAdmin,
+    carousel_for: carouselFor,
   } as const;
 
   let lastRaw = "";
@@ -318,6 +323,7 @@ export async function generateCarousel(formData: FormData): Promise<
       use_stock_photos: useStockPhotos,
       use_ai_generate: useAiGenerate,
       use_web_search: useWebSearch,
+      ...(carouselFor && { carousel_for: carouselFor }),
     },
   };
   try {
@@ -332,13 +338,16 @@ export async function generateCarousel(formData: FormData): Promise<
     }
   }
 
-  const defaultTemplate = await getDefaultTemplateForNewCarousel(user.id);
+  const defaultTemplate =
+    carouselFor === "linkedin" && !data.template_id
+      ? await getDefaultLinkedInTemplate(user.id)
+      : await getDefaultTemplateForNewCarousel(user.id);
   let defaultTemplateId: string | null = defaultTemplate?.templateId ?? null;
   if (data.template_id) {
     const requested = await getTemplate(user.id, data.template_id);
     if (requested) defaultTemplateId = requested.id;
   }
-  const isFollowCta = defaultTemplate?.isFollowCta ?? false;
+  const isFollowCta = carouselFor !== "linkedin" && (defaultTemplate && "isFollowCta" in defaultTemplate ? defaultTemplate.isFollowCta : false);
 
   const slideRows = validated.slides.map((s) => {
     const fullHeadline = s.slide_index === 1 ? stripLinksFromText(validated.title) : stripLinksFromText(s.headline);
@@ -635,8 +644,14 @@ export async function generateCarousel(formData: FormData): Promise<
         };
         const processOneSearchSlide = async (job: { slide: (typeof createdSlides)[number]; queries: string[]; image_provider: StockProvider }) => {
           const { slide, queries, image_provider } = job;
-          const queryResults = await Promise.all(queries.slice(0, 4).map((q) => tryQueryWithFallback(q, image_provider)));
-          let imageResults: ImageResult[] = dedupeByUrl(queryResults.filter((r) => r != null) as ImageResult[]);
+          let imageResults: ImageResult[] = [];
+          for (const q of queries.slice(0, 4)) {
+            const r = await tryQueryWithFallback(q, image_provider);
+            if (r) {
+              imageResults = [r];
+              break;
+            }
+          }
           if (imageResults.length === 0) {
             const fallback = await tryQueryWithFallback(topicFallbackBase, image_provider);
             if (fallback) imageResults = [fallback];
@@ -728,6 +743,7 @@ export async function startCarouselGeneration(formData: FormData): Promise<
     notes: ((formData.get("notes") as string | null) ?? "").trim() || undefined,
     template_id: (formData.get("template_id") as string | null)?.trim() || undefined,
     viral_shorts_style: formData.get("viral_shorts_style") ?? undefined,
+    carousel_for: (formData.get("carousel_for") as string | null)?.trim() || undefined,
   };
 
   const parsed = generateCarouselInputSchema.safeParse(raw);
@@ -754,7 +770,7 @@ export async function startCarouselGeneration(formData: FormData): Promise<
       error: `Generation limit: ${count}/${limits.carouselsPerMonth} carousels this month.${isPro ? "" : " Upgrade to Pro for more."}`,
     };
   }
-  const requestedAiGenerate = !!data.use_ai_generate;
+  const requestedAiGenerate = parsed.data.carousel_for !== "linkedin" && !!data.use_ai_generate;
   const userIsAdmin = isAdmin(user.email ?? null);
   if (requestedAiGenerate && !userIsAdmin && !isPro) {
     return { error: "AI-generated images are only available for Pro. Upgrade to use this feature." };
@@ -776,7 +792,7 @@ export async function startCarouselGeneration(formData: FormData): Promise<
   const generationOptions: Record<string, unknown> = {
     use_ai_backgrounds: !!data.use_ai_backgrounds,
     use_stock_photos: !!parsed.data.use_stock_photos,
-    use_ai_generate: !!data.use_ai_generate,
+    use_ai_generate: parsed.data.carousel_for !== "linkedin" && !!data.use_ai_generate,
     use_web_search: !!data.use_web_search,
     generation_started: false,
     number_of_slides: data.number_of_slides,
@@ -784,6 +800,7 @@ export async function startCarouselGeneration(formData: FormData): Promise<
     template_id: data.template_id,
     viral_shorts_style: !!parsed.data.viral_shorts_style,
     background_asset_ids: data.background_asset_ids,
+    ...(parsed.data.carousel_for && { carousel_for: parsed.data.carousel_for }),
   };
   await updateCarousel(user.id, carousel.id, {
     status: "generating",

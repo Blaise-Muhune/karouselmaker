@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { startCarouselGeneration, generateCarousel } from "@/app/actions/carousels/generateCarousel";
 import { Button } from "@/components/ui/button";
@@ -17,9 +17,15 @@ import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { createCheckoutSession } from "@/app/actions/subscription/createCheckoutSession";
-import { Gem, GlobeIcon, ImageIcon, LayoutTemplateIcon, Loader2Icon, Link2Icon, FileTextIcon, SparklesIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react";
+import { Gem, GlobeIcon, ImageIcon, LayoutTemplateIcon, Loader2Icon, Link2Icon, FileTextIcon, SparklesIcon, ChevronDownIcon, ChevronUpIcon, LinkedinIcon } from "lucide-react";
 
 const TEMPLATE_PAGE_SIZE = 8;
+
+/** Carousel for: Instagram (default) or LinkedIn. LinkedIn uses B2B-optimized content and stock/own images only (no AI generate). */
+const CAROUSEL_FOR_OPTIONS = [
+  { value: "instagram" as const, label: "Instagram", icon: ImageIcon },
+  { value: "linkedin" as const, label: "LinkedIn", icon: LinkedinIcon },
+] as const;
 /** Diverse Unsplash sample images for template preview when "Let AI suggest background images" is on. */
 const TEMPLATE_PREVIEW_IMAGE_URLS = [
   "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=1080&q=80", // people / portrait
@@ -58,9 +64,12 @@ export function NewCarouselForm({
   initialUseStockPhotos,
   initialUseAiGenerate,
   initialUseWebSearch,
+  initialCarouselFor,
   templateOptions = [],
   defaultTemplateId = null,
   defaultTemplateConfig = null,
+  defaultLinkedInTemplateId = null,
+  defaultLinkedInTemplateConfig = null,
   primaryColor = "#0a0a0a",
 }: {
   projectId: string;
@@ -87,10 +96,15 @@ export function NewCarouselForm({
   initialUseStockPhotos?: boolean;
   initialUseAiGenerate?: boolean;
   initialUseWebSearch?: boolean;
+  /** Pre-fill "Carousel for" (Instagram vs LinkedIn). */
+  initialCarouselFor?: "instagram" | "linkedin";
   /** Templates the user can choose before generating (with parsed config for preview). */
   templateOptions?: TemplateOption[];
   defaultTemplateId?: string | null;
   defaultTemplateConfig?: TemplateConfig | null;
+  /** Default template when Carousel for is LinkedIn; one of these is selected when user picks LinkedIn. */
+  defaultLinkedInTemplateId?: string | null;
+  defaultLinkedInTemplateConfig?: TemplateConfig | null;
   primaryColor?: string;
 }) {
   const router = useRouter();
@@ -108,12 +122,15 @@ export function NewCarouselForm({
         : "stock";
   const [imageSource, setImageSource] = useState<"stock" | "ai_generate" | "brave">(defaultImageSource);
   const [useWebSearch, setUseWebSearch] = useState(initialUseWebSearch ?? false);
+  const [carouselFor, setCarouselFor] = useState<"instagram" | "linkedin">(initialCarouselFor ?? "instagram");
   const [viralShortsStyle, setViralShortsStyle] = useState(false);
   const [notes, setNotes] = useState("");
   const [backgroundPickerOpen, setBackgroundPickerOpen] = useState(false);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [visibleTemplateCount, setVisibleTemplateCount] = useState(TEMPLATE_PAGE_SIZE);
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(() =>
+    initialCarouselFor === "linkedin" && defaultLinkedInTemplateId ? defaultLinkedInTemplateId : null
+  );
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [upgradeLoading, setUpgradeLoading] = useState(false);
@@ -144,6 +161,27 @@ export function NewCarouselForm({
     if (templateModalOpen) setVisibleTemplateCount(TEMPLATE_PAGE_SIZE);
   }, [templateModalOpen]);
 
+  useEffect(() => {
+    if (carouselFor === "linkedin" && imageSource === "ai_generate") setImageSource("stock");
+  }, [carouselFor]);
+
+  const prevCarouselForRef = useRef<"instagram" | "linkedin">(carouselFor);
+  useEffect(() => {
+    if (prevCarouselForRef.current !== carouselFor) {
+      prevCarouselForRef.current = carouselFor;
+      if (carouselFor === "linkedin" && defaultLinkedInTemplateId) setSelectedTemplateId(defaultLinkedInTemplateId);
+      else if (carouselFor === "instagram") setSelectedTemplateId(null);
+    }
+  }, [carouselFor, defaultLinkedInTemplateId]);
+
+  /** Templates available for the current platform: LinkedIn only when carouselFor is linkedin, non-LinkedIn (Instagram) otherwise. */
+  const templateOptionsForPlatform = useMemo(() => {
+    if (carouselFor === "linkedin") {
+      return templateOptions.filter((o) => o.category?.toLowerCase() === "linkedin");
+    }
+    return templateOptions.filter((o) => o.category?.toLowerCase() !== "linkedin");
+  }, [templateOptions, carouselFor]);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -166,11 +204,13 @@ export function NewCarouselForm({
       if (backgroundAssetIds.length) formData.set("background_asset_ids", JSON.stringify(backgroundAssetIds));
       if (useAiBackgrounds || regenerateCarouselId) formData.set("use_ai_backgrounds", "true");
       if (imageSource === "stock") formData.set("use_stock_photos", "true");
-      if (imageSource === "ai_generate" && canUseAiGenerate) formData.set("use_ai_generate", "true");
+      if (imageSource === "ai_generate" && canUseAiGenerate && carouselFor !== "linkedin") formData.set("use_ai_generate", "true");
+      formData.set("carousel_for", carouselFor);
       if (useWebSearch) formData.set("use_web_search", "true");
       if (viralShortsStyle) formData.set("viral_shorts_style", "true");
       if (notes.trim()) formData.set("notes", notes.trim());
       if (selectedTemplateId) formData.set("template_id", selectedTemplateId);
+      else if (carouselFor === "linkedin" && defaultLinkedInTemplateId) formData.set("template_id", defaultLinkedInTemplateId);
       if (regenerateCarouselId) {
         const result = await generateCarousel(formData);
         if ("error" in result && !("carouselId" in result)) {
@@ -243,6 +283,37 @@ export function NewCarouselForm({
             )}
           </div>
         )}
+
+        <Card className="py-4 gap-4">
+          <CardHeader className="pb-0 px-5">
+            <CardTitle className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
+              Carousel for
+            </CardTitle>
+            <CardDescription>Instagram or LinkedIn. LinkedIn uses B2B-optimized content and stock or your own images only.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4 px-5 pt-0">
+            <div className="flex rounded-lg border border-input p-0.5 bg-muted/30">
+              {CAROUSEL_FOR_OPTIONS.map((o) => {
+                const Icon = o.icon;
+                return (
+                  <button
+                    key={o.value}
+                    type="button"
+                    onClick={() => setCarouselFor(o.value)}
+                    className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-2.5 text-sm font-medium transition-colors ${
+                      carouselFor === o.value
+                        ? "bg-background text-primary shadow-sm ring-1 ring-primary/20"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <Icon className="size-3.5 shrink-0" />
+                    {o.label}
+                  </button>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
 
         <Card className="py-4 gap-4">
           <CardHeader className="pb-0 px-5">
@@ -425,7 +496,7 @@ export function NewCarouselForm({
           </CardContent>
         </Card>
 
-        {(templateOptions.length > 0 || defaultTemplateConfig) && (
+        {(templateOptionsForPlatform.length > 0 || (carouselFor === "linkedin" ? defaultLinkedInTemplateConfig : defaultTemplateConfig)) && (
           <Card className="py-4 gap-4">
             <CardHeader className="pb-0 px-5">
               <CardTitle className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
@@ -434,7 +505,9 @@ export function NewCarouselForm({
               <CardDescription>
                 {useAiBackgrounds
                   ? "Previews use a sample image. Pick the layout for your carousel."
-                  : "Pick the layout. Default uses your recommended template."}
+                  : carouselFor === "linkedin"
+                    ? "Pick a layout for LinkedIn. Default uses the recommended LinkedIn template."
+                    : "Pick the layout. Default uses your recommended template."}
               </CardDescription>
             </CardHeader>
             <CardContent className="px-5 pt-0">
@@ -447,7 +520,7 @@ export function NewCarouselForm({
             >
               <LayoutTemplateIcon className="size-4" />
               {selectedTemplateId
-                ? templateOptions.find((t) => t.id === selectedTemplateId)?.name ?? "Custom"
+                ? templateOptionsForPlatform.find((t) => t.id === selectedTemplateId)?.name ?? "Custom"
                 : "Default (recommended)"}
             </Button>
             <Dialog open={templateModalOpen} onOpenChange={setTemplateModalOpen}>
@@ -456,13 +529,13 @@ export function NewCarouselForm({
                   <DialogTitle>Choose template</DialogTitle>
                 </DialogHeader>
                 <p className="text-muted-foreground text-sm -mt-2">
-                  Pick a layout for your carousel. You can load more below.
+                  {carouselFor === "linkedin" ? "LinkedIn templates." : "Pick a layout for your carousel."} You can load more below.
                 </p>
                 <div className="overflow-y-auto overflow-x-hidden flex-1 min-h-0 min-w-0 w-full pr-1">
                   <TemplateSelectCards
-                    templates={templateOptions.slice(0, visibleTemplateCount)}
-                    defaultTemplateId={defaultTemplateId}
-                    defaultTemplateConfig={defaultTemplateConfig}
+                    templates={templateOptionsForPlatform.slice(0, visibleTemplateCount)}
+                    defaultTemplateId={carouselFor === "linkedin" ? defaultLinkedInTemplateId : defaultTemplateId}
+                    defaultTemplateConfig={carouselFor === "linkedin" ? defaultLinkedInTemplateConfig : defaultTemplateConfig}
                     value={selectedTemplateId}
                     onChange={(id) => {
                       setSelectedTemplateId(id);
@@ -472,7 +545,7 @@ export function NewCarouselForm({
                     previewImageUrls={useAiBackgrounds ? TEMPLATE_PREVIEW_IMAGE_URLS : undefined}
                   />
                 </div>
-                {visibleTemplateCount < templateOptions.length && (
+                {visibleTemplateCount < templateOptionsForPlatform.length && (
                   <div className="pt-2 border-t flex justify-center">
                     <Button
                       type="button"
@@ -532,7 +605,7 @@ export function NewCarouselForm({
                 <span className="text-xs text-muted-foreground mr-1">Source:</span>
                 {([
                   "stock",
-                  ...(isPro || isAdminUser ? (["ai_generate"] as const) : []),
+                  ...(carouselFor !== "linkedin" && (isPro || isAdminUser) ? (["ai_generate"] as const) : []),
                   ...(isAdminUser ? (["brave"] as const) : []),
                 ] as const).map((src) => (
                   <label
