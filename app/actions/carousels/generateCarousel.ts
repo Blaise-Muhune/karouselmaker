@@ -599,6 +599,7 @@ export async function generateCarousel(formData: FormData): Promise<
       }
     }
   }
+  }
 
   // Apply solid color (project primary) to any slide that has no background image
   const primaryColor = brandKit?.primary_color?.trim() || "#0a0a0a";
