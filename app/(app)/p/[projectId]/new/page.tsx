@@ -12,8 +12,8 @@ import { Button } from "@/components/ui/button";
 import type { TemplateOption } from "@/components/carousels/TemplateSelectCards";
 import { ArrowLeftIcon } from "lucide-react";
 
-// Long-running carousel generation (LLM + per-slide AI images). Vercel Pro allows up to 300s; also set in vercel.json.
-export const maxDuration = 300;
+// Long-running carousel generation (LLM + per-slide AI images). Pro allows up to 800s for AI-generated image requests.
+export const maxDuration = 800;
 
 export default async function NewCarouselPage({
   params,
