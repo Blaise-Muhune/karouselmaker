@@ -1,19 +1,13 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { SubscriptionStatusBanner } from "@/components/subscription/SubscriptionStatusBanner";
 import { GoProBar } from "@/components/subscription/GoProBar";
 import { ProjectMenuDropdown } from "@/components/projects/ProjectMenuDropdown";
 import { getSubscription } from "@/lib/server/subscription";
 import { PaginationNav } from "@/components/ui/pagination-nav";
-import { PlusCircleIcon, SparklesIcon } from "lucide-react";
+import { PlusCircleIcon } from "lucide-react";
 
 const PROJECTS_PAGE_SIZE = 15;
 
@@ -63,55 +57,22 @@ export default async function ProjectsPage({
 
         {showGettingStarted && (
           <Card className="border-primary/20 bg-primary/5">
-            <CardHeader className="pb-2">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <SparklesIcon className="size-4 text-primary" />
-                How to create a carousel
-              </CardTitle>
-              <CardDescription>
-                {projects.length === 0
-                  ? "Follow these steps to create your first carousel."
-                  : "You're all set — create your first carousel in one of your projects."}
-              </CardDescription>
-              <p className="text-sm text-foreground/90 mt-1 font-medium">
-                Generate your first carousel free — try it before you go Pro.
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="pt-5 pb-5">
               {projects.length === 0 ? (
                 <>
-                  <ol className="text-sm space-y-3 text-foreground">
-                    <li className="flex gap-3">
-                      <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/20 text-primary text-xs font-semibold">1</span>
-                      <span><strong>Create a project</strong> — give it a name and optional niche. Use <strong>Advanced settings</strong> to set language, tone, and brand (or edit later).</span>
-                    </li>
-                    <li className="flex gap-3">
-                      <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/20 text-primary text-xs font-semibold">2</span>
-                      <span><strong>Open the project</strong> and click <strong>New carousel</strong>.</span>
-                    </li>
-                    <li className="flex gap-3">
-                      <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/20 text-primary text-xs font-semibold">3</span>
-                      <span><strong>Enter a topic or paste a URL</strong>, then hit Generate. AI creates the carousel and suggests images.</span>
-                    </li>
-                  </ol>
-                  <Button asChild>
+                  <p className="text-base font-medium text-foreground">
+                    Create a project, add a topic, hit Generate. Your first carousel is free.
+                  </p>
+                  <Button asChild className="mt-4">
                     <Link href="/projects/new">
                       <PlusCircleIcon className="mr-2 size-4" />
-                      Create your first project
+                      Create project
                     </Link>
                   </Button>
-                  <div className="rounded-lg border border-border/60 bg-muted/30 p-4 pt-3">
-                    <p className="text-muted-foreground text-xs font-medium mb-2">Project ideas</p>
-                    <ul className="text-muted-foreground text-xs space-y-1">
-                      <li>• Fitness tips · Tone: Casual</li>
-                      <li>• Tech reviews · Tone: Professional</li>
-                      <li>• Recipes · Tone: Friendly</li>
-                    </ul>
-                  </div>
                 </>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  Open any project below, then click <strong>New carousel</strong>. Enter a topic or URL and click Generate — you'll get a full carousel in under a minute.
+                  Open a project below → <strong>New carousel</strong> → enter a topic and Generate. Your first one is free.
                 </p>
               )}
             </CardContent>
