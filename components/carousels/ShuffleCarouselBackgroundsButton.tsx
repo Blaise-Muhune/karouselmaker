@@ -41,8 +41,8 @@ export function ShuffleCarouselBackgroundsButton({
       onClick={handleShuffle}
       title={
         hasShuffleableSlides
-          ? "Shuffle background images (pick a random alternate per slide)"
-          : "No slides with multiple images to shuffle"
+          ? "Shuffle background images (pick a random alternate per frame)"
+          : "No frames with multiple images to shuffle"
       }
     >
       {isPending ? (

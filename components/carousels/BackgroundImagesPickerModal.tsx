@@ -81,9 +81,9 @@ export function BackgroundImagesPickerModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col" showCloseButton>
         <DialogHeader>
-          <DialogTitle>Background images for slides</DialogTitle>
+          <DialogTitle>Background images for carousel frames</DialogTitle>
           <DialogDescription>
-            Select 1–30 images. They will be applied to slides in order (round-robin). First slide can use 1 or 2 images (full + circle).
+            Select 1–30 images. They will be applied to frames in order (round-robin). First frame can use 1 or 2 images (full + circle).
           </DialogDescription>
         </DialogHeader>
         {loading ? (

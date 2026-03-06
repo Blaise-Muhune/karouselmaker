@@ -20,7 +20,7 @@ export function GenerationPartialBanner() {
     >
       <AlertCircleIcon className="size-5 shrink-0 text-amber-600 dark:text-amber-500" aria-hidden />
       <p className="min-w-0 flex-1">
-        Some background images couldn&apos;t be generated. Your carousel was saved — you can edit slides, add images manually, or try regenerating with different settings.
+        Some background images couldn&apos;t be generated. Your carousel was saved — you can edit the carousel, add images manually, or try regenerating with different settings.
       </p>
       <Button
         variant="ghost"

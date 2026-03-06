@@ -984,8 +984,8 @@ export function TemplateBuilderForm({
             {templateTab === "more" && (
           <section className="space-y-4" aria-label="More">
         <div className="rounded-lg border border-border/50 bg-muted/5 p-3">
-          <h3 className="text-xs font-semibold text-foreground mb-2">Show on slide</h3>
-          <p className="text-muted-foreground text-[11px] mb-3">Same options as the slide editor. These become the template defaults when slides use this template.</p>
+          <h3 className="text-xs font-semibold text-foreground mb-2">Show on frame</h3>
+          <p className="text-muted-foreground text-[11px] mb-3">Same options as the frame editor. These become the template defaults when frames use this template.</p>
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <Label>Show swipe hint</Label>
@@ -1104,7 +1104,7 @@ export function TemplateBuilderForm({
             </div>
             {config.chrome.showCounter && (
               <div className="rounded border border-border/40 bg-background/50 p-3 space-y-2">
-                <p className="text-[11px] font-medium text-foreground">Slide number position</p>
+                <p className="text-[11px] font-medium text-foreground">Frame number position</p>
                 <div className="grid grid-cols-3 gap-2">
                   {(["top", "right", "fontSize"] as const).map((key) => {
                     const label = key === "top" ? "Top (px)" : key === "right" ? "Right (px)" : "Font size";
@@ -1301,7 +1301,7 @@ export function TemplateBuilderForm({
             {showMadeWith && (
               <div className="rounded border border-border/40 bg-background/50 p-3 space-y-2">
                 <p className="text-[11px] font-medium text-foreground">Made with position & size</p>
-                <p className="text-muted-foreground text-[11px]">Leave X/Y empty for default (centered at bottom). Same as slide editor.</p>
+                <p className="text-muted-foreground text-[11px]">Leave X/Y empty for default (centered at bottom). Same as frame editor.</p>
                 <div className="grid grid-cols-3 gap-2">
                   <div className="space-y-1">
                     <Label className="text-xs">Font size</Label>

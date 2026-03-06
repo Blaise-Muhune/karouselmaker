@@ -74,7 +74,7 @@ export function ProjectMenuDropdown({ projectId, projectName }: ProjectMenuDropd
           <DialogHeader>
             <DialogTitle>Delete project?</DialogTitle>
             <DialogDescription>
-              This will permanently delete &quot;{projectName}&quot; and all its carousels and slides. This action cannot be undone.
+              This will permanently delete &quot;{projectName}&quot; and all its carousels. This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter showCloseButton={false}>

@@ -179,7 +179,7 @@ export default async function CarouselEditorPage({
           </div>
         )}
         {!hasFullAccess && (
-          <UpgradeBanner message="You've used your 3 free generations with full access. Upgrade to Pro to edit slides, export, and unlock AI backgrounds." />
+          <UpgradeBanner message="You've used your 3 free generations with full access. Upgrade to Pro to edit carousels, export, and unlock AI backgrounds." />
         )}
 
         {/* Header */}

@@ -181,7 +181,7 @@ export function AssetLibrary({
       {filteredAssets.length === 0 ? (
         <div className="flex min-h-[220px] flex-col items-center justify-center rounded-2xl border border-dashed border-border/60 bg-muted/20 p-8 text-center">
           <p className="text-muted-foreground text-sm mb-2">
-            No images yet. Upload your first image to use as slide backgrounds.
+            No images yet. Upload your first image to use as carousel frame backgrounds.
           </p>
           <p className="text-muted-foreground text-xs mb-4 max-w-sm">
             Pro tip: Use high-res images (1080×1080 or larger). Landscapes, textures, and solid colors work great.
@@ -223,7 +223,7 @@ export function AssetLibrary({
             <DialogTitle>{selectedAsset?.file_name ?? "Image"}</DialogTitle>
             <DialogDescription>
               {pickerMode && slideId
-                ? "Use this image as the slide background."
+                ? "Use this image as the frame background."
                 : "Preview."}
             </DialogDescription>
           </DialogHeader>

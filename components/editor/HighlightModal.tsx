@@ -90,8 +90,8 @@ export function HighlightModal({
                 title={
                   lastHighlightAction === "auto" && totalSlides > 1
                     ? target === "headline"
-                      ? "Run Auto on headlines for every slide"
-                      : "Run Auto on body for every slide"
+                      ? "Run Auto on headlines for every frame"
+                      : "Run Auto on body for every frame"
                     : "Apply current color to all highlights in this field"
                 }
               >
@@ -109,7 +109,7 @@ export function HighlightModal({
           </div>
         </div>
         <p className="text-[11px] text-muted-foreground leading-relaxed shrink-0">
-          Select text in the box below, then pick a color (or Auto to highlight key words). Use No color to remove a highlight. You can see the result in the live preview above. If you just used Auto, "Apply to all highlights" runs Auto on every slide; otherwise it applies the current color to every highlight here.
+          Select text in the box below, then pick a color (or Auto to highlight key words). Use No color to remove a highlight. You can see the result in the live preview above. If you just used Auto, "Apply to all highlights" runs Auto on every frame; otherwise it applies the current color to every highlight here.
         </p>
         <div className="space-y-4 min-w-0">
           <div>
@@ -233,8 +233,8 @@ export function HighlightModal({
                 title={
                   lastHighlightAction === "auto" && totalSlides > 1
                     ? target === "headline"
-                      ? "Run Auto on headlines for every slide"
-                      : "Run Auto on body for every slide"
+                      ? "Run Auto on headlines for every frame"
+                      : "Run Auto on body for every frame"
                     : "Apply current color to all highlights in this field"
                 }
               >
@@ -248,7 +248,7 @@ export function HighlightModal({
             )}
           </div>
           <p className="text-[11px] text-muted-foreground leading-relaxed">
-            Select text in the box below, then pick a color (or Auto to highlight key words). Use No color to remove a highlight. You can see the result in the live preview above. If you just used Auto, “Apply to all highlights” runs Auto on every slide; otherwise it applies the current color to every highlight here.
+            Select text in the box below, then pick a color (or Auto to highlight key words). Use No color to remove a highlight. You can see the result in the live preview above. If you just used Auto, “Apply to all highlights” runs Auto on every frame; otherwise it applies the current color to every highlight here.
           </p>
         </DialogHeader>
 

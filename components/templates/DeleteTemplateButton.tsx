@@ -60,7 +60,7 @@ export function DeleteTemplateButton({
         <DialogHeader>
           <DialogTitle>Delete template</DialogTitle>
           <DialogDescription>
-            Delete &quot;{templateName}&quot;? Slides using this template will fall back to the default. This cannot be undone.
+            Delete &quot;{templateName}&quot;? Frames using this template will fall back to the default. This cannot be undone.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>

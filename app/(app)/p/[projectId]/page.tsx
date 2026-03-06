@@ -66,7 +66,7 @@ export default async function ProjectDashboardPage({
         </header>
 
         {/* Main CTA */}
-        <div className="mb-10">
+        <div className="mb-6">
           <Button size="lg" className="gap-2" asChild>
             <Link href={`/p/${projectId}/new`}>
               <PlusCircleIcon className="size-4" />
@@ -74,6 +74,12 @@ export default async function ProjectDashboardPage({
             </Link>
           </Button>
         </div>
+
+        {carousels.length === 0 && (
+          <p className="text-muted-foreground text-sm mb-6 rounded-lg border border-border/50 bg-muted/20 px-4 py-3">
+            Click <strong>New carousel</strong>, enter a topic or paste a URL, then hit Generate. We&apos;ll create the carousel and suggest images.
+          </p>
+        )}
 
         {/* Carousels */}
         <section>
@@ -91,7 +97,7 @@ export default async function ProjectDashboardPage({
                     <span className="font-medium truncate">{c.title}</span>
                     <span className="text-muted-foreground flex shrink-0 items-center gap-2 text-xs">
                       {slideCounts[c.id] != null && (
-                        <span>{slideCounts[c.id]} slide{slideCounts[c.id] !== 1 ? "s" : ""}</span>
+                        <span>{slideCounts[c.id]} frame{slideCounts[c.id] !== 1 ? "s" : ""}</span>
                       )}
                       {formatDate(new Date(c.created_at))}
                       <ChevronRightIcon className="size-3.5 opacity-40" />
@@ -106,7 +112,7 @@ export default async function ProjectDashboardPage({
                 No carousels yet
               </p>
               <p className="text-muted-foreground/80 mt-1 text-xs">
-                Paste a topic or URL and we&apos;ll draft the slides.
+                Paste a topic or URL and we&apos;ll create a carousel.
               </p>
               <p className="text-muted-foreground/80 mt-1 text-xs">
                 Create your first carousel above.

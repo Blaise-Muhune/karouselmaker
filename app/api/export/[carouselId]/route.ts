@@ -461,7 +461,7 @@ export async function POST(
         /browser has been closed/i.test(raw) ||
         /Protocol error/i.test(raw);
       const msg = isBrowserClosed
-        ? "Export failed: the browser closed unexpectedly. Try again in a moment or download each slide individually below."
+        ? "Export failed: the browser closed unexpectedly. Try again in a moment or download each frame individually below."
         : raw;
       try {
         await updateExport(userId, exportId, { status: "failed" });

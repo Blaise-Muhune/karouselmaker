@@ -63,14 +63,17 @@ export default async function EditProjectPage({
           ]}
           className="mb-2"
         />
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon-sm" className="-ml-1 shrink-0" asChild>
             <Link href={`/p/${project.id}`}>
               <ArrowLeftIcon className="size-4" />
               <span className="sr-only">Back to project</span>
             </Link>
           </Button>
-          <h1 className="text-xl font-semibold tracking-tight">Edit project</h1>
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight">Edit project</h1>
+            <p className="text-muted-foreground text-sm mt-0.5">Your project is where your carousels live. Change name and niche here; use Advanced settings for language, tone, and brand.</p>
+          </div>
         </div>
         <ProjectEditForm projectId={project.id} defaultValues={defaultValues} isAdmin={isAdmin(user.email ?? null)} />
       </div>

@@ -31,7 +31,7 @@ import {
   type ProjectFormInput,
 } from "@/lib/validations/project";
 import { DO_PRESETS, DONT_PRESETS } from "@/lib/editor/voicePresets";
-import { ArrowLeftIcon } from "lucide-react";
+import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, Settings2Icon } from "lucide-react";
 
 const TONE_OPTIONS = [
   { value: "neutral", label: "Neutral" },
@@ -69,6 +69,7 @@ export function ProjectEditForm({
   const [isPending, setIsPending] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const router = useRouter();
 
   const form = useForm<ProjectFormInput>({
@@ -151,6 +152,21 @@ export function ProjectEditForm({
             </FormItem>
           )}
         />
+
+        <div className="space-y-3">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-foreground -ml-2"
+            onClick={() => setShowAdvanced((v) => !v)}
+          >
+            <Settings2Icon className="mr-2 size-4" />
+            Advanced settings
+            {showAdvanced ? <ChevronUpIcon className="ml-1 size-4" /> : <ChevronDownIcon className="ml-1 size-4" />}
+          </Button>
+          {showAdvanced && (
+            <div className="space-y-6 rounded-lg border border-border/60 bg-muted/20 p-4">
         <FormField
           control={form.control}
           name="language"
@@ -207,7 +223,7 @@ export function ProjectEditForm({
             </FormItem>
           )}
         />
-        <p className="text-muted-foreground text-xs">Default number of slides per carousel is set when you create a new carousel.</p>
+        <p className="text-muted-foreground text-xs">Default number of frames per carousel is set when you create a new carousel.</p>
         {isAdmin && (
           <div className="space-y-2">
             <FormLabel>Post to (optional)</FormLabel>
@@ -391,6 +407,9 @@ export function ProjectEditForm({
             />
           </div>
         </div>
+                </div>
+              )}
+            </div>
         <div className="flex gap-4">
           <Button type="submit" disabled={isPending}>
             {isPending ? "Saving…" : "Save"}

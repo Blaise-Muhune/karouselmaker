@@ -29,6 +29,9 @@ export type AdminUserRow = {
   name: string;
   plan: "free" | "pro" | null;
   createdAt: string | null;
+  carouselCount: number;
+  projectCount: number;
+  exportCount: number;
 };
 
 /** List users with name and email for admin. Uses Auth + profiles; capped at 500. */
@@ -59,16 +62,31 @@ export async function getAdminUsers(): Promise<AdminUserRow[]> {
   }
 
   const userIds = rows.map((r) => r.id);
-  const { data: profiles } = await supabase
-    .from("profiles")
-    .select("user_id, display_name, plan")
-    .in("user_id", userIds);
+  const [profilesRes, carouselsRes, projectsRes, exportsRes] = await Promise.all([
+    supabase.from("profiles").select("user_id, display_name, plan").in("user_id", userIds),
+    supabase.from("carousels").select("user_id").in("user_id", userIds),
+    supabase.from("projects").select("user_id").in("user_id", userIds),
+    supabase.from("exports").select("user_id").in("user_id", userIds),
+  ]);
+
+  const profiles = profilesRes.data ?? [];
   const profileByUserId = new Map(
-    (profiles ?? []).map((p) => [
+    profiles.map((p) => [
       (p as { user_id: string; display_name: string | null; plan: string | null }).user_id,
       p as { display_name: string | null; plan: string | null },
     ])
   );
+
+  const countByUser = (rows: { user_id: string }[]): Map<string, number> => {
+    const m = new Map<string, number>();
+    for (const r of rows) {
+      m.set(r.user_id, (m.get(r.user_id) ?? 0) + 1);
+    }
+    return m;
+  };
+  const carouselByUser = countByUser((carouselsRes.data ?? []) as { user_id: string }[]);
+  const projectByUser = countByUser((projectsRes.data ?? []) as { user_id: string }[]);
+  const exportByUser = countByUser((exportsRes.data ?? []) as { user_id: string }[]);
 
   return rows.map((u) => {
     const profile = profileByUserId.get(u.id);
@@ -84,8 +102,74 @@ export async function getAdminUsers(): Promise<AdminUserRow[]> {
       name,
       plan: (profile?.plan === "pro" ? "pro" : profile?.plan === "free" ? "free" : null) ?? null,
       createdAt: u.created_at,
+      carouselCount: carouselByUser.get(u.id) ?? 0,
+      projectCount: projectByUser.get(u.id) ?? 0,
+      exportCount: exportByUser.get(u.id) ?? 0,
     };
   });
+}
+
+export type AdminUserDetailCarousel = {
+  id: string;
+  title: string;
+  input_value: string | null;
+  project_id: string;
+  projectName: string | null;
+  created_at: string;
+  status: string;
+};
+
+export type AdminUserDetails = {
+  user: { id: string; email: string | null; name: string; plan: "free" | "pro" | null; createdAt: string | null };
+  projects: { id: string; name: string }[];
+  carousels: AdminUserDetailCarousel[];
+};
+
+/** Fetch one user's profile and their projects + carousels (with project name) for admin. */
+export async function getAdminUserDetails(userId: string): Promise<AdminUserDetails | null> {
+  const supabase = createAdminClient();
+  const [authRes, profileRes, projectsRes, carouselsRes] = await Promise.all([
+    supabase.auth.admin.getUserById(userId),
+    supabase.from("profiles").select("user_id, display_name, plan").eq("user_id", userId).maybeSingle(),
+    supabase.from("projects").select("id, name").eq("user_id", userId).order("name"),
+    supabase.from("carousels").select("id, title, input_value, project_id, created_at, status").eq("user_id", userId).order("created_at", { ascending: false }),
+  ]);
+
+  const userData = authRes.data?.user;
+  if (authRes.error && authRes.error.message?.toLowerCase().includes("not found")) return null;
+  const profile = profileRes.data as { user_id: string; display_name: string | null; plan: string | null } | null;
+  const projects = (projectsRes.data ?? []) as { id: string; name: string }[];
+  const carouselsRaw = (carouselsRes.data ?? []) as { id: string; title: string; input_value: string | null; project_id: string; created_at: string; status: string }[];
+
+  const projectById = new Map(projects.map((p) => [p.id, p.name]));
+  const carousels: AdminUserDetailCarousel[] = carouselsRaw.map((c) => ({
+    id: c.id,
+    title: c.title,
+    input_value: c.input_value ?? null,
+    project_id: c.project_id,
+    projectName: projectById.get(c.project_id) ?? null,
+    created_at: c.created_at,
+    status: c.status,
+  }));
+
+  const meta = (userData?.user_metadata ?? {}) as Record<string, unknown>;
+  const name =
+    (profile?.display_name?.trim()) ||
+    (typeof meta.full_name === "string" && meta.full_name.trim()) ||
+    (typeof meta.name === "string" && meta.name.trim()) ||
+    "—";
+
+  return {
+    user: {
+      id: userId,
+      email: userData?.email ?? null,
+      name,
+      plan: (profile?.plan === "pro" ? "pro" : profile?.plan === "free" ? "free" : null) ?? null,
+      createdAt: userData?.created_at ?? null,
+    },
+    projects,
+    carousels,
+  };
 }
 
 export type AdminStats = {

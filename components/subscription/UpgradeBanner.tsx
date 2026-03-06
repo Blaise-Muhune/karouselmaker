@@ -12,7 +12,7 @@ type UpgradeBannerProps = {
 };
 
 export function UpgradeBanner({
-  message = "Upgrade to Pro to edit slides, export, and unlock AI backgrounds.",
+  message = "Upgrade to Pro to edit carousels, export, and unlock AI backgrounds.",
   variant = "banner",
 }: UpgradeBannerProps) {
   const [loading, setLoading] = useState(false);

@@ -45,7 +45,7 @@ const GENERATION_STEPS = [
   "Analyzing your input…",
   "Outlining the structure…",
   "Writing headlines…",
-  "Formatting slides…",
+  "Formatting carousel…",
   "Applying templates…",
   "Generating images…",
   "Almost there…",
@@ -202,7 +202,7 @@ export function NewCarouselForm({
         (message.toLowerCase().includes("fetch") && message.toLowerCase().includes("fail"));
       setError(
         isTimeout
-          ? "The request took too long (server timeout). Try fewer slides, or use Unsplash/Brave for images instead of AI generate, then try again."
+          ? "The request took too long (server timeout). Try fewer frames, or use Unsplash/Brave for images instead of AI generate, then try again."
           : message
       );
     } finally {
@@ -338,12 +338,12 @@ export function NewCarouselForm({
             <CardTitle className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
               Options
             </CardTitle>
-            <CardDescription>Slides count, instructions, and tone.</CardDescription>
+            <CardDescription>Frame count, instructions, and tone.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-5 px-5 pt-0">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label id="number_of_slides_label" className="text-sm font-medium">Number of slides</Label>
+                <Label id="number_of_slides_label" className="text-sm font-medium">Number of frames</Label>
                 <div
                   id="number_of_slides"
                   role="group"
@@ -360,7 +360,7 @@ export function NewCarouselForm({
                     }}
                     disabled={numberOfSlides === ""}
                     className="flex h-full w-10 shrink-0 items-center justify-center border-r border-input text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50 disabled:hover:bg-transparent"
-                    aria-label="Decrease slides"
+                    aria-label="Decrease frames"
                   >
                     <ChevronDownIcon className="size-5" />
                   </button>
@@ -379,7 +379,7 @@ export function NewCarouselForm({
                     }}
                     disabled={numberOfSlides !== "" && parseInt(numberOfSlides, 10) >= 12}
                     className="flex h-full w-10 shrink-0 items-center justify-center border-l border-input text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50 disabled:hover:bg-transparent"
-                    aria-label="Increase slides"
+                    aria-label="Increase frames"
                   >
                     <ChevronUpIcon className="size-5" />
                   </button>
@@ -397,20 +397,22 @@ export function NewCarouselForm({
                 />
               </div>
             </div>
-            <label className="flex items-start gap-3 rounded-lg border border-transparent p-3 text-sm cursor-pointer hover:bg-muted/40 hover:border-border/50 transition-colors">
-              <input
-                type="checkbox"
-                checked={viralShortsStyle}
-                onChange={(e) => setViralShortsStyle(e.target.checked)}
-                className="mt-0.5 rounded border-input accent-primary"
-              />
-              <span className="flex flex-col gap-1">
-                <span className="font-medium text-foreground">Viral Shorts style</span>
-                <span className="text-muted-foreground text-xs leading-relaxed">
-                  Curiosity-gap or contrarian hook, story build-up, one natural mid-carousel question (e.g. &quot;What would you add?&quot;), payoff, then follow CTA. Not recommended for professional or brand accounts.
+            {isAdminUser && (
+              <label className="flex items-start gap-3 rounded-lg border border-transparent p-3 text-sm cursor-pointer hover:bg-muted/40 hover:border-border/50 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={viralShortsStyle}
+                  onChange={(e) => setViralShortsStyle(e.target.checked)}
+                  className="mt-0.5 rounded border-input accent-primary"
+                />
+                <span className="flex flex-col gap-1">
+                  <span className="font-medium text-foreground">Viral Shorts style</span>
+                  <span className="text-muted-foreground text-xs leading-relaxed">
+                    Curiosity-gap or contrarian hook, story build-up, one natural mid-carousel question (e.g. &quot;What would you add?&quot;), payoff, then follow CTA. Not recommended for professional or brand accounts.
+                  </span>
                 </span>
-              </span>
-            </label>
+              </label>
+            )}
           </CardContent>
         </Card>
 
@@ -485,11 +487,11 @@ export function NewCarouselForm({
                 </div>
                 <p className="text-muted-foreground text-xs">
                   Brave: broad coverage. Unsplash: high quality.
-                  {isAdminUser && " AI Generate: unique images per slide."}
+                  {isAdminUser && " AI Generate: unique images per frame."}
                 </p>
                 {isAdminUser && imageSource === "ai_generate" && (
                   <p className="text-amber-600 dark:text-amber-400 text-xs">
-                    Can take 2–5 min. Use fewer slides (5–8) to avoid timeout.
+                    Can take 2–5 min. Use fewer frames (5–8) to avoid timeout.
                   </p>
                 )}
               </div>
@@ -595,7 +597,7 @@ export function NewCarouselForm({
               </CardTitle>
               <CardDescription>
                 {useAiBackgrounds
-                  ? "Previews use a sample image. Pick the layout for your slides."
+                  ? "Previews use a sample image. Pick the layout for your carousel."
                   : "Pick the layout. Default uses your recommended template."}
               </CardDescription>
             </CardHeader>
@@ -618,7 +620,7 @@ export function NewCarouselForm({
                   <DialogTitle>Choose template</DialogTitle>
                 </DialogHeader>
                 <p className="text-muted-foreground text-sm -mt-2">
-                  Pick a layout for your slides. You can load more below.
+                  Pick a layout for your carousel. You can load more below.
                 </p>
                 <div className="overflow-y-auto overflow-x-hidden flex-1 min-h-0 min-w-0 w-full pr-1">
                   <TemplateSelectCards
@@ -670,12 +672,12 @@ export function NewCarouselForm({
             {isPending ? (
               <>
                 <Loader2Icon className="mr-2 size-4 animate-spin" />
-                Generating slides…
+                Generating carousel…
               </>
             ) : carouselCount >= carouselLimit ? (
               "Limit reached"
             ) : (
-              "Generate slides"
+              "Generate carousel"
             )}
           </Button>
           {carouselCount >= carouselLimit && !isPro && (

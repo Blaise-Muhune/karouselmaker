@@ -46,7 +46,7 @@ export default async function AssetsPage({
         <header>
           <h1 className="text-xl font-semibold tracking-tight">Asset library</h1>
           <p className="mt-1 text-muted-foreground text-sm">
-            Upload images to use as slide backgrounds. Choose an image when editing a slide.
+            Upload images to use as carousel frame backgrounds. Choose an image when editing a carousel.
           </p>
         </header>
         <AssetLibrary

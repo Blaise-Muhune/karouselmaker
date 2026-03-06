@@ -31,7 +31,7 @@ import {
   type ProjectFormInput,
 } from "@/lib/validations/project";
 import { DO_PRESETS, DONT_PRESETS } from "@/lib/editor/voicePresets";
-import { ArrowLeftIcon, Loader2Icon } from "lucide-react";
+import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, Loader2Icon, Settings2Icon } from "lucide-react";
 
 const TONE_OPTIONS = [
   { value: "neutral", label: "Neutral" },
@@ -60,6 +60,7 @@ const LANGUAGE_OPTIONS = [
 export function NewProjectForm({ isAdmin = false }: { isAdmin?: boolean }) {
   const [isPending, startTransition] = useTransition();
   const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const form = useForm<ProjectFormInput>({
     resolver: zodResolver(projectFormSchema) as Resolver<ProjectFormInput>,
@@ -129,7 +130,10 @@ export function NewProjectForm({ isAdmin = false }: { isAdmin?: boolean }) {
               <span className="sr-only">Back</span>
             </Link>
           </Button>
-          <h1 className="text-xl font-semibold tracking-tight">New project</h1>
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight">New project</h1>
+            <p className="text-muted-foreground text-sm mt-0.5">Your project is where your carousels live—one place per niche or brand. Name it and go; add language, tone, and brand in Advanced settings if you like.</p>
+          </div>
         </div>
 
         <Form {...form}>
@@ -160,6 +164,21 @@ export function NewProjectForm({ isAdmin = false }: { isAdmin?: boolean }) {
                 </FormItem>
               )}
             />
+
+            <div className="space-y-3">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground hover:text-foreground -ml-2"
+                onClick={() => setShowAdvanced((v) => !v)}
+              >
+                <Settings2Icon className="mr-2 size-4" />
+                Advanced settings
+                {showAdvanced ? <ChevronUpIcon className="ml-1 size-4" /> : <ChevronDownIcon className="ml-1 size-4" />}
+              </Button>
+              {showAdvanced && (
+                <div className="space-y-6 rounded-lg border border-border/60 bg-muted/20 p-4">
             <FormField
               control={form.control}
               name="language"
@@ -391,6 +410,9 @@ export function NewProjectForm({ isAdmin = false }: { isAdmin?: boolean }) {
                   )}
                 />
               </div>
+            </div>
+                </div>
+              )}
             </div>
             {form.formState.errors.root && (
               <p className="text-destructive text-sm">{form.formState.errors.root.message}</p>

@@ -49,5 +49,5 @@ export async function requirePro(
   if (isPro) return { allowed: true };
   const lifetimeCount = await countCarouselsLifetime(userId);
   if (lifetimeCount < FREE_FULL_ACCESS_GENERATIONS) return { allowed: true };
-  return { allowed: false, error: "Upgrade to Pro to edit slides and export." };
+  return { allowed: false, error: "Upgrade to Pro to edit carousels and export." };
 }

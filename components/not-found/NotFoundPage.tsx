@@ -6,10 +6,10 @@ import { NotFoundContent } from "./NotFoundContent";
 import { JumpScare } from "./JumpScare";
 
 const PUNCHLINES = [
-  "This slide doesn't exist. You swiped too far. 🎠",
+  "This carousel doesn't exist. You swiped too far. 🎠",
   "404: The carousel stopped here.",
   "This page is missing. So are our socks.",
-  "You've found the void between slides.",
+  "You've found the void between carousels.",
 ];
 
 const JUMP_SCARE_CHANCE = 0.2;

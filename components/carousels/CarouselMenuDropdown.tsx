@@ -111,7 +111,7 @@ export function CarouselMenuDropdown({
           <DialogHeader>
             <DialogTitle>Delete carousel?</DialogTitle>
             <DialogDescription>
-              This will permanently delete this carousel and all its slides. This action cannot be undone.
+              This will permanently delete this carousel and all its frames. This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter showCloseButton={false}>

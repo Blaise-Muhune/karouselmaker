@@ -3,17 +3,17 @@
 import { useState, useEffect } from "react";
 
 const JOKES = [
-  "This slide doesn't exist. The carousel decided to take a coffee break. ☕",
+  "This carousel doesn't exist. It decided to take a coffee break. ☕",
   "404: You swiped into the void. Legend says infinite templates live here. 🎠",
   "This page went to get milk. It's not coming back. 🥛",
-  "Error 404: We've searched all 7 slides. This one isn't one of them.",
+  "Error 404: We've searched all 7 carousels. This one isn't one of them.",
   "The carousel stopped here. The horses ran away. Again. 🐴",
-  "You've discovered the gap between slides. Few have returned. ⚠️",
-  "404: Even the best carousels have missing slides. This is ours.",
+  "You've discovered the gap between carousels. Few have returned. ⚠️",
+  "404: Even the best projects have missing carousels. This is ours.",
   "This page is loading... from 1998. 📞",
-  "The slide you're looking for is in another carousel. 🍄",
+  "The carousel you're looking for is in another project. 🍄",
   "404: We asked our AI. It said 'page not found.' So... yeah.",
-  "This slide doesn't exist. But your next carousel could! 🚀",
+  "This carousel doesn't exist. But your next one could! 🚀",
   "You swiped too far. The carousel stopped here. Happens to the best of us. 🎠",
 ];
 

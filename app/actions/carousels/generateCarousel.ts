@@ -201,7 +201,7 @@ export async function generateCarousel(formData: FormData): Promise<
     project_niche: project.niche?.trim() || undefined,
     language: projectLanguage,
     notes: data.notes,
-    viral_shorts_style: !!parsed.data.viral_shorts_style,
+    viral_shorts_style: !!parsed.data.viral_shorts_style && isAdmin(user.email ?? null),
   } as const;
 
   let lastRaw = "";
@@ -632,8 +632,8 @@ export async function generateCarousel(formData: FormData): Promise<
       msg.toLowerCase().includes("timeout") ||
       msg.toLowerCase().includes("gateway");
     const partialError = isTimeout
-      ? "Generation was interrupted (server timeout). Your carousel was saved — some slides may have images. You can edit slides or try regenerating with fewer slides or Unsplash/Brave instead of AI generate."
-      : "Some background images couldn't be generated. Your carousel was saved — you can edit slides or try again with different settings.";
+      ? "Generation was interrupted (server timeout). Your carousel was saved — some frames may have images. You can edit the carousel or try regenerating with fewer frames or Unsplash/Brave instead of AI generate."
+      : "Some background images couldn't be generated. Your carousel was saved — you can edit the carousel or try again with different settings.";
     return { carouselId: carousel.id, partialError };
   }
 }

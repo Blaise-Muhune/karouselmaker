@@ -13,7 +13,7 @@ import { GoProBar } from "@/components/subscription/GoProBar";
 import { ProjectMenuDropdown } from "@/components/projects/ProjectMenuDropdown";
 import { getSubscription } from "@/lib/server/subscription";
 import { PaginationNav } from "@/components/ui/pagination-nav";
-import { PlusCircleIcon } from "lucide-react";
+import { PlusCircleIcon, SparklesIcon } from "lucide-react";
 
 const PROJECTS_PAGE_SIZE = 15;
 
@@ -23,17 +23,19 @@ export default async function ProjectsPage({
   searchParams: Promise<{ subscription?: string; page?: string; error?: string }>;
 }) {
   const { getUser } = await import("@/lib/server/auth/getUser");
-  const { listProjects, countProjects } = await import("@/lib/server/db");
+  const { listProjects, countProjects, countCarouselsLifetime } = await import("@/lib/server/db");
   const { user } = await getUser();
   const params = await searchParams;
   const page = Math.max(1, parseInt(params.page ?? "1", 10) || 1);
   const offset = (page - 1) * PROJECTS_PAGE_SIZE;
-  const [projects, total, subscription] = await Promise.all([
+  const [projects, total, subscription, carouselCount] = await Promise.all([
     listProjects(user.id, { limit: PROJECTS_PAGE_SIZE, offset }),
     countProjects(user.id),
     getSubscription(user.id, user.email),
+    countCarouselsLifetime(user.id),
   ]);
   const totalPages = Math.max(1, Math.ceil(total / PROJECTS_PAGE_SIZE));
+  const showGettingStarted = projects.length === 0 || carouselCount === 0;
 
   return (
     <div className="p-6 md:p-8">
@@ -59,32 +61,64 @@ export default async function ProjectsPage({
           </Button>
         </div>
 
-        {projects.length === 0 ? (
-          <Card className="border-dashed">
-            <CardHeader>
-              <CardTitle>No projects yet</CardTitle>
+        {showGettingStarted && (
+          <Card className="border-primary/20 bg-primary/5">
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <SparklesIcon className="size-4 text-primary" />
+                How to create a carousel
+              </CardTitle>
               <CardDescription>
-                One project = one niche. Set your brand, tone, and style—then spin up carousels in seconds.
+                {projects.length === 0
+                  ? "Follow these steps to create your first carousel."
+                  : "You're all set — create your first carousel in one of your projects."}
               </CardDescription>
+              <p className="text-sm text-foreground/90 mt-1 font-medium">
+                Generate your first carousel free — try it before you go Pro.
+              </p>
             </CardHeader>
             <CardContent className="space-y-4">
-              <Button asChild>
-                <Link href="/projects/new">
-                  <PlusCircleIcon className="mr-2 size-4" />
-                  Create project
-                </Link>
-              </Button>
-              <div className="rounded-lg border border-border/60 bg-muted/30 p-4">
-                <p className="text-muted-foreground text-xs font-medium mb-2">Quick start ideas</p>
-                <ul className="text-muted-foreground text-xs space-y-1">
-                  <li>• Fitness tips · Tone: Casual</li>
-                  <li>• Tech reviews · Tone: Professional</li>
-                  <li>• Recipes · Tone: Friendly</li>
-                </ul>
-              </div>
+              {projects.length === 0 ? (
+                <>
+                  <ol className="text-sm space-y-3 text-foreground">
+                    <li className="flex gap-3">
+                      <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/20 text-primary text-xs font-semibold">1</span>
+                      <span><strong>Create a project</strong> — give it a name and optional niche. Use <strong>Advanced settings</strong> to set language, tone, and brand (or edit later).</span>
+                    </li>
+                    <li className="flex gap-3">
+                      <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/20 text-primary text-xs font-semibold">2</span>
+                      <span><strong>Open the project</strong> and click <strong>New carousel</strong>.</span>
+                    </li>
+                    <li className="flex gap-3">
+                      <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/20 text-primary text-xs font-semibold">3</span>
+                      <span><strong>Enter a topic or paste a URL</strong>, then hit Generate. AI creates the carousel and suggests images.</span>
+                    </li>
+                  </ol>
+                  <Button asChild>
+                    <Link href="/projects/new">
+                      <PlusCircleIcon className="mr-2 size-4" />
+                      Create your first project
+                    </Link>
+                  </Button>
+                  <div className="rounded-lg border border-border/60 bg-muted/30 p-4 pt-3">
+                    <p className="text-muted-foreground text-xs font-medium mb-2">Project ideas</p>
+                    <ul className="text-muted-foreground text-xs space-y-1">
+                      <li>• Fitness tips · Tone: Casual</li>
+                      <li>• Tech reviews · Tone: Professional</li>
+                      <li>• Recipes · Tone: Friendly</li>
+                    </ul>
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Open any project below, then click <strong>New carousel</strong>. Enter a topic or URL and click Generate — you'll get a full carousel in under a minute.
+                </p>
+              )}
             </CardContent>
           </Card>
-        ) : (
+        )}
+
+        {projects.length === 0 ? null : (
           <>
             <ul className="space-y-2">
               {projects.map((p) => (

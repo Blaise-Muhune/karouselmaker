@@ -268,7 +268,7 @@ export function EditorExportSection({
         const res = await fetch(`/api/carousel/${carouselId}/render-for-video`, { method: "POST" });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-          throw new Error(data.error ?? "Failed to prepare slides for video");
+          throw new Error(data.error ?? "Failed to prepare frames for video");
         }
         const runId = (data.runId as string) ?? null;
         if (runId) videoRenderRunIdRef.current = runId;
@@ -838,13 +838,13 @@ export function EditorExportSection({
         <div className="mt-2 space-y-1">
           <p className="text-destructive text-sm">{error}</p>
           <p className="text-muted-foreground text-sm">
-            You can download each slide as an image using the Download button under each slide below.
+            You can download each frame as an image using the Download button under each frame below.
           </p>
         </div>
       )}
       {!error && recentExports.some((ex) => ex.status === "failed") && (
         <p className="text-muted-foreground mt-2 text-sm">
-          A recent export failed. You can download each slide individually using the Download button under each slide below.
+          A recent export failed. You can download each frame individually using the Download button under each frame below.
         </p>
       )}
       {recentExports.length > 0 && (

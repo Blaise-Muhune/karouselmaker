@@ -611,7 +611,7 @@ export function SlideGrid({
                     <Button
                       variant="outline"
                       size="icon-sm"
-                      title="Download this slide"
+                      title="Download this frame"
                       disabled={downloadingSlideId === slide.id}
                       onClick={async () => {
                         if (downloadingSlideId) return;
@@ -638,13 +638,13 @@ export function SlideGrid({
                       ) : (
                         <DownloadIcon className="size-4" />
                       )}
-                      <span className="sr-only">Download this slide</span>
+                      <span className="sr-only">Download this frame</span>
                     </Button>
                     {canEdit && slideHasShuffleableImages(slide) && (
                       <Button
                         variant="outline"
                         size="icon-sm"
-                        title="Shuffle background images for this slide"
+                        title="Shuffle background images for this frame"
                         disabled={shufflingSlideId === slide.id}
                         onClick={() => {
                           setShufflingSlideId(slide.id);
@@ -664,7 +664,7 @@ export function SlideGrid({
                       </Button>
                     )}
                     {canEdit ? (
-                      <Button variant="outline" size="icon-sm" asChild title="Edit slide">
+                      <Button variant="outline" size="icon-sm" asChild title="Edit frame">
                         <Link href={`/p/${projectId}/c/${carouselId}/s/${slide.id}`}>
                           <PencilIcon className="size-4" />
                         </Link>

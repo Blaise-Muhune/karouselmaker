@@ -27,7 +27,7 @@ export default async function TemplatesPage() {
       <div className="mx-auto max-w-xl">
         {!subscription.isPro && (
           <UpgradeBanner
-            message="Free: View templates only. Upgrade to Pro to pick templates when editing slides."
+            message="Free: View templates only. Upgrade to Pro to pick templates when editing carousels."
             variant="banner"
           />
         )}

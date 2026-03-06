@@ -283,11 +283,11 @@ function getPreviewDimensions(size: "1080x1080" | "1080x1350" | "1080x1920", max
 const SECTION_INFO: Record<string, { title: string; body: string }> = {
   content: {
     title: "Content",
-    body: "Type your headline and optional body here. For bold, wrap a word in **like this**. Highlights: select a word (or drag to select), then click a color—Yellow, Amber, or the color picker. Or click Auto to highlight key words automatically. Use “Apply to all highlights” to change the color of every highlight in that field; use “Apply to all slides” to run Auto on every slide. Highlight style: colored text only, or highlighter (colored background + dark text).",
+    body: "Type your headline and optional body here. For bold, wrap a word in **like this**. Highlights: select a word (or drag to select), then click a color—Yellow, Amber, or the color picker. Or click Auto to highlight key words automatically. Use “Apply to all highlights” to change the color of every highlight in that field; use “Apply to all frames” to run Auto on every frame. Highlight style: colored text only, or highlighter (colored background + dark text).",
   },
   layout: {
-    title: "Slide layout",
-    body: "The Template dropdown chooses the slide layout—where the headline and body are placed (e.g. center, bottom). Each template has a fixed layout; you only edit the text. Position number shows the slide index (e.g. 3/10) on the slide and always applies to all slides in the carousel. If you have multiple slides, use Apply template to all to use this template on every slide.",
+    title: "Frame layout",
+    body: "The Template dropdown chooses the frame layout—where the headline and body are placed (e.g. center, bottom). Each template has a fixed layout; you only edit the text. Position number shows the frame index (e.g. 3/10) on the frame and always applies to all frames in the carousel. If you have multiple frames, use Apply template to all to use this template on every frame.",
   },
   background: {
     title: "Background",
@@ -295,11 +295,11 @@ const SECTION_INFO: Record<string, { title: string; body: string }> = {
   },
   templates: {
     title: "Save as template",
-    body: "Save the current layout and overlay settings as a new template. Your template will include the layout, gradient overlay (direction, opacity, color, extent), and chrome settings. You can then use it on other slides or carousels from the Template dropdown in Layout.",
+    body: "Save the current layout and overlay settings as a new template. Your template will include the layout, gradient overlay (direction, opacity, color, extent), and chrome settings. You can then use it on other frames or carousels from the Template dropdown in Layout.",
   },
   preview: {
     title: "Preview",
-    body: "This shows how the slide will look when exported. Choose the export format (PNG or JPEG) and size (square, 4:5, or 9:16). Changes apply to all slides in this carousel. On desktop the preview stays in view when you scroll; on mobile it appears above the form.",
+    body: "This shows how the frame will look when exported. Choose the export format (PNG or JPEG) and size (square, 4:5, or 9:16). Changes apply to all frames in this carousel. On desktop the preview stays in view when you scroll; on mobile it appears above the form.",
   },
 };
 
@@ -1760,7 +1760,7 @@ export function SlideEditForm({
         }));
         setBackgroundImageUrlForPreview(asset.url);
         setImageUrls([{ url: "", source: undefined }]);
-        setDriveSuccess("Image from Drive applied. Save the slide to keep it.");
+        setDriveSuccess("Image from Drive applied. Save the frame to keep it.");
         setTimeout(() => setDriveSuccess(null), 4000);
       } else if (!result.ok) {
         setDriveError(result.error);
@@ -1860,7 +1860,7 @@ export function SlideEditForm({
             className="text-muted-foreground hover:text-foreground"
             onClick={handleApplyOverlayToAll}
             disabled={applyingOverlay}
-            title="Apply overlay to all slides"
+            title="Apply overlay to all frames"
           >
             {applyingOverlay ? <Loader2Icon className="size-4 animate-spin" /> : <CopyIcon className="size-4" />}
             Apply to all
@@ -2062,8 +2062,8 @@ export function SlideEditForm({
               className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
               onClick={handleDownloadSlide}
               disabled={downloading}
-              title={`Download slide (${exportFormat.toUpperCase()}, ${exportSize})`}
-              aria-label="Download this slide"
+              title={`Download frame (${exportFormat.toUpperCase()}, ${exportSize})`}
+              aria-label="Download this frame"
             >
               {downloading ? <Loader2Icon className="size-4 animate-spin" /> : <DownloadIcon className="size-4" />}
             </Button>
@@ -2077,7 +2077,7 @@ export function SlideEditForm({
             className="h-8 gap-1.5 px-3 text-xs font-medium"
             onClick={() => performSave(false)}
             disabled={saving}
-            title="Save slide changes"
+            title="Save frame changes"
           >
             {saving ? <Loader2Icon className="size-3.5 animate-spin" /> : savedFeedback ? <CheckIcon className="size-3.5" /> : <CheckIcon className="size-3.5" />}
             {saving ? "Saving…" : savedFeedback ? "Saved" : "Save"}
@@ -2105,8 +2105,8 @@ export function SlideEditForm({
             className="h-9 w-9 shrink-0 rounded-full border border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted/50"
             disabled={!prevHref || saving}
             onClick={(e) => handlePrevNext(e, "prev")}
-            title="Previous slide (saves first)"
-            aria-label="Previous slide"
+            title="Previous frame (saves first)"
+            aria-label="Previous frame"
           >
             <ChevronLeftIcon className="size-5" />
           </Button>
@@ -2118,7 +2118,7 @@ export function SlideEditForm({
             ref={previewWrapRef}
             className="w-full max-w-full rounded-lg border border-border bg-background/50 shadow-sm overflow-hidden relative"
             role="img"
-            aria-label="Slide preview"
+            aria-label="Frame preview"
             style={{
               maxWidth: getPreviewDimensions(exportSize).w,
               aspectRatio: `${1080}/${exportSize === "1080x1080" ? 1080 : exportSize === "1080x1350" ? 1350 : 1920}`,
@@ -2184,8 +2184,8 @@ export function SlideEditForm({
             className="h-9 w-9 shrink-0 rounded-full border border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted/50"
             disabled={!nextHref || saving}
             onClick={(e) => handlePrevNext(e, "next")}
-            title="Next slide (saves first)"
-            aria-label="Next slide"
+            title="Next frame (saves first)"
+            aria-label="Next frame"
           >
             <ChevronRightIcon className="size-5" />
           </Button>
@@ -2488,7 +2488,7 @@ export function SlideEditForm({
                   <InfoIcon className="size-3.5" />
                 </button>
               </div>
-              <p className="text-muted-foreground text-[11px]">Layout for this slide.</p>
+              <p className="text-muted-foreground text-[11px]">Layout for this frame.</p>
               <Button
                 type="button"
                 variant="outline"
@@ -2677,7 +2677,7 @@ export function SlideEditForm({
               <>
                 <div className="rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3">
                   <h3 className="text-xs font-semibold text-foreground">When applying to all</h3>
-                  <p className="text-muted-foreground text-[11px]">Template and background apply to slides matching these options.</p>
+                  <p className="text-muted-foreground text-[11px]">Template and background apply to frames matching these options.</p>
                   <div className="flex items-center gap-4">
                     <label className="flex cursor-pointer items-center gap-1.5 text-xs">
                       <input
@@ -2713,7 +2713,7 @@ export function SlideEditForm({
                     </label>
                   </div>
                 </div>
-                <Button type="button" variant="secondary" size="sm" className="w-full h-9 text-xs font-medium" onClick={handleApplyTemplateToAll} disabled={applyingTemplate} title="Use this template on every slide (respects First/Last options above)">
+                <Button type="button" variant="secondary" size="sm" className="w-full h-9 text-xs font-medium" onClick={handleApplyTemplateToAll} disabled={applyingTemplate} title="Use this template on every frame (respects First/Last options above)">
                   {applyingTemplate ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
                   Apply this template to all slides
                 </Button>
@@ -2730,7 +2730,7 @@ export function SlideEditForm({
                 <h3 className="text-xs font-semibold text-foreground shrink-0">Headline</h3>
                 <div className="flex items-center gap-1 shrink-0">
                   {totalSlides > 1 && isPro && (
-                    <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={handleApplyHeadlineToAll} disabled={applyingHeadlineZone} title="Apply headline size and position & layout to all slides">
+                    <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={handleApplyHeadlineToAll} disabled={applyingHeadlineZone} title="Apply headline size and position & layout to all frames">
                       {applyingHeadlineZone ? <Loader2Icon className="size-3 animate-spin" /> : <CopyIcon className="size-3" />}
                       Apply to all
                     </Button>
@@ -2794,7 +2794,7 @@ export function SlideEditForm({
                     </Button>
                   )}
                   {totalSlides > 1 && isPro && (
-                    <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground gap-1.5" onClick={handleApplyClearHeadlineToAll} disabled={applyingClear} title="Clear headline text on every slide">
+                    <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground gap-1.5" onClick={handleApplyClearHeadlineToAll} disabled={applyingClear} title="Clear headline text on every frame">
                       {applyingClear ? <Loader2Icon className="size-3.5 animate-spin" /> : <Trash2 className="size-3" />}
                       Clear text on all slides
                     </Button>
@@ -2804,7 +2804,7 @@ export function SlideEditForm({
               {false && headlineHighlightOpen && (
               <div className="border-t border-border/40 pt-3 mt-3 hidden">
                   <div className="space-y-2">
-                    <p className="text-[11px] text-muted-foreground">Select a word (or drag to select), then click a color. Or click Auto to highlight key words. Use “Apply to all highlights” to change every highlight’s color; “Apply to all slides” runs Auto on every slide.</p>
+                    <p className="text-[11px] text-muted-foreground">Select a word (or drag to select), then click a color. Or click Auto to highlight key words. Use “Apply to all highlights” to change every highlight’s color; “Apply to all frames” runs Auto on every frame.</p>
                     <div className="flex flex-wrap items-center gap-1.5">
                       <Button
                         type="button"
@@ -2893,7 +2893,7 @@ export function SlideEditForm({
                           className="h-6 text-[11px] px-2"
                           onClick={() => handleApplyAutoHighlightsToAll("headline")}
                           disabled={applyingAutoHighlights}
-                          title="Run Auto highlight on headlines only, on every slide (uses headline color)"
+                          title="Run Auto highlight on headlines only, on every frame (uses headline color)"
                         >
                           {applyingAutoHighlights ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
                           Apply Auto to all slides
@@ -2920,7 +2920,7 @@ export function SlideEditForm({
                 <h3 className="text-xs font-semibold text-foreground shrink-0">Body</h3>
                 <div className="flex items-center gap-1 shrink-0">
                   {totalSlides > 1 && isPro && (
-                    <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={handleApplyBodyToAll} disabled={applyingBodyZone} title="Apply body size and position & layout to all slides">
+                    <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={handleApplyBodyToAll} disabled={applyingBodyZone} title="Apply body size and position & layout to all frames">
                       {applyingBodyZone ? <Loader2Icon className="size-3 animate-spin" /> : <CopyIcon className="size-3" />}
                       Apply to all
                     </Button>
@@ -2981,7 +2981,7 @@ export function SlideEditForm({
                     </Button>
                   )}
                   {totalSlides > 1 && isPro && (
-                    <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground gap-1.5" onClick={handleApplyClearBodyToAll} disabled={applyingClear} title="Clear body text on every slide">
+                    <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground gap-1.5" onClick={handleApplyClearBodyToAll} disabled={applyingClear} title="Clear body text on every frame">
                       {applyingClear ? <Loader2Icon className="size-3.5 animate-spin" /> : <Trash2 className="size-3" />}
                       Clear text on all slides
                     </Button>
@@ -2991,7 +2991,7 @@ export function SlideEditForm({
               {false && bodyHighlightOpen && (
               <div className="border-t border-border/40 pt-3 mt-3 hidden">
                   <div className="space-y-2">
-                    <p className="text-[11px] text-muted-foreground">Select a word (or drag to select), then click a color. Or click Auto to highlight key words. Use “Apply to all highlights” to change every highlight’s color; “Apply to all slides” runs Auto on every slide.</p>
+                    <p className="text-[11px] text-muted-foreground">Select a word (or drag to select), then click a color. Or click Auto to highlight key words. Use “Apply to all highlights” to change every highlight’s color; “Apply to all frames” runs Auto on every frame.</p>
                     <div className="flex flex-wrap items-center gap-1.5">
                       <Button
                         type="button"
@@ -3075,7 +3075,7 @@ export function SlideEditForm({
                           className="h-6 text-[11px] px-2"
                           onClick={() => handleApplyAutoHighlightsToAll("body")}
                           disabled={applyingAutoHighlights}
-                          title="Run Auto highlight on body only, on every slide (uses body color)"
+                          title="Run Auto highlight on body only, on every frame (uses body color)"
                         >
                           {applyingAutoHighlights ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
                           Apply Auto to all slides
@@ -3112,7 +3112,7 @@ export function SlideEditForm({
                       className="h-7 text-xs text-muted-foreground hover:text-foreground"
                       onClick={handleApplyBackgroundToAll}
                       disabled={applyingBackground}
-                      title="Apply background (color, style, overlay) to all slides"
+                      title="Apply background (color, style, overlay) to all frames"
                     >
                       {applyingBackground ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
                       Apply to all
@@ -3342,7 +3342,7 @@ export function SlideEditForm({
                     className="rounded-lg h-9 text-muted-foreground hover:text-foreground text-xs"
                     onClick={handleApplyImageCountToAll}
                     disabled={applyingImageCount || validImageCount < 1 || totalSlides < 2}
-                    title={totalSlides < 2 ? "Need 2+ slides" : `Apply ${validImageCount} image${validImageCount === 1 ? "" : "s"} to all (reduces slides with more)`}
+                    title={totalSlides < 2 ? "Need 2+ frames" : `Apply ${validImageCount} image${validImageCount === 1 ? "" : "s"} to all (reduces frames with more)`}
                   >
                     {applyingImageCount ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
                     Apply {validImageCount} to all
@@ -3365,7 +3365,7 @@ export function SlideEditForm({
                       className="text-muted-foreground hover:text-foreground text-xs"
                       onClick={handleApplyImageDisplayToAll}
                       disabled={applyingImageDisplay || totalSlides < 2}
-                      title={totalSlides < 2 ? "Need 2+ slides to apply" : "Apply position & frame to all slides"}
+                      title={totalSlides < 2 ? "Need 2+ frames to apply" : "Apply position & frame to all frames"}
                     >
                       {applyingImageDisplay ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
                       Apply to all
@@ -3778,7 +3778,7 @@ export function SlideEditForm({
                   <SelectItem value="1080x1920">{EXPORT_SIZE_LABELS["1080x1920"]}</SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-muted-foreground text-[11px]">Size applies to all slides. ZIP includes images, captions (short/medium/long), and credits.</p>
+              <p className="text-muted-foreground text-[11px]">Size applies to all frames. ZIP includes images, captions (short/medium/long), and credits.</p>
               <Button
                 type="button"
                 variant="default"
@@ -3796,7 +3796,7 @@ export function SlideEditForm({
             </div>
             <div className="rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3">
               <h3 className="text-xs font-semibold text-foreground">Save as template</h3>
-              <p className="text-muted-foreground text-[11px] leading-snug">Reuse this layout and overlay on other slides.</p>
+              <p className="text-muted-foreground text-[11px] leading-snug">Reuse this layout and overlay on other frames.</p>
               <Button type="button" variant="outline" size="sm" className="h-8 w-full md:w-auto md:min-w-[160px] rounded-md text-xs gap-1.5" onClick={() => setSaveTemplateOpen(true)} disabled={!templateConfig}>
                 <Bookmark className="size-3.5" />
                 Save as template

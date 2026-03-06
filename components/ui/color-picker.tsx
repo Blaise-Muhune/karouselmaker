@@ -143,7 +143,7 @@ export function ColorPicker({
             size="sm"
             className="shrink-0"
             onClick={() => fileRef.current?.click()}
-            title={onLogoUpload ? "Upload logo (saved and used on slides)" : "Upload logo to extract colors"}
+            title={onLogoUpload ? "Upload logo (saved and used on carousel frames)" : "Upload logo to extract colors"}
           >
             <ImageIcon className="size-4" />
           </Button>

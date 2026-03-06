@@ -89,7 +89,7 @@ export default async function Home() {
             {[
               { num: 1, title: "Create project", desc: "Brand, niche, tone.", example: "Fitness tips" },
               { num: 2, title: "Enter topic", desc: "Paste topic or URL.", example: "5 habits of founders" },
-              { num: 3, title: "Slides drafted", desc: "Hook, points, CTA.", example: null },
+              { num: 3, title: "Carousel drafted", desc: "Hook, points, CTA.", example: null },
               { num: 4, title: "Edit & export", desc: "Tweak, export PNGs.", example: "1080×1080" },
             ].map((step, i) => (
               <div key={step.num} className="relative w-full min-w-0 max-w-[260px] sm:max-w-[280px]">

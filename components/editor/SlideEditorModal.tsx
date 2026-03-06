@@ -182,7 +182,7 @@ export function SlideEditorModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[95vh] w-[95vw] max-w-6xl overflow-y-auto p-5 sm:p-6" showCloseButton>
         <DialogHeader className="space-y-1.5 pb-3">
-          <DialogTitle className="text-xl">Edit slide {slide.slide_index}</DialogTitle>
+          <DialogTitle className="text-xl">Edit frame {slide.slide_index}</DialogTitle>
           <DialogDescription>
             Headline, body, template, and background. Use “Shorten to fit” to match template zones.
           </DialogDescription>
@@ -303,7 +303,7 @@ export function SlideEditorModal({
                 <HashIcon className="size-4" />
                 Display
               </Label>
-              <label className="flex cursor-pointer items-center gap-2 text-sm" title="Show slide number (e.g. 3 / 10)">
+              <label className="flex cursor-pointer items-center gap-2 text-sm" title="Show frame number (e.g. 3 / 10)">
                 <input
                   type="checkbox"
                   checked={showCounter}

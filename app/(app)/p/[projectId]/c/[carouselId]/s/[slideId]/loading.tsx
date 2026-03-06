@@ -8,7 +8,7 @@ export default function SlideEditLoading() {
       <main className="flex flex-1 items-center justify-center p-4 bg-muted/20">
         <div className="flex flex-col items-center gap-3 text-muted-foreground">
           <div className="size-8 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden />
-          <p className="text-sm">Loading slide…</p>
+          <p className="text-sm">Loading frame…</p>
         </div>
       </main>
       <section className="shrink-0 border-t border-border p-3">

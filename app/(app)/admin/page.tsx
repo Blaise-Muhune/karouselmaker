@@ -93,7 +93,7 @@ export default async function AdminPage() {
         />
         <StatCard icon={FolderIcon} label="Projects" value={stats.totalProjects} />
         <StatCard icon={LayoutIcon} label="Carousels" value={stats.totalCarousels} />
-        <StatCard icon={LayersIcon} label="Slides" value={stats.totalSlides} sub={`~${slidesPerCarousel}/carousel`} />
+        <StatCard icon={LayersIcon} label="Frames" value={stats.totalSlides} sub={`~${slidesPerCarousel}/carousel`} />
         <StatCard icon={DownloadIcon} label="Exports" value={stats.totalExports} />
           </div>
         </section>
@@ -150,14 +150,28 @@ export default async function AdminPage() {
                   <tr>
                     <th className="text-left font-medium text-muted-foreground px-4 py-3">Name</th>
                     <th className="text-left font-medium text-muted-foreground px-4 py-3">Email</th>
+                    <th className="text-right font-medium text-muted-foreground px-4 py-3">Carousels</th>
+                    <th className="text-right font-medium text-muted-foreground px-4 py-3">Projects</th>
+                    <th className="text-right font-medium text-muted-foreground px-4 py-3">Exports</th>
+                    <th className="text-left font-medium text-muted-foreground px-4 py-3">Joined</th>
                     <th className="text-left font-medium text-muted-foreground px-4 py-3">Plan</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(users ?? []).map((u) => (
                     <tr key={u.id} className="border-b border-border/30 last:border-0 hover:bg-muted/30">
-                      <td className="px-4 py-2.5 font-medium text-foreground">{u.name}</td>
+                      <td className="px-4 py-2.5 font-medium text-foreground">
+                        <Link href={`/admin/users/${u.id}`} className="hover:underline focus:underline">
+                          {u.name}
+                        </Link>
+                      </td>
                       <td className="px-4 py-2.5 text-muted-foreground">{u.email ?? "—"}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums">{u.carouselCount}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums">{u.projectCount}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums">{u.exportCount}</td>
+                      <td className="px-4 py-2.5 text-muted-foreground">
+                        {u.createdAt ? new Date(u.createdAt).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "—"}
+                      </td>
                       <td className="px-4 py-2.5">
                         <span className={u.plan === "pro" ? "text-primary font-medium" : "text-muted-foreground"}>
                           {u.plan ?? "—"}
