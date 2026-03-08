@@ -165,7 +165,8 @@ export async function POST(
 
         const slideBg = slide.background as
           | {
-              style?: "solid" | "gradient";
+              style?: "solid" | "gradient" | "pattern";
+              pattern?: "dots" | "ovals" | "lines" | "circles";
               color?: string;
               gradientOn?: boolean;
               mode?: string;
@@ -234,6 +235,7 @@ export async function POST(
         const backgroundOverride = slideBg
           ? {
               style: slideBg.style,
+              pattern: slideBg.pattern,
               color: slideBg.color,
               gradientOn,
               ...overlayFields,
@@ -377,8 +379,10 @@ export async function POST(
         }
       }
       const captionVariants = (carousel.caption_variants ?? {}) as {
-      short?: string;
+      title?: string;
       medium?: string;
+      long?: string;
+      short?: string;
       spicy?: string;
     };
     const hashtags = (carousel.hashtags ?? []) as string[];
@@ -406,13 +410,13 @@ export async function POST(
         )
       );
     }
-    const shortBlock = captionVariants?.short?.trim();
+    const titleBlock = (captionVariants?.title ?? captionVariants?.short)?.trim();
     const mediumBlock = captionVariants?.medium?.trim();
-    const longBlock = captionVariants?.spicy?.trim();
+    const longBlock = (captionVariants?.long ?? captionVariants?.spicy)?.trim();
     const captionSections: string[] = [];
-    if (shortBlock) captionSections.push(`--- Short ---\n${shortBlock}`);
-    if (mediumBlock) captionSections.push(`--- Medium ---\n${mediumBlock}`);
-    if (longBlock) captionSections.push(`--- Long ---\n${longBlock}`);
+    if (titleBlock) captionSections.push(`--- Title (SEO) ---\n${titleBlock}`);
+    if (mediumBlock) captionSections.push(`--- Medium caption (engagement) ---\n${mediumBlock}`);
+    if (longBlock) captionSections.push(`--- Long caption ---\n${longBlock}`);
     if (hashtagLine) captionSections.push(hashtagLine);
     captionSections.push(...creditsLines);
     const captionText = captionSections.filter(Boolean).join("\n\n");

@@ -20,8 +20,10 @@ function gradientDirectionToCss(direction: GradientDirection | undefined, templa
 }
 
 export type SlideBackgroundOverride = {
-  style?: "solid" | "gradient";
+  style?: "solid" | "gradient" | "pattern";
   color?: string;
+  /** When style is "pattern", one of: dots, ovals, lines, circles. Minimal professional backgrounds. */
+  pattern?: "dots" | "ovals" | "lines" | "circles";
   gradientOn?: boolean;
   gradientStrength?: number;
   gradientColor?: string;
@@ -29,6 +31,12 @@ export type SlideBackgroundOverride = {
   gradientDirection?: GradientDirection;
   gradientExtent?: number;
   gradientSolidSize?: number;
+  /** When false, gradient and tint are not applied. Default true. */
+  overlayEnabled?: boolean;
+  /** When there is a background image: tint layer color (hex) on top at reduced opacity. */
+  tintColor?: string;
+  /** Tint layer opacity 0–1. */
+  tintOpacity?: number;
 };
 
 export type FontSizeOverrides = {
@@ -44,11 +52,40 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
+/** Safe font-family stack for template fontFamily (system, Inter, Georgia, etc.). */
+function getFontFamilyStack(fontFamily: string | undefined): string {
+  if (!fontFamily?.trim()) return "inherit";
+  const f = fontFamily.trim();
+  if (f === "system" || f === "sans-serif") return "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif";
+  if (f === "Inter") return "\"Inter\", -apple-system, BlinkMacSystemFont, sans-serif";
+  if (f === "Georgia" || f === "serif") return "Georgia, \"Times New Roman\", serif";
+  return `\"${escapeHtml(f)}\", -apple-system, BlinkMacSystemFont, sans-serif`;
+}
+
 const POSITION_TO_CSS: Record<string, string> = {
   center: "center center", top: "center top", bottom: "center bottom",
   left: "left center", right: "right center",
   "top-left": "left top", "top-right": "right top", "bottom-left": "left bottom", "bottom-right": "right bottom",
 };
+
+/** Minimal pattern backgrounds (no image): high-contrast, professional. Returns CSS background properties. */
+function getPatternBackgroundStyle(baseColor: string, pattern: "dots" | "ovals" | "lines" | "circles"): string {
+  const r = 255; const g = 255; const b = 255;
+  const a = pattern === "lines" ? 0.04 : 0.08;
+  const rgba = `rgba(${r},${g},${b},${a})`;
+  switch (pattern) {
+    case "dots":
+      return `background-color:${baseColor};background-image:radial-gradient(circle, ${rgba} 1px, transparent 1px);background-size:28px 28px`;
+    case "ovals":
+      return `background-color:${baseColor};background-image:radial-gradient(ellipse 60% 40% at 50% 50%, ${rgba} 0%, transparent 70%);background-size:120px 80px`;
+    case "lines":
+      return `background-color:${baseColor};background-image:repeating-linear-gradient(45deg, transparent, transparent 3px, ${rgba} 3px, ${rgba} 5px)`;
+    case "circles":
+      return `background-color:${baseColor};background-image:radial-gradient(circle at 20% 80%, ${rgba} 0%, transparent 50%),radial-gradient(circle at 80% 20%, ${rgba} 0%, transparent 45%)`;
+    default:
+      return `background-color:${baseColor}`;
+  }
+}
 const FRAME_WIDTHS: Record<string, number> = { none: 0, thin: 2, medium: 5, thick: 10, chunky: 16, heavy: 20 };
 
 const ZIGZAG_LEFT = "polygon(0 0, 50% 0, 35% 25%, 65% 50%, 35% 75%, 50% 100%, 0 100%)";
@@ -106,7 +143,7 @@ export function renderSlideHtml(
   highlightStyles: HighlightStyleOverrides = {},
   /** When true, wrap background image in a bordered frame. */
   borderedFrame?: boolean,
-  /** Image display options: position, fit, frame, layout, gap, frameShape, dividerStyle. */
+  /** Image display options: position, fit, frame, layout, gap, frameShape, dividerStyle, pip. */
   imageDisplay?: {
     position?: string;
     fit?: "cover" | "contain";
@@ -124,6 +161,10 @@ export function renderSlideHtml(
     dividerStyle?: "gap" | "line" | "zigzag" | "diagonal" | "wave" | "dashed" | "scalloped";
     dividerColor?: string;
     dividerWidth?: number;
+    mode?: "full" | "pip";
+    pipPosition?: "top_left" | "top_right" | "bottom_left" | "bottom_right";
+    pipSize?: number;
+    pipBorderRadius?: number;
   } | null,
   /** Export dimensions. Default 1080x1080. */
   dimensions?: { w: number; h: number },
@@ -139,6 +180,9 @@ export function renderSlideHtml(
   // Size-based text multiplier: scale down headline/body font so they always fit on 4:5 and 9:16 (no overflow)
   const maxDim = Math.max(dimW, dimH);
   const textScale = maxDim <= 1080 ? 1 : Math.max(0.5, 1080 / maxDim);
+  // When picture-in-picture is on, scale text down so it doesn't overlap the image
+  const pipTextScale = imageDisplay?.mode === "pip" ? 0.85 : 1;
+  const effectiveTextScale = textScale * pipTextScale;
 
   // For 4:5 and 9:16, scale zone x/w proportionally so the same relative position and width apply across sizes
   const coverScale = Math.max(1, dimH / 1080);
@@ -191,17 +235,24 @@ export function renderSlideHtml(
     slideData.slide_index,
     totalSlides,
     hasZoneOverrides ? mergedZoneOverrides : undefined,
-    textScale,
+    effectiveTextScale,
     chromeOverrides ?? undefined
   );
 
   const backgroundColor = overlayOnly
     ? "transparent"
     : (backgroundOverride?.color ?? model.background.backgroundColor);
-  const useGradient =
-    backgroundOverride?.gradientOn !== undefined
-      ? backgroundOverride.gradientOn
-      : model.background.useGradient;
+  const bgColorCss = escapeHtml(backgroundColor ?? "#0a0a0a");
+  const isPatternBg = !overlayOnly && backgroundOverride?.style === "pattern" && backgroundOverride?.pattern && ["dots", "ovals", "lines", "circles"].includes(backgroundOverride.pattern);
+  const slideBackgroundStyle = isPatternBg
+    ? getPatternBackgroundStyle(bgColorCss, backgroundOverride.pattern as "dots" | "ovals" | "lines" | "circles")
+    : `background-color:${bgColorCss}`;
+  const hasImageForOverlay = !!(backgroundImageUrl ?? model.background.backgroundImageUrl) || (backgroundImageUrls?.length ?? 0) >= 2;
+  /** Only when there is a background image: gate gradient/tint on top of the picture. */
+  const overlayEnabled = backgroundOverride?.overlayEnabled !== false;
+  const useGradient = hasImageForOverlay
+    ? overlayEnabled && (backgroundOverride?.gradientOn !== undefined ? backgroundOverride.gradientOn : model.background.useGradient)
+    : (backgroundOverride?.gradientOn !== undefined ? backgroundOverride.gradientOn : model.background.useGradient);
   const gradientDir = gradientDirectionToCss(
     backgroundOverride?.gradientDirection,
     model.background.gradientDirection
@@ -273,9 +324,10 @@ export function renderSlideHtml(
               ? (highlightStyles.headline ?? "text")
               : (highlightStyles.body ?? "text");
           const zoneColor = block.zone.color ?? textColor;
-          const fontSize = Math.round(block.zone.fontSize * textScale);
+          const fontSize = Math.round(block.zone.fontSize * effectiveTextScale);
           const lineHeight = block.zone.lineHeight;
-          return `<div class="text-block" style="left:${block.zone.x}px;top:${block.zone.y}px;width:${block.zone.w}px;height:${block.zone.h}px;font-size:${fontSize}px;font-weight:${block.zone.fontWeight};line-height:${lineHeight};text-align:${block.zone.align};color:${escapeHtml(zoneColor)};z-index:5">${block.lines.map((line) => `<span>${lineToHtml(line, zoneHighlightStyle, zoneColor)}</span>`).join("")}</div>`;
+          const fontStack = getFontFamilyStack((block.zone as { fontFamily?: string }).fontFamily);
+          return `<div class="text-block" style="left:${block.zone.x}px;top:${block.zone.y}px;width:${block.zone.w}px;height:${block.zone.h}px;font-size:${fontSize}px;font-weight:${block.zone.fontWeight};line-height:${lineHeight};text-align:${block.zone.align};color:${escapeHtml(zoneColor)};font-family:${fontStack};z-index:5">${block.lines.map((line) => `<span>${lineToHtml(line, zoneHighlightStyle, zoneColor)}</span>`).join("")}</div>`;
         })
         .join("");
 
@@ -427,9 +479,10 @@ export function renderSlideHtml(
 
   const resolvedBgUrl = overlayOnly ? null : (backgroundImageUrl ?? model.background.backgroundImageUrl);
   const isSingleImage = !!resolvedBgUrl && !multiUrls;
-  const singleFrame = isSingleImage ? "none" : (disp.frame ?? (borderedFrame ? "medium" : "none"));
-  const singleFrameW = isSingleImage ? 0 : (FRAME_WIDTHS[singleFrame] ?? 0);
-  const singleRadius = isSingleImage ? 0 : (disp.frameRadius ?? (singleFrameW > 0 ? 24 : 0));
+  const isPip = isSingleImage && disp.mode === "pip";
+  const singleFrame = isSingleImage && !isPip ? "none" : (disp.frame ?? (borderedFrame ? "medium" : "none"));
+  const singleFrameW = isSingleImage && !isPip ? 0 : (FRAME_WIDTHS[singleFrame] ?? 0);
+  const singleRadius = isSingleImage && !isPip ? 0 : (disp.frameRadius ?? (singleFrameW > 0 ? 24 : 0));
   const singleShapeCss = getShapeCss(disp.frameShape ?? "squircle", singleRadius);
   const singleFrameColor = disp.frameColor ?? "rgba(255,255,255,0.9)";
   /** Position controls where image is anchored (cover and contain). */
@@ -442,6 +495,22 @@ export function renderSlideHtml(
     singleFrameW > 0 && resolvedBgUrl
       ? `left:16px;top:16px;width:${1080 - 32}px;height:${1080 - 32}px;${singleShapeCss};border:${singleFrameW}px solid ${escapeHtml(singleFrameColor)};box-shadow:0 8px 32px rgba(0,0,0,0.3);`
       : "left:0;top:0;width:1080px;height:1080px;";
+  const pipInset = 48;
+  const pipSizePx = Math.round(Math.min(594, Math.max(270, (disp.pipSize ?? 0.4) * 1080)));
+  const pipRadius = Math.min(72, Math.max(0, disp.pipBorderRadius ?? 24));
+  const pipPos = disp.pipPosition ?? "bottom_right";
+  const pipPosStyle =
+    pipPos === "bottom_right"
+      ? `right:${pipInset}px;bottom:${pipInset}px`
+      : pipPos === "bottom_left"
+        ? `left:${pipInset}px;bottom:${pipInset}px`
+        : pipPos === "top_right"
+          ? `right:${pipInset}px;top:${pipInset}px`
+          : `left:${pipInset}px;top:${pipInset}px`;
+  const singlePipHtml =
+    resolvedBgUrl && isPip
+      ? `<div style="position:absolute;${pipPosStyle};width:${pipSizePx}px;height:${pipSizePx}px;border-radius:${pipRadius}px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.25);"><div style="position:absolute;inset:0;${bgImageStyle}"></div></div>`
+      : "";
   const hookCircleHtml =
     overlayOnly
       ? ""
@@ -469,17 +538,21 @@ export function renderSlideHtml(
   /** Chrome (counter, logo, watermark text) scaled with height so they stay proportional in 4:5 and 9:16. */
   const chromeScale = dimH / 1080;
 
+  const needsInterFont = model.textBlocks.some((b) => (b.zone as { fontFamily?: string }).fontFamily === "Inter");
+  const fontLink = needsInterFont ? '<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">' : "";
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=${dimW}, height=${dimH}">
+  ${fontLink}
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; border: none; }
-    html { margin: 0; padding: 0; overflow: hidden; background-color: ${escapeHtml(backgroundColor)}; }
-    body { margin: 0; padding: 0; width: ${dimW}px; height: ${dimH}px; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: ${escapeHtml(backgroundColor)}; }
+    html { margin: 0; padding: 0; overflow: hidden; background-color: ${bgColorCss}; }
+    body { margin: 0; padding: 0; width: ${dimW}px; height: ${dimH}px; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: ${bgColorCss}; }
     .slide-wrap { position: absolute; left: 0; top: 0; width: ${dimW}px; height: ${dimH}px; overflow: hidden; }
-    .slide { position: absolute; left: ${slideTranslateX}px; top: ${slideTranslateY}px; width: ${scaledSize}px; height: ${scaledSize}px; overflow: hidden; background-color: ${escapeHtml(backgroundColor)}; }
+    .slide { position: absolute; left: ${slideTranslateX}px; top: ${slideTranslateY}px; width: ${scaledSize}px; height: ${scaledSize}px; overflow: hidden; ${slideBackgroundStyle}; }
     .slide-inner { position: absolute; left: 0; top: 0; width: 1080px; height: 1080px; transform: scale(${scale}); transform-origin: top left; }
     .slide-bg-image { position: absolute; inset: 0; ${bgImageStyle} }
     .slide-gradient { position: absolute; inset: 0; background: ${gradientStyle}; pointer-events: none; z-index: 1; }
@@ -492,7 +565,8 @@ export function renderSlideHtml(
   <div class="slide-wrap">
   <div class="slide">
   <div class="slide-inner">
-    ${overlayOnly ? "" : (multiUrls ? multiImagesHtml : `<div class="slide-bg-image" style="${bgFrameStyle}${bgImageStyle}"></div>`)}
+    ${overlayOnly ? "" : (multiUrls ? multiImagesHtml : isPip ? singlePipHtml : isSingleImage ? `<div class="slide-bg-image" style="${bgFrameStyle}${bgImageStyle}"></div>` : "")}
+    ${(resolvedBgUrl || multiUrls) && (backgroundOverride?.tintOpacity ?? 0) > 0 ? `<div style="position:absolute;inset:0;background-color:${escapeHtml(backgroundOverride?.tintColor ?? backgroundColor ?? "#0a0a0a")};opacity:${Math.min(1, Math.max(0, backgroundOverride?.tintOpacity ?? 0))};pointer-events:none;z-index:0"></div>` : ""}
     ${noTextOrChrome ? "" : "<div class=\"slide-gradient\"></div>"}
     ${hookCircleHtml}
     ${textBlocksHtml}

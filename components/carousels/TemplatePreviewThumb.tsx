@@ -2,13 +2,13 @@
 
 import { SlidePreview } from "@/components/renderer/SlidePreview";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
+import { getTemplatePreviewBackgroundOverride, getLinkedInPreviewOverlayOverride } from "@/lib/renderer/getTemplatePreviewBackground";
 import { LayoutTemplateIcon } from "lucide-react";
 
 const PREVIEW_W = 136;
 const PREVIEW_H = 170;
 const INSET = 3;
 const SCALE = (PREVIEW_W - INSET * 2) / 1080;
-const PREVIEW_BG = "#15151f";
 
 const SAMPLE_SLIDE = {
   headline: "How to Get Better Results in Less Time",
@@ -55,6 +55,8 @@ export type TemplatePreviewThumbProps = {
   config: TemplateConfig | null;
   primaryColor?: string;
   previewImageUrl?: string | null;
+  /** When "linkedin" and previewImageUrl is set, preview uses LinkedIn defaults (tint 75%, gradient off). */
+  category?: string;
   className?: string;
 };
 
@@ -62,6 +64,7 @@ export function TemplatePreviewThumb({
   config,
   primaryColor = "#0a0a0a",
   previewImageUrl,
+  category,
   className,
 }: TemplatePreviewThumbProps) {
   const brandKit = { primary_color: primaryColor };
@@ -98,7 +101,13 @@ export function TemplatePreviewThumb({
           brandKit={brandKit}
           totalSlides={8}
           backgroundImageUrl={previewImageUrl ?? undefined}
-          backgroundOverride={!previewImageUrl ? { color: PREVIEW_BG } : undefined}
+          backgroundOverride={
+            !previewImageUrl
+              ? getTemplatePreviewBackgroundOverride(config)
+              : category === "linkedin"
+                ? getLinkedInPreviewOverlayOverride(config)
+                : undefined
+          }
           showCounterOverride={false}
           showWatermarkOverride={false}
           exportSize="1080x1350"

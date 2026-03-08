@@ -136,6 +136,7 @@ export async function POST(
       const slideBg = slide.background as
         | {
             style?: string;
+            pattern?: "dots" | "ovals" | "lines" | "circles";
             color?: string;
             gradientOn?: boolean;
             mode?: string;
@@ -184,7 +185,8 @@ export async function POST(
           : (slideBg?.gradientOn ?? slideBg?.overlay?.gradient ?? true);
       const backgroundOverride = slideBg
         ? {
-            style: (slideBg.style === "solid" || slideBg.style === "gradient" ? slideBg.style : undefined) as "solid" | "gradient" | undefined,
+            style: (slideBg.style === "solid" || slideBg.style === "gradient" || slideBg.style === "pattern" ? slideBg.style : undefined) as "solid" | "gradient" | "pattern" | undefined,
+            pattern: slideBg.pattern,
             color: slideBg.color,
             gradientOn,
             ...overlayFields,

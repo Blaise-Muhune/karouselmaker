@@ -20,7 +20,7 @@ import {
   Share2Icon,
 } from "lucide-react";
 
-type CaptionVariants = { short?: string; medium?: string; spicy?: string };
+type CaptionVariants = { title?: string; medium?: string; long?: string; short?: string; spicy?: string };
 
 type InstagramPostPreviewDialogProps = {
   carouselId: string;
@@ -30,7 +30,7 @@ type InstagramPostPreviewDialogProps = {
 };
 
 const CAPTION_PICK = (v: CaptionVariants): string =>
-  v.medium ?? v.short ?? v.spicy ?? "";
+  v.title ?? v.medium ?? v.long ?? v.short ?? v.spicy ?? "";
 
 /** Random int in [min, max] inclusive. */
 function randomInt(min: number, max: number): number {

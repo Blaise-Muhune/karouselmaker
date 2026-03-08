@@ -19,7 +19,7 @@ type CaptionEditModalProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   carouselId: string;
-  captionVariants: { short?: string; medium?: string; spicy?: string };
+  captionVariants: { title?: string; medium?: string; long?: string };
   hashtags: string[];
   editorPath: string;
   onSaved?: () => void;
@@ -34,9 +34,9 @@ export function CaptionEditModal({
   editorPath,
   onSaved,
 }: CaptionEditModalProps) {
-  const [short, setShort] = useState(captionVariants.short ?? "");
+  const [title, setTitle] = useState(captionVariants.title ?? "");
   const [medium, setMedium] = useState(captionVariants.medium ?? "");
-  const [spicy, setSpicy] = useState(captionVariants.spicy ?? "");
+  const [long, setLong] = useState(captionVariants.long ?? "");
   const [hashtagsStr, setHashtagsStr] = useState(() => hashtags.join(" "));
   const [saving, setSaving] = useState(false);
 
@@ -49,7 +49,7 @@ export function CaptionEditModal({
     const result = await updateCaption(
       {
         carousel_id: carouselId,
-        caption_variants: { short: short || undefined, medium: medium || undefined, spicy: spicy || undefined },
+        caption_variants: { title: title || undefined, medium: medium || undefined, long: long || undefined },
         hashtags: hashtagList,
       },
       editorPath
@@ -67,38 +67,38 @@ export function CaptionEditModal({
         <DialogHeader>
           <DialogTitle>Edit caption & hashtags</DialogTitle>
           <DialogDescription>
-            Short, medium, and spicy caption variants. Hashtags as space- or comma-separated.
+            Title (SEO), medium caption (engagement), long caption, and hashtags. Hashtags as space- or comma-separated.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-2">
           <div>
-            <Label htmlFor="short">Short</Label>
+            <Label htmlFor="title">Title (SEO)</Label>
             <Textarea
-              id="short"
-              value={short}
-              onChange={(e) => setShort(e.target.value)}
-              placeholder="Short caption"
+              id="title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Short post title, optimized for search"
               className="mt-1 min-h-[60px]"
             />
           </div>
           <div>
-            <Label htmlFor="medium">Medium</Label>
+            <Label htmlFor="medium">Medium caption (engagement)</Label>
             <Textarea
               id="medium"
               value={medium}
               onChange={(e) => setMedium(e.target.value)}
-              placeholder="Medium caption"
+              placeholder="Caption with more context, questions, or explanation"
               className="mt-1 min-h-[80px]"
             />
           </div>
           <div>
-            <Label htmlFor="spicy">Spicy</Label>
+            <Label htmlFor="long">Long caption</Label>
             <Textarea
-              id="spicy"
-              value={spicy}
-              onChange={(e) => setSpicy(e.target.value)}
-              placeholder="Spicy caption"
-              className="mt-1 min-h-[80px]"
+              id="long"
+              value={long}
+              onChange={(e) => setLong(e.target.value)}
+              placeholder="Longer caption with full context"
+              className="mt-1 min-h-[120px]"
             />
           </div>
           <div>

@@ -6,9 +6,9 @@ import { getUser } from "@/lib/server/auth/getUser";
 import { updateCarousel } from "@/lib/server/db";
 
 const captionVariantsSchema = z.object({
-  short: z.string().optional(),
-  medium: z.string().optional(),
-  spicy: z.string().optional(),
+  title: z.string().max(200).optional(),
+  medium: z.string().max(500).optional(),
+  long: z.string().max(1000).optional(),
 });
 
 const updateCaptionInputSchema = z.object({
@@ -22,7 +22,7 @@ export type UpdateCaptionResult = { ok: true } | { ok: false; error: string };
 export async function updateCaption(
   input: {
     carousel_id: string;
-    caption_variants?: { short?: string; medium?: string; spicy?: string };
+    caption_variants?: { title?: string; medium?: string; long?: string };
     hashtags?: string[];
   },
   revalidatePathname?: string

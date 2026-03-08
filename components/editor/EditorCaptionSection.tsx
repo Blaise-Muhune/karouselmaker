@@ -19,9 +19,18 @@ function formatCreditLine(a: UnsplashAttribution): string {
   return `Photo by ${a.photographerName} (https://unsplash.com/@${a.photographerUsername}?${UTM}) on Unsplash (https://unsplash.com/?${UTM})`;
 }
 
+/** Supports new (title, medium, long) and legacy (short, medium, spicy) for display. */
+export type CaptionVariantsDisplay = {
+  title?: string;
+  medium?: string;
+  long?: string;
+  short?: string;
+  spicy?: string;
+};
+
 type EditorCaptionSectionProps = {
   carouselId: string;
-  captionVariants: { short?: string; medium?: string; spicy?: string };
+  captionVariants: CaptionVariantsDisplay;
   hashtags: string[];
   unsplashAttributions?: UnsplashAttribution[];
   editorPath: string;
@@ -38,9 +47,9 @@ export function EditorCaptionSection({
   disabled = false,
 }: EditorCaptionSectionProps) {
   const [editOpen, setEditOpen] = useState(false);
-  const [copied, setCopied] = useState<"short" | "medium" | "spicy" | "hashtags" | "credits" | null>(null);
+  const [copied, setCopied] = useState<"title" | "medium" | "long" | "hashtags" | "credits" | null>(null);
 
-  const copyToClipboard = useCallback(async (text: string, key: "short" | "medium" | "spicy" | "hashtags" | "credits") => {
+  const copyToClipboard = useCallback(async (text: string, key: "title" | "medium" | "long" | "hashtags" | "credits") => {
     if (!text.trim()) return;
     try {
       await navigator.clipboard.writeText(text);
@@ -51,6 +60,9 @@ export function EditorCaptionSection({
     }
   }, []);
 
+  const titleText = captionVariants.title ?? captionVariants.short ?? "";
+  const mediumText = captionVariants.medium ?? "";
+  const longText = captionVariants.long ?? captionVariants.spicy ?? "";
   const hashtagText = hashtags.length > 0 ? hashtags.map((h) => `#${h.replace(/^#/, "")}`).join(" ") : "";
   const creditsText =
     unsplashAttributions.length > 0 ? unsplashAttributions.map(formatCreditLine).join("\n") : "";
@@ -67,36 +79,36 @@ export function EditorCaptionSection({
           </Button>
         </div>
         <div className="mt-3 space-y-4">
-          {captionVariants.short && (
+          {titleText && (
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0 flex-1">
-                <p className="text-muted-foreground text-xs">Short</p>
-                <p className="text-sm">{captionVariants.short}</p>
+                <p className="text-muted-foreground text-xs">Title (SEO)</p>
+                <p className="text-sm">{titleText}</p>
               </div>
               <Button
                 variant="ghost"
                 size="sm"
                 className="text-muted-foreground shrink-0 gap-1.5 h-8"
-                onClick={() => copyToClipboard(captionVariants.short!, "short")}
-                title="Copy short caption"
+                onClick={() => copyToClipboard(titleText, "title")}
+                title="Copy title"
                 disabled={disabled}
               >
-                {copied === "short" ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
+                {copied === "title" ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
                 Copy
               </Button>
             </div>
           )}
-          {captionVariants.medium && (
+          {mediumText && (
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0 flex-1">
-                <p className="text-muted-foreground text-xs">Medium</p>
-                <p className="text-sm">{captionVariants.medium}</p>
+                <p className="text-muted-foreground text-xs">Medium caption (engagement)</p>
+                <p className="text-sm">{mediumText}</p>
               </div>
               <Button
                 variant="ghost"
                 size="sm"
                 className="text-muted-foreground shrink-0 gap-1.5 h-8"
-                onClick={() => copyToClipboard(captionVariants.medium!, "medium")}
+                onClick={() => copyToClipboard(mediumText, "medium")}
                 title="Copy medium caption"
                 disabled={disabled}
               >
@@ -105,25 +117,26 @@ export function EditorCaptionSection({
               </Button>
             </div>
           )}
-          {captionVariants.spicy && (
+          {longText && (
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0 flex-1">
-                <p className="text-muted-foreground text-xs">Spicy</p>
-                <p className="text-sm">{captionVariants.spicy}</p>
+                <p className="text-muted-foreground text-xs">Long caption</p>
+                <p className="text-sm">{longText}</p>
               </div>
               <Button
                 variant="ghost"
                 size="sm"
                 className="text-muted-foreground shrink-0 gap-1.5 h-8"
-                onClick={() => copyToClipboard(captionVariants.spicy!, "spicy")}
-                title="Copy spicy caption"
+                onClick={() => copyToClipboard(longText, "long")}
+                title="Copy long caption"
+                disabled={disabled}
               >
-                {copied === "spicy" ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
+                {copied === "long" ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
                 Copy
               </Button>
             </div>
           )}
-          {!captionVariants.short && !captionVariants.medium && !captionVariants.spicy && (
+          {!titleText && !mediumText && !longText && (
             <p className="text-muted-foreground text-sm">No caption variants yet.</p>
           )}
 
@@ -199,7 +212,11 @@ export function EditorCaptionSection({
         open={editOpen}
         onOpenChange={setEditOpen}
         carouselId={carouselId}
-        captionVariants={captionVariants}
+        captionVariants={{
+          title: titleText || undefined,
+          medium: mediumText || undefined,
+          long: longText || undefined,
+        }}
         hashtags={hashtags}
         editorPath={editorPath}
       />

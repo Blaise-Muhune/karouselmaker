@@ -397,6 +397,14 @@ export async function generateCarousel(formData: FormData): Promise<
     : { gradient: true, darken: 0.5, color: overlayColor, textColor: overlayTextColor };
   const slidesWithImage = new Set<string>();
 
+  const selectedTemplate = defaultTemplateId ? await getTemplate(user.id, defaultTemplateId) : null;
+  const isLinkedIn = (selectedTemplate?.category ?? "").toLowerCase() === "linkedin";
+  const templateTintColor =
+    (selectedTemplate?.config as { defaults?: { background?: { color?: string } } } | undefined)?.defaults?.background?.color?.trim() ?? overlayColor;
+  const overlayForImageSlide = isLinkedIn
+    ? { ...defaultOverlay, enabled: false, tintColor: templateTintColor, tintOpacity: 0.75 }
+    : defaultOverlay;
+
   try {
   if (parsed.data.background_asset_ids?.length && createdSlides.length) {
     const assetIds = parsed.data.background_asset_ids;
@@ -418,7 +426,7 @@ export async function generateCarousel(formData: FormData): Promise<
             asset_id: asset.id,
             storage_path: asset.storage_path,
             fit: "cover",
-            overlay: defaultOverlay,
+            overlay: overlayForImageSlide,
           },
         });
       }
@@ -469,7 +477,7 @@ export async function generateCarousel(formData: FormData): Promise<
                 mode: "image",
                 storage_path: storagePath,
                 fit: "cover",
-                overlay: defaultOverlay,
+                overlay: overlayForImageSlide,
               },
             });
           }
@@ -496,7 +504,7 @@ export async function generateCarousel(formData: FormData): Promise<
                   mode: "image",
                   storage_path: storagePath,
                   fit: "cover",
-                  overlay: defaultOverlay,
+                  overlay: overlayForImageSlide,
                 },
               });
             }
@@ -550,7 +558,7 @@ export async function generateCarousel(formData: FormData): Promise<
               pixabay_attribution: firstResult.pixabayAttribution,
               pexels_attribution: firstResult.pexelsAttribution,
               fit: "cover",
-              overlay: defaultOverlay,
+              overlay: overlayForImageSlide,
             },
           });
         } else {
@@ -578,7 +586,7 @@ export async function generateCarousel(formData: FormData): Promise<
             background: {
               mode: "image",
               images: imageItems,
-              overlay: defaultOverlay,
+              overlay: overlayForImageSlide,
               image_display: {
                 position: "top",
                 fit: "cover",
@@ -681,9 +689,15 @@ export async function generateCarousel(formData: FormData): Promise<
     }
   }
 
-  // Apply solid color (project primary) to any slide that has no background image
+  // Apply solid or pattern background to slides with no image. Use template theme (color, style, pattern) when set.
   const primaryColor = brandKit?.primary_color?.trim() || "#0a0a0a";
-  const solidBg = { style: "solid" as const, color: primaryColor, gradientOn: true };
+  const defaultsBg = (selectedTemplate?.config as { defaults?: { background?: { style?: string; color?: string; pattern?: string } } } | undefined)?.defaults?.background;
+  const themeColor = defaultsBg?.color?.trim() || primaryColor;
+  const themeStyle = defaultsBg?.style === "pattern" && ["dots", "ovals", "lines", "circles"].includes(defaultsBg?.pattern ?? "") ? "pattern" : "solid";
+  const themePattern = themeStyle === "pattern" ? (defaultsBg?.pattern as "dots" | "ovals" | "lines" | "circles") : undefined;
+  const solidBg = themeStyle === "pattern"
+    ? { style: "pattern" as const, color: themeColor, pattern: themePattern, gradientOn: true }
+    : { style: "solid" as const, color: themeColor, gradientOn: true };
   for (const slide of createdSlides) {
     if (slidesWithImage.has(slide.id)) continue;
     const bg = isFollowCta ? { ...solidBg, overlay: defaultOverlay } : solidBg;

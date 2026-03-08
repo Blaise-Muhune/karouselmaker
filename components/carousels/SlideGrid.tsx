@@ -20,6 +20,7 @@ import { createSlide as createSlideAction } from "@/app/actions/slides/createSli
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
 import type { BrandKit } from "@/lib/renderer/renderModel";
 import type { SlideBackgroundOverride } from "@/components/renderer/SlidePreview";
+import { getTemplatePreviewBackgroundOverride } from "@/lib/renderer/getTemplatePreviewBackground";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import type { Slide, Template } from "@/lib/server/db/types";
 import { useRouter } from "next/navigation";
@@ -152,13 +153,15 @@ function getZoneAndFontOverridesFromTemplate(config: TemplateConfig | null): {
 
 function getBackgroundOverride(slide: Slide, templateConfig: TemplateConfig | null): SlideBackgroundOverride | null {
   const bg = slide.background as {
-    style?: "solid" | "gradient";
+    style?: "solid" | "gradient" | "pattern";
+    pattern?: "dots" | "ovals" | "lines" | "circles";
     color?: string;
     gradientOn?: boolean;
     mode?: string;
-    overlay?: { gradient?: boolean; darken?: number; color?: string; textColor?: string; direction?: "top" | "bottom" | "left" | "right"; extent?: number; solidSize?: number };
+    overlay?: { enabled?: boolean; gradient?: boolean; darken?: number; color?: string; textColor?: string; direction?: "top" | "bottom" | "left" | "right"; extent?: number; solidSize?: number; tintColor?: string; tintOpacity?: number };
   } | null;
   if (!bg) return null;
+  const overlayEnabled = bg.overlay?.enabled !== false;
   const gradientColor = bg.overlay?.color ?? templateConfig?.overlays?.gradient?.color ?? "#0a0a0a";
   const templateStrength = templateConfig?.overlays?.gradient?.strength ?? 0.5;
   const gradientStrength =
@@ -174,16 +177,20 @@ function getBackgroundOverride(slide: Slide, templateConfig: TemplateConfig | nu
     gradientDirection: bg.overlay?.direction ?? templateConfig?.overlays?.gradient?.direction ?? "bottom",
     gradientExtent,
     gradientSolidSize,
+    overlayEnabled,
+    ...(bg.overlay?.tintOpacity != null && bg.overlay.tintOpacity > 0
+      ? { tintColor: bg.overlay.tintColor ?? (templateConfig?.defaults?.background as { color?: string } | undefined)?.color ?? "#0a0a0a", tintOpacity: Math.min(1, Math.max(0, bg.overlay.tintOpacity)) }
+      : {}),
   };
   if (bg.mode === "image")
     return {
-      gradientOn: bg.overlay?.gradient ?? true,
+      gradientOn: overlayEnabled && (bg.overlay?.gradient ?? true),
       color: bg.color ?? undefined,
       ...overlayFields,
     };
-  if (bg.style === undefined && bg.color === undefined && bg.gradientOn === undefined)
+  if (bg.style === undefined && bg.color === undefined && bg.gradientOn === undefined && bg.pattern === undefined)
     return null;
-  return { style: bg.style, color: bg.color, gradientOn: bg.gradientOn, ...overlayFields };
+  return { style: bg.style, pattern: bg.pattern, color: bg.color, gradientOn: bg.gradientOn, ...overlayFields };
 }
 
 function getShowCounterOverride(slide: Slide): boolean | undefined {
@@ -444,7 +451,12 @@ export function SlideGrid({
           const previewFontOverrides = getFontOverrides(slide) ?? templateDefaults.fontOverrides;
           const previewChromeOverrides = getChromeOverrides(slide) ?? templateDefaults.chromeOverrides;
           const currentTemplateId = slide.template_id ?? templates[0]?.id;
-          const backgroundOverride = getBackgroundOverride(slide, effectiveTemplateConfig);
+          const fromSlide = getBackgroundOverride(slide, effectiveTemplateConfig);
+          const hasBackgroundImage =
+            typeof slideBackgroundImageUrls[slide.id] === "string" ||
+            (Array.isArray(slideBackgroundImageUrls[slide.id]) && (slideBackgroundImageUrls[slide.id] as string[]).length > 0);
+          const backgroundOverride =
+            fromSlide ?? (!hasBackgroundImage && effectiveTemplateConfig ? getTemplatePreviewBackgroundOverride(effectiveTemplateConfig) : null);
           const isDragging = draggedId === slide.id;
           const isDragOver = dragOverId === slide.id;
 

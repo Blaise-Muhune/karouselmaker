@@ -27,6 +27,8 @@ const textZoneSchema = z.object({
   align: z.enum(["left", "center"]),
   /** Optional text color (hex). When unset, uses contrasting color from background. */
   color: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
+  /** Optional font family: "system", "Inter", "Georgia", or other safe web font. Rendered as font-family stack. */
+  fontFamily: z.string().max(80).optional(),
 });
 
 const gradientOverlaySchema = z.object({

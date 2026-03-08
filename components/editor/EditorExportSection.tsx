@@ -111,7 +111,7 @@ type EditorExportSectionProps = {
   /** Platform keys the user has connected (e.g. from getPlatformConnections). */
   connectedPlatforms?: string[];
   /** Caption variants for Post view (Instagram-style preview). */
-  captionVariants?: { short?: string; medium?: string; spicy?: string };
+  captionVariants?: { title?: string; medium?: string; long?: string; short?: string; spicy?: string };
   /** Hashtags for Post view. */
   hashtags?: string[];
   /** When true (e.g. carousel is generating), disable all actions. */

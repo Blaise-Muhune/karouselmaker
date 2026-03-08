@@ -49,12 +49,15 @@ export const carouselOutputSchema = z.object({
   slides: z.array(aiSlideSchema),
   caption_variants: z
     .object({
-      short: z.string().max(150).optional().default(""),
-      medium: z.string().max(300).optional().default(""),
-      spicy: z.string().max(300).optional().default(""),
+      /** SEO-friendly post title for social (discoverability). */
+      title: z.string().max(120).optional().default(""),
+      /** Engagement-focused caption with more explanation. */
+      medium: z.string().max(400).optional().default(""),
+      /** Longer caption for full context. */
+      long: z.string().max(800).optional().default(""),
     })
     .optional()
-    .default({ short: "", medium: "", spicy: "" }),
+    .default({ title: "", medium: "", long: "" }),
   hashtags: z.array(z.string().max(50)).max(15).optional().default([]),
 });
 

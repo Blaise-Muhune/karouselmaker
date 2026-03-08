@@ -226,10 +226,24 @@ export function NewCarouselForm({
         const result = await startCarouselGeneration(formData);
         if ("error" in result) {
           setError(result.error);
+          setIsPending(false);
           return;
         }
         if (result.carouselId) {
-          router.push(`/p/${projectId}/c/${result.carouselId}`);
+          // Wait for generation to complete on this page, then show result (redirect when ready)
+          const res = await fetch(`/api/carousel/${result.carouselId}/generate`, { method: "POST" });
+          if (res.status === 200) {
+            router.push(`/p/${projectId}/c/${result.carouselId}`);
+            return;
+          }
+          if (res.status >= 400) {
+            const body = await res.json().catch(() => ({}));
+            setError((body as { error?: string }).error ?? "Generation failed. Please try again.");
+          } else {
+            setError("Generation failed. Please try again.");
+          }
+          setIsPending(false);
+          return;
         }
       }
     } catch (err) {
@@ -260,10 +274,12 @@ export function NewCarouselForm({
           <div className="mx-auto max-w-sm space-y-6 px-6 text-center">
             <Loader2Icon className="mx-auto size-12 animate-spin text-primary" />
             <p className="text-sm font-medium text-foreground">
-              {regenerateCarouselId ? "Regenerating your carousel…" : "Taking you to your carousel…"}
+              {regenerateCarouselId ? "Regenerating your carousel…" : "Generating your carousel…"}
             </p>
             <p className="text-xs text-muted-foreground">
-              {regenerateCarouselId ? "This may take a minute or two." : "Generation will continue on the next page."}
+              {regenerateCarouselId
+                ? "This may take a minute or two."
+                : "This usually takes 1–3 minutes. Please don't leave this page."}
             </p>
           </div>
         </div>
@@ -524,7 +540,7 @@ export function NewCarouselForm({
                 : "Default (recommended)"}
             </Button>
             <Dialog open={templateModalOpen} onOpenChange={setTemplateModalOpen}>
-              <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
+              <DialogContent className="flex flex-col max-w-[calc(100%-2rem)] max-h-[85vh] sm:max-w-2xl md:max-w-[92vw] md:max-h-[92vh] md:w-[92vw] md:h-[92vh] lg:max-w-[94vw] lg:max-h-[94vh] lg:w-[94vw] lg:h-[94vh]">
                 <DialogHeader>
                   <DialogTitle>Choose template</DialogTitle>
                 </DialogHeader>

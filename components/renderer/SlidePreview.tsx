@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { ReactNode, CSSProperties } from "react";
 import { applyTemplate } from "@/lib/renderer/applyTemplate";
 import type { BrandKit, SlideData, TextZoneOverrides, ChromeOverrides } from "@/lib/renderer/renderModel";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
@@ -22,8 +22,68 @@ function gradientDirectionToCss(direction: GradientDirection | undefined, templa
   return map[templateDirection] ?? "to bottom";
 }
 
+/** Minimal pattern backgrounds (no image): high-contrast, professional. Returns React style object. */
+function getPatternBackgroundStyleObject(
+  baseColor: string,
+  pattern: "dots" | "ovals" | "lines" | "circles"
+): CSSProperties {
+  const a = pattern === "lines" ? 0.04 : 0.08;
+  const rgba = `rgba(255,255,255,${a})`;
+  switch (pattern) {
+    case "dots":
+      return {
+        backgroundColor: baseColor,
+        backgroundImage: `radial-gradient(circle, ${rgba} 1px, transparent 1px)`,
+        backgroundSize: "28px 28px",
+      };
+    case "ovals":
+      return {
+        backgroundColor: baseColor,
+        backgroundImage: `radial-gradient(ellipse 60% 40% at 50% 50%, ${rgba} 0%, transparent 70%)`,
+        backgroundSize: "120px 80px",
+      };
+    case "lines":
+      return {
+        backgroundColor: baseColor,
+        backgroundImage: `repeating-linear-gradient(45deg, transparent, transparent 3px, ${rgba} 3px, ${rgba} 5px)`,
+      };
+    case "circles":
+      return {
+        backgroundColor: baseColor,
+        backgroundImage: `radial-gradient(circle at 20% 80%, ${rgba} 0%, transparent 50%), radial-gradient(circle at 80% 20%, ${rgba} 0%, transparent 45%)`,
+      };
+    default:
+      return { backgroundColor: baseColor };
+  }
+}
+
+const PATTERN_VALUES = ["dots", "ovals", "lines", "circles"] as const;
+type PatternType = (typeof PATTERN_VALUES)[number];
+
+/** Resolve style and pattern for no-image background: override wins, then template defaults. Ensures editor preview matches template picker. */
+function resolveNoImageBackgroundStyle(
+  backgroundOverride: SlideBackgroundOverride | null | undefined,
+  templateConfig: TemplateConfig
+): { style: "solid" | "pattern"; pattern?: PatternType } {
+  const fromOverride =
+    backgroundOverride?.style === "pattern" &&
+    backgroundOverride?.pattern &&
+    PATTERN_VALUES.includes(backgroundOverride.pattern as PatternType)
+      ? { style: "pattern" as const, pattern: backgroundOverride.pattern as PatternType }
+      : null;
+  if (fromOverride) return fromOverride;
+  const defaultsBg = templateConfig?.defaults?.background;
+  if (defaultsBg && typeof defaultsBg === "object" && (defaultsBg as { style?: string }).style === "pattern") {
+    const p = (defaultsBg as { pattern?: string }).pattern;
+    if (p && PATTERN_VALUES.includes(p as PatternType)) return { style: "pattern", pattern: p as PatternType };
+  }
+  return { style: "solid" };
+}
+
 export type SlideBackgroundOverride = {
-  style?: "solid" | "gradient";
+  style?: "solid" | "gradient" | "pattern";
+  /** When style is "pattern", one of: dots, ovals, lines, circles. */
+  pattern?: "dots" | "ovals" | "lines" | "circles";
   color?: string;
   gradientOn?: boolean;
   /** When using a background image, strength of gradient (0–1). Default 0.5. */
@@ -38,6 +98,12 @@ export type SlideBackgroundOverride = {
   gradientExtent?: number;
   /** Solid part (0–100): 0 = full gradient transition, 100 = solid overlay. */
   gradientSolidSize?: number;
+  /** When false, gradient and tint are not applied (preview and export). Default true. */
+  overlayEnabled?: boolean;
+  /** When there is a background image: tint layer color (hex) on top of image at reduced opacity so image stays visible. */
+  tintColor?: string;
+  /** Tint layer opacity 0–1. When > 0, tintColor is drawn over the image. */
+  tintOpacity?: number;
 };
 
 export type FontSizeOverrides = {
@@ -83,7 +149,7 @@ export type SlidePreviewProps = {
   bodyHighlightStyle?: "text" | "background" | "outline";
   /** When true, wrap background image in a bordered frame (nice separation for multi-image carousels). */
   borderedFrame?: boolean;
-  /** Image display options: position, fit, frame, layout, gap, frameShape, dividerStyle. */
+  /** Image display options: position, fit, frame, layout, gap, frameShape, dividerStyle, pip. */
   imageDisplay?: {
     position?: "center" | "top" | "bottom" | "left" | "right" | "top-left" | "top-right" | "bottom-left" | "bottom-right";
     fit?: "cover" | "contain";
@@ -101,6 +167,14 @@ export type SlidePreviewProps = {
     overlayCircleBorderColor?: string;
     overlayCircleX?: number;
     overlayCircleY?: number;
+    /** "full" = image fills slide (default). "pip" = picture-in-picture: template background fills slide, image in a corner. */
+    mode?: "full" | "pip";
+    /** When mode is "pip": corner for the image box. */
+    pipPosition?: "top_left" | "top_right" | "bottom_left" | "bottom_right";
+    /** When mode is "pip": size as fraction of canvas (0.25–0.55). Default 0.4. */
+    pipSize?: number;
+    /** When mode is "pip": border radius in px. Default 24. */
+    pipBorderRadius?: number;
   } | null;
   /** When set, headline/body font sizes are scaled so text fits at this export size (4:5, 9:16). */
   exportSize?: "1080x1080" | "1080x1350" | "1080x1920";
@@ -297,10 +371,11 @@ export function SlidePreview({
   const multiImages = allowImage ? rawMultiImages : null;
   const hasBackgroundImage = !!(bgImageUrl || multiImages);
   const defaultStyle = templateConfig.backgroundRules?.defaultStyle;
-  const useGradient =
-    hasBackgroundImage && (defaultStyle === "none" || defaultStyle === "blur")
-      ? false
-      : baseUseGradient;
+  /** Only applies when there is a background image: gate gradient/tint on top of the picture. */
+  const overlayEnabled = backgroundOverride?.overlayEnabled !== false;
+  const useGradient = hasBackgroundImage
+    ? overlayEnabled && (defaultStyle !== "none" && defaultStyle !== "blur") && baseUseGradient
+    : baseUseGradient;
   const useBlur = hasBackgroundImage && defaultStyle === "blur";
   const gradientDir = gradientDirectionToCss(
     backgroundOverride?.gradientDirection,
@@ -349,13 +424,21 @@ export function SlidePreview({
             transformOrigin: "top left",
           }}
         >
-      {/* Background: solid or image */}
-      <div
-        className="absolute inset-0"
-        style={{
-          backgroundColor,
-        }}
-      />
+      {/* Background: solid, pattern, or image. When no image, resolve style/pattern from override then template defaults so editor preview matches template picker. */}
+      {(() => {
+        const noImageStyle =
+          !hasBackgroundImage ? resolveNoImageBackgroundStyle(backgroundOverride, templateConfig) : null;
+        return (
+          <div
+            className="absolute inset-0"
+            style={
+              noImageStyle?.style === "pattern" && noImageStyle.pattern
+                ? getPatternBackgroundStyleObject(backgroundColor, noImageStyle.pattern)
+                : { backgroundColor }
+            }
+          />
+        );
+      })()}
       {multiImages ? (
         (() => {
           const gap = imageDisplay?.gap ?? 0;
@@ -620,6 +703,53 @@ export function SlidePreview({
         })()
       ) : bgImageUrl && (
         (() => {
+          const isPip = imageDisplay?.mode === "pip";
+          const pipPosition = imageDisplay?.pipPosition ?? "bottom_right";
+          const pipSizePx = Math.round(Math.min(594, Math.max(270, (imageDisplay?.pipSize ?? 0.4) * CANVAS_SIZE)));
+          const pipRadius = imageDisplay?.pipBorderRadius ?? 24;
+          const pipInset = 48;
+
+          if (isPip) {
+            const pipBgColor = backgroundOverride?.color ?? model.background.backgroundColor;
+            const pipBgStyle =
+              backgroundOverride?.style === "pattern" &&
+              backgroundOverride?.pattern &&
+              ["dots", "ovals", "lines", "circles"].includes(backgroundOverride.pattern)
+                ? getPatternBackgroundStyleObject(pipBgColor, backgroundOverride.pattern as "dots" | "ovals" | "lines" | "circles")
+                : { backgroundColor: pipBgColor };
+            const pipPosStyle: CSSProperties =
+              pipPosition === "bottom_right"
+                ? { right: pipInset, bottom: pipInset }
+                : pipPosition === "bottom_left"
+                  ? { left: pipInset, bottom: pipInset }
+                  : pipPosition === "top_right"
+                    ? { right: pipInset, top: pipInset }
+                    : { left: pipInset, top: pipInset };
+            return (
+              <>
+                <div className="absolute inset-0" style={pipBgStyle} />
+                <div
+                  className="absolute overflow-hidden"
+                  style={{
+                    width: pipSizePx,
+                    height: pipSizePx,
+                    ...pipPosStyle,
+                    borderRadius: pipRadius,
+                    boxShadow: "0 8px 32px rgba(0,0,0,0.25)",
+                  }}
+                >
+                  <img
+                    src={bgImageUrl}
+                    alt=""
+                    referrerPolicy="no-referrer"
+                    className="absolute inset-0 w-full h-full object-cover"
+                    style={{ objectPosition: POSITION_TO_CSS[imageDisplay?.position ?? "top"] }}
+                  />
+                </div>
+              </>
+            );
+          }
+
           const frame = imageDisplay?.frame ?? (borderedFrame ? "medium" : "none");
           const frameW = FRAME_WIDTHS[frame] ?? 0;
           const radius = imageDisplay?.frameRadius ?? (frameW > 0 ? 24 : 0);
@@ -652,6 +782,17 @@ export function SlidePreview({
             </div>
           );
         })()
+      )}
+      {/* Color tint overlay (template/brand color on top of image at reduced opacity; not gated by "Apply overlay") */}
+      {hasBackgroundImage && (backgroundOverride?.tintOpacity ?? 0) > 0 && (
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            zIndex: 0,
+            backgroundColor: backgroundOverride?.tintColor ?? (templateConfig.defaults?.background as { color?: string } | undefined)?.color ?? "#0a0a0a",
+            opacity: Math.min(1, Math.max(0, backgroundOverride?.tintOpacity ?? 0)),
+          }}
+        />
       )}
       {/* Hook second image: circle with thick border (bottom-right) */}
       {secondaryBackgroundImageUrl && slide.slide_type === "hook" && (

@@ -81,6 +81,13 @@ export type SlideRenderModel = {
 
 const DEFAULT_BG = "#0a0a0a";
 
+function getTemplateDefaultBackgroundColor(templateConfig: TemplateConfig): string | undefined {
+  const bg = templateConfig.defaults?.background;
+  if (!bg || typeof bg !== "object" || !("color" in bg)) return undefined;
+  const color = (bg as { color?: string }).color;
+  return typeof color === "string" && /^#[0-9A-Fa-f]{3,6}$/i.test(color) ? color : undefined;
+}
+
 /** Per-slide overrides for text zones (from slide meta). */
 export type TextZoneOverrides = {
   headline?: Partial<TextZone>;
@@ -170,7 +177,7 @@ export function buildSlideRenderModel(
       gradientExtent: templateConfig.overlays.gradient.extent ?? 50,
       gradientColor: templateConfig.overlays.gradient.color,
       gradientSolidSize: templateConfig.overlays.gradient.solidSize ?? 25,
-      backgroundColor: brandKit.primary_color || DEFAULT_BG,
+      backgroundColor: getTemplateDefaultBackgroundColor(templateConfig) ?? brandKit.primary_color ?? DEFAULT_BG,
       backgroundImageUrl: undefined,
     },
     textBlocks,

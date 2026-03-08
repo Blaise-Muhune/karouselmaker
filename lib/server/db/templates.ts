@@ -80,12 +80,17 @@ export async function getDefaultTemplateId(userId: string): Promise<string | nul
  * Default template for LinkedIn carousels: first template (user or system) with category 'linkedin'.
  * Used when carousel_for is 'linkedin' and no template is selected.
  */
+/** Preferred default LinkedIn template name when multiple exist. */
+const DEFAULT_LINKEDIN_TEMPLATE_NAME = "LinkedIn Tech";
+
 export async function getDefaultLinkedInTemplate(userId: string): Promise<{
   templateId: string;
 } | null> {
   const all = await listTemplatesForUser(userId, { includeSystem: true });
-  const linkedin = all.find((t) => t.category.toLowerCase() === "linkedin");
-  if (linkedin) return { templateId: linkedin.id };
+  const linkedin = all.filter((t) => t.category.toLowerCase() === "linkedin");
+  const preferred = linkedin.find((t) => t.name === DEFAULT_LINKEDIN_TEMPLATE_NAME);
+  const chosen = preferred ?? linkedin[0];
+  if (chosen) return { templateId: chosen.id };
   return null;
 }
 

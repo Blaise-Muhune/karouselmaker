@@ -25,6 +25,7 @@ import { updateSlide } from "@/app/actions/slides/updateSlide";
 import { shortenToFit } from "@/app/actions/slides/shortenToFit";
 import { rewriteHook } from "@/app/actions/slides/rewriteHook";
 import type { BrandKit } from "@/lib/renderer/renderModel";
+import { getTemplatePreviewBackgroundOverride } from "@/lib/renderer/getTemplatePreviewBackground";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import type { Slide, Template } from "@/lib/server/db/types";
 import {
@@ -96,7 +97,9 @@ export function SlideEditorModal({
     const bg = slide.background as SlideBackgroundState | null;
     if (bg && (bg.mode === "image" || bg.style || bg.color != null))
       return { ...bg, style: bg.style ?? "solid", color: bg.color ?? brandKit.primary_color ?? "#0a0a0a", gradientOn: bg.gradientOn ?? true };
-    return { style: "solid", color: brandKit.primary_color ?? "#0a0a0a", gradientOn: true };
+    const initTemplateConfig = getTemplateConfig(slide.template_id ?? templates[0]?.id ?? null, templates);
+    const templateBg = getTemplatePreviewBackgroundOverride(initTemplateConfig);
+    return { style: templateBg.style ?? "solid", color: templateBg.color, pattern: templateBg.pattern, gradientOn: true };
   });
   const [backgroundImageUrlForPreview, setBackgroundImageUrlForPreview] = useState<string | null>(() => initialBackgroundImageUrl ?? null);
   const [showCounter, setShowCounter] = useState<boolean>(() => {
@@ -245,7 +248,8 @@ export function SlideEditorModal({
                     size="sm"
                     title="Clear image"
                     onClick={() => {
-                      setBackground({ style: "solid", color: brandKit.primary_color ?? "#0a0a0a", gradientOn: true });
+                      const templateBg = getTemplatePreviewBackgroundOverride(templateConfig);
+                      setBackground({ ...templateBg, gradientOn: true });
                       setBackgroundImageUrlForPreview(null);
                     }}
                   >

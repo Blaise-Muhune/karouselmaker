@@ -24,7 +24,7 @@ import type { BrandKit } from "@/lib/renderer/renderModel";
 import type { ExportFormat, ExportSize, PlatformName } from "@/lib/server/db/types";
 import { FREE_FULL_ACCESS_GENERATIONS } from "@/lib/constants";
 import { GenerationPartialBanner } from "@/components/carousels/GenerationPartialBanner";
-import { CarouselGeneratingBanner, CarouselGeneratingTrigger } from "@/components/carousels/CarouselGeneratingTrigger";
+import { CarouselGeneratingPage } from "@/components/carousels/CarouselGeneratingTrigger";
 import { ArrowLeftIcon } from "lucide-react";
 
 function getExportFormat(c: { export_format?: unknown }): ExportFormat {
@@ -124,8 +124,10 @@ export default async function CarouselEditorPage({
   );
 
   const captionVariants = (carousel.caption_variants as {
-    short?: string;
+    title?: string;
     medium?: string;
+    long?: string;
+    short?: string;
     spicy?: string;
   }) ?? {};
   const hashtags = Array.isArray(carousel.hashtags) ? carousel.hashtags : [];
@@ -170,15 +172,15 @@ export default async function CarouselEditorPage({
 
   const isGenerating = carousel.status === "generating";
 
+  // When still generating, show only full-page loading—no empty editor, no "No caption yet".
+  // CarouselGeneratingPage runs the generate API and refreshes; when done, this page re-renders with results.
+  if (isGenerating) {
+    return <CarouselGeneratingPage projectId={projectId} carouselId={carouselId} />;
+  }
+
   return (
     <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">
       <div className="mx-auto max-w-4xl space-y-6">
-        {isGenerating && (
-          <>
-            <CarouselGeneratingBanner />
-            <CarouselGeneratingTrigger projectId={projectId} carouselId={carouselId} />
-          </>
-        )}
         {showGenerationPartial && <GenerationPartialBanner />}
         {!subscription.isPro && (
           hasFullAccess ? (

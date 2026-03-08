@@ -66,7 +66,7 @@ export async function GET(
 
   const templateCfg = config.data;
   const slideBg = slide.background as
-    | { style?: "solid" | "gradient"; color?: string; gradientOn?: boolean; mode?: string; storage_path?: string; image_url?: string; secondary_storage_path?: string; secondary_image_url?: string; images?: { image_url?: string; storage_path?: string }[]; overlay?: { gradient?: boolean; darken?: number; color?: string; textColor?: string; direction?: "top" | "bottom" | "left" | "right"; extent?: number; solidSize?: number } }
+    | { style?: "solid" | "gradient" | "pattern"; pattern?: "dots" | "ovals" | "lines" | "circles"; color?: string; gradientOn?: boolean; mode?: string; storage_path?: string; image_url?: string; secondary_storage_path?: string; secondary_image_url?: string; images?: { image_url?: string; storage_path?: string }[]; overlay?: { enabled?: boolean; gradient?: boolean; darken?: number; color?: string; textColor?: string; direction?: "top" | "bottom" | "left" | "right"; extent?: number; solidSize?: number; tintColor?: string; tintOpacity?: number } }
     | null
     | undefined;
   // Overlay color: slide override > template (no brand logo color; use template or neutral)
@@ -82,6 +82,8 @@ export async function GET(
   const templateSolidSize = templateCfg?.overlays?.gradient?.solidSize ?? 25;
   const gradientExtent = slideBg?.overlay?.extent != null ? slideBg.overlay.extent : templateExtent;
   const gradientSolidSize = slideBg?.overlay?.solidSize != null ? slideBg.overlay.solidSize : templateSolidSize;
+  const templateDefaultColor = (templateCfg?.defaults?.background as { color?: string } | undefined)?.color ?? "#0a0a0a";
+  const overlayEnabled = slideBg?.overlay?.enabled !== false;
   const overlayFields = {
     gradientStrength,
     gradientColor,
@@ -89,18 +91,23 @@ export async function GET(
     gradientDirection: (slideBg?.overlay?.direction ?? templateCfg?.overlays?.gradient?.direction ?? "bottom") as "top" | "bottom" | "left" | "right",
     gradientExtent,
     gradientSolidSize,
+    overlayEnabled,
+    ...(slideBg?.overlay?.tintOpacity != null && slideBg.overlay.tintOpacity > 0
+      ? { tintColor: slideBg.overlay.tintColor ?? templateDefaultColor, tintOpacity: Math.min(1, Math.max(0, slideBg.overlay.tintOpacity)) }
+      : {}),
   };
   const hasBackgroundImage =
     slideBg?.mode === "image" &&
     (!!slideBg.images?.length || !!slideBg.image_url || !!slideBg.storage_path);
   const defaultStyle = templateCfg?.backgroundRules?.defaultStyle;
-  const gradientOn =
-    hasBackgroundImage && (defaultStyle === "none" || defaultStyle === "blur")
-      ? false
-      : (slideBg?.gradientOn ?? slideBg?.overlay?.gradient ?? true);
+  /** Only gate by overlay when there is a background image (overlay on picture). Solid/pattern background is unchanged. */
+  const gradientOn = hasBackgroundImage
+    ? overlayEnabled && (defaultStyle !== "none" && defaultStyle !== "blur") && (slideBg?.gradientOn ?? slideBg?.overlay?.gradient ?? true)
+    : (slideBg?.gradientOn ?? slideBg?.overlay?.gradient ?? true);
   const backgroundOverride = slideBg
     ? {
         style: slideBg.style,
+        pattern: slideBg.pattern,
         color: slideBg.color,
         gradientOn,
         ...overlayFields,

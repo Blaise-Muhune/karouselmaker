@@ -38,6 +38,7 @@ import { ensureSlideTextVariants } from "@/app/actions/slides/ensureSlideTextVar
 import { createTemplateAction } from "@/app/actions/templates/createTemplate";
 import { getTemplateConfigAction } from "@/app/actions/templates/getTemplateConfig";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
+import { getTemplatePreviewBackgroundOverride } from "@/lib/renderer/getTemplatePreviewBackground";
 import type { BrandKit } from "@/lib/renderer/renderModel";
 import type { ChromeOverrides } from "@/lib/renderer/renderModel";
 import type { TemplateConfig, TextZone } from "@/lib/server/renderer/templateSchema";
@@ -221,6 +222,14 @@ export type ImageDisplayState = {
   overlayCircleBorderColor?: string;
   overlayCircleX?: number;
   overlayCircleY?: number;
+  /** Single image only: "full" = fill slide (default), "pip" = picture-in-picture in a corner. */
+  mode?: "full" | "pip";
+  /** When mode is "pip": corner for the image box. */
+  pipPosition?: "top_left" | "top_right" | "bottom_left" | "bottom_right";
+  /** When mode is "pip": size as fraction of canvas (0.25–0.55). Default 0.4. */
+  pipSize?: number;
+  /** When mode is "pip": border radius in px. Default 24. */
+  pipBorderRadius?: number;
 };
 
 export type SlideBackgroundState = SlideBackgroundOverride & {
@@ -237,6 +246,8 @@ export type SlideBackgroundState = SlideBackgroundOverride & {
   fit?: "cover" | "contain";
   image_display?: ImageDisplayState;
   overlay?: {
+    /** When false, gradient and tint are not applied in preview or export. Default true. */
+    enabled?: boolean;
     gradient?: boolean;
     darken?: number;
     blur?: number;
@@ -246,13 +257,16 @@ export type SlideBackgroundState = SlideBackgroundOverride & {
     solidSize?: number;
     /** Where the dark part of the gradient sits: top, bottom, left, right. */
     direction?: "top" | "bottom" | "left" | "right";
+    /** Template/brand color over image at reduced opacity so image stays visible. */
+    tintColor?: string;
+    /** Tint layer opacity 0–1. When > 0, tintColor is drawn over the image. */
+    tintOpacity?: number;
   };
 };
 
 /** Max preview size (longest side) so it always fits on screen. Keeps mobile and desktop usable. */
 const PREVIEW_MAX = 380;
 const PREVIEW_MAX_LARGE = 560;
-const TEMPLATE_PAGE_SIZE = 8;
 
 /** Preview dimensions and scale. Content is 1080 x exportH; scale to cover so it fills the frame (matches export). */
 function getPreviewDimensions(size: "1080x1080" | "1080x1350" | "1080x1920", maxSize = PREVIEW_MAX): { w: number; h: number; contentW: number; contentH: number; scale: number; offsetX: number; offsetY: number } {
@@ -291,7 +305,7 @@ const SECTION_INFO: Record<string, { title: string; body: string }> = {
   },
   background: {
     title: "Background",
-    body: "You can use a solid color, a gradient, or a background image. Add image: pick from your library (Pick) or paste a URL. With an image, use the Gradient overlay section below to add a dark gradient so text stays readable; you can set position (top/bottom/left/right), color, opacity, and text color. With solid/gradient only, the color picker and Overlay checkbox control the fill.",
+    body: "You can use a solid color, a gradient, or a background image. The color picker starts from the template color; change it to override. Gradient adds a gradient on top of the fill. Add image: Pick or paste a URL. With an image, use Gradient overlay to darken for text readability, and Image overlay blend to tint with the template color.",
   },
   templates: {
     title: "Save as template",
@@ -469,7 +483,11 @@ export function SlideEditForm({
     const templateOverlayStrength = initTemplateConfig?.overlays?.gradient?.strength ?? 0.5;
     const bg = slide.background as SlideBackgroundState | null;
     if (bg && (bg.mode === "image" || bg.style || bg.color != null)) {
-      const base = { ...bg, style: bg.style ?? "solid", color: bg.color ?? brandKit.primary_color ?? "#0a0a0a", gradientOn: bg.gradientOn ?? true };
+      const templateBgForInit = getTemplatePreviewBackgroundOverride(initTemplateConfig ?? null);
+      const fallbackColor = templateBgForInit.color ?? brandKit.primary_color ?? "#0a0a0a";
+      const effectiveStyle = bg.style ?? templateBgForInit.style ?? "solid";
+      const effectivePattern = bg.pattern ?? (effectiveStyle === "pattern" ? templateBgForInit.pattern : undefined);
+      const base = { ...bg, style: effectiveStyle, pattern: effectivePattern, color: bg.color ?? fallbackColor, gradientOn: bg.gradientOn ?? true };
       if (bg.overlay) {
         const grad = initTemplateConfig?.overlays?.gradient;
         const defaultOverlayColor = grad?.color ?? "#0a0a0a";
@@ -481,9 +499,17 @@ export function SlideEditForm({
         const solidSize = bg.overlay.solidSize ?? grad?.solidSize ?? 25;
         const effectiveSolidSize = solidSize === 25 ? (grad?.solidSize ?? 25) : solidSize;
         base.overlay = { ...bg.overlay, darken: effectiveDarken, extent: effectiveExtent, solidSize: effectiveSolidSize, color: overlayColor, textColor: getContrastingTextColor(overlayColor) };
+        const initTemplate = (slide.template_id ?? templates[0]?.id) ? templates.find((t) => t.id === (slide.template_id ?? templates[0]?.id)) : templates[0];
+        if (bg.mode === "image" && initTemplate?.category === "linkedin") {
+          const tintColor = (initTemplateConfig?.defaults?.background as { color?: string } | undefined)?.color ?? defaultOverlayColor;
+          base.overlay = { ...base.overlay, enabled: false, tintColor, tintOpacity: 0.75 };
+        }
       } else {
         const grad = initTemplateConfig?.overlays?.gradient;
         const defaultOverlayColor = grad?.color ?? "#0a0a0a";
+        const initTemplate = (slide.template_id ?? templates[0]?.id) ? templates.find((t) => t.id === (slide.template_id ?? templates[0]?.id)) : templates[0];
+        const isLinkedIn = initTemplate?.category === "linkedin";
+        const tintColor = (initTemplateConfig?.defaults?.background as { color?: string } | undefined)?.color ?? defaultOverlayColor;
         base.overlay = {
           gradient: grad?.enabled ?? true,
           darken: templateOverlayStrength,
@@ -492,6 +518,7 @@ export function SlideEditForm({
           direction: grad?.direction ?? "bottom",
           extent: grad?.extent ?? 50,
           solidSize: grad?.solidSize ?? 25,
+          ...(isLinkedIn ? { enabled: false, tintColor, tintOpacity: 0.75 } : {}),
         };
       }
       if (bg.image_display) base.image_display = { ...bg.image_display };
@@ -499,9 +526,11 @@ export function SlideEditForm({
     }
     const grad = initTemplateConfig?.overlays?.gradient;
     const defaultOverlayColor = grad?.color ?? "#0a0a0a";
+    const templateBg = getTemplatePreviewBackgroundOverride(initTemplateConfig ?? null);
     return {
-      style: "solid",
-      color: brandKit.primary_color ?? "#0a0a0a",
+      style: templateBg.style ?? "solid",
+      color: defaultOverlayColor ?? templateBg.color,
+      pattern: templateBg.pattern,
       gradientOn: true,
       overlay: {
         gradient: true,
@@ -525,7 +554,18 @@ export function SlideEditForm({
     }
     if (Object.keys(d).length === 0) {
       const fc = brandKit.primary_color?.trim() || "#ffffff";
-      return { position: "top", fit: "cover", frame: "none", frameRadius: 16, frameColor: fc, frameShape: "squircle" };
+      const initTemplateId = slide.template_id ?? templates[0]?.id ?? null;
+      const initTemplate = initTemplateId ? templates.find((t) => t.id === initTemplateId) : templates[0];
+      const isLinkedIn = initTemplate?.category === "linkedin";
+      return {
+        position: "top",
+        fit: "cover",
+        frame: "none",
+        frameRadius: 16,
+        frameColor: fc,
+        frameShape: "squircle",
+        ...(isLinkedIn ? { mode: "pip" as const, pipPosition: "bottom_right" as const, pipSize: 0.4 } : {}),
+      };
     }
     return d;
   });
@@ -701,7 +741,6 @@ export function SlideEditForm({
   const [driveError, setDriveError] = useState<string | null>(null);
   const [driveSuccess, setDriveSuccess] = useState<string | null>(null);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
-  const [visibleTemplateCount, setVisibleTemplateCount] = useState(TEMPLATE_PAGE_SIZE);
   /** When user selects a template from the modal, we store its config here so the preview updates immediately (avoids relying on list lookup). */
   const [overrideTemplateConfig, setOverrideTemplateConfig] = useState<TemplateConfig | null>(null);
   const [infoSection, setInfoSection] = useState<string | null>(null);
@@ -936,10 +975,20 @@ export function SlideEditForm({
           body: bodyZoneOverride ?? templateDefaultsOverrides.zoneOverrides?.body,
         }
       : templateDefaultsOverrides.zoneOverrides;
+  const singleImageWithPip =
+    (imageDisplay?.mode === "pip") &&
+    imageUrls.filter((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim())).length === 1;
+  const pipDefaultHeadlineSize = headlineZoneFromTemplate?.fontSize ?? 72;
+  const pipDefaultBodySize = bodyZoneFromTemplate?.fontSize ?? 48;
+  const pipFontScale = 0.85;
+  const baseHeadline = headlineFontSize ?? templateDefaultsOverrides.fontOverrides?.headline_font_size ?? pipDefaultHeadlineSize;
+  const baseBody = bodyFontSize ?? templateDefaultsOverrides.fontOverrides?.body_font_size ?? pipDefaultBodySize;
   const previewFontOverrides =
-    headlineFontSize != null || bodyFontSize != null
-      ? { headline_font_size: headlineFontSize, body_font_size: bodyFontSize }
-      : templateDefaultsOverrides.fontOverrides;
+    singleImageWithPip
+      ? { headline_font_size: Math.round(baseHeadline * pipFontScale), body_font_size: Math.round(baseBody * pipFontScale) }
+      : headlineFontSize != null || bodyFontSize != null
+        ? { headline_font_size: headlineFontSize, body_font_size: bodyFontSize }
+        : templateDefaultsOverrides.fontOverrides;
   const previewChromeOverrides: ChromeOverrides | undefined =
     counterZoneOverride || watermarkZoneOverride || madeWithZoneOverride
       ? {
@@ -973,10 +1022,15 @@ export function SlideEditForm({
             bottom: 16,
           },
         };
-  const templateOptionsForModal = templates.slice(1).map((t) => ({ id: t.id, name: t.name, parsedConfig: t.parsedConfig }));
-  useEffect(() => {
-    if (templateModalOpen) setVisibleTemplateCount(TEMPLATE_PAGE_SIZE);
-  }, [templateModalOpen]);
+  const restTemplates = templates.slice(1);
+  const sortedTemplatesForModal = [...restTemplates].sort((a, b) => {
+    const aLinkedIn = (a.category ?? "").toLowerCase() === "linkedin";
+    const bLinkedIn = (b.category ?? "").toLowerCase() === "linkedin";
+    if (aLinkedIn && !bLinkedIn) return -1;
+    if (!aLinkedIn && bLinkedIn) return 1;
+    return 0;
+  });
+  const templateOptionsForModal = sortedTemplatesForModal.map((t) => ({ id: t.id, name: t.name, parsedConfig: t.parsedConfig, category: t.category }));
   useEffect(() => {
     setOverrideTemplateConfig(null);
   }, [slide.id]);
@@ -1193,6 +1247,10 @@ export function SlideEditForm({
     if (source.overlayCircleBorderColor != null) payload.overlayCircleBorderColor = source.overlayCircleBorderColor;
     if (source.overlayCircleX != null) payload.overlayCircleX = Math.min(100, Math.max(0, source.overlayCircleX));
     if (source.overlayCircleY != null) payload.overlayCircleY = Math.min(100, Math.max(0, source.overlayCircleY));
+    if (source.mode != null) payload.mode = source.mode;
+    if (source.pipPosition != null) payload.pipPosition = source.pipPosition;
+    if (source.pipSize != null) payload.pipSize = Math.min(0.55, Math.max(0.25, source.pipSize));
+    if (source.pipBorderRadius != null) payload.pipBorderRadius = Math.min(72, Math.max(0, source.pipBorderRadius));
     return Object.keys(payload).length > 0 ? payload : undefined;
   };
 
@@ -1418,7 +1476,7 @@ export function SlideEditForm({
                 ? { secondary_asset_id: background.secondary_asset_id, secondary_storage_path: background.secondary_storage_path, secondary_image_url: background.secondary_image_url || undefined }
                 : {}),
             }
-      : { style: background.style, color: background.color, gradientOn: background.gradientOn, overlay: overlayPayload };
+      : { style: background.style ?? "solid", pattern: background.pattern, color: background.color, gradientOn: background.gradientOn ?? false, overlay: overlayPayload };
   };
 
   const handleApplyTemplateToAll = async () => {
@@ -1491,6 +1549,10 @@ export function SlideEditForm({
       dividerStyle: imageDisplay.dividerStyle ?? "gap",
       dividerColor: imageDisplay.dividerColor ?? "#ffffff",
       dividerWidth: imageDisplay.dividerWidth ?? 48,
+      ...(imageDisplay.mode != null && { mode: imageDisplay.mode }),
+      ...(imageDisplay.pipPosition != null && { pipPosition: imageDisplay.pipPosition }),
+      ...(imageDisplay.pipSize != null && { pipSize: imageDisplay.pipSize }),
+      ...(imageDisplay.pipBorderRadius != null && { pipBorderRadius: imageDisplay.pipBorderRadius }),
     };
     const result = await applyImageDisplayToAllSlides(slide.carousel_id, fullPayload, editorPath, applyScope);
     setApplyingImageDisplay(false);
@@ -1798,7 +1860,19 @@ export function SlideEditForm({
         : null;
   const previewBackgroundImageUrls =
     validImageUrls.length >= 2 ? validImageUrls.map((i) => i.url) : undefined;
-  const overlayColor = background.overlay?.color ?? brandKit.primary_color?.trim() ?? "#000000";
+  /** Template overlay/gradient color: used as the main "Color" (fill and gradient) when user hasn't set one. */
+  const templateOverlayColor =
+    templateConfig?.overlays?.gradient?.color && /^#[0-9A-Fa-f]{3,6}$/i.test(templateConfig.overlays.gradient.color)
+      ? templateConfig.overlays.gradient.color
+      : undefined;
+  const overlayColor = background.overlay?.color ?? templateOverlayColor ?? brandKit.primary_color?.trim() ?? "#000000";
+  /** Template default background color (solid/pattern). Fallback when no overlay color. */
+  const templateDefaultBgColor =
+    templateConfig?.defaults?.background && typeof templateConfig.defaults.background === "object" && "color" in templateConfig.defaults.background
+      ? (templateConfig.defaults.background as { color: string }).color
+      : undefined;
+  const effectiveBackgroundColor =
+    background.color ?? templateOverlayColor ?? templateDefaultBgColor ?? brandKit.primary_color ?? "#0a0a0a";
   const templateOverlayStrength = templateConfig?.overlays?.gradient?.strength ?? 0.5;
   const overlayDefaults = {
     gradientStrength: templateOverlayStrength,
@@ -1824,9 +1898,13 @@ export function SlideEditForm({
         p.textColor === (background.overlay?.textColor ?? "#ffffff")
     )?.id ?? PRESET_CUSTOM_ID;
 
+  const overlayEnabled = background.overlay?.enabled !== false;
+  const templateBgForPreview = getTemplatePreviewBackgroundOverride(templateConfig ?? null);
+  const effectivePreviewStyle = background.style ?? templateBgForPreview.style ?? "solid";
+  const effectivePreviewPattern = background.pattern ?? (effectivePreviewStyle === "pattern" ? templateBgForPreview.pattern : undefined);
   const previewBackgroundOverride: SlideBackgroundOverride = isImageMode
     ? {
-        gradientOn: background.overlay?.gradient ?? true,
+        gradientOn: overlayEnabled && (background.overlay?.gradient ?? true),
         color: background.color ?? brandKit.primary_color ?? "#0a0a0a",
         gradientStrength: effectiveOverlayOpacity,
         gradientColor: overlayColor,
@@ -1834,14 +1912,21 @@ export function SlideEditForm({
         gradientDirection: background.overlay?.direction ?? templateConfig?.overlays?.gradient?.direction ?? "bottom",
         gradientExtent: effectiveExtent,
         gradientSolidSize: effectiveSolidSize,
+        overlayEnabled,
+        ...(typeof background.overlay?.tintOpacity === "number" && background.overlay.tintOpacity > 0
+          ? {
+              tintColor: background.overlay.tintColor ?? (templateConfig?.defaults?.background as { color?: string } | undefined)?.color ?? "#0a0a0a",
+              tintOpacity: Math.min(1, Math.max(0, background.overlay.tintOpacity)),
+            }
+          : {}),
       }
     : {
-        style: background.style,
-        color: background.color,
-        gradientOn: background.gradientOn,
-        gradientStrength: effectiveOverlayOpacity,
-        gradientColor: overlayColor,
-        textColor: overlayDefaults.textColor,
+        style: effectivePreviewStyle,
+        pattern: effectivePreviewPattern,
+        color: effectiveBackgroundColor,
+        gradientOn: background.gradientOn ?? false,
+        gradientStrength: background.gradientOn ? effectiveOverlayOpacity : 0,
+        gradientColor: background.overlay?.color ?? effectiveBackgroundColor,
         gradientDirection: background.overlay?.direction ?? templateConfig?.overlays?.gradient?.direction ?? "bottom",
         gradientExtent: effectiveExtent,
         gradientSolidSize: effectiveSolidSize,
@@ -1869,6 +1954,42 @@ export function SlideEditForm({
           </Button>
         )}
       </div>
+      <p className="text-muted-foreground text-[11px]">Background color (and gradient color when overlay is on). Uses template color until you change it.</p>
+      <div className="flex flex-wrap items-center gap-4">
+        <div className="flex items-center gap-2">
+          <span className="text-muted-foreground text-xs font-medium">Color</span>
+          <input
+            type="color"
+            value={effectiveBackgroundColor}
+            onChange={(e) => {
+              const color = e.target.value;
+              setBackground((b) => ({
+                ...b,
+                color,
+                overlay: { ...b.overlay, gradient: true, color, textColor: getContrastingTextColor(color), darken: b.overlay?.darken ?? templateOverlayStrength },
+              }));
+            }}
+            className="h-10 w-12 cursor-pointer rounded-lg border border-input/80 bg-background"
+          />
+        </div>
+        <label className="flex cursor-pointer items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            id="overlay-enabled"
+            checked={isImageMode ? overlayEnabled : (background.gradientOn ?? true)}
+            onChange={(e) =>
+              setBackground((b) =>
+                isImageMode
+                  ? { ...b, overlay: { ...b.overlay, enabled: e.target.checked } }
+                  : { ...b, gradientOn: e.target.checked }
+              )
+            }
+            className="h-4 w-4 rounded border-input accent-primary"
+          />
+          <span className="text-xs font-medium">Gradient overlay</span>
+        </label>
+      </div>
+      {(isImageMode ? overlayEnabled : (background.gradientOn ?? true)) && (
         <div className="flex flex-wrap items-end gap-4">
         <div className="space-y-1.5">
           <span className="text-muted-foreground text-xs font-medium">Gradient position</span>
@@ -1918,11 +2039,12 @@ export function SlideEditForm({
             <span className="text-muted-foreground text-xs font-medium">Color</span>
             <input
               type="color"
-              value={background.overlay?.color ?? "#000000"}
+              value={background.overlay?.color ?? effectiveBackgroundColor}
               onChange={(e) => {
                 const color = e.target.value;
                 setBackground((b) => ({
                   ...b,
+                  ...(!isImageMode ? { color } : {}),
                   overlay: { ...b.overlay, gradient: true, color, textColor: getContrastingTextColor(color), darken: b.overlay?.darken ?? templateOverlayStrength },
                 }));
               }}
@@ -1994,6 +2116,31 @@ export function SlideEditForm({
           </div>
         </div>
       </div>
+      )}
+    </div>
+  );
+
+  const templateTintSection = isImageMode && (
+    <div className="flex items-center gap-3 rounded-lg border border-border/50 bg-muted/5 p-3">
+      <span className="text-xs font-medium text-foreground shrink-0">Image overlay blend</span>
+      <Slider
+        value={[Math.round((background.overlay?.tintOpacity ?? 0) * 100)]}
+        onValueChange={([v]) => {
+          const opacity = (v ?? 0) / 100;
+          const tintColor = templateConfig?.defaults?.background && typeof templateConfig.defaults.background === "object" && "color" in templateConfig.defaults.background
+            ? (templateConfig.defaults.background as { color?: string }).color
+            : brandKit.primary_color ?? "#0a0a0a";
+          setBackground((b) => ({
+            ...b,
+            overlay: { ...b.overlay, tintOpacity: opacity, tintColor: opacity > 0 ? (b.overlay?.tintColor ?? tintColor) : undefined },
+          }));
+        }}
+        min={0}
+        max={100}
+        step={5}
+        className="flex-1 max-w-[160px]"
+      />
+      <span className="text-muted-foreground text-xs tabular-nums w-8">{Math.round((background.overlay?.tintOpacity ?? 0) * 100)}%</span>
     </div>
   );
 
@@ -2152,9 +2299,9 @@ export function SlideEditForm({
                 templateConfig={templateConfig}
                 brandKit={brandKit}
                 totalSlides={totalSlides}
-                backgroundImageUrl={previewBackgroundImageUrl}
-                backgroundImageUrls={previewBackgroundImageUrls}
-                secondaryBackgroundImageUrl={secondaryBackgroundImageUrlForPreview ?? initialSecondaryBackgroundImageUrl}
+                backgroundImageUrl={isImageMode ? previewBackgroundImageUrl : null}
+                backgroundImageUrls={isImageMode ? previewBackgroundImageUrls : undefined}
+                secondaryBackgroundImageUrl={isImageMode ? (secondaryBackgroundImageUrlForPreview ?? initialSecondaryBackgroundImageUrl) : null}
                 backgroundOverride={previewBackgroundOverride}
                 showCounterOverride={showCounter}
                 showWatermarkOverride={showWatermark}
@@ -2195,11 +2342,20 @@ export function SlideEditForm({
           <div className="w-9 shrink-0" aria-hidden />
         )}
       </div>
-      {totalSlides > 1 && (
-        <p className="text-center text-muted-foreground text-[11px] pb-2">
-          {slide.slide_index} of {totalSlides}
-        </p>
-      )}
+      <div className="flex justify-center items-center gap-2 pb-2">
+        <span className="text-muted-foreground text-[11px]">Template:</span>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="gap-1.5 h-8 text-xs"
+          onClick={() => setTemplateModalOpen(true)}
+          disabled={applyingTemplate}
+        >
+          <LayoutTemplateIcon className="size-3.5" />
+          <span className="truncate max-w-[160px]">{templates.find((t) => t.id === templateId)?.name ?? "Choose template"}</span>
+        </Button>
+      </div>
       {saveError && (
         <p className="text-destructive text-sm px-3 pb-2" role="alert">
           {saveError}
@@ -2330,6 +2486,84 @@ export function SlideEditForm({
         </DialogContent>
       </Dialog>
 
+      <Dialog open={templateModalOpen} onOpenChange={setTemplateModalOpen}>
+        <DialogContent className="flex flex-col max-w-[calc(100%-2rem)] max-h-[85vh] sm:max-w-2xl md:max-w-[92vw] md:max-h-[92vh] md:w-[92vw] md:h-[92vh] lg:max-w-[94vw] lg:max-h-[94vh] lg:w-[94vw] lg:h-[94vh]">
+          <DialogHeader>
+            <DialogTitle>Choose template</DialogTitle>
+          </DialogHeader>
+          <p className="text-muted-foreground text-sm -mt-2">
+            Pick a layout for your slide. You can load more below.
+          </p>
+          <div className="overflow-y-auto overflow-x-hidden flex-1 min-h-0 min-w-0 w-full pr-1">
+            <TemplateSelectCards
+              templates={templateOptionsForModal}
+              defaultTemplateId={templates[0]?.id ?? null}
+              defaultTemplateConfig={templates[0]?.parsedConfig ?? null}
+              defaultTemplateCategory={templates[0]?.category ?? undefined}
+              value={templateId === templates[0]?.id ? null : templateId}
+              onChange={async (id) => {
+                const resolvedId = id === null ? (templates[0]?.id ?? null) : id;
+                setTemplateModalOpen(false);
+                if (resolvedId) {
+                  const config = await getTemplateConfigAction(resolvedId);
+                  if (config) setOverrideTemplateConfig(config);
+                  else setOverrideTemplateConfig(null);
+                  const newTemplate = templates.find((t) => t.id === resolvedId);
+                  const hasImage =
+                    background.mode === "image" ||
+                    !!background.asset_id ||
+                    validImageUrls.some((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim()));
+                  if (config) {
+                    const templateBg = getTemplatePreviewBackgroundOverride(config);
+                    const grad = config.overlays?.gradient;
+                    const defaultBgColor =
+                      config.defaults?.background && typeof config.defaults.background === "object" && "color" in config.defaults.background
+                        ? (config.defaults.background as { color?: string }).color
+                        : undefined;
+                    const newColor =
+                      (grad?.color && /^#[0-9A-Fa-f]{3,6}$/i.test(grad.color) ? grad.color : defaultBgColor) ?? templateBg.color ?? "#0a0a0a";
+                    const isLinkedIn = newTemplate?.category === "linkedin";
+                    const linkedInTintColor = defaultBgColor && /^#[0-9A-Fa-f]{3,6}$/i.test(defaultBgColor) ? defaultBgColor : newColor;
+                    setBackground((prev) => ({
+                      ...prev,
+                      style: templateBg.style ?? "solid",
+                      pattern: templateBg.pattern ?? prev.pattern,
+                      color: newColor,
+                      overlay: {
+                        ...prev.overlay,
+                        gradient: prev.overlay?.gradient ?? (grad?.enabled ?? true),
+                        darken: prev.overlay?.darken ?? (grad?.strength ?? 0.5),
+                        color: newColor,
+                        textColor: getContrastingTextColor(newColor),
+                        direction: prev.overlay?.direction ?? (grad?.direction ?? "bottom"),
+                        extent: prev.overlay?.extent ?? (grad?.extent ?? 50),
+                        solidSize: prev.overlay?.solidSize ?? (grad?.solidSize ?? 25),
+                        ...(isLinkedIn && hasImage ? { enabled: false, tintColor: linkedInTintColor, tintOpacity: 0.75 } : {}),
+                      },
+                    }));
+                  }
+                } else {
+                  setOverrideTemplateConfig(null);
+                }
+                setTemplateId(resolvedId);
+                setHeadlineFontSize(undefined);
+                setBodyFontSize(undefined);
+                setHeadlineZoneOverride(undefined);
+                setBodyZoneOverride(undefined);
+                setCounterZoneOverride(undefined);
+                setWatermarkZoneOverride(undefined);
+                setMadeWithZoneOverride(undefined);
+                void handleTemplateChange(resolvedId);
+              }}
+              primaryColor={brandKit.primary_color ?? undefined}
+              previewImageUrls={previewBackgroundImageUrl ? [previewBackgroundImageUrl] : (previewBackgroundImageUrls?.length ? previewBackgroundImageUrls : undefined)}
+              showCategoryTabs
+              paginateInternally
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={infoSection !== null} onOpenChange={(open) => !open && setInfoSection(null)}>
         <DialogContent showCloseButton className="max-w-sm">
           <DialogHeader>
@@ -2408,9 +2642,9 @@ export function SlideEditForm({
                         templateConfig={templateConfig}
                         brandKit={brandKit}
                         totalSlides={totalSlides}
-                        backgroundImageUrl={previewBackgroundImageUrl}
-                        backgroundImageUrls={previewBackgroundImageUrls}
-                        secondaryBackgroundImageUrl={secondaryBackgroundImageUrlForPreview ?? initialSecondaryBackgroundImageUrl}
+                        backgroundImageUrl={isImageMode ? previewBackgroundImageUrl : null}
+                        backgroundImageUrls={isImageMode ? previewBackgroundImageUrls : undefined}
+                        secondaryBackgroundImageUrl={isImageMode ? (secondaryBackgroundImageUrlForPreview ?? initialSecondaryBackgroundImageUrl) : null}
                         backgroundOverride={previewBackgroundOverride}
                         showCounterOverride={showCounter}
                         showWatermarkOverride={showWatermark}
@@ -2483,78 +2717,6 @@ export function SlideEditForm({
           >
           {editorTab === "layout" && (
           <section className={`space-y-5 ${!isPro ? "pointer-events-none opacity-60" : ""}`} aria-label="Layout">
-            <div className="rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-xs font-semibold text-foreground">Template</h3>
-                <button type="button" onClick={() => setInfoSection("layout")} className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Layout help" title="Help">
-                  <InfoIcon className="size-3.5" />
-                </button>
-              </div>
-              <p className="text-muted-foreground text-[11px]">Layout for this frame.</p>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="gap-2 h-9"
-                onClick={() => setTemplateModalOpen(true)}
-                disabled={applyingTemplate}
-              >
-                <LayoutTemplateIcon className="size-4" />
-                {templates.find((t) => t.id === templateId)?.name ?? "Choose template"}
-              </Button>
-              <Dialog open={templateModalOpen} onOpenChange={setTemplateModalOpen}>
-                <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
-                  <DialogHeader>
-                    <DialogTitle>Choose template</DialogTitle>
-                  </DialogHeader>
-                  <p className="text-muted-foreground text-sm -mt-2">
-                    Pick a layout for your slide. You can load more below.
-                  </p>
-                  <div className="overflow-y-auto overflow-x-hidden flex-1 min-h-0 min-w-0 w-full pr-1">
-                    <TemplateSelectCards
-                      templates={templateOptionsForModal.slice(0, visibleTemplateCount)}
-                      defaultTemplateId={templates[0]?.id ?? null}
-                      defaultTemplateConfig={templates[0]?.parsedConfig ?? null}
-                      value={templateId === templates[0]?.id ? null : templateId}
-                      onChange={async (id) => {
-                        const resolvedId = id === null ? (templates[0]?.id ?? null) : id;
-                        setTemplateModalOpen(false);
-                        if (resolvedId) {
-                          const config = await getTemplateConfigAction(resolvedId);
-                          if (config) setOverrideTemplateConfig(config);
-                          else setOverrideTemplateConfig(null);
-                        } else {
-                          setOverrideTemplateConfig(null);
-                        }
-                        setTemplateId(resolvedId);
-                        setHeadlineFontSize(undefined);
-                        setBodyFontSize(undefined);
-                        setHeadlineZoneOverride(undefined);
-                        setBodyZoneOverride(undefined);
-                        setCounterZoneOverride(undefined);
-                        setWatermarkZoneOverride(undefined);
-                        setMadeWithZoneOverride(undefined);
-                        void handleTemplateChange(resolvedId);
-                      }}
-                      primaryColor={brandKit.primary_color ?? undefined}
-                      previewImageUrls={previewBackgroundImageUrl ? [previewBackgroundImageUrl] : (previewBackgroundImageUrls?.length ? previewBackgroundImageUrls : undefined)}
-                    />
-                  </div>
-                  {visibleTemplateCount < templateOptionsForModal.length && (
-                    <div className="pt-2 border-t flex justify-center">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setVisibleTemplateCount((n) => n + TEMPLATE_PAGE_SIZE)}
-                      >
-                        Load more
-                      </Button>
-                    </div>
-                  )}
-                </DialogContent>
-              </Dialog>
-            </div>
             <div className="rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-xs font-semibold text-foreground">Show on slide</h3>
@@ -3128,7 +3290,8 @@ export function SlideEditForm({
                       title="Clear image"
                       className="h-7 text-xs text-muted-foreground hover:text-foreground"
                       onClick={() => {
-                        setBackground((b) => ({ ...b, style: "solid", color: brandKit.primary_color ?? "#0a0a0a", gradientOn: true, mode: undefined, asset_id: undefined, storage_path: undefined, image_url: undefined, image_display: undefined }));
+                        const templateBg = getTemplatePreviewBackgroundOverride(templateConfig ?? null);
+                        setBackground((b) => ({ ...b, ...templateBg, gradientOn: true, mode: undefined, asset_id: undefined, storage_path: undefined, image_url: undefined, image_display: undefined }));
                         setBackgroundImageUrlForPreview(null);
                         setImageUrls([{ url: "", source: undefined }]);
                         setImageDisplay({});
@@ -3358,6 +3521,61 @@ export function SlideEditForm({
                 <div className="rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3">
                   <p className="text-muted-foreground text-[11px] font-medium">Display</p>
                 <div className="space-y-2">
+                  {validImageCount === 1 && (
+                    <>
+                      <div className="space-y-1.5">
+                        <span className="text-muted-foreground text-xs">Image style</span>
+                        <Select
+                          value={imageDisplay.mode ?? "full"}
+                          onValueChange={(v: "full" | "pip") => setImageDisplay((d) => ({ ...d, mode: v, ...(v === "pip" && d.pipPosition == null ? { pipPosition: "bottom_right" as const, pipSize: 0.4 } : {}) }))}
+                        >
+                          <SelectTrigger className="h-9 rounded-lg border-input/80 bg-background text-sm">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="full">Full slide</SelectItem>
+                            <SelectItem value="pip">Picture-in-picture (image in corner)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-muted-foreground text-[11px]">PiP keeps text clear by placing the image in a corner.</p>
+                      </div>
+                      {(imageDisplay.mode ?? "full") === "pip" && (
+                        <div className="grid gap-3 sm:grid-cols-2 pt-1">
+                          <div className="space-y-1.5">
+                            <span className="text-muted-foreground text-xs">PiP position</span>
+                            <Select
+                              value={imageDisplay.pipPosition ?? "bottom_right"}
+                              onValueChange={(v: "top_left" | "top_right" | "bottom_left" | "bottom_right") => setImageDisplay((d) => ({ ...d, pipPosition: v }))}
+                            >
+                              <SelectTrigger className="h-9 rounded-lg border-input/80 bg-background text-sm">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="top_left">Top left</SelectItem>
+                                <SelectItem value="top_right">Top right</SelectItem>
+                                <SelectItem value="bottom_left">Bottom left</SelectItem>
+                                <SelectItem value="bottom_right">Bottom right</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-1.5">
+                            <span className="text-muted-foreground text-xs">PiP size</span>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="range"
+                                min={25}
+                                max={55}
+                                value={Math.round((imageDisplay.pipSize ?? 0.4) * 100)}
+                                onChange={(e) => setImageDisplay((d) => ({ ...d, pipSize: Number(e.target.value) / 100 }))}
+                                className="h-2 flex-1 cursor-pointer appearance-none rounded-full bg-muted accent-primary"
+                              />
+                              <span className="text-muted-foreground min-w-8 text-xs tabular-nums">{Math.round((imageDisplay.pipSize ?? 0.4) * 100)}%</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-muted-foreground text-[11px] font-medium">Position & frame</span>
                     <Button
@@ -3659,44 +3877,6 @@ export function SlideEditForm({
               </div>
             )}
             {!isImageMode && (
-              <div className="rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3">
-                <h3 className="text-xs font-semibold text-foreground">Color</h3>
-              <div className="flex flex-wrap items-center gap-3">
-                {isPro && (
-                  <Select
-                    value={background.style ?? "solid"}
-                    onValueChange={(v: "solid" | "gradient") => setBackground((b) => ({ ...b, style: v }))}
-                  >
-                    <SelectTrigger className="h-9 w-full md:w-[120px] rounded-md border-input/80 bg-background text-sm">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="solid">Solid</SelectItem>
-                      <SelectItem value="gradient">Gradient</SelectItem>
-                    </SelectContent>
-                  </Select>
-                )}
-                <div className="flex items-center gap-2 flex-wrap">
-                  <input
-                    type="color"
-                    value={background.color ?? "#0a0a0a"}
-                    onChange={(e) => setBackground((b) => ({ ...b, color: e.target.value }))}
-                    className="h-10 w-12 cursor-pointer rounded-lg border border-input/80 bg-background"
-                  />
-                  <label className="flex cursor-pointer items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={background.gradientOn ?? true}
-                      onChange={(e) => setBackground((b) => ({ ...b, gradientOn: e.target.checked }))}
-                      className="rounded border-input accent-primary"
-                    />
-                    Overlay
-                  </label>
-                </div>
-              </div>
-              </div>
-            )}
-            {!isImageMode && (
               <div className={`rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3 ${!isPro ? "pointer-events-none opacity-60" : ""}`}>
                 <p className="text-muted-foreground text-[11px] font-medium">Add image</p>
                 <div className="flex flex-wrap items-center gap-2">
@@ -3763,7 +3943,8 @@ export function SlideEditForm({
                 </div>
               </div>
             )}
-            {background.gradientOn && overlaySection}
+            {overlaySection}
+            {templateTintSection}
           </section>
           )}
           {editorTab === "more" && (
