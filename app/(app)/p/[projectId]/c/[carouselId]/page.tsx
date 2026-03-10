@@ -1,12 +1,16 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getUser } from "@/lib/server/auth/getUser";
+
+/** Ensure router.refresh() always gets fresh data so generating→done transition is visible. */
+export const dynamic = "force-dynamic";
 import { getSubscription } from "@/lib/server/subscription";
 import { getCarousel, getProject, listSlides, listTemplatesForUser, listExportsByCarousel, countExportsThisMonth, getAsset, countCarouselsLifetime, getPlatformConnections } from "@/lib/server/db";
 import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { resolveBrandKitLogo } from "@/lib/server/brandKit";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
+import { isSupabaseSignedUrl } from "@/lib/server/storage/signedUrlUtils";
 import { Button } from "@/components/ui/button";
 import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { SlideGrid, type TemplateWithConfig } from "@/components/carousels/SlideGrid";
@@ -70,6 +74,11 @@ export default async function CarouselEditorPage({
   if (!carousel) notFound();
   if (!project) notFound();
 
+  // Show loading immediately when generating; skip heavy work so refresh gets fresh status.
+  if (carousel.status === "generating") {
+    return <CarouselGeneratingPage projectId={projectId} carouselId={carouselId} />;
+  }
+
   const templates: TemplateWithConfig[] = templatesRaw
     .map((t) => {
       const parsed = templateConfigSchema.safeParse(t.config);
@@ -80,45 +89,51 @@ export default async function CarouselEditorPage({
 
   const brandKit: BrandKit = await resolveBrandKitLogo(project.brand_kit as Record<string, unknown> | null);
 
+  /** 1 hour expiry for display so thumbnails don't break quickly. */
+  const DISPLAY_SIGNED_URL_EXPIRY = 3600;
   const slideBackgroundImageUrls: Record<string, string | string[]> = {};
   await Promise.all(
     slides.map(async (s) => {
-      const bg = s.background as { mode?: string; storage_path?: string; image_url?: string; asset_id?: string; images?: { image_url?: string; storage_path?: string }[] } | null;
+      const bg = s.background as { mode?: string; storage_path?: string; image_url?: string; asset_id?: string; images?: { image_url?: string; storage_path?: string; asset_id?: string }[] } | null;
       if (bg?.mode !== "image") return;
       if (bg.images?.length) {
         const urls: string[] = [];
         for (const img of bg.images) {
-          if (img.image_url) urls.push(img.image_url);
-          else if (img.storage_path) {
+          const path =
+            img.storage_path?.replace(/^\/+/, "").trim() ||
+            (img.asset_id ? (await getAsset(user.id, img.asset_id))?.storage_path?.replace(/^\/+/, "").trim() : undefined);
+          if (path) {
             try {
-              urls.push(await getSignedImageUrl("carousel-assets", img.storage_path, 600));
+              urls.push(await getSignedImageUrl("carousel-assets", path, DISPLAY_SIGNED_URL_EXPIRY));
             } catch {
-              // skip
+              if (img.image_url && !isSupabaseSignedUrl(img.image_url)) urls.push(img.image_url);
             }
+          } else if (img.image_url && !isSupabaseSignedUrl(img.image_url)) {
+            urls.push(img.image_url);
           }
         }
         if (urls.length) slideBackgroundImageUrls[s.id] = urls.length === 1 ? urls[0]! : urls;
         return;
       }
-      if (bg.image_url) {
-        slideBackgroundImageUrls[s.id] = bg.image_url;
-        return;
-      }
-      let pathToUse = bg.storage_path;
+      let pathToUse = bg.storage_path?.replace(/^\/+/, "").trim();
       if (!pathToUse && bg.asset_id) {
         const asset = await getAsset(user.id, bg.asset_id);
-        if (asset?.storage_path) pathToUse = asset.storage_path;
+        if (asset?.storage_path) pathToUse = asset.storage_path.replace(/^\/+/, "").trim();
       }
       if (pathToUse) {
         try {
           slideBackgroundImageUrls[s.id] = await getSignedImageUrl(
             "carousel-assets",
             pathToUse,
-            600
+            DISPLAY_SIGNED_URL_EXPIRY
           );
+          return;
         } catch {
-          // skip
+          // fall through to image_url only if not an expired signed URL
         }
+      }
+      if (bg.image_url && !isSupabaseSignedUrl(bg.image_url)) {
+        slideBackgroundImageUrls[s.id] = bg.image_url;
       }
     })
   );
@@ -169,14 +184,7 @@ export default async function CarouselEditorPage({
   });
 
   const editorPath = `/p/${projectId}/c/${carouselId}`;
-
-  const isGenerating = carousel.status === "generating";
-
-  // When still generating, show only full-page loading—no empty editor, no "No caption yet".
-  // CarouselGeneratingPage runs the generate API and refreshes; when done, this page re-renders with results.
-  if (isGenerating) {
-    return <CarouselGeneratingPage projectId={projectId} carouselId={carouselId} />;
-  }
+  const isGenerating = carousel.status === "generating"; // always false here (we early-return above)
 
   return (
     <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">
@@ -197,24 +205,18 @@ export default async function CarouselEditorPage({
           <div className="flex flex-col gap-2 min-w-0">
             <Breadcrumbs
               items={[
-                { label: project.name, href: isGenerating ? undefined : `/p/${projectId}` },
+                { label: project.name, href: `/p/${projectId}` },
                 { label: carousel.title },
               ]}
               className="mb-0.5"
             />
             <div className="flex items-center gap-2 flex-wrap">
-              {isGenerating ? (
-                <Button variant="ghost" size="icon-sm" className="-ml-1 shrink-0 size-8" disabled aria-label="Back to project (disabled while generating)">
+              <Button variant="ghost" size="icon-sm" className="-ml-1 shrink-0" asChild>
+                <Link href={`/p/${projectId}`}>
                   <ArrowLeftIcon className="size-4" />
-                </Button>
-              ) : (
-                <Button variant="ghost" size="icon-sm" className="-ml-1 shrink-0" asChild>
-                  <Link href={`/p/${projectId}`}>
-                    <ArrowLeftIcon className="size-4" />
-                    <span className="sr-only">Back to project</span>
-                  </Link>
-                </Button>
-              )}
+                  <span className="sr-only">Back to project</span>
+                </Link>
+              </Button>
               <div className="min-w-0">
                 <h1 className="text-xl font-semibold tracking-tight truncate">{carousel.title}</h1>
                 <p className="text-muted-foreground text-sm">

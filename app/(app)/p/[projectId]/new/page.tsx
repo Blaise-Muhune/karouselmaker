@@ -42,7 +42,13 @@ export default async function NewCarouselPage({
   for (const t of templatesRaw) {
     const parsed = templateConfigSchema.safeParse(t.config);
     if (parsed.success) {
-      templateOptions.push({ id: t.id, name: t.name, parsedConfig: parsed.data, category: t.category });
+      templateOptions.push({
+        id: t.id,
+        name: t.name,
+        parsedConfig: parsed.data,
+        category: t.category,
+        isSystemTemplate: t.user_id == null,
+      });
     }
   }
   const defaultTemplateId = defaultTemplate?.templateId ?? null;

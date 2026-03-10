@@ -7,8 +7,8 @@ import { Button } from "@/components/ui/button";
 
 /**
  * When carousel status is "generating", triggers POST /api/carousel/[carouselId]/generate
- * (which runs the full generation). When the request completes or when polling sees
- * status change, refreshes the page so the result appears.
+ * and polls until status changes. Page refresh shows the result; we don't rely on the POST
+ * response (it can time out during long generation).
  */
 export function CarouselGeneratingTrigger({
   carouselId,
@@ -17,23 +17,16 @@ export function CarouselGeneratingTrigger({
   carouselId: string;
 }) {
   const router = useRouter();
-  const started = useRef(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (started.current) return;
-    started.current = true;
-
+    console.log("[carousel-gen] client: POST /api/carousel/.../generate + start polling every 1.5s");
     const apiUrl = `/api/carousel/${carouselId}/generate`;
     fetch(apiUrl, { method: "POST" })
       .then((res) => {
-        if (res.status === 202) {
-          pollRef.current = setInterval(() => router.refresh(), 2500);
-          return;
-        }
-        if (res.status === 200) {
-          router.refresh();
+        if (res.status === 200 || res.status === 202) {
+          console.log("[carousel-gen] client: server responded", res.status);
           return;
         }
         return res.json().then((body: { error?: string }) => {
@@ -44,6 +37,7 @@ export function CarouselGeneratingTrigger({
         setError(err instanceof Error ? err.message : "Failed to start generation");
       });
 
+    pollRef.current = setInterval(() => router.refresh(), 1500);
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
@@ -74,8 +68,9 @@ export function CarouselGeneratingBanner() {
 
 /**
  * Full-page loading state when user lands on carousel page while status is still "generating".
- * Runs the generate trigger (POST + poll) and shows only a loading screen—no empty editor.
- * When generation completes and page refreshes, the normal editor with results is shown.
+ * Kicks off generation (POST) and polls until status is no longer "generating". Loading goes away
+ * as soon as the next refresh sees the updated status—no reliance on the POST response (which
+ * can time out after 1–3 minutes).
  */
 export function CarouselGeneratingPage({
   projectId,
@@ -85,23 +80,16 @@ export function CarouselGeneratingPage({
   carouselId: string;
 }) {
   const router = useRouter();
-  const started = useRef(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (started.current) return;
-    started.current = true;
-
+    console.log("[carousel-gen] client: full-page loading — POST + polling every 1.5s");
     const apiUrl = `/api/carousel/${carouselId}/generate`;
     fetch(apiUrl, { method: "POST" })
       .then((res) => {
-        if (res.status === 202) {
-          pollRef.current = setInterval(() => router.refresh(), 2500);
-          return;
-        }
-        if (res.status === 200) {
-          router.refresh();
+        if (res.status === 200 || res.status === 202) {
+          console.log("[carousel-gen] client: server responded", res.status);
           return;
         }
         return res.json().then((body: { error?: string }) => {
@@ -112,6 +100,7 @@ export function CarouselGeneratingPage({
         setError(err instanceof Error ? err.message : "Failed to start generation");
       });
 
+    pollRef.current = setInterval(() => router.refresh(), 1500);
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };

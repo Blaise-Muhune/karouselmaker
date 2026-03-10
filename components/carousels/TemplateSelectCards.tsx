@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
-import { SlidePreview } from "@/components/renderer/SlidePreview";
+import { useState, useEffect, useMemo, type ComponentProps } from "react";
+import { SlidePreview, type SlideBackgroundOverride } from "@/components/renderer/SlidePreview";
+import { DeleteTemplateButton } from "@/components/templates/DeleteTemplateButton";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
-import { getTemplatePreviewBackgroundOverride, getLinkedInPreviewOverlayOverride } from "@/lib/renderer/getTemplatePreviewBackground";
+import { getTemplatePreviewBackgroundOverride, getLinkedInPreviewOverlayOverride, getTemplatePreviewOverlayOverride } from "@/lib/renderer/getTemplatePreviewBackground";
 import { CheckIcon, LayoutTemplateIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -46,6 +47,8 @@ export type TemplateOption = {
   parsedConfig: TemplateConfig;
   /** Template category (e.g. 'hook', 'point', 'linkedin'). Used to filter by platform. */
   category?: string;
+  /** When true, template is system-owned; admins can delete it from the modal. */
+  isSystemTemplate?: boolean;
 };
 
 export type TemplateSelectCardsProps = {
@@ -63,6 +66,14 @@ export type TemplateSelectCardsProps = {
   showCategoryTabs?: boolean;
   /** When false (default when showCategoryTabs), parent controls how many templates to show via slice. When true (with showCategoryTabs), we paginate internally with Load more. */
   paginateInternally?: boolean;
+  /** When true, show delete on system templates (e.g. in Choose template modal). */
+  isAdmin?: boolean;
+  /** Required with isAdmin to show delete; Pro is required for deleting user templates. */
+  isPro?: boolean;
+  /** Called after admin deletes a template (e.g. close modal and refresh). */
+  onTemplateDeleted?: () => void;
+  /** When set, use this overlay for the card of the currently selected template (value === t.id) so the card matches the live slide (e.g. gradient/tint saved on slide). */
+  selectedTemplateOverlayOverride?: SlideBackgroundOverride | null;
 };
 
 type TabId = "linkedin" | "other" | "all";
@@ -78,6 +89,10 @@ export function TemplateSelectCards({
   defaultTemplateCategory,
   showCategoryTabs = false,
   paginateInternally = false,
+  isAdmin = false,
+  isPro = false,
+  onTemplateDeleted,
+  selectedTemplateOverlayOverride,
 }: TemplateSelectCardsProps) {
   const { w: PREVIEW_W, h: PREVIEW_H, scale: SCALE } = usePreviewSize();
   const brandKit = { primary_color: primaryColor };
@@ -136,6 +151,22 @@ export function TemplateSelectCards({
           }
         : undefined;
     return { zoneOverrides, fontOverrides };
+  };
+
+  /** Image display only when template is PIP, so modal shows PIP for those and normal full-bleed for the rest. */
+  const getImageDisplayFromConfig = (config: TemplateConfig): ComponentProps<typeof SlidePreview>["imageDisplay"] => {
+    const raw = config.defaults?.meta && typeof config.defaults.meta === "object" && "image_display" in config.defaults.meta
+      ? (config.defaults.meta as { image_display?: unknown }).image_display
+      : undefined;
+    if (raw == null || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+    const d = raw as Record<string, unknown>;
+    if (d.mode !== "pip") return undefined;
+    const pipPos = d.pipPosition;
+    const validPipPos = pipPos === "top_left" || pipPos === "top_right" || pipPos === "bottom_left" || pipPos === "bottom_right" ? pipPos : undefined;
+    return {
+      ...d,
+      pipPosition: validPipPos,
+    } as ComponentProps<typeof SlidePreview>["imageDisplay"];
   };
   const sampleSlide = {
     headline: "How to Get Better Results in Less Time",
@@ -217,11 +248,12 @@ export function TemplateSelectCards({
                     ? getTemplatePreviewBackgroundOverride(defaultTemplateConfig)
                     : isDefaultLinkedIn
                       ? getLinkedInPreviewOverlayOverride(defaultTemplateConfig)
-                      : undefined
+                      : getTemplatePreviewOverlayOverride(defaultTemplateConfig)
                 }
                 showCounterOverride={false}
                 showWatermarkOverride={false}
                 exportSize="1080x1350"
+                imageDisplay={getImageDisplayFromConfig(defaultTemplateConfig)}
                 {...getOverridesFromConfig(defaultTemplateConfig)}
               />
             </div>
@@ -233,62 +265,87 @@ export function TemplateSelectCards({
         <span className="text-[10px] text-muted-foreground">Recommended</span>
       </button>
 
-        {displayList.map((t, idx) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => onChange(t.id)}
-            className={cn(
-              "relative flex flex-col rounded-lg border-2 p-2 text-left transition-colors min-w-0",
-              value === t.id
-                ? "border-primary bg-primary/5 ring-1 ring-primary/20"
-                : "border-border/60 hover:border-muted-foreground/40 hover:bg-muted/30"
-            )}
-          >
-            {value === t.id && (
-              <span className="absolute right-2 top-2 rounded-full bg-primary p-0.5 text-primary-foreground z-10">
-                <CheckIcon className="size-3.5" />
-              </span>
-            )}
+        {displayList.map((t, idx) => {
+          const isSystem = t.isSystemTemplate === true;
+          const showDelete =
+            (isAdmin && isSystem) || (!isSystem && isPro);
+          return (
             <div
-              className="mb-2 overflow-hidden rounded-md bg-muted/50 shrink-0 relative"
-              style={{ width: PREVIEW_W, height: PREVIEW_H, minWidth: PREVIEW_W, minHeight: PREVIEW_H }}
+              key={t.id}
+              className={cn(
+                "relative flex flex-col rounded-lg border-2 p-2 text-left transition-colors min-w-0",
+                value === t.id
+                  ? "border-primary bg-primary/5 ring-1 ring-primary/20"
+                  : "border-border/60 hover:border-muted-foreground/40 hover:bg-muted/30"
+              )}
             >
-              <div
-                className="absolute origin-top-left"
-                style={{
-                  left: INSET,
-                  top: INSET,
-                  transform: `scale(${SCALE})`,
-                  width: 1080,
-                  height: 1350,
-                }}
+              {showDelete && (
+                <div className="absolute right-2 top-2 z-10">
+                  <DeleteTemplateButton
+                    templateId={t.id}
+                    templateName={t.name}
+                    isPro={isPro}
+                    isAdmin={isAdmin}
+                    isSystemTemplate={isSystem}
+                    onDeleted={onTemplateDeleted}
+                  />
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => onChange(t.id)}
+                className={cn(
+                  "relative flex flex-col rounded-lg border-0 text-left transition-colors min-w-0 w-full bg-transparent -m-2 p-2",
+                  "focus:outline-none focus:ring-0"
+                )}
               >
-                <SlidePreview
-                  slide={sampleSlide}
-                  templateConfig={t.parsedConfig}
-                  brandKit={brandKit}
-                  totalSlides={8}
-                  backgroundImageUrl={getPreviewImage(idx + 1)}
-                  backgroundOverride={
-                    !getPreviewImage(idx + 1)
-                      ? getTemplatePreviewBackgroundOverride(t.parsedConfig)
-                      : t.category === "linkedin"
-                        ? getLinkedInPreviewOverlayOverride(t.parsedConfig)
-                        : undefined
-                  }
-                  showCounterOverride={false}
-                  showWatermarkOverride={false}
-                  exportSize="1080x1350"
-                  {...getOverridesFromConfig(t.parsedConfig)}
-                />
-              </div>
+                {value === t.id && (
+                  <span className="absolute right-2 top-2 z-[5] rounded-full bg-primary p-0.5 text-primary-foreground">
+                    <CheckIcon className="size-3.5" />
+                  </span>
+                )}
+                <div
+                  className="mb-2 overflow-hidden rounded-md bg-muted/50 shrink-0 relative"
+                  style={{ width: PREVIEW_W, height: PREVIEW_H, minWidth: PREVIEW_W, minHeight: PREVIEW_H }}
+                >
+                  <div
+                    className="absolute origin-top-left"
+                    style={{
+                      left: INSET,
+                      top: INSET,
+                      transform: `scale(${SCALE})`,
+                      width: 1080,
+                      height: 1350,
+                    }}
+                  >
+                    <SlidePreview
+                      slide={sampleSlide}
+                      templateConfig={t.parsedConfig}
+                      brandKit={brandKit}
+                      totalSlides={8}
+                      backgroundImageUrl={getPreviewImage(idx + 1)}
+                      backgroundOverride={
+                        !getPreviewImage(idx + 1)
+                          ? getTemplatePreviewBackgroundOverride(t.parsedConfig)
+                          : t.category === "linkedin"
+                            ? getLinkedInPreviewOverlayOverride(t.parsedConfig)
+                            : getTemplatePreviewOverlayOverride(t.parsedConfig)
+                      }
+                      showCounterOverride={false}
+                      showWatermarkOverride={false}
+                      exportSize="1080x1350"
+                      imageDisplay={getImageDisplayFromConfig(t.parsedConfig)}
+                      {...getOverridesFromConfig(t.parsedConfig)}
+                    />
+                  </div>
+                </div>
+                <span className="text-xs font-medium text-foreground line-clamp-2 min-h-8 break-words" title={t.name}>
+                  {t.name}
+                </span>
+              </button>
             </div>
-            <span className="text-xs font-medium text-foreground line-clamp-2 min-h-8 break-words" title={t.name}>
-              {t.name}
-            </span>
-          </button>
-        ))}
+          );
+        })}
       </div>
 
       {hasMore && (

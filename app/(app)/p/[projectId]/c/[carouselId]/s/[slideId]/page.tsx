@@ -2,10 +2,11 @@ import { notFound } from "next/navigation";
 import { getUser } from "@/lib/server/auth/getUser";
 import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { getSubscription } from "@/lib/server/subscription";
-import { getSlide, getCarousel, getProject, listSlides, listTemplatesForUser, countCarouselsLifetime } from "@/lib/server/db";
+import { getSlide, getCarousel, getProject, listSlides, listTemplatesForUser, countCarouselsLifetime, getAsset } from "@/lib/server/db";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { resolveBrandKitLogo } from "@/lib/server/brandKit";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
+import { isSupabaseSignedUrl } from "@/lib/server/storage/signedUrlUtils";
 import { SlideEditForm, type TemplateWithConfig } from "@/components/editor/SlideEditForm";
 import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
 import type { BrandKit } from "@/lib/renderer/renderModel";
@@ -75,33 +76,48 @@ export default async function EditSlidePage({
   const bg = slide.background as {
     mode?: string;
     storage_path?: string;
+    asset_id?: string;
     image_url?: string;
     image_source?: "brave" | "unsplash" | "google" | "pixabay" | "pexels";
     unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string };
     secondary_storage_path?: string;
     secondary_image_url?: string;
-    images?: { image_url?: string; storage_path?: string; source?: "brave" | "google" | "unsplash" | "pixabay" | "pexels"; unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string }; pixabay_attribution?: { userName: string; userId: number; pageURL: string; photoURL: string }; pexels_attribution?: { photographer: string; photographer_url: string; photo_url: string }; alternates?: string[] }[];
+    images?: { image_url?: string; storage_path?: string; asset_id?: string; source?: "brave" | "google" | "unsplash" | "pixabay" | "pexels"; unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string }; pixabay_attribution?: { userName: string; userId: number; pageURL: string; photoURL: string }; pexels_attribution?: { photographer: string; photographer_url: string; photo_url: string }; alternates?: string[] }[];
   } | null;
+  /** 1 hour expiry for display so preview doesn't break quickly. */
+  const DISPLAY_SIGNED_URL_EXPIRY = 3600;
   if (bg?.mode === "image") {
     if (bg.images?.length) {
       const urls: string[] = [];
       const sources: ("brave" | "unsplash" | "google" | "pixabay" | "pexels")[] = [];
       for (const img of bg.images) {
-        if (img.image_url) {
+        const path =
+          img.storage_path?.replace(/^\/+/, "").trim() ||
+          (img.asset_id ? (await getAsset(user.id, img.asset_id))?.storage_path?.replace(/^\/+/, "").trim() : undefined);
+        if (path) {
+          try {
+            urls.push(await getSignedImageUrl(BUCKET, path, DISPLAY_SIGNED_URL_EXPIRY));
+            sources.push(img.source ?? "brave");
+            const alt = (img as { alternates?: string[] }).alternates;
+            if (alt?.length) {
+              const validAlt = alt.filter((u) => u?.trim() && /^https?:\/\//i.test(u));
+              urls.push(...validAlt);
+              validAlt.forEach(() => sources.push(img.source ?? "brave"));
+            }
+          } catch {
+            if (img.image_url && !isSupabaseSignedUrl(img.image_url)) {
+              urls.push(img.image_url);
+              sources.push(img.source ?? "brave");
+            }
+          }
+        } else if (img.image_url && !isSupabaseSignedUrl(img.image_url)) {
           urls.push(img.image_url);
           sources.push(img.source ?? "brave");
-          // One slot with alternates: pass all so the form can show Shuffle
           const alt = (img as { alternates?: string[] }).alternates;
           if (alt?.length) {
             const validAlt = alt.filter((u) => u?.trim() && /^https?:\/\//i.test(u));
             urls.push(...validAlt);
             validAlt.forEach(() => sources.push(img.source ?? "brave"));
-          }
-        } else if (img.storage_path) {
-          try {
-            urls.push(await getSignedImageUrl(BUCKET, img.storage_path, 600));
-          } catch {
-            // skip
           }
         }
       }
@@ -113,25 +129,33 @@ export default async function EditSlidePage({
         initialImageSources = sources.length === urls.length ? sources : urls.map((_, i) => sources[i] ?? sources[0] ?? "brave");
       }
     } else {
-      if (bg.image_url) {
+      let pathToUse = bg.storage_path?.replace(/^\/+/, "").trim();
+      if (!pathToUse && bg.asset_id) {
+        const asset = await getAsset(user.id, bg.asset_id);
+        if (asset?.storage_path) pathToUse = asset.storage_path.replace(/^\/+/, "").trim();
+      }
+      if (pathToUse) {
+        try {
+          initialBackgroundImageUrl = await getSignedImageUrl(BUCKET, pathToUse, DISPLAY_SIGNED_URL_EXPIRY);
+        } catch {
+          if (bg.image_url && !isSupabaseSignedUrl(bg.image_url)) {
+            initialBackgroundImageUrl = bg.image_url;
+            if (bg.image_source) initialImageSource = bg.image_source;
+          }
+        }
+      } else if (bg.image_url && !isSupabaseSignedUrl(bg.image_url)) {
         initialBackgroundImageUrl = bg.image_url;
         if (bg.image_source) initialImageSource = bg.image_source;
-      } else if (bg.storage_path) {
-        try {
-          initialBackgroundImageUrl = await getSignedImageUrl(BUCKET, bg.storage_path, 600);
-        } catch {
-          // skip
-        }
       }
       if (slide.slide_type === "hook") {
-        if (bg.secondary_image_url) {
-          initialSecondaryBackgroundImageUrl = bg.secondary_image_url;
-        } else if (bg.secondary_storage_path) {
+        if (bg.secondary_storage_path) {
           try {
-            initialSecondaryBackgroundImageUrl = await getSignedImageUrl(BUCKET, bg.secondary_storage_path, 600);
+            initialSecondaryBackgroundImageUrl = await getSignedImageUrl(BUCKET, bg.secondary_storage_path.replace(/^\/+/, "").trim(), DISPLAY_SIGNED_URL_EXPIRY);
           } catch {
-            // skip
+            if (bg.secondary_image_url && !isSupabaseSignedUrl(bg.secondary_image_url)) initialSecondaryBackgroundImageUrl = bg.secondary_image_url;
           }
+        } else if (bg.secondary_image_url && !isSupabaseSignedUrl(bg.secondary_image_url)) {
+          initialSecondaryBackgroundImageUrl = bg.secondary_image_url;
         }
       }
     }

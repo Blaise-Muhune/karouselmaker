@@ -144,6 +144,20 @@ export async function updateTemplate(
   return { ok: true };
 }
 
+/** Update any template by id (e.g. system template). Admin only; uses service role to bypass RLS. */
+export async function updateTemplateAsAdmin(
+  templateId: string,
+  payload: { name?: string; category?: string; aspect_ratio?: string; config?: unknown }
+): Promise<{ ok: boolean; error?: string }> {
+  const supabase = createAdminClient();
+  const { error } = await supabase
+    .from("templates")
+    .update({ ...payload, updated_at: new Date().toISOString() })
+    .eq("id", templateId);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
 export async function deleteTemplate(
   userId: string,
   templateId: string
@@ -155,6 +169,16 @@ export async function deleteTemplate(
     .eq("id", templateId)
     .eq("user_id", userId);
 
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+/** Delete any template by id (e.g. system template). Admin only; uses service role to bypass RLS. */
+export async function deleteTemplateAsAdmin(
+  templateId: string
+): Promise<{ ok: boolean; error?: string }> {
+  const supabase = createAdminClient();
+  const { error } = await supabase.from("templates").delete().eq("id", templateId);
   if (error) return { ok: false, error: error.message };
   return { ok: true };
 }

@@ -31,8 +31,10 @@ When you use **Save as template** in the slide editor, the following applies.
   - `headline_highlight_style`, `body_highlight_style` (text vs background)
   - **Headline highlights** — word-based spans (start, end, color) if you have any
   - **Body highlights** — same for body
+  - **Image overlay blend** — tint opacity (0–1) and tint color (hex), applied when the slide uses a background image
+  - **Background color** — hex color used as fill/fallback (and as tint color when no separate tint is set)
 
-So: layout, text zone positions/sizes, gradient overlay, chrome toggles, and the “defaults” above (including zone overrides and highlight styling) **are** saved.
+So: layout, text zone positions/sizes, gradient overlay, chrome toggles, image overlay blend, background color, and the “defaults” above (including zone overrides and highlight styling) **are** saved.
 
 ---
 

@@ -4,6 +4,8 @@ export const gradientDirectionSchema = z.enum(["top", "bottom", "left", "right"]
 export type GradientDirection = z.output<typeof gradientDirectionSchema>;
 
 export const slideBackgroundOverlaySchema = z.object({
+  /** When false, gradient and tint are not applied. Default true. */
+  enabled: z.boolean().optional(),
   gradient: z.boolean().optional(),
   darken: z.number().min(0).max(1).optional(),
   blur: z.number().min(0).max(1).optional(),
@@ -17,6 +19,10 @@ export const slideBackgroundOverlaySchema = z.object({
   extent: z.number().min(0).max(100).optional(),
   /** Solid part (0–100): how much of the gradient area is solid color vs transition. 0 = full gradient, 100 = solid overlay. */
   solidSize: z.number().min(0).max(100).optional(),
+  /** Tint layer color (hex) on top of image. */
+  tintColor: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
+  /** Tint layer opacity 0–1. */
+  tintOpacity: z.number().min(0).max(1).optional(),
 });
 
 export const imagePositionSchema = z.enum([
@@ -61,6 +67,22 @@ export const imageDisplaySchema = z.object({
   overlayCircleX: z.number().min(0).max(100).optional(),
   /** Overlay-circles layout only: Y position 0–100 (0=bottom, 100=top). */
   overlayCircleY: z.number().min(0).max(100).optional(),
+  /** "full" = image fills slide (default). "pip" = picture-in-picture in a corner. */
+  mode: z.enum(["full", "pip"]).optional(),
+  /** When mode is "pip": corner for the image box. */
+  pipPosition: z.enum(["top_left", "top_right", "bottom_left", "bottom_right"]).optional(),
+  /** When mode is "pip": size as fraction of canvas (0.25–0.55). */
+  pipSize: z.number().min(0.25).max(0.55).optional(),
+  /** When mode is "pip": border radius in px. 0–72. */
+  pipBorderRadius: z.number().min(0).max(72).optional(),
+  /** Single image: custom focal point X (0–100). Overrides position preset when set with imagePositionY. */
+  imagePositionX: z.number().min(0).max(100).optional(),
+  /** Single image: custom focal point Y (0–100). Overrides position preset when set with imagePositionX. */
+  imagePositionY: z.number().min(0).max(100).optional(),
+  /** When mode is "pip": custom position X (0–100). Overrides pipPosition preset when set with pipY. */
+  pipX: z.number().min(0).max(100).optional(),
+  /** When mode is "pip": custom position Y (0–100). Overrides pipPosition preset when set with pipX. */
+  pipY: z.number().min(0).max(100).optional(),
 }).optional();
 
 export const slideBackgroundSchema = z.object({
@@ -151,6 +173,8 @@ export const textZoneOverrideSchema = z.object({
   maxLines: z.number().int().min(1).max(20).optional(),
   align: z.enum(["left", "center"]).optional(),
   color: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
+  /** Font family: "Inter", "Georgia", "system", "Roboto", "Montserrat", etc. */
+  fontFamily: z.string().max(80).optional(),
 }).optional();
 export type TextZoneOverride = z.output<typeof textZoneOverrideSchema>;
 

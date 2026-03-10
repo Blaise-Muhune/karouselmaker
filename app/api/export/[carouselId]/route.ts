@@ -10,6 +10,7 @@ import {
   createExport,
   updateExport,
   countExportsThisMonth,
+  getAsset,
 } from "@/lib/server/db";
 import { getExportStoragePaths } from "@/lib/server/db/exports";
 import { getDefaultTemplateId } from "@/lib/server/db/templates";
@@ -17,14 +18,26 @@ import { getSubscription, getPlanLimits } from "@/lib/server/subscription";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { renderSlideHtml } from "@/lib/server/renderer/renderSlideHtml";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
+import { getTemplatePreviewBackgroundOverride } from "@/lib/renderer/getTemplatePreviewBackground";
 import { resolveBrandKitLogo } from "@/lib/server/brandKit";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
+import { createProxyImageUrl } from "@/lib/server/proxyImageUrl";
 import { formatUnsplashAttributionLine } from "@/lib/server/unsplash";
 import {
   normalizeSlideMetaForRender,
   getTemplateDefaultOverrides,
   mergeWithTemplateDefaults,
 } from "@/lib/server/export/normalizeSlideMetaForRender";
+import {
+  resolveOverlayTint,
+  resolveBackgroundColorFromMeta,
+  resolveImageDisplay,
+  resolveOverlayEnabled,
+} from "@/lib/server/export/resolveSlideBackgroundFromTemplate";
+import {
+  downloadStorageImageAsDataUrl,
+  fetchImageAsDataUrl,
+} from "@/lib/server/export/fetchImageAsDataUrl";
 import type { BrandKit } from "@/lib/renderer/renderModel";
 import JSZip from "jszip";
 
@@ -170,6 +183,7 @@ export async function POST(
               color?: string;
               gradientOn?: boolean;
               mode?: string;
+              asset_id?: string;
               storage_path?: string;
               image_url?: string;
               secondary_storage_path?: string;
@@ -177,12 +191,14 @@ export async function POST(
               images?: Array<{
                 image_url?: string;
                 storage_path?: string;
+                asset_id?: string;
                 unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string };
                 pixabay_attribution?: { userName: string; userId: number; pageURL: string; photoURL: string };
                 pexels_attribution?: { photographer: string; photographer_url: string; photo_url: string };
               }>;
               image_display?: Record<string, unknown>;
               overlay?: {
+                enabled?: boolean;
                 gradient?: boolean;
                 darken?: number;
                 color?: string;
@@ -190,6 +206,8 @@ export async function POST(
                 direction?: string;
                 extent?: number;
                 solidSize?: number;
+                tintColor?: string;
+                tintOpacity?: number;
               };
               unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string };
               pixabay_attribution?: { userName: string; userId: number; pageURL: string; photoURL: string };
@@ -199,13 +217,25 @@ export async function POST(
           | undefined;
 
         const templateCfg = config.data;
+        const slideMetaForBg = (slide.meta ?? null) as Record<string, unknown> | null;
+        const imageDisplayMerged = resolveImageDisplay(config.data, slideBg);
+        const isPip = imageDisplayMerged?.mode === "pip";
+        const { tintOpacity: effectiveTintOpacity, tintColor: effectiveTintColor } = resolveOverlayTint(
+          slideBg,
+          slideMetaForBg,
+          templateCfg,
+          isPip
+        );
+        const overlayEnabled = resolveOverlayEnabled(slideBg);
+        const metaBgColor = resolveBackgroundColorFromMeta(slideMetaForBg, templateCfg);
+        const templateDefaultColor =
+          (templateCfg?.defaults?.background as { color?: string } | undefined)?.color ?? metaBgColor ?? "#0a0a0a";
+
         const dir = slideBg?.overlay?.direction ?? templateCfg?.overlays?.gradient?.direction;
         const gradientDirection: "top" | "bottom" | "left" | "right" =
           dir === "top" || dir === "bottom" || dir === "left" || dir === "right" ? dir : "bottom";
-        // Overlay color: slide override > template (no brand logo color; use template or neutral)
         const gradientColor =
-          slideBg?.overlay?.color ??
-          (templateCfg?.overlays?.gradient?.color || "#0a0a0a");
+          slideBg?.overlay?.color ?? (templateCfg?.overlays?.gradient?.color || "#0a0a0a");
         const templateStrength = templateCfg?.overlays?.gradient?.strength ?? 0.5;
         const gradientStrength =
           slideBg?.overlay?.darken != null && slideBg.overlay.darken !== 0.5
@@ -222,21 +252,43 @@ export async function POST(
           gradientDirection,
           gradientExtent,
           gradientSolidSize,
+          overlayEnabled,
+          ...(effectiveTintOpacity > 0 ? { tintColor: effectiveTintColor, tintOpacity: effectiveTintOpacity } : {}),
         };
         // Match editor preview: when template defaultStyle is "none" or "blur" and slide has image, no gradient
         const hasBackgroundImage =
           slideBg?.mode === "image" &&
-          (!!slideBg.images?.length || !!slideBg.image_url || !!slideBg.storage_path);
+          (!!slideBg.images?.length || !!slideBg.image_url || !!slideBg.storage_path || !!slideBg.asset_id);
         const defaultStyle = templateCfg?.backgroundRules?.defaultStyle;
+        /** Prefer slide's explicit gradient choice; otherwise use template defaultStyle. */
         const gradientOn =
-          hasBackgroundImage && (defaultStyle === "none" || defaultStyle === "blur")
-            ? false
+          hasBackgroundImage
+            ? overlayEnabled && (
+                (slideBg?.gradientOn === true || slideBg?.overlay?.gradient === true)
+                  ? true
+                  : (slideBg?.gradientOn === false || slideBg?.overlay?.gradient === false)
+                    ? false
+                    : (defaultStyle !== "none" && defaultStyle !== "blur")
+              )
             : (slideBg?.gradientOn ?? slideBg?.overlay?.gradient ?? true);
+        const templateBg = getTemplatePreviewBackgroundOverride(templateCfg);
+        const effectiveStyle =
+          !hasBackgroundImage ? (slideBg?.style ?? templateBg.style ?? "solid") : slideBg?.style;
+        const effectivePattern =
+          !hasBackgroundImage && effectiveStyle === "pattern"
+            ? (slideBg?.pattern ?? templateBg.pattern)
+            : slideBg?.pattern;
+        const effectiveColorRaw =
+          !hasBackgroundImage ? (slideBg?.color ?? templateBg.color ?? metaBgColor) : (slideBg?.color ?? templateBg.color ?? metaBgColor);
+        const effectiveColor = /^#([0-9A-Fa-f]{3}){1,2}$/.test(effectiveColorRaw ?? "") ? effectiveColorRaw! : "#0a0a0a";
+        const effectiveDecoration = !hasBackgroundImage ? templateBg.decoration : undefined;
+        const effectiveDecorationColor = !hasBackgroundImage ? templateBg.decorationColor : undefined;
         const backgroundOverride = slideBg
           ? {
-              style: slideBg.style,
-              pattern: slideBg.pattern,
-              color: slideBg.color,
+              style: effectiveStyle,
+              pattern: effectivePattern,
+              color: effectiveColor,
+              ...(effectiveDecoration && { decoration: effectiveDecoration, ...(effectiveDecorationColor && { decorationColor: effectiveDecorationColor }) }),
               gradientOn,
               ...overlayFields,
             }
@@ -245,16 +297,41 @@ export async function POST(
         let backgroundImageUrl: string | null = null;
         let backgroundImageUrls: string[] | null = null;
         let secondaryBackgroundImageUrl: string | null = null;
+        const appOrigin = (() => {
+          try {
+            return new URL(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").origin;
+          } catch {
+            return "http://localhost:3000";
+          }
+        })();
         if (slideBg?.mode === "image") {
           if (slideBg.images?.length) {
-            const urls: string[] = [];
+            const resolved: string[] = [];
             for (const img of slideBg.images) {
-              if (img.image_url) urls.push(img.image_url);
-              else if (img.storage_path) {
+              const storagePath =
+                img.storage_path?.replace(/^\/+/, "").trim() ||
+                (img.asset_id ? (await getAsset(userId, img.asset_id))?.storage_path?.replace(/^\/+/, "").trim() : undefined);
+              let data =
+                (storagePath && (await downloadStorageImageAsDataUrl(BUCKET, storagePath)))
+                ?? (img.image_url && /^https?:\/\//i.test(img.image_url) ? await fetchImageAsDataUrl(img.image_url) : null);
+              if (!data && img.image_url && /^https?:\/\//i.test(img.image_url)) {
+                const proxyUrl = createProxyImageUrl(img.image_url, appOrigin);
+                if (proxyUrl) data = await fetchImageAsDataUrl(proxyUrl);
+              }
+              if (!data && storagePath) {
                 try {
-                  urls.push(await getSignedImageUrl(BUCKET, img.storage_path, 600));
+                  data = await getSignedImageUrl(BUCKET, storagePath, 600);
                 } catch {
-                  // skip
+                  // keep null
+                }
+              }
+              if (data) resolved.push(data);
+              else if (img.image_url && /^https?:\/\//i.test(img.image_url)) resolved.push(img.image_url);
+              else if (storagePath) {
+                try {
+                  resolved.push(await getSignedImageUrl(BUCKET, storagePath, 600));
+                } catch {
+                  // skip this slot
                 }
               }
               if (img.unsplash_attribution) {
@@ -270,15 +347,28 @@ export async function POST(
                 if (!pexelsAttributions.has(key)) pexelsAttributions.set(key, img.pexels_attribution);
               }
             }
-            if (urls.length === 1) backgroundImageUrl = urls[0] ?? null;
-            else if (urls.length >= 2) backgroundImageUrls = urls;
-          } else if (slideBg.image_url) {
-            backgroundImageUrl = slideBg.image_url;
-          } else if (slideBg.storage_path) {
-            try {
-              backgroundImageUrl = await getSignedImageUrl(BUCKET, slideBg.storage_path, 600);
-            } catch {
-              // skip
+            if (resolved.length === 1) backgroundImageUrl = resolved[0] ?? null;
+            else if (resolved.length >= 2) backgroundImageUrls = resolved;
+          } else {
+            const storagePath = slideBg.storage_path ?? (slideBg.asset_id ? (await getAsset(userId, slideBg.asset_id))?.storage_path : undefined);
+            const trimmedPath = storagePath?.replace(/^\/+/, "").trim();
+            if (trimmedPath) {
+              backgroundImageUrl = await downloadStorageImageAsDataUrl(BUCKET, trimmedPath);
+              if (!backgroundImageUrl) {
+                try {
+                  backgroundImageUrl = await getSignedImageUrl(BUCKET, trimmedPath, 600);
+                } catch {
+                  // keep null
+                }
+              }
+            }
+            if (!backgroundImageUrl && slideBg.image_url && /^https?:\/\//i.test(slideBg.image_url)) {
+              backgroundImageUrl = await fetchImageAsDataUrl(slideBg.image_url);
+              if (!backgroundImageUrl) {
+                const proxyUrl = createProxyImageUrl(slideBg.image_url, appOrigin);
+                if (proxyUrl) backgroundImageUrl = await fetchImageAsDataUrl(proxyUrl);
+              }
+              if (!backgroundImageUrl) backgroundImageUrl = slideBg.image_url;
             }
           }
           if (slideBg.unsplash_attribution) {
@@ -294,18 +384,24 @@ export async function POST(
             if (!pexelsAttributions.has(key)) pexelsAttributions.set(key, slideBg.pexels_attribution);
           }
           if (slide.slide_type === "hook" && !backgroundImageUrls) {
-            if (slideBg.secondary_image_url) {
-              secondaryBackgroundImageUrl = slideBg.secondary_image_url;
-            } else if (slideBg.secondary_storage_path) {
-              try {
-                secondaryBackgroundImageUrl = await getSignedImageUrl(
-                  BUCKET,
-                  slideBg.secondary_storage_path,
-                  600
-                );
-              } catch {
-                // skip
+            if (slideBg.secondary_storage_path) {
+              const secPath = slideBg.secondary_storage_path.replace(/^\/+/, "").trim();
+              secondaryBackgroundImageUrl = await downloadStorageImageAsDataUrl(BUCKET, secPath);
+              if (!secondaryBackgroundImageUrl) {
+                try {
+                  secondaryBackgroundImageUrl = await getSignedImageUrl(BUCKET, secPath, 600);
+                } catch {
+                  // keep null
+                }
               }
+            }
+            if (!secondaryBackgroundImageUrl && slideBg.secondary_image_url && /^https?:\/\//i.test(slideBg.secondary_image_url)) {
+              secondaryBackgroundImageUrl = await fetchImageAsDataUrl(slideBg.secondary_image_url);
+              if (!secondaryBackgroundImageUrl) {
+                const proxyUrl = createProxyImageUrl(slideBg.secondary_image_url, appOrigin);
+                if (proxyUrl) secondaryBackgroundImageUrl = await fetchImageAsDataUrl(proxyUrl);
+              }
+              if (!secondaryBackgroundImageUrl) secondaryBackgroundImageUrl = slideBg.secondary_image_url;
             }
           }
         }
@@ -323,13 +419,7 @@ export async function POST(
         const zoneOverrides = merged.zoneOverrides;
         const chromeOverrides = merged.chromeOverrides;
         const highlightStyles = merged.highlightStyles;
-        type ImageDisplayOption = NonNullable<Parameters<typeof renderSlideHtml>[16]>;
-        const imageDisplayParam: ImageDisplayOption | undefined =
-          slideBg?.image_display != null &&
-          typeof slideBg.image_display === "object" &&
-          !Array.isArray(slideBg.image_display)
-            ? (slideBg.image_display as unknown as ImageDisplayOption)
-            : undefined;
+        const imageDisplayParam = resolveImageDisplay(config.data, slideBg);
 
         const html = renderSlideHtml(
           {

@@ -1,10 +1,19 @@
-import { buildSlideRenderModel, type SlideData, type BrandKit, type SlideRenderModel, type TextZoneOverrides, type ChromeOverrides } from "./renderModel";
+import {
+  buildSlideRenderModel,
+  type SlideData,
+  type BrandKit,
+  type SlideRenderModel,
+  type TextZoneOverrides,
+  type ChromeOverrides,
+  type BuildSlideRenderModelOptions,
+} from "./renderModel";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 
 /**
  * Apply template config to slide data and produce a render model.
  * Thin wrapper around buildSlideRenderModel for consistent naming.
  * @param textScale When set (e.g. for 4:5 or 9:16), line wrapping uses scaled font so breaks match rendered size.
+ * @param options.zoneOverridesForWrap When set (e.g. design-space only), line wrapping uses these so preview and export match.
  */
 export function applyTemplate(
   templateConfig: TemplateConfig,
@@ -14,7 +23,8 @@ export function applyTemplate(
   totalSlides: number,
   zoneOverrides?: TextZoneOverrides | null,
   textScale?: number,
-  chromeOverrides?: ChromeOverrides | null
+  chromeOverrides?: ChromeOverrides | null,
+  options?: BuildSlideRenderModelOptions | null
 ): SlideRenderModel {
   return buildSlideRenderModel(
     templateConfig,
@@ -24,6 +34,7 @@ export function applyTemplate(
     totalSlides,
     zoneOverrides,
     textScale,
-    chromeOverrides
+    chromeOverrides,
+    options
   );
 }

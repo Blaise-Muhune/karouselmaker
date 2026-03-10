@@ -2,19 +2,31 @@ import { NextResponse } from "next/server";
 import { launchChromium } from "@/lib/server/browser/launchChromium";
 import { waitForImagesInPage } from "@/lib/server/browser/waitForImages";
 import { createClient } from "@/lib/supabase/server";
-import { getSlide, getTemplate, getCarousel, getProject, listSlides } from "@/lib/server/db";
+import { getSlide, getTemplate, getCarousel, getProject, listSlides, getAsset } from "@/lib/server/db";
 import { getDefaultTemplateId } from "@/lib/server/db/templates";
 import { getSubscription } from "@/lib/server/subscription";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { renderSlideHtml } from "@/lib/server/renderer/renderSlideHtml";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
+import { getTemplatePreviewBackgroundOverride } from "@/lib/renderer/getTemplatePreviewBackground";
 import { resolveBrandKitLogo } from "@/lib/server/brandKit";
-import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
 import {
   normalizeSlideMetaForRender,
   getTemplateDefaultOverrides,
   mergeWithTemplateDefaults,
 } from "@/lib/server/export/normalizeSlideMetaForRender";
+import {
+  resolveOverlayTint,
+  resolveBackgroundColorFromMeta,
+  resolveImageDisplay,
+  resolveOverlayEnabled,
+} from "@/lib/server/export/resolveSlideBackgroundFromTemplate";
+import {
+  downloadStorageImageAsDataUrl,
+  fetchImageAsDataUrl,
+} from "@/lib/server/export/fetchImageAsDataUrl";
+import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
+import { createProxyImageUrl } from "@/lib/server/proxyImageUrl";
 import type { BrandKit } from "@/lib/renderer/renderModel";
 
 const BUCKET = "carousel-assets";
@@ -94,25 +106,38 @@ export async function GET(
         color?: string;
         gradientOn?: boolean;
         mode?: string;
+        asset_id?: string;
         storage_path?: string;
         image_url?: string;
         secondary_storage_path?: string;
         secondary_image_url?: string;
-        images?: { image_url?: string; storage_path?: string }[];
+        images?: { image_url?: string; storage_path?: string; asset_id?: string }[];
         image_display?: Record<string, unknown>;
         overlay?: { enabled?: boolean; gradient?: boolean; darken?: number; color?: string; textColor?: string; direction?: string; extent?: number; solidSize?: number; tintColor?: string; tintOpacity?: number };
       }
     | null
     | undefined;
 
+  const slideMeta = (slide.meta ?? null) as Record<string, unknown> | null;
   const templateCfg = config.data;
+  const imageDisplayMerged = resolveImageDisplay(templateCfg, slideBg);
+  const isPip = imageDisplayMerged?.mode === "pip";
+  const { tintOpacity: effectiveTintOpacity, tintColor: effectiveTintColor } = resolveOverlayTint(
+    slideBg,
+    slideMeta,
+    templateCfg,
+    isPip
+  );
+  const overlayEnabled = resolveOverlayEnabled(slideBg);
+  const metaBgColor = resolveBackgroundColorFromMeta(slideMeta, templateCfg);
+  const templateDefaultColor =
+    (templateCfg?.defaults?.background as { color?: string } | undefined)?.color ?? metaBgColor ?? "#0a0a0a";
+
   const dir = slideBg?.overlay?.direction ?? templateCfg?.overlays?.gradient?.direction;
   const gradientDirection: "top" | "bottom" | "left" | "right" =
     dir === "top" || dir === "bottom" || dir === "left" || dir === "right" ? dir : "bottom";
-  // Overlay color: slide override > template (no brand logo color; use template or neutral)
   const gradientColor =
-    slideBg?.overlay?.color ??
-    (templateCfg?.overlays?.gradient?.color || "#0a0a0a");
+    slideBg?.overlay?.color ?? (templateCfg?.overlays?.gradient?.color || "#0a0a0a");
   const templateStrength = templateCfg?.overlays?.gradient?.strength ?? 0.5;
   const gradientStrength =
     slideBg?.overlay?.darken != null && slideBg.overlay.darken !== 0.5
@@ -122,8 +147,6 @@ export async function GET(
   const templateSolidSize = templateCfg?.overlays?.gradient?.solidSize ?? 25;
   const gradientExtent = slideBg?.overlay?.extent != null ? slideBg.overlay.extent : templateExtent;
   const gradientSolidSize = slideBg?.overlay?.solidSize != null ? slideBg.overlay.solidSize : templateSolidSize;
-  const templateDefaultColor = (templateCfg?.defaults?.background as { color?: string } | undefined)?.color ?? "#0a0a0a";
-  const overlayEnabled = slideBg?.overlay?.enabled !== false;
   const overlayFields = {
     gradientStrength,
     gradientColor,
@@ -132,23 +155,40 @@ export async function GET(
     gradientExtent,
     gradientSolidSize,
     overlayEnabled,
-    ...(slideBg?.overlay?.tintOpacity != null && slideBg.overlay.tintOpacity > 0
-      ? { tintColor: slideBg.overlay.tintColor ?? templateDefaultColor, tintOpacity: Math.min(1, Math.max(0, slideBg.overlay.tintOpacity)) }
-      : {}),
+    ...(effectiveTintOpacity > 0 ? { tintColor: effectiveTintColor, tintOpacity: effectiveTintOpacity } : {}),
   };
   const hasBackgroundImage =
     slideBg?.mode === "image" &&
-    (!!slideBg.images?.length || !!slideBg.image_url || !!slideBg.storage_path);
+    (!!slideBg.images?.length || !!slideBg.image_url || !!slideBg.storage_path || !!slideBg.asset_id);
   const defaultStyle = templateCfg?.backgroundRules?.defaultStyle;
-  /** Only gate by overlay when there is a background image (overlay on picture). Solid/pattern background is unchanged. */
+  /** Only gate by overlay when there is a background image. Prefer slide's explicit gradient choice; otherwise use template defaultStyle. */
   const gradientOn = hasBackgroundImage
-    ? overlayEnabled && (defaultStyle !== "none" && defaultStyle !== "blur") && (slideBg?.gradientOn ?? slideBg?.overlay?.gradient ?? true)
+    ? overlayEnabled && (
+        (slideBg?.gradientOn === true || slideBg?.overlay?.gradient === true)
+          ? true
+          : (slideBg?.gradientOn === false || slideBg?.overlay?.gradient === false)
+            ? false
+            : (defaultStyle !== "none" && defaultStyle !== "blur")
+      )
     : (slideBg?.gradientOn ?? slideBg?.overlay?.gradient ?? true);
+  const templateBg = getTemplatePreviewBackgroundOverride(templateCfg);
+  const effectiveStyle =
+    !hasBackgroundImage ? (slideBg?.style ?? templateBg.style ?? "solid") : slideBg?.style;
+  const effectivePattern =
+    !hasBackgroundImage && effectiveStyle === "pattern"
+      ? (slideBg?.pattern ?? templateBg.pattern)
+      : slideBg?.pattern;
+  const fallbackColor =
+    !hasBackgroundImage ? (slideBg?.color ?? templateBg.color ?? metaBgColor) : (slideBg?.color ?? templateBg.color ?? metaBgColor);
+  const finalEffectiveColor = /^#([0-9A-Fa-f]{3}){1,2}$/.test(fallbackColor ?? "") ? (fallbackColor ?? "#0a0a0a") : "#0a0a0a";
+  const effectiveDecoration = !hasBackgroundImage ? templateBg.decoration : undefined;
+  const effectiveDecorationColor = !hasBackgroundImage ? templateBg.decorationColor : undefined;
   const backgroundOverride = slideBg
     ? {
-        style: slideBg.style,
-        pattern: slideBg.pattern,
-        color: slideBg.color,
+        style: effectiveStyle,
+        pattern: effectivePattern,
+        color: finalEffectiveColor,
+        ...(effectiveDecoration && { decoration: effectiveDecoration, ...(effectiveDecorationColor && { decorationColor: effectiveDecorationColor }) }),
         gradientOn,
         ...overlayFields,
       }
@@ -157,45 +197,87 @@ export async function GET(
   let backgroundImageUrl: string | null = null;
   let backgroundImageUrls: string[] | null = null;
   let secondaryBackgroundImageUrl: string | null = null;
+  const appOrigin = new URL(request.url).origin;
   if (slideBg?.mode === "image") {
     if (slideBg.images?.length) {
-      const urls: string[] = [];
+      const resolved: string[] = [];
       for (const img of slideBg.images) {
-        if (img.image_url) urls.push(img.image_url);
-        else if (img.storage_path) {
+        const storagePath =
+          img.storage_path?.replace(/^\/+/, "").trim() ||
+          (img.asset_id ? (await getAsset(userId, img.asset_id))?.storage_path?.replace(/^\/+/, "").trim() : undefined);
+        let data =
+          (storagePath && (await downloadStorageImageAsDataUrl(BUCKET, storagePath)))
+          ?? (img.image_url && /^https?:\/\//i.test(img.image_url) ? await fetchImageAsDataUrl(img.image_url) : null);
+        if (!data && img.image_url && /^https?:\/\//i.test(img.image_url)) {
+          const proxyUrl = createProxyImageUrl(img.image_url, appOrigin);
+          if (proxyUrl) data = await fetchImageAsDataUrl(proxyUrl);
+        }
+        if (!data && storagePath) {
           try {
-            urls.push(await getSignedImageUrl(BUCKET, img.storage_path, 600));
+            data = await getSignedImageUrl(BUCKET, storagePath, 600);
           } catch {
-            // skip
+            // keep null
+          }
+        }
+        // Fallback: use raw URL so export HTML still has a loadable image (Puppeteer can load it)
+        if (data) resolved.push(data);
+        else if (img.image_url && /^https?:\/\//i.test(img.image_url)) resolved.push(img.image_url);
+        else if (storagePath) {
+          try {
+            resolved.push(await getSignedImageUrl(BUCKET, storagePath, 600));
+          } catch {
+            // skip this slot
           }
         }
       }
-      if (urls.length === 1) backgroundImageUrl = urls[0] ?? null;
-      else if (urls.length >= 2) backgroundImageUrls = urls;
-    } else if (slideBg.image_url) {
-      backgroundImageUrl = slideBg.image_url;
-    } else if (slideBg.storage_path) {
-      try {
-        backgroundImageUrl = await getSignedImageUrl(BUCKET, slideBg.storage_path, 600);
-      } catch {
-        // skip
+      if (resolved.length === 1) backgroundImageUrl = resolved[0] ?? null;
+      else if (resolved.length >= 2) backgroundImageUrls = resolved;
+    } else {
+      const storagePath = slideBg.storage_path ?? (slideBg.asset_id ? (await getAsset(userId, slideBg.asset_id))?.storage_path : undefined);
+      const trimmedPath = storagePath?.replace(/^\/+/, "").trim();
+      if (trimmedPath) {
+        backgroundImageUrl = await downloadStorageImageAsDataUrl(BUCKET, trimmedPath);
+        if (!backgroundImageUrl) {
+          try {
+            backgroundImageUrl = await getSignedImageUrl(BUCKET, trimmedPath, 600);
+          } catch {
+            // keep null
+          }
+        }
+      }
+      if (!backgroundImageUrl && slideBg.image_url && /^https?:\/\//i.test(slideBg.image_url)) {
+        backgroundImageUrl = await fetchImageAsDataUrl(slideBg.image_url);
+        if (!backgroundImageUrl) {
+          const proxyUrl = createProxyImageUrl(slideBg.image_url, appOrigin);
+          if (proxyUrl) backgroundImageUrl = await fetchImageAsDataUrl(proxyUrl);
+        }
+        if (!backgroundImageUrl) backgroundImageUrl = slideBg.image_url;
       }
     }
     if (slide.slide_type === "hook" && !backgroundImageUrls) {
-      if (slideBg.secondary_image_url) {
-        secondaryBackgroundImageUrl = slideBg.secondary_image_url;
-      } else if (slideBg.secondary_storage_path) {
-        try {
-          secondaryBackgroundImageUrl = await getSignedImageUrl(BUCKET, slideBg.secondary_storage_path, 600);
-        } catch {
-          // skip
+      if (slideBg.secondary_storage_path) {
+        const secPath = slideBg.secondary_storage_path.replace(/^\/+/, "").trim();
+        secondaryBackgroundImageUrl = await downloadStorageImageAsDataUrl(BUCKET, secPath);
+        if (!secondaryBackgroundImageUrl) {
+          try {
+            secondaryBackgroundImageUrl = await getSignedImageUrl(BUCKET, secPath, 600);
+          } catch {
+            // keep null
+          }
         }
+      }
+      if (!secondaryBackgroundImageUrl && slideBg.secondary_image_url && /^https?:\/\//i.test(slideBg.secondary_image_url)) {
+        secondaryBackgroundImageUrl = await fetchImageAsDataUrl(slideBg.secondary_image_url);
+        if (!secondaryBackgroundImageUrl) {
+          const proxyUrl = createProxyImageUrl(slideBg.secondary_image_url, appOrigin);
+          if (proxyUrl) secondaryBackgroundImageUrl = await fetchImageAsDataUrl(proxyUrl);
+        }
+        if (!secondaryBackgroundImageUrl) secondaryBackgroundImageUrl = slideBg.secondary_image_url;
       }
     }
   }
   const borderedFrame = !!(backgroundImageUrl || backgroundImageUrls?.length);
 
-  const slideMeta = (slide.meta ?? null) as Record<string, unknown> | null;
   const defaultShowWatermark = false; // logo only when user explicitly enabled it
   const normalized = normalizeSlideMetaForRender(slideMeta);
   const templateDefaults = getTemplateDefaultOverrides(config.data);
@@ -208,13 +290,7 @@ export async function GET(
   const chromeOverrides = merged.chromeOverrides;
   const highlightStyles = merged.highlightStyles;
 
-  type ImageDisplayOption = NonNullable<Parameters<typeof renderSlideHtml>[16]>;
-  const imageDisplayParam: ImageDisplayOption | undefined =
-    slideBg?.image_display != null &&
-    typeof slideBg.image_display === "object" &&
-    !Array.isArray(slideBg.image_display)
-      ? (slideBg.image_display as unknown as ImageDisplayOption)
-      : undefined;
+  const imageDisplayParam = resolveImageDisplay(config.data, slideBg);
 
   const dimensions = DIMENSIONS[size];
   const html = renderSlideHtml(
@@ -255,7 +331,7 @@ export async function GET(
       await page.setContent(html, { waitUntil: "load", timeout: CONTENT_TIMEOUT_MS });
       await page.waitForSelector(".slide-wrap", { state: "visible", timeout: SELECTOR_TIMEOUT_MS });
       await waitForImagesInPage(page, CONTENT_TIMEOUT_MS).catch(() => {});
-      await new Promise((r) => setTimeout(r, 500));
+      await new Promise((r) => setTimeout(r, 1200));
       const buffer = await page.locator(".slide-wrap").screenshot({ type: format, timeout: SELECTOR_TIMEOUT_MS });
       const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
       const ext = format === "jpeg" ? "jpg" : "png";

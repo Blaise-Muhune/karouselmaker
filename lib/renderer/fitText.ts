@@ -1,11 +1,11 @@
 import type { TextZone } from "@/lib/server/renderer/templateSchema";
 
 /**
- * Approximate chars per line from zone width and font size (rough: ~0.6em per char).
- * Used to cap text before fitting into maxLines.
+ * Approximate chars per line from zone width and font size.
+ * Conservative (0.54) so lines stay inside the zone and wrap instead of overflowing.
  */
 function charsPerLine(zone: TextZone): number {
-  const approxCharWidth = zone.fontSize * 0.55;
+  const approxCharWidth = zone.fontSize * 0.54;
   return Math.max(1, Math.floor(zone.w / approxCharWidth));
 }
 

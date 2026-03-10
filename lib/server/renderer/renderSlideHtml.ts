@@ -1,4 +1,4 @@
-import { buildSlideRenderModel, type BrandKit, type SlideData, type TextZoneOverrides, type ChromeOverrides } from "@/lib/renderer/renderModel";
+import { buildSlideRenderModel, getTextScaleForDimensions, type BrandKit, type SlideData, type TextZoneOverrides, type ChromeOverrides } from "@/lib/renderer/renderModel";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { getContrastingTextColor, hexToRgba } from "@/lib/editor/colorUtils";
 import { parseInlineFormatting } from "@/lib/editor/inlineFormat";
@@ -19,11 +19,23 @@ function gradientDirectionToCss(direction: GradientDirection | undefined, templa
   return map[templateDirection] ?? "to bottom";
 }
 
+/** Decoration drawn on no-image background: distinct shapes that support content without competing. */
+export type BackgroundDecoration =
+  | "big_circles"
+  | "accent_bar"
+  | "soft_glow"
+  | "bold_slash"
+  | "corner_block";
+
 export type SlideBackgroundOverride = {
   style?: "solid" | "gradient" | "pattern";
   color?: string;
   /** When style is "pattern", one of: dots, ovals, lines, circles. Minimal professional backgrounds. */
   pattern?: "dots" | "ovals" | "lines" | "circles";
+  /** No-image only: big circles, accent bar, soft glow, bold slash, or corner block. */
+  decoration?: BackgroundDecoration;
+  /** Color for decoration (accent bar, glow, etc.). Falls back to color when unset. */
+  decorationColor?: string;
   gradientOn?: boolean;
   gradientStrength?: number;
   gradientColor?: string;
@@ -52,6 +64,12 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
+/** Google Fonts that need a stylesheet link (subset of PREVIEW_FONTS). */
+const GOOGLE_FONT_IDS = new Set([
+  "Inter", "Roboto", "Montserrat", "Open Sans", "Lato", "Oswald", "Poppins",
+  "Playfair Display", "Merriweather", "Source Sans 3", "Bebas Neue", "DM Sans",
+]);
+
 /** Safe font-family stack for template fontFamily (system, Inter, Georgia, etc.). */
 function getFontFamilyStack(fontFamily: string | undefined): string {
   if (!fontFamily?.trim()) return "inherit";
@@ -59,6 +77,17 @@ function getFontFamilyStack(fontFamily: string | undefined): string {
   if (f === "system" || f === "sans-serif") return "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif";
   if (f === "Inter") return "\"Inter\", -apple-system, BlinkMacSystemFont, sans-serif";
   if (f === "Georgia" || f === "serif") return "Georgia, \"Times New Roman\", serif";
+  if (f === "Roboto") return "\"Roboto\", -apple-system, BlinkMacSystemFont, sans-serif";
+  if (f === "Montserrat") return "\"Montserrat\", -apple-system, BlinkMacSystemFont, sans-serif";
+  if (f === "Open Sans") return "\"Open Sans\", -apple-system, BlinkMacSystemFont, sans-serif";
+  if (f === "Lato") return "\"Lato\", -apple-system, BlinkMacSystemFont, sans-serif";
+  if (f === "Oswald") return "\"Oswald\", -apple-system, BlinkMacSystemFont, sans-serif";
+  if (f === "Poppins") return "\"Poppins\", -apple-system, BlinkMacSystemFont, sans-serif";
+  if (f === "Playfair Display") return "\"Playfair Display\", Georgia, serif";
+  if (f === "Merriweather") return "\"Merriweather\", Georgia, serif";
+  if (f === "Source Sans 3") return "\"Source Sans 3\", -apple-system, BlinkMacSystemFont, sans-serif";
+  if (f === "Bebas Neue") return "\"Bebas Neue\", -apple-system, BlinkMacSystemFont, sans-serif";
+  if (f === "DM Sans") return "\"DM Sans\", -apple-system, BlinkMacSystemFont, sans-serif";
   return `\"${escapeHtml(f)}\", -apple-system, BlinkMacSystemFont, sans-serif`;
 }
 
@@ -67,6 +96,37 @@ const POSITION_TO_CSS: Record<string, string> = {
   left: "left center", right: "right center",
   "top-left": "left top", "top-right": "right top", "bottom-left": "left bottom", "bottom-right": "right bottom",
 };
+
+/** Build HTML for a decoration layer (no-image only). Content-first, low opacity so text stays primary. */
+function getDecorationLayerHtml(
+  decoration: BackgroundDecoration,
+  baseColor: string,
+  accentColor: string,
+  escapeHtmlFn: (s: string) => string
+): string {
+  const base = escapeHtmlFn(baseColor);
+  const accent = escapeHtmlFn(accentColor);
+  switch (decoration) {
+    case "big_circles": {
+      const opacity = "0.08";
+      return `<div style="position:absolute;inset:0;pointer-events:none;z-index:0"><div style="position:absolute;top:-120px;right:-120px;width:420px;height:420px;border-radius:50%;background-color:${accent};opacity:${opacity}"></div><div style="position:absolute;bottom:-100px;left:-100px;width:380px;height:380px;border-radius:50%;background-color:${accent};opacity:${opacity}"></div></div>`;
+    }
+    case "accent_bar": {
+      return `<div style="position:absolute;left:0;top:0;bottom:0;width:20px;background-color:${accent};opacity:0.85;pointer-events:none;z-index:0"></div>`;
+    }
+    case "soft_glow": {
+      return `<div style="position:absolute;left:50%;top:40%;width:900px;height:700px;margin-left:-450px;margin-top:-350px;border-radius:50%;background:radial-gradient(ellipse 100% 100% at 50% 50%, ${accent} 0%, transparent 70%);opacity:0.18;pointer-events:none;z-index:0"></div>`;
+    }
+    case "bold_slash": {
+      return `<div style="position:absolute;left:-30%;top:-30%;width:160%;height:160%;background:linear-gradient(135deg, ${accent} 0%, transparent 22%);opacity:0.09;pointer-events:none;z-index:0;transform:rotate(-8deg)"></div>`;
+    }
+    case "corner_block": {
+      return `<div style="position:absolute;top:0;right:0;width:520px;height:520px;background:radial-gradient(circle at 100% 0%, ${accent} 0%, transparent 65%);opacity:0.14;pointer-events:none;z-index:0"></div>`;
+    }
+    default:
+      return "";
+  }
+}
 
 /** Minimal pattern backgrounds (no image): high-contrast, professional. Returns CSS background properties. */
 function getPatternBackgroundStyle(baseColor: string, pattern: "dots" | "ovals" | "lines" | "circles"): string {
@@ -165,6 +225,12 @@ export function renderSlideHtml(
     pipPosition?: "top_left" | "top_right" | "bottom_left" | "bottom_right";
     pipSize?: number;
     pipBorderRadius?: number;
+    /** Custom focal point 0–100. When set with imagePositionY, overrides position preset. */
+    imagePositionX?: number;
+    imagePositionY?: number;
+    /** PiP custom position 0–100. When set with pipY, overrides pipPosition preset. */
+    pipX?: number;
+    pipY?: number;
   } | null,
   /** Export dimensions. Default 1080x1080. */
   dimensions?: { w: number; h: number },
@@ -177,24 +243,10 @@ export function renderSlideHtml(
   const overlayOnly = !!transparentBackground;
   const noTextOrChrome = !!backgroundOnly;
 
-  // Size-based text multiplier: scale down headline/body font so they always fit on 4:5 and 9:16 (no overflow)
-  const maxDim = Math.max(dimW, dimH);
-  const textScale = maxDim <= 1080 ? 1 : Math.max(0.5, 1080 / maxDim);
+  const textScale = getTextScaleForDimensions(dimW, dimH);
   // When picture-in-picture is on, scale text down so it doesn't overlap the image
   const pipTextScale = imageDisplay?.mode === "pip" ? 0.85 : 1;
   const effectiveTextScale = textScale * pipTextScale;
-
-  // For 4:5 and 9:16, scale zone x/w proportionally so the same relative position and width apply across sizes
-  const coverScale = Math.max(1, dimH / 1080);
-  const visibleLeft = coverScale > 1 ? (1080 - 1080 / coverScale) / 2 : 0;
-  const visibleWidth = coverScale > 1 ? 1080 / coverScale : 1080;
-  const scaleZoneXW = (part: Record<string, unknown> | undefined): Record<string, unknown> | undefined => {
-    if (!part || visibleWidth >= 1080) return part;
-    const ratio = visibleWidth / 1080;
-    const x = part.x != null ? visibleLeft + Number(part.x) * ratio : undefined;
-    const w = part.w != null ? Math.max(1, Math.round(Number(part.w) * ratio)) : undefined;
-    return { ...part, ...(x != null && { x }), ...(w != null && { w }) };
-  };
 
   const headlineZone = templateConfig.textZones.find((z) => z.id === "headline");
   const bodyZone = templateConfig.textZones.find((z) => z.id === "body");
@@ -214,17 +266,7 @@ export function renderSlideHtml(
           },
         }
       : undefined;
-  // For 4:5 and 9:16, always scale zone x/w into the visible region so text is not clipped (match preview)
-  if (coverScale > 1) {
-    const mergedHead = (mergedZoneOverrides?.headline ?? headlineZone) as Record<string, unknown> | undefined;
-    const mergedBody = (mergedZoneOverrides?.body ?? bodyZone) as Record<string, unknown> | undefined;
-    const scaledHead = scaleZoneXW(mergedHead);
-    const scaledBody = scaleZoneXW(mergedBody);
-    mergedZoneOverrides = {
-      headline: { ...(mergedHead ?? {}), ...(scaledHead ?? {}) } as TextZoneOverrides["headline"],
-      body: { ...(mergedBody ?? {}), ...(scaledBody ?? {}) } as TextZoneOverrides["body"],
-    };
-  }
+  // Use same zone positions as preview (no scaleZoneXW) so export matches preview exactly
   const hasZoneOverrides =
     mergedZoneOverrides &&
     (Object.keys(mergedZoneOverrides.headline ?? {}).length > 0 || Object.keys(mergedZoneOverrides.body ?? {}).length > 0);
@@ -236,7 +278,8 @@ export function renderSlideHtml(
     totalSlides,
     hasZoneOverrides ? mergedZoneOverrides : undefined,
     effectiveTextScale,
-    chromeOverrides ?? undefined
+    chromeOverrides ?? undefined,
+    hasZoneOverrides ? { zoneOverridesForWrap: mergedZoneOverrides } : undefined
   );
 
   const backgroundColor = overlayOnly
@@ -247,6 +290,21 @@ export function renderSlideHtml(
   const slideBackgroundStyle = isPatternBg
     ? getPatternBackgroundStyle(bgColorCss, backgroundOverride.pattern as "dots" | "ovals" | "lines" | "circles")
     : `background-color:${bgColorCss}`;
+  const decorationTypes: BackgroundDecoration[] = ["big_circles", "accent_bar", "soft_glow", "bold_slash", "corner_block"];
+  const hasDecoration =
+    !overlayOnly &&
+    !backgroundImageUrl &&
+    !(backgroundImageUrls?.length ?? 0) &&
+    backgroundOverride?.decoration &&
+    decorationTypes.includes(backgroundOverride.decoration as BackgroundDecoration);
+  const decorationHtml = hasDecoration
+    ? getDecorationLayerHtml(
+        backgroundOverride!.decoration as BackgroundDecoration,
+        backgroundColor ?? "#0a0a0a",
+        backgroundOverride!.decorationColor ?? backgroundColor ?? "#0a0a0a",
+        escapeHtml
+      )
+    : "";
   const hasImageForOverlay = !!(backgroundImageUrl ?? model.background.backgroundImageUrl) || (backgroundImageUrls?.length ?? 0) >= 2;
   /** Only when there is a background image: gate gradient/tint on top of the picture. */
   const overlayEnabled = backgroundOverride?.overlayEnabled !== false;
@@ -327,7 +385,8 @@ export function renderSlideHtml(
           const fontSize = Math.round(block.zone.fontSize * effectiveTextScale);
           const lineHeight = block.zone.lineHeight;
           const fontStack = getFontFamilyStack((block.zone as { fontFamily?: string }).fontFamily);
-          return `<div class="text-block" style="left:${block.zone.x}px;top:${block.zone.y}px;width:${block.zone.w}px;height:${block.zone.h}px;font-size:${fontSize}px;font-weight:${block.zone.fontWeight};line-height:${lineHeight};text-align:${block.zone.align};color:${escapeHtml(zoneColor)};font-family:${fontStack};z-index:5">${block.lines.map((line) => `<span>${lineToHtml(line, zoneHighlightStyle, zoneColor)}</span>`).join("")}</div>`;
+          const zoneAlign = block.zone.align ?? "left";
+          return `<div class="text-block" style="left:${block.zone.x}px;top:${block.zone.y}px;width:${block.zone.w}px;height:${block.zone.h}px;font-size:${fontSize}px;font-weight:${block.zone.fontWeight};line-height:${lineHeight};text-align:${zoneAlign};color:${escapeHtml(zoneColor)};font-family:${fontStack};z-index:5">${block.lines.map((line) => `<span>${lineToHtml(line, zoneHighlightStyle, zoneColor)}</span>`).join("")}</div>`;
         })
         .join("");
 
@@ -378,10 +437,10 @@ export function renderSlideHtml(
           const borderColorCss = disp.overlayCircleBorderColor ? escapeHtml(disp.overlayCircleBorderColor) : "rgba(255,255,255,0.95)";
           const circlesHtml = circleUrls.map((url, i) => {
             const { left, top } = getCirclePos(i);
-            return `<div style="position:absolute;left:${left}px;top:${top}px;width:${CIRCLE_SIZE}px;height:${CIRCLE_SIZE}px;border-radius:50%;overflow:hidden;border:${CIRCLE_BORDER}px solid ${borderColorCss};box-shadow:0 8px 40px rgba(0,0,0,0.4);"><div style="position:absolute;inset:0;background-image:url(${escapeHtml(url)});background-size:cover;background-position:center;"></div></div>`;
+            return `<div style="position:absolute;left:${left}px;top:${top}px;width:${CIRCLE_SIZE}px;height:${CIRCLE_SIZE}px;border-radius:50%;overflow:hidden;border:${CIRCLE_BORDER}px solid ${borderColorCss};box-shadow:0 8px 40px rgba(0,0,0,0.4);"><div style="position:absolute;inset:0;background-image:url('${escapeHtml(url)}');background-size:cover;background-position:center;"></div></div>`;
           }).join("");
           const coverPos = posCss;
-          return `<div class="slide-bg-image" style="position:absolute;inset:0;background-image:url(${escapeHtml(bgUrl!)});background-size:${fit};background-position:${coverPos};"></div>${circlesHtml}`;
+          return `<div class="slide-bg-image" style="position:absolute;inset:0;background-image:url('${escapeHtml(bgUrl!)}');background-size:${fit};background-position:${coverPos};"></div>${circlesHtml}`;
         }
         const useStacked = layout === "stacked";
         const useGrid = layout === "grid" || (layout === "auto" && count === 4);
@@ -397,7 +456,7 @@ export function renderSlideHtml(
           const clip1 = isDiagonal ? DIAGONAL_BOTTOM : ZIGZAG_RIGHT;
           const coverPos = posCss;
           const imgs = multiUrls.map((url, i) =>
-            `<div style="position:absolute;inset:0;background-size:${fit};background-position:${coverPos};background-image:url(${escapeHtml(url)});clip-path:${i === 0 ? clip0 : clip1}"></div>`
+            `<div style="position:absolute;inset:0;background-size:${fit};background-position:${coverPos};background-image:url('${escapeHtml(url)}');clip-path:${i === 0 ? clip0 : clip1}"></div>`
           ).join("");
           const divOverlay = isDiagonal
             ? `<div style="position:absolute;inset:0;background:linear-gradient(135deg, transparent calc(50% - ${dividerWidth}px), ${escapeHtml(dividerColor)} calc(50% - ${dividerWidth}px), ${escapeHtml(dividerColor)} calc(50% + ${dividerWidth}px), transparent calc(50% + ${dividerWidth}px));pointer-events:none"></div>`
@@ -471,7 +530,7 @@ export function renderSlideHtml(
 
         const multiCoverPos = posCss;
         const itemsHtml = multiUrls.map((url) =>
-          `<div style="overflow:hidden;${shapeCss};${frameW > 0 ? `border:${frameW}px solid ${escapeHtml(frameColor)};box-shadow:0 8px 32px rgba(0,0,0,0.3);` : ""}width:${itemW}px;height:${itemH}px;flex-shrink:0"><div style="width:100%;height:100%;background-size:${fit};background-position:${multiCoverPos};background-image:url(${escapeHtml(url)})"></div></div>`
+          `<div style="overflow:hidden;${shapeCss};${frameW > 0 ? `border:${frameW}px solid ${escapeHtml(frameColor)};box-shadow:0 8px 32px rgba(0,0,0,0.3);` : ""}width:${itemW}px;height:${itemH}px;flex-shrink:0"><div style="width:100%;height:100%;background-size:${fit};background-position:${multiCoverPos};background-image:url('${escapeHtml(url)}')"></div></div>`
         ).join("");
         return `<div style="position:absolute;left:${pad}px;top:${pad}px;width:${inner}px;height:${inner}px;display:flex;flex-wrap:wrap;flex-direction:${flexDir};gap:${effectiveGap}px;box-sizing:border-box">${itemsHtml}</div>${segsHtml}`;
       })()
@@ -485,11 +544,14 @@ export function renderSlideHtml(
   const singleRadius = isSingleImage && !isPip ? 0 : (disp.frameRadius ?? (singleFrameW > 0 ? 24 : 0));
   const singleShapeCss = getShapeCss(disp.frameShape ?? "squircle", singleRadius);
   const singleFrameColor = disp.frameColor ?? "rgba(255,255,255,0.9)";
-  /** Position controls where image is anchored (cover and contain). */
-  const singleBgPosition = posCss;
+  /** Position controls where image is anchored (cover and contain). Use custom focal point when set. */
+  const singleBgPosition =
+    disp.imagePositionX != null && disp.imagePositionY != null
+      ? `${Math.min(100, Math.max(0, disp.imagePositionX))}% ${Math.min(100, Math.max(0, disp.imagePositionY))}%`
+      : posCss;
   const bgImageStyle =
     resolvedBgUrl
-      ? `background-image:url(${escapeHtml(resolvedBgUrl)});background-size:${fit};background-position:${singleBgPosition};`
+      ? `background-image:url('${escapeHtml(resolvedBgUrl)}');background-size:${fit};background-position:${singleBgPosition};`
       : "";
   const bgFrameStyle =
     singleFrameW > 0 && resolvedBgUrl
@@ -498,9 +560,12 @@ export function renderSlideHtml(
   const pipInset = 48;
   const pipSizePx = Math.round(Math.min(594, Math.max(270, (disp.pipSize ?? 0.4) * 1080)));
   const pipRadius = Math.min(72, Math.max(0, disp.pipBorderRadius ?? 24));
+  const pipRange = 1080 - pipSizePx;
+  const useCustomPipPos = disp.pipX != null && disp.pipY != null;
   const pipPos = disp.pipPosition ?? "bottom_right";
-  const pipPosStyle =
-    pipPos === "bottom_right"
+  const pipPosStyle = useCustomPipPos
+    ? `left:${(Math.min(100, Math.max(0, disp.pipX!)) / 100) * pipRange}px;top:${(Math.min(100, Math.max(0, disp.pipY!)) / 100) * pipRange}px`
+    : pipPos === "bottom_right"
       ? `right:${pipInset}px;bottom:${pipInset}px`
       : pipPos === "bottom_left"
         ? `left:${pipInset}px;bottom:${pipInset}px`
@@ -509,13 +574,20 @@ export function renderSlideHtml(
           : `left:${pipInset}px;top:${pipInset}px`;
   const singlePipHtml =
     resolvedBgUrl && isPip
-      ? `<div style="position:absolute;${pipPosStyle};width:${pipSizePx}px;height:${pipSizePx}px;border-radius:${pipRadius}px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.25);"><div style="position:absolute;inset:0;${bgImageStyle}"></div></div>`
+      ? `<div style="position:absolute;${pipPosStyle};width:${pipSizePx}px;height:${pipSizePx}px;border-radius:${pipRadius}px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.25);"><img src="${escapeHtml(resolvedBgUrl)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:${fit};object-position:${singleBgPosition};display:block" /></div>`
+      : "";
+  /** Use <img> for single full-bleed so data URLs and large images render reliably (no style-attribute length limits). */
+  const singleBgImgHtml =
+    resolvedBgUrl && isSingleImage && !isPip
+      ? singleFrameW > 0
+        ? `<div style="${bgFrameStyle}"><img src="${escapeHtml(resolvedBgUrl)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:${fit};object-position:${singleBgPosition};display:block" /></div>`
+        : `<img src="${escapeHtml(resolvedBgUrl)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:${fit};object-position:${singleBgPosition};z-index:0;display:block" />`
       : "";
   const hookCircleHtml =
     overlayOnly
       ? ""
       : secondaryBackgroundImageUrl && slideData.slide_type === "hook"
-        ? `<div class="slide-hook-circle" style="position:absolute;right:${HOOK_CIRCLE_INSET}px;bottom:${HOOK_CIRCLE_INSET}px;width:${HOOK_CIRCLE_SIZE}px;height:${HOOK_CIRCLE_SIZE}px;border-radius:50%;overflow:hidden;border:${HOOK_CIRCLE_BORDER}px solid rgba(255,255,255,0.95);box-shadow:0 8px 40px rgba(0,0,0,0.4);"><div style="position:absolute;inset:0;background-image:url(${escapeHtml(secondaryBackgroundImageUrl)});background-size:cover;background-position:center;"></div></div>`
+        ? `<div class="slide-hook-circle" style="position:absolute;right:${HOOK_CIRCLE_INSET}px;bottom:${HOOK_CIRCLE_INSET}px;width:${HOOK_CIRCLE_SIZE}px;height:${HOOK_CIRCLE_SIZE}px;border-radius:50%;overflow:hidden;border:${HOOK_CIRCLE_BORDER}px solid rgba(255,255,255,0.95);box-shadow:0 8px 40px rgba(0,0,0,0.4);"><img src="${escapeHtml(secondaryBackgroundImageUrl)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;display:block" /></div>`
         : "";
 
   const gradientExtent = backgroundOverride?.gradientExtent ?? (model.background as { gradientExtent?: number }).gradientExtent ?? 50;
@@ -529,6 +601,10 @@ export function renderSlideHtml(
           : `linear-gradient(${gradientDir}, transparent 0%, transparent ${100 - gradientExtent}%, ${gradientRgba} ${gradientTransitionEnd}%, ${gradientRgba} 100%)`)
     : "none";
 
+  /** When export is not 1:1, render single full-bleed background in a layer that matches dimW x dimH so cover uses the real aspect ratio. */
+  const useFullCanvasBackground =
+    dimH !== 1080 && !!resolvedBgUrl && !multiUrls && !isPip;
+
   // Scale to cover: template fills the full frame at 4:5 and 9:16 (no letterboxing); centered crop clips overflow.
   // Use a slide container at scaled size so it fills the viewport and no background color shows at edges.
   const scale = Math.max(dimW / 1080, dimH / 1080);
@@ -538,8 +614,15 @@ export function renderSlideHtml(
   /** Chrome (counter, logo, watermark text) scaled with height so they stay proportional in 4:5 and 9:16. */
   const chromeScale = dimH / 1080;
 
-  const needsInterFont = model.textBlocks.some((b) => (b.zone as { fontFamily?: string }).fontFamily === "Inter");
-  const fontLink = needsInterFont ? '<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">' : "";
+  const usedFontIds = new Set(
+    model.textBlocks
+      .map((b) => (b.zone as { fontFamily?: string }).fontFamily?.trim())
+      .filter((f): f is string => !!f && GOOGLE_FONT_IDS.has(f))
+  );
+  const fontFamilyParam = [...usedFontIds]
+    .map((id) => `family=${encodeURIComponent(id).replace(/%20/g, "+")}:wght@400;500;600;700;800`)
+    .join("&");
+  const fontLink = fontFamilyParam ? `<link href="https://fonts.googleapis.com/css2?${fontFamilyParam}&display=swap" rel="stylesheet">` : "";
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -552,22 +635,25 @@ export function renderSlideHtml(
     html { margin: 0; padding: 0; overflow: hidden; background-color: ${bgColorCss}; }
     body { margin: 0; padding: 0; width: ${dimW}px; height: ${dimH}px; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: ${bgColorCss}; }
     .slide-wrap { position: absolute; left: 0; top: 0; width: ${dimW}px; height: ${dimH}px; overflow: hidden; }
-    .slide { position: absolute; left: ${slideTranslateX}px; top: ${slideTranslateY}px; width: ${scaledSize}px; height: ${scaledSize}px; overflow: hidden; ${slideBackgroundStyle}; }
+    .slide { position: absolute; left: ${slideTranslateX}px; top: ${slideTranslateY}px; width: ${scaledSize}px; height: ${scaledSize}px; overflow: hidden; ${useFullCanvasBackground ? "background:transparent" : slideBackgroundStyle}; }
     .slide-inner { position: absolute; left: 0; top: 0; width: 1080px; height: 1080px; transform: scale(${scale}); transform-origin: top left; }
     .slide-bg-image { position: absolute; inset: 0; ${bgImageStyle} }
     .slide-gradient { position: absolute; inset: 0; background: ${gradientStyle}; pointer-events: none; z-index: 1; }
     .text-block { position: absolute; display: flex; flex-direction: column; justify-content: center; z-index: 5; box-sizing: border-box; }
-    .text-block > span { display: block; }
+    .text-block > span { display: block; white-space: nowrap; }
     .chrome-swipe { position: absolute; display: flex; align-items: center; justify-content: center; padding: 12px 0; opacity: 0.9; font-size: 24px; font-weight: 600; letter-spacing: 0.1em; z-index: 5; }
   </style>
 </head>
 <body>
   <div class="slide-wrap">
+  ${(() => { const preloadUrls = [resolvedBgUrl, ...(multiUrls ?? []), secondaryBackgroundImageUrl].filter(Boolean) as string[]; return preloadUrls.length ? preloadUrls.map((url) => `<img src="${escapeHtml(url)}" alt="" decoding="async" class="slide-preload-img" style="position:absolute;width:0;height:0;opacity:0;pointer-events:none;visibility:hidden" />`).join("") : ""; })()}
+  ${useFullCanvasBackground ? `<div class="slide-fullcanvas-bg" style="position:absolute;left:0;top:0;width:${dimW}px;height:${dimH}px;overflow:hidden;z-index:0"><img src="${escapeHtml(resolvedBgUrl!)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:${singleBgPosition};display:block" />${(backgroundOverride?.tintOpacity ?? 0) > 0 ? `<div style="position:absolute;inset:0;background-color:${escapeHtml(backgroundOverride?.tintColor ?? backgroundColor ?? "#0a0a0a")};opacity:${Math.min(1, Math.max(0, backgroundOverride?.tintOpacity ?? 0))};pointer-events:none"></div>` : ""}${useGradient ? `<div style="position:absolute;inset:0;background:${gradientStyle};pointer-events:none"></div>` : ""}</div>` : ""}
   <div class="slide">
   <div class="slide-inner">
-    ${overlayOnly ? "" : (multiUrls ? multiImagesHtml : isPip ? singlePipHtml : isSingleImage ? `<div class="slide-bg-image" style="${bgFrameStyle}${bgImageStyle}"></div>` : "")}
-    ${(resolvedBgUrl || multiUrls) && (backgroundOverride?.tintOpacity ?? 0) > 0 ? `<div style="position:absolute;inset:0;background-color:${escapeHtml(backgroundOverride?.tintColor ?? backgroundColor ?? "#0a0a0a")};opacity:${Math.min(1, Math.max(0, backgroundOverride?.tintOpacity ?? 0))};pointer-events:none;z-index:0"></div>` : ""}
-    ${noTextOrChrome ? "" : "<div class=\"slide-gradient\"></div>"}
+    ${decorationHtml}
+    ${overlayOnly ? "" : useFullCanvasBackground ? "" : (multiUrls ? multiImagesHtml : isPip ? singlePipHtml : singleBgImgHtml || (isSingleImage ? `<div class="slide-bg-image" style="${bgFrameStyle}${bgImageStyle}"></div>` : ""))}
+    ${!useFullCanvasBackground && (resolvedBgUrl || multiUrls) && (backgroundOverride?.tintOpacity ?? 0) > 0 ? `<div style="position:absolute;inset:0;background-color:${escapeHtml(backgroundOverride?.tintColor ?? backgroundColor ?? "#0a0a0a")};opacity:${Math.min(1, Math.max(0, backgroundOverride?.tintOpacity ?? 0))};pointer-events:none;z-index:0"></div>` : ""}
+    ${noTextOrChrome ? "" : useFullCanvasBackground ? "" : "<div class=\"slide-gradient\"></div>"}
     ${hookCircleHtml}
     ${textBlocksHtml}
     ${!noTextOrChrome && model.chrome.showSwipe ? (() => {

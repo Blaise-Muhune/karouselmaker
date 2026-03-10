@@ -1,5 +1,6 @@
 import { getUser } from "@/lib/server/auth/getUser";
 import { getSubscription } from "@/lib/server/subscription";
+import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { listTemplatesForUser, countUserTemplates } from "@/lib/server/db";
 import { PLAN_LIMITS } from "@/lib/constants";
 import Link from "next/link";
@@ -11,6 +12,7 @@ import { LockIcon, PencilIcon, PlusIcon } from "lucide-react";
 
 export default async function TemplatesPage() {
   const { user } = await getUser();
+  const userIsAdmin = isAdmin(user.email ?? null);
   const [templates, subscription, userTemplateCount] = await Promise.all([
     listTemplatesForUser(user.id, { includeSystem: true }),
     getSubscription(user.id, user.email),
@@ -96,6 +98,8 @@ export default async function TemplatesPage() {
                         templateId={t.id}
                         templateName={t.name}
                         isPro={subscription.isPro}
+                        isAdmin={userIsAdmin}
+                        isSystemTemplate={false}
                       />
                     </div>
                   </div>
@@ -127,7 +131,7 @@ export default async function TemplatesPage() {
             <ul className="divide-y divide-border/50">
               {systemTemplates.map((t) => (
                 <li key={t.id}>
-                  <div className="flex items-center justify-between gap-3 py-3.5">
+                  <div className="flex items-center justify-between gap-3 py-3.5 transition-colors hover:bg-accent/30 -mx-2 px-2 rounded-lg">
                     <LockIcon className="text-muted-foreground size-4 shrink-0" />
                     <div className="min-w-0 flex-1">
                       <p className="font-medium">{t.name}</p>
@@ -135,15 +139,24 @@ export default async function TemplatesPage() {
                         {t.category} · {t.aspect_ratio}
                       </p>
                     </div>
-                    {subscription.isPro && (
-                      <DuplicateTemplateButton
+                    <div className="flex shrink-0 items-center gap-1">
+                      {subscription.isPro && (
+                        <DuplicateTemplateButton
+                          templateId={t.id}
+                          templateName={t.name}
+                          category={t.category}
+                          isPro={subscription.isPro}
+                          atLimit={atTemplateLimit}
+                        />
+                      )}
+                      <DeleteTemplateButton
                         templateId={t.id}
                         templateName={t.name}
-                        category={t.category}
                         isPro={subscription.isPro}
-                        atLimit={atTemplateLimit}
+                        isAdmin={userIsAdmin}
+                        isSystemTemplate={true}
                       />
-                    )}
+                    </div>
                   </div>
                 </li>
               ))}

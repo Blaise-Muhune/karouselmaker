@@ -2,6 +2,61 @@ import type { TextZoneOverrides, ChromeOverrides } from "@/lib/renderer/renderMo
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { HIGHLIGHT_COLORS } from "@/lib/editor/inlineFormat";
 
+/** Image display options for renderSlideHtml. Template defaults + slide overrides. */
+export type ImageDisplayForRender = {
+  position?: string;
+  fit?: "cover" | "contain";
+  frame?: "none" | "thin" | "medium" | "thick" | "chunky" | "heavy";
+  frameRadius?: number;
+  frameColor?: string;
+  frameShape?: string;
+  layout?: "auto" | "side-by-side" | "stacked" | "grid" | "overlay-circles";
+  gap?: number;
+  overlayCircleSize?: number;
+  overlayCircleBorderWidth?: number;
+  overlayCircleBorderColor?: string;
+  overlayCircleX?: number;
+  overlayCircleY?: number;
+  dividerStyle?: "gap" | "line" | "zigzag" | "diagonal" | "wave" | "dashed" | "scalloped";
+  dividerColor?: string;
+  dividerWidth?: number;
+  mode?: "full" | "pip";
+  pipPosition?: "top_left" | "top_right" | "bottom_left" | "bottom_right";
+  pipSize?: number;
+  pipBorderRadius?: number;
+  imagePositionX?: number;
+  imagePositionY?: number;
+  pipX?: number;
+  pipY?: number;
+};
+
+/**
+ * Merge template default image_display with slide background image_display.
+ * Slide wins when both set. Use so template can define default (e.g. PIP) and slide can override.
+ */
+export function getMergedImageDisplay(
+  config: TemplateConfig | null,
+  slideBackground: unknown
+): ImageDisplayForRender | undefined {
+  const templateD = (config?.defaults?.meta && typeof config.defaults.meta === "object" && "image_display" in config.defaults.meta)
+    ? (config.defaults.meta as { image_display?: unknown }).image_display
+    : undefined;
+  const slideD =
+    slideBackground != null && typeof slideBackground === "object" && "image_display" in slideBackground
+      ? (slideBackground as { image_display?: unknown }).image_display
+      : undefined;
+  const fromTemplate =
+    templateD != null && typeof templateD === "object" && !Array.isArray(templateD)
+      ? (templateD as Record<string, unknown>)
+      : {};
+  const fromSlide =
+    slideD != null && typeof slideD === "object" && !Array.isArray(slideD)
+      ? (slideD as Record<string, unknown>)
+      : {};
+  const merged = { ...fromTemplate, ...fromSlide };
+  return Object.keys(merged).length > 0 ? (merged as ImageDisplayForRender) : undefined;
+}
+
 export type NormalizedSlideMeta = {
   zoneOverrides: TextZoneOverrides | undefined;
   fontOverrides: { headline_font_size?: number; body_font_size?: number } | undefined;
@@ -15,7 +70,7 @@ export type NormalizedSlideMeta = {
 };
 
 const NUMERIC_KEYS = ["x", "y", "w", "h", "fontSize", "fontWeight", "lineHeight", "maxLines"] as const;
-const ALIGN_VALUES = new Set(["left", "center"]);
+const ALIGN_VALUES = new Set(["left", "center", "right"]);
 
 /**
  * Normalize zone override from slide meta so export/overlay render matches editor preview.
@@ -36,6 +91,7 @@ function normalizeZoneOverride(
   }
   if (raw.align && ALIGN_VALUES.has(raw.align as string)) out.align = raw.align;
   if (typeof raw.color === "string" && /^#([0-9A-Fa-f]{3}){1,2}$/.test(raw.color)) out.color = raw.color;
+  if (typeof raw.fontFamily === "string" && raw.fontFamily.trim() !== "") out.fontFamily = raw.fontFamily.trim();
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
@@ -97,13 +153,23 @@ export function mergeWithTemplateDefaults(
  */
 export function normalizeSlideMetaForRender(meta: Record<string, unknown> | null | undefined): NormalizedSlideMeta {
   const m = meta ?? {};
-  const headlineZone = normalizeZoneOverride(m.headline_zone_override as Record<string, unknown> | undefined);
-  const bodyZone = normalizeZoneOverride(m.body_zone_override as Record<string, unknown> | undefined);
+  const headlineZoneRaw = normalizeZoneOverride(m.headline_zone_override as Record<string, unknown> | undefined);
+  const bodyZoneRaw = normalizeZoneOverride(m.body_zone_override as Record<string, unknown> | undefined);
+  const headlineFontFamily = typeof m.headline_font_family === "string" && m.headline_font_family.trim() !== "" ? m.headline_font_family.trim() : undefined;
+  const bodyFontFamily = typeof m.body_font_family === "string" && m.body_font_family.trim() !== "" ? m.body_font_family.trim() : undefined;
+  const headlineZone =
+    headlineZoneRaw || headlineFontFamily
+      ? { ...(headlineZoneRaw ?? {}), ...(headlineFontFamily != null && { fontFamily: headlineFontFamily }) }
+      : undefined;
+  const bodyZone =
+    bodyZoneRaw || bodyFontFamily
+      ? { ...(bodyZoneRaw ?? {}), ...(bodyFontFamily != null && { fontFamily: bodyFontFamily }) }
+      : undefined;
   const zoneOverrides =
-    headlineZone || bodyZone
+    (headlineZone && Object.keys(headlineZone).length > 0) || (bodyZone && Object.keys(bodyZone).length > 0)
       ? {
-          ...(headlineZone && { headline: headlineZone }),
-          ...(bodyZone && { body: bodyZone }),
+          ...(headlineZone && Object.keys(headlineZone).length > 0 && { headline: headlineZone }),
+          ...(bodyZone && Object.keys(bodyZone).length > 0 && { body: bodyZone }),
         }
       : undefined;
 

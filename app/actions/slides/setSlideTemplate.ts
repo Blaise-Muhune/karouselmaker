@@ -20,12 +20,12 @@ function clearPreviousTemplateOverrides(meta: Record<string, unknown>): Record<s
   return out;
 }
 
-/** Build overlay object from template gradient so slide applies the template's overlay (e.g. purple). */
-function overlayFromTemplateGradient(grad: { color?: string; direction?: string; strength?: number; extent?: number; solidSize?: number } | undefined): Record<string, unknown> | undefined {
+/** Build overlay object from template gradient so slide applies the template's overlay (e.g. purple) and gradient on/off. */
+function overlayFromTemplateGradient(grad: { enabled?: boolean; color?: string; direction?: string; strength?: number; extent?: number; solidSize?: number } | undefined): Record<string, unknown> | undefined {
   if (!grad) return undefined;
   const color = (typeof grad.color === "string" && /^#([0-9A-Fa-f]{3}){1,2}$/.test(grad.color)) ? grad.color : "#0a0a0a";
   return {
-    gradient: true,
+    gradient: grad.enabled !== false,
     color,
     textColor: getContrastingTextColor(color),
     direction: grad.direction ?? "bottom",
@@ -70,18 +70,55 @@ export async function setSlideTemplate(
       meta: clearPreviousTemplateOverrides(existingMeta) as Json,
     };
 
-    // Apply template overlay (e.g. purple) to slide so it matches the template preview when user selects it.
+    // Apply template overlay (e.g. purple), gradient on/off, image overlay blend (tint), and image_display so the slide matches the template and persists after refresh.
     const existingBg = slide.background as Record<string, unknown> | null | undefined;
-    if (templateOverlay && existingBg && typeof existingBg === "object") {
+    const defaultsMeta = parsed.data?.defaults?.meta as Record<string, unknown> | undefined;
+    const overlayTintOpacity = defaultsMeta != null && typeof defaultsMeta.overlay_tint_opacity === "number"
+      ? defaultsMeta.overlay_tint_opacity
+      : undefined;
+    const overlayTintColor =
+      defaultsMeta != null &&
+      typeof defaultsMeta.overlay_tint_color === "string" &&
+      /^#([0-9A-Fa-f]{3}){1,2}$/.test(defaultsMeta.overlay_tint_color)
+        ? defaultsMeta.overlay_tint_color
+        : undefined;
+    const mergedOverlay: Record<string, unknown> = {
+      ...(existingBg?.overlay as Record<string, unknown> | undefined),
+      ...(templateOverlay ?? {}),
+      ...(overlayTintOpacity != null && { tintOpacity: overlayTintOpacity }),
+      ...(overlayTintColor != null && { tintColor: overlayTintColor }),
+    };
+    const templateImageDisplay =
+      defaultsMeta != null && typeof defaultsMeta === "object" && defaultsMeta.image_display != null && typeof defaultsMeta.image_display === "object" && !Array.isArray(defaultsMeta.image_display)
+        ? (defaultsMeta.image_display as Record<string, unknown>)
+        : undefined;
+    const hasOverlayOrTint = templateOverlay || overlayTintOpacity != null || overlayTintColor != null;
+    const hasImageDisplay = templateImageDisplay != null && Object.keys(templateImageDisplay).length > 0;
+
+    // Resolve template background color/style/pattern so they persist after reload (editor reads slide.background.color).
+    const defaultsBg = parsed.data?.defaults?.background as { color?: string; style?: string; pattern?: string } | undefined;
+    const templateBgColor =
+      (defaultsMeta != null && typeof defaultsMeta.background_color === "string" && /^#([0-9A-Fa-f]{3}){1,2}$/.test(defaultsMeta.background_color as string))
+        ? (defaultsMeta.background_color as string)
+        : (defaultsBg && typeof defaultsBg.color === "string" && /^#([0-9A-Fa-f]{3}){1,2}$/.test(defaultsBg.color))
+          ? defaultsBg.color
+          : undefined;
+    const templateBgStyle = defaultsBg && (defaultsBg.style === "solid" || defaultsBg.style === "pattern") ? defaultsBg.style : undefined;
+    const templateBgPattern = defaultsBg && typeof defaultsBg.pattern === "string" ? defaultsBg.pattern : undefined;
+
+    if (existingBg && typeof existingBg === "object") {
       patch.background = {
         ...existingBg,
-        overlay: { ...(existingBg.overlay as Record<string, unknown> | undefined), ...templateOverlay },
+        ...(templateBgColor != null && { color: templateBgColor }),
+        ...(templateBgStyle != null && { style: templateBgStyle }),
+        ...(templateBgPattern != null && { pattern: templateBgPattern }),
+        ...(hasOverlayOrTint && { overlay: mergedOverlay }),
+        ...(hasImageDisplay && { image_display: { ...(existingBg.image_display as Record<string, unknown> | undefined), ...templateImageDisplay } }),
       } as Json;
     }
 
-    const defaultsMeta = parsed.data?.defaults?.meta;
     if (defaultsMeta != null && typeof defaultsMeta === "object" && Object.keys(defaultsMeta).length > 0) {
-      // Apply template defaults (zone position, font size, etc.) so the slide matches the saved template layout.
+      // Apply template defaults (zone position, font size, overlay_tint_*, etc.) so the slide matches the saved template.
       const defaultsWithoutHighlights = { ...defaultsMeta };
       delete defaultsWithoutHighlights.headline_highlights;
       delete defaultsWithoutHighlights.body_highlights;

@@ -230,19 +230,9 @@ export function NewCarouselForm({
           return;
         }
         if (result.carouselId) {
-          // Wait for generation to complete on this page, then show result (redirect when ready)
-          const res = await fetch(`/api/carousel/${result.carouselId}/generate`, { method: "POST" });
-          if (res.status === 200) {
-            router.push(`/p/${projectId}/c/${result.carouselId}`);
-            return;
-          }
-          if (res.status >= 400) {
-            const body = await res.json().catch(() => ({}));
-            setError((body as { error?: string }).error ?? "Generation failed. Please try again.");
-          } else {
-            setError("Generation failed. Please try again.");
-          }
-          setIsPending(false);
+          // Redirect immediately to carousel page; it runs the generate API and shows loading there.
+          // Avoids keeping a long-running fetch on this page (client/proxy timeouts would leave loading stuck).
+          router.push(`/p/${projectId}/c/${result.carouselId}`);
           return;
         }
       }
@@ -559,6 +549,12 @@ export function NewCarouselForm({
                     }}
                     primaryColor={primaryColor}
                     previewImageUrls={useAiBackgrounds ? TEMPLATE_PREVIEW_IMAGE_URLS : undefined}
+                    isAdmin={isAdminUser}
+                    isPro={isPro}
+                    onTemplateDeleted={() => {
+                      setTemplateModalOpen(false);
+                      router.refresh();
+                    }}
                   />
                 </div>
                 {visibleTemplateCount < templateOptionsForPlatform.length && (

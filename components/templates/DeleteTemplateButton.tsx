@@ -19,18 +19,28 @@ type DeleteTemplateButtonProps = {
   templateId: string;
   templateName: string;
   isPro: boolean;
+  /** When true, show delete for system templates (admin only). */
+  isAdmin?: boolean;
+  /** When true, template is system-owned; delete shown only if isAdmin. */
+  isSystemTemplate?: boolean;
+  /** Called after successful delete (e.g. to refresh list or close modal). */
+  onDeleted?: () => void;
 };
 
 export function DeleteTemplateButton({
   templateId,
   templateName,
   isPro,
+  isAdmin = false,
+  isSystemTemplate = false,
+  onDeleted,
 }: DeleteTemplateButtonProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  if (!isPro) return null;
+  const canDelete = isPro || (isAdmin && isSystemTemplate);
+  if (!canDelete) return null;
 
   const handleDelete = async () => {
     setLoading(true);
@@ -39,6 +49,7 @@ export function DeleteTemplateButton({
     if (result.ok) {
       setOpen(false);
       router.refresh();
+      onDeleted?.();
     } else {
       alert(result.error ?? "Failed to delete template");
     }

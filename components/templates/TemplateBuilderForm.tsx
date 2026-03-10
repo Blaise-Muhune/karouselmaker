@@ -21,7 +21,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { SlidePreview } from "@/components/renderer/SlidePreview";
+import { SlidePreview, PREVIEW_FONTS } from "@/components/renderer/SlidePreview";
 import { createTemplateAction } from "@/app/actions/templates/createTemplate";
 import { updateTemplateAction } from "@/app/actions/templates/updateTemplate";
 import { DEFAULT_TEMPLATE_CONFIG, LAYOUT_PRESETS } from "@/lib/templateDefaults";
@@ -692,6 +692,19 @@ export function TemplateBuilderForm({
                     </SelectContent>
                   </Select>
                 </div>
+                <div className="space-y-1 mt-4">
+                  <Label className="text-xs">Font (LinkedIn/Instagram)</Label>
+                  <Select value={headlineZone.fontFamily ?? "system"} onValueChange={(v) => updateTextZone("headline", { fontFamily: v || undefined })}>
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue placeholder="Font" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PREVIEW_FONTS.map(({ id, label }) => (
+                        <SelectItem key={id} value={id}>{label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
                 <div className="mt-4">
                   <Label className="text-xs block mb-1.5">Text color</Label>
                   <ColorPicker value={headlineZone.color ?? ""} onChange={(v) => updateTextZone("headline", { color: v.trim() || undefined })} placeholder="Auto (contrast)" />
@@ -790,6 +803,19 @@ export function TemplateBuilderForm({
                     <SelectContent>
                       <SelectItem value="left">Left</SelectItem>
                       <SelectItem value="center">Center</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1 mt-4">
+                  <Label className="text-xs">Font (LinkedIn/Instagram)</Label>
+                  <Select value={bodyZone.fontFamily ?? "system"} onValueChange={(v) => updateTextZone("body", { fontFamily: v || undefined })}>
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue placeholder="Font" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PREVIEW_FONTS.map(({ id, label }) => (
+                        <SelectItem key={id} value={id}>{label}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>

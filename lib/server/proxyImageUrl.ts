@@ -14,7 +14,10 @@ export function createProxyImageUrl(targetUrl: string, appOrigin: string): strin
     if (target.origin === app.origin) return null;
     if (!/^https?:$/i.test(target.protocol)) return null;
     const sig = createHmac("sha256", SECRET).update(targetUrl).digest("hex");
-    const params = new URLSearchParams({ url: targetUrl, sig });
+    // Encode url so that any & in the target (e.g. Supabase ?token=...&sig=...) are not interpreted as query separators
+    const params = new URLSearchParams();
+    params.set("url", targetUrl);
+    params.set("sig", sig);
     return `${appOrigin}/api/proxy-image?${params.toString()}`;
   } catch {
     return null;

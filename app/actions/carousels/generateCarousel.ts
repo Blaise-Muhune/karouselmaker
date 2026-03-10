@@ -30,9 +30,59 @@ import { FREE_FULL_ACCESS_GENERATIONS, AI_GENERATE_LIMIT_PRO } from "@/lib/const
 
 const MAX_RETRIES = 2;
 /** Max concurrent AI image generations to cut total time without hitting rate limits. */
-const AI_IMAGE_CONCURRENCY = 3;
+const AI_IMAGE_CONCURRENCY = 5;
 /** Max concurrent slides when fetching from stock APIs (Pexels/Unsplash/Pixabay). Higher = faster but more parallel load on providers. */
-const SEARCH_IMAGE_CONCURRENCY = 6;
+const SEARCH_IMAGE_CONCURRENCY = 8;
+/** Chunk size for parallel updateSlide calls (DB round-trips). */
+const UPDATE_SLIDE_BATCH_SIZE = 10;
+
+const LOG = (step: string, detail?: string) =>
+  console.log(`[carousel-gen] ${step}${detail ? ` — ${detail}` : ""}`);
+
+const now = () => Date.now();
+function elapsedMs(start: number): number {
+  return Math.round(Date.now() - start);
+}
+
+/** Token usage for one step (input = prompt, output = completion). */
+type StepUsage = { step: string; inputTokens: number; outputTokens: number };
+/** Price per 1M tokens (USD). Model: gpt-4o-mini / gpt-5-mini style. */
+const PRICE_INPUT_PER_1M = 0.15;
+const PRICE_OUTPUT_PER_1M = 0.60;
+/** Estimated cost per image (USD). OpenAI gpt-image-1.5 style; Replicate Ideogram/FLUX. */
+const OPENAI_IMAGE_COST_USD = 0.045;
+const REPLICATE_IMAGE_COST_USD = 0.02;
+
+function costUsd(inputTokens: number, outputTokens: number): number {
+  return (inputTokens / 1_000_000) * PRICE_INPUT_PER_1M + (outputTokens / 1_000_000) * PRICE_OUTPUT_PER_1M;
+}
+
+type ImageCostTrack = { openai: number; replicate: number };
+
+function logTokenSummary(steps: StepUsage[], imageCostTrack?: ImageCostTrack) {
+  const totalIn = steps.reduce((s, u) => s + u.inputTokens, 0);
+  const totalOut = steps.reduce((s, u) => s + u.outputTokens, 0);
+  const llmCost = steps.reduce((s, u) => s + costUsd(u.inputTokens, u.outputTokens), 0);
+  LOG("--- Token usage ---", "");
+  for (const u of steps) {
+    const cost = costUsd(u.inputTokens, u.outputTokens);
+    const total = u.inputTokens + u.outputTokens;
+    if (total > 0) {
+      console.log(`[carousel-gen]   ${u.step}: ${u.inputTokens} in / ${u.outputTokens} out = ${total} tokens — $${cost.toFixed(4)}`);
+    }
+  }
+  console.log(`[carousel-gen]   LLM TOTAL: ${totalIn} in / ${totalOut} out = ${totalIn + totalOut} tokens — $${llmCost.toFixed(4)}`);
+  const imageOpenai = imageCostTrack?.openai ?? 0;
+  const imageReplicate = imageCostTrack?.replicate ?? 0;
+  const imageCount = imageOpenai + imageReplicate;
+  const imageCostUsd = imageOpenai * OPENAI_IMAGE_COST_USD + imageReplicate * REPLICATE_IMAGE_COST_USD;
+  if (imageCount > 0) {
+    console.log(`[carousel-gen]   Images: ${imageCount} (OpenAI: ${imageOpenai}, Replicate: ${imageReplicate}) — $${imageCostUsd.toFixed(4)}`);
+  }
+  const grandTotal = llmCost + imageCostUsd;
+  console.log(`[carousel-gen]   GRAND TOTAL (LLM + images): $${grandTotal.toFixed(4)}`);
+  LOG("-------------------", "");
+}
 
 /** Heuristic: true when input looks like news or time-sensitive so we auto-enable web search for current facts. */
 function looksLikeNewsOrTimeSensitive(inputValue: string, inputType: string): boolean {
@@ -70,6 +120,59 @@ function stripJson(raw: string): string {
   return s;
 }
 
+const MAX_HIGHLIGHT_WORDS = 8;
+const MAX_HIGHLIGHT_WORD_LEN = 60;
+const MAX_IMAGE_QUERY_LEN = 80;
+const MAX_IMAGE_QUERIES = 4;
+
+/** Normalize LLM output to schema limits so we don't burn tokens on retries for "too_big". */
+function normalizeCarouselOutput(parsed: unknown): unknown {
+  if (!parsed || typeof parsed !== "object") return parsed;
+  const root = parsed as Record<string, unknown>;
+  const slides = root.slides;
+  if (!Array.isArray(slides)) return parsed;
+
+  const normHighlight = (arr: unknown): string[] => {
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .filter((x): x is string => typeof x === "string" && x.length > 0)
+      .map((s) => String(s).slice(0, MAX_HIGHLIGHT_WORD_LEN))
+      .slice(0, MAX_HIGHLIGHT_WORDS);
+  };
+  const normStr = (s: unknown, max: number): string =>
+    typeof s === "string" ? s.slice(0, max) : "";
+  const normStrArr = (arr: unknown, maxLen: number, maxItems: number): string[] => {
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .filter((x): x is string => typeof x === "string")
+      .map((s) => s.slice(0, maxLen))
+      .slice(0, maxItems);
+  };
+
+  root.slides = slides.map((slide) => {
+    if (!slide || typeof slide !== "object") return slide;
+    const s = { ...slide } as Record<string, unknown>;
+    if (s.headline_highlight_words !== undefined) s.headline_highlight_words = normHighlight(s.headline_highlight_words);
+    if (s.body_highlight_words !== undefined) s.body_highlight_words = normHighlight(s.body_highlight_words);
+    if (s.image_query !== undefined) s.image_query = normStr(s.image_query, MAX_IMAGE_QUERY_LEN) || undefined;
+    if (s.image_queries !== undefined) s.image_queries = normStrArr(s.image_queries, MAX_IMAGE_QUERY_LEN, MAX_IMAGE_QUERIES);
+    if (s.unsplash_query !== undefined) s.unsplash_query = normStr(s.unsplash_query, MAX_IMAGE_QUERY_LEN) || undefined;
+    if (s.unsplash_queries !== undefined) s.unsplash_queries = normStrArr(s.unsplash_queries, MAX_IMAGE_QUERY_LEN, MAX_IMAGE_QUERIES);
+    const alternates = s.shorten_alternates;
+    if (Array.isArray(alternates)) {
+      s.shorten_alternates = alternates.map((alt) => {
+        if (!alt || typeof alt !== "object") return alt;
+        const a = { ...alt } as Record<string, unknown>;
+        if (a.headline_highlight_words !== undefined) a.headline_highlight_words = normHighlight(a.headline_highlight_words);
+        if (a.body_highlight_words !== undefined) a.body_highlight_words = normHighlight(a.body_highlight_words);
+        return a;
+      });
+    }
+    return s;
+  });
+  return root;
+}
+
 function parseAndValidate(raw: string): CarouselOutput | { error: string } {
   const cleaned = stripJson(raw);
   let parsed: unknown;
@@ -78,6 +181,7 @@ function parseAndValidate(raw: string): CarouselOutput | { error: string } {
   } catch {
     return { error: "Invalid JSON" };
   }
+  parsed = normalizeCarouselOutput(parsed);
   const result = carouselOutputSchema.safeParse(parsed);
   if (!result.success) {
     const msg = result.error.flatten().formErrors.join("; ") ||
@@ -125,18 +229,25 @@ export async function generateCarousel(formData: FormData): Promise<
     carousel_for: (formData.get("carousel_for") as string | null)?.trim() || undefined,
   };
 
+  LOG("input", `type=${raw.input_type} slides=${raw.number_of_slides ?? "auto"} stock=${!!raw.use_stock_photos} aiImages=${!!raw.use_ai_generate} webSearch=${!!raw.use_web_search}`);
+
   const parsed = generateCarouselInputSchema.safeParse(raw);
   if (!parsed.success) {
     const flat = parsed.error.flatten();
     const formMsgs = flat.formErrors.filter(Boolean);
     const fieldMsgs = Object.values(flat.fieldErrors).flat().filter(Boolean) as string[];
     const msg = [...formMsgs, ...fieldMsgs].join("; ") || parsed.error.message;
+    LOG("validation failed", msg);
     return { error: msg };
   }
   const data = parsed.data;
 
   const project = await getProject(user.id, data.project_id);
-  if (!project) return { error: "Project not found" };
+  if (!project) {
+    LOG("project not found");
+    return { error: "Project not found" };
+  }
+  LOG("limits", "checked");
 
   const { isPro } = await getSubscription(user.id, user.email);
   const limits = await getPlanLimits(user.id, user.email);
@@ -163,8 +274,10 @@ export async function generateCarousel(formData: FormData): Promise<
   if (data.carousel_id) {
     carousel = await getCarousel(user.id, data.carousel_id);
     if (!carousel || carousel.project_id !== data.project_id) {
+      LOG("carousel not found");
       return { error: "Carousel not found" };
     }
+    LOG("carousel", `using existing ${carousel.id}`);
   } else {
     carousel = await createCarousel(
       user.id,
@@ -173,12 +286,19 @@ export async function generateCarousel(formData: FormData): Promise<
       data.input_value,
       data.title ?? "Untitled"
     );
+    LOG("carousel", `created ${carousel.id}`);
   }
 
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return { error: "OPENAI_API_KEY is not configured" };
+  if (!apiKey) {
+    LOG("config", "OPENAI_API_KEY missing");
+    return { error: "OPENAI_API_KEY is not configured" };
+  }
 
   const openai = new OpenAI({ apiKey });
+  const tokenUsageSteps: StepUsage[] = [];
+  const imageCostTrack: ImageCostTrack = { openai: 0, replicate: 0 };
+  const totalStart = now();
 
   const brandKit = project.brand_kit as { watermark_text?: string; primary_color?: string; secondary_color?: string } | null;
   const creatorHandle = brandKit?.watermark_text?.trim() || undefined;
@@ -222,11 +342,15 @@ export async function generateCarousel(formData: FormData): Promise<
     carousel_for: carouselFor,
   } as const;
 
+  LOG("AI", useWebSearch ? "calling LLM with web search" : "calling LLM (JSON mode)");
+  const llmStart = now();
+
   let lastRaw = "";
   let lastError = "";
   let validated: CarouselOutput | null = null;
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (attempt > 0) LOG("AI retry", `attempt ${attempt + 1}/${MAX_RETRIES + 1}`);
     const prompts =
       attempt === 0
         ? buildCarouselPrompts(ctx)
@@ -244,6 +368,13 @@ export async function generateCarousel(formData: FormData): Promise<
         tool_choice: "auto",
       });
       content = response.output_text ?? "";
+      const respUsage = (response as { usage?: { input_tokens?: number; output_tokens?: number } }).usage;
+      tokenUsageSteps.push({
+        step: attempt === 0 ? "LLM (web search)" : `LLM retry ${attempt + 1} (web search)`,
+        inputTokens: respUsage?.input_tokens ?? 0,
+        outputTokens: respUsage?.output_tokens ?? 0,
+      });
+      LOG("AI", "web search response received");
     } else {
       // Chat Completions with JSON mode (no web search, or retries)
       const completion = await openai.chat.completions.create({
@@ -255,9 +386,17 @@ export async function generateCarousel(formData: FormData): Promise<
         response_format: { type: "json_object" },
       });
       content = completion.choices[0]?.message?.content ?? "";
+      const u = completion.usage;
+      tokenUsageSteps.push({
+        step: attempt === 0 ? "LLM (chat JSON)" : `LLM retry ${attempt + 1} (chat JSON)`,
+        inputTokens: u?.prompt_tokens ?? 0,
+        outputTokens: u?.completion_tokens ?? 0,
+      });
+      LOG("AI", "chat completion received");
     }
 
     if (!content?.trim()) {
+      LOG("AI", "empty response");
       return { error: "No response from AI" };
     }
 
@@ -266,12 +405,14 @@ export async function generateCarousel(formData: FormData): Promise<
 
     if ("error" in result) {
       lastError = result.error;
+      LOG("AI validation", result.error);
       if (attempt < MAX_RETRIES) continue;
       await updateCarousel(user.id, carousel.id, { status: "draft" });
       return { error: `Generation failed after retries: ${result.error}` };
     }
 
     validated = result;
+    LOG("AI", `validated ${validated.slides.length} slides in ${elapsedMs(llmStart) / 1000}s`);
     break;
   }
 
@@ -343,9 +484,16 @@ export async function generateCarousel(formData: FormData): Promise<
       ? await getDefaultLinkedInTemplate(user.id)
       : await getDefaultTemplateForNewCarousel(user.id);
   let defaultTemplateId: string | null = defaultTemplate?.templateId ?? null;
+  let selectedTemplate: Awaited<ReturnType<typeof getTemplate>> = null;
   if (data.template_id) {
     const requested = await getTemplate(user.id, data.template_id);
-    if (requested) defaultTemplateId = requested.id;
+    if (requested) {
+      defaultTemplateId = requested.id;
+      selectedTemplate = requested;
+    }
+  }
+  if (!selectedTemplate && defaultTemplateId) {
+    selectedTemplate = await getTemplate(user.id, defaultTemplateId);
   }
   const isFollowCta = carouselFor !== "linkedin" && (defaultTemplate && "isFollowCta" in defaultTemplate ? defaultTemplate.isFollowCta : false);
 
@@ -397,7 +545,6 @@ export async function generateCarousel(formData: FormData): Promise<
     : { gradient: true, darken: 0.5, color: overlayColor, textColor: overlayTextColor };
   const slidesWithImage = new Set<string>();
 
-  const selectedTemplate = defaultTemplateId ? await getTemplate(user.id, defaultTemplateId) : null;
   const isLinkedIn = (selectedTemplate?.category ?? "").toLowerCase() === "linkedin";
   const templateTintColor =
     (selectedTemplate?.config as { defaults?: { background?: { color?: string } } } | undefined)?.defaults?.background?.color?.trim() ?? overlayColor;
@@ -405,6 +552,7 @@ export async function generateCarousel(formData: FormData): Promise<
     ? { ...defaultOverlay, enabled: false, tintColor: templateTintColor, tintOpacity: 0.75 }
     : defaultOverlay;
 
+  const backgroundsStart = now();
   try {
   if (parsed.data.background_asset_ids?.length && createdSlides.length) {
     const assetIds = parsed.data.background_asset_ids;
@@ -414,21 +562,30 @@ export async function generateCarousel(formData: FormData): Promise<
       if (asset?.storage_path) assets.push({ id: asset.id, storage_path: asset.storage_path });
     }
     if (assets.length) {
+      const userAssetUpdates: { slide: (typeof createdSlides)[number]; asset: { id: string; storage_path: string } }[] = [];
       for (let i = 0; i < createdSlides.length; i++) {
         const slide = createdSlides[i];
         if (!slide) continue;
         const asset = assets[i % assets.length];
         if (!asset) continue;
         slidesWithImage.add(slide.id);
-        await updateSlide(user.id, slide.id, {
-          background: {
-            mode: "image",
-            asset_id: asset.id,
-            storage_path: asset.storage_path,
-            fit: "cover",
-            overlay: overlayForImageSlide,
-          },
-        });
+        userAssetUpdates.push({ slide, asset });
+      }
+      for (let i = 0; i < userAssetUpdates.length; i += UPDATE_SLIDE_BATCH_SIZE) {
+        const chunk = userAssetUpdates.slice(i, i + UPDATE_SLIDE_BATCH_SIZE);
+        await Promise.all(
+          chunk.map(({ slide, asset }) =>
+            updateSlide(user.id, slide.id, {
+              background: {
+                mode: "image",
+                asset_id: asset.id,
+                storage_path: asset.storage_path,
+                fit: "cover",
+                overlay: overlayForImageSlide,
+              },
+            })
+          )
+        );
       }
     }
   }
@@ -441,6 +598,7 @@ export async function generateCarousel(formData: FormData): Promise<
     );
 
     if (useAiGenerate) {
+      LOG("backgrounds", `AI generate: ${aiSlideByIndex.size} slides (concurrency ${AI_IMAGE_CONCURRENCY})`);
       const aiGenJobs: { slide: (typeof createdSlides)[number]; aiSlide: (typeof validated.slides)[number] }[] = [];
       for (const slide of createdSlides) {
         if (slidesWithImage.has(slide.id)) continue;
@@ -469,6 +627,7 @@ export async function generateCarousel(formData: FormData): Promise<
         };
         const genResult = await generateImageFromPrompt(firstQuery, { context: imageContext });
         if (genResult.ok) {
+          imageCostTrack[genResult.provider] += 1;
           const storagePath = await uploadGeneratedImage(user.id, carousel.id, slide.id, genResult.buffer);
           if (storagePath) {
             slidesWithImage.add(slide.id);
@@ -496,6 +655,7 @@ export async function generateCarousel(formData: FormData): Promise<
             },
           });
           if (fallbackResult.ok) {
+            imageCostTrack[fallbackResult.provider] += 1;
             const storagePath = await uploadGeneratedImage(user.id, carousel.id, slide.id, fallbackResult.buffer);
             if (storagePath) {
               slidesWithImage.add(slide.id);
@@ -515,7 +675,9 @@ export async function generateCarousel(formData: FormData): Promise<
         const chunk = aiGenJobs.slice(i, i + AI_IMAGE_CONCURRENCY);
         await Promise.all(chunk.map(processOneAiSlide));
       }
+      LOG("backgrounds", "AI generate done");
     } else {
+      LOG("backgrounds", useStockPhotos ? `stock photos (Unsplash/Pexels/Pixabay, concurrency ${SEARCH_IMAGE_CONCURRENCY})` : "Brave search");
       type ImageResult = {
         url: string;
         source: "brave" | "unsplash" | "pixabay" | "pexels";
@@ -685,10 +847,12 @@ export async function generateCarousel(formData: FormData): Promise<
           }
           await applyImageResultsToSlide(slide, imageResults);
         }
+        LOG("backgrounds", "Brave search done");
       }
     }
   }
 
+  LOG("backgrounds", "applying solid/pattern to slides without images");
   // Apply solid or pattern background to slides with no image. Use template theme (color, style, pattern) when set.
   const primaryColor = brandKit?.primary_color?.trim() || "#0a0a0a";
   const defaultsBg = (selectedTemplate?.config as { defaults?: { background?: { style?: string; color?: string; pattern?: string } } } | undefined)?.defaults?.background;
@@ -698,12 +862,20 @@ export async function generateCarousel(formData: FormData): Promise<
   const solidBg = themeStyle === "pattern"
     ? { style: "pattern" as const, color: themeColor, pattern: themePattern, gradientOn: true }
     : { style: "solid" as const, color: themeColor, gradientOn: true };
-  for (const slide of createdSlides) {
-    if (slidesWithImage.has(slide.id)) continue;
-    const bg = isFollowCta ? { ...solidBg, overlay: defaultOverlay } : solidBg;
-    await updateSlide(user.id, slide.id, { background: bg });
+  const slidesWithoutImage = createdSlides.filter((s) => !slidesWithImage.has(s.id));
+  for (let i = 0; i < slidesWithoutImage.length; i += UPDATE_SLIDE_BATCH_SIZE) {
+    const chunk = slidesWithoutImage.slice(i, i + UPDATE_SLIDE_BATCH_SIZE);
+    await Promise.all(
+      chunk.map((slide) => {
+        const bg = isFollowCta ? { ...solidBg, overlay: defaultOverlay } : solidBg;
+        return updateSlide(user.id, slide.id, { background: bg });
+      })
+    );
   }
 
+  LOG("backgrounds", `done in ${elapsedMs(backgroundsStart) / 1000}s`);
+  LOG("done", `carousel ${carousel.id} ready (total ${elapsedMs(totalStart) / 1000}s)`);
+  logTokenSummary(tokenUsageSteps, imageCostTrack);
   return { carouselId: carousel.id };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -714,6 +886,16 @@ export async function generateCarousel(formData: FormData): Promise<
     const partialError = isTimeout
       ? "Generation was interrupted (server timeout). Your carousel was saved — some frames may have images. You can edit the carousel or try regenerating with fewer frames or Unsplash/Brave instead of AI generate."
       : "Some background images couldn't be generated. Your carousel was saved — you can edit the carousel or try again with different settings.";
+    try {
+      const current = await getCarousel(user.id, carousel.id);
+      if (current?.status === "generating") {
+        await updateCarousel(user.id, carousel.id, { status: "generated" });
+      }
+    } catch {
+      // ignore; avoid hiding original error
+    }
+    LOG("done", `partial error (total ${elapsedMs(totalStart) / 1000}s)`);
+    logTokenSummary(tokenUsageSteps, imageCostTrack);
     return { carouselId: carousel.id, partialError };
   }
 }

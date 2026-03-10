@@ -82,6 +82,11 @@ export type SlideRenderModel = {
 const DEFAULT_BG = "#0a0a0a";
 
 function getTemplateDefaultBackgroundColor(templateConfig: TemplateConfig): string | undefined {
+  const meta = templateConfig.defaults?.meta;
+  if (meta != null && typeof meta === "object" && typeof (meta as { background_color?: string }).background_color === "string") {
+    const c = (meta as { background_color: string }).background_color;
+    if (/^#[0-9A-Fa-f]{3,6}$/i.test(c)) return c;
+  }
   const bg = templateConfig.defaults?.background;
   if (!bg || typeof bg !== "object" || !("color" in bg)) return undefined;
   const color = (bg as { color?: string }).color;
@@ -113,6 +118,14 @@ export type ChromeOverrides = {
  * Deterministic: same inputs produce same model.
  * @param textScale When set (e.g. for 4:5 or 9:16), line wrapping uses zone.fontSize * textScale so breaks match rendered font size.
  */
+/**
+ * When set, line wrapping uses zoneOverridesForWrap (e.g. design-space only) so preview and export
+ * produce the same line breaks. Used when preview applies scaled position/width for the visible band.
+ */
+export type BuildSlideRenderModelOptions = {
+  zoneOverridesForWrap?: TextZoneOverrides | null;
+};
+
 export function buildSlideRenderModel(
   templateConfig: TemplateConfig,
   slideData: SlideData,
@@ -121,13 +134,24 @@ export function buildSlideRenderModel(
   totalSlides: number,
   zoneOverrides?: TextZoneOverrides | null,
   textScale?: number,
-  chromeOverrides?: ChromeOverrides | null
+  chromeOverrides?: ChromeOverrides | null,
+  options?: BuildSlideRenderModelOptions | null
 ): SlideRenderModel {
   const textBlocks: TextBlock[] = [];
+  const wrapOverrides = options?.zoneOverridesForWrap;
 
   for (const zone of templateConfig.textZones) {
     const overrides = zoneOverrides?.[zone.id as "headline" | "body"];
     const mergedZone = overrides ? { ...zone, ...overrides } : zone;
+    // Preserve template align when override omits it so preview and export match
+    if (mergedZone.align === undefined) {
+      mergedZone.align = ((zone as { align?: string }).align ?? "left") as "left" | "center" | "right";
+    }
+    const wrapOverride = wrapOverrides?.[zone.id as "headline" | "body"];
+    const mergedZoneForWrap = wrapOverride ? { ...zone, ...wrapOverride } : zone;
+    if (mergedZoneForWrap.align === undefined) {
+      mergedZoneForWrap.align = ((zone as { align?: string }).align ?? "left") as "left" | "center" | "right";
+    }
     let text =
       zone.id === "headline"
         ? slideData.headline
@@ -143,8 +167,8 @@ export function buildSlideRenderModel(
     }
     const zoneForWrap =
       textScale != null && textScale !== 1
-        ? { ...mergedZone, fontSize: Math.round(mergedZone.fontSize * textScale) }
-        : mergedZone;
+        ? { ...mergedZoneForWrap, fontSize: Math.round(mergedZoneForWrap.fontSize * textScale) }
+        : mergedZoneForWrap;
     const lines = fitTextToZone(text, zoneForWrap);
     textBlocks.push({ zone: mergedZone, lines });
   }
@@ -199,4 +223,19 @@ export function buildSlideRenderModel(
       madeWithText: chromeOverrides?.madeWith?.text,
     },
   };
+}
+
+/** Design canvas width; export height varies by format (1080, 1350, 1920). */
+const DESIGN_WIDTH = 1080;
+
+/**
+ * Text scale for a given export size so text stays readable and proportional.
+ * 1:1 = 1; 4:5 and 9:16 use gentler scaling so text doesn't look too small in portrait.
+ */
+export function getTextScaleForDimensions(dimW: number, dimH: number): number {
+  const maxDim = Math.max(dimW, dimH);
+  if (maxDim <= DESIGN_WIDTH) return 1;
+  if (dimW === 1080 && dimH === 1350) return 0.95;
+  if (dimW === 1080 && dimH === 1920) return 0.88;
+  return Math.max(0.88, DESIGN_WIDTH / maxDim);
 }

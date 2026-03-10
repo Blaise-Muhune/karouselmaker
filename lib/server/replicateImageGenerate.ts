@@ -55,6 +55,9 @@ async function fetchImageAsJpegBuffer(imageUrl: string): Promise<ReplicateImageR
   return { ok: true, buffer };
 }
 
+/** Supported aspect ratios for Replicate (Ideogram/FLUX). Default 4:5 for carousel slides. */
+export type ReplicateAspectRatio = "1:1" | "4:5" | "9:16" | "2:3" | "16:9";
+
 /** Run one Replicate model and return image buffer if output contains a URL. */
 async function runReplicateModel(
   replicate: Replicate,
@@ -75,8 +78,11 @@ async function runReplicateModel(
   return { ok: false, error: "No image URL in Replicate output" };
 }
 
-/** Generate one image via Replicate. Tries Ideogram v3 Quality, then FLUX Schnell if needed. Returns JPEG buffer. */
-export async function generateImageViaReplicate(prompt: string): Promise<ReplicateImageResult> {
+/** Generate one image via Replicate. Tries Ideogram v3 Quality, then FLUX Schnell if needed. Returns JPEG buffer. Default aspect 4:5. */
+export async function generateImageViaReplicate(
+  prompt: string,
+  aspectRatio: ReplicateAspectRatio = "4:5"
+): Promise<ReplicateImageResult> {
   const token = process.env.REPLICATE_API_TOKEN?.trim();
   if (!token) {
     return { ok: false, error: "REPLICATE_API_TOKEN not configured" };
@@ -84,7 +90,7 @@ export async function generateImageViaReplicate(prompt: string): Promise<Replica
 
   try {
     const replicate = new Replicate({ auth: token });
-    const input = { prompt, aspect_ratio: "2:3" as const };
+    const input = { prompt, aspect_ratio: aspectRatio };
 
     let result = await runReplicateModel(replicate, IDEOGRAM_V3_QUALITY, input);
     if (result.ok) return result;

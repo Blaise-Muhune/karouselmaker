@@ -4,10 +4,31 @@ import { verifyProxySignature } from "@/lib/server/proxyImageUrl";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const url = searchParams.get("url");
-  const sig = searchParams.get("sig");
-
+  const requestUrl = request.url;
+  const qIndex = requestUrl.indexOf("?");
+  const queryString = qIndex >= 0 ? requestUrl.slice(qIndex + 1) : "";
+  // Parse url param robustly: it may be long or contain & (Supabase ?token=...&sig=...).
+  // Our proxy URL is ?url=ENCODED&sig=OUR_HMAC, so take everything between "url=" and the last "&sig=" as url.
+  let url: string | null = null;
+  let sig: string | null = null;
+  const urlPrefix = "url=";
+  const sigPrefix = "&sig=";
+  const urlStart = queryString.indexOf(urlPrefix);
+  const sigStart = queryString.lastIndexOf(sigPrefix);
+  if (urlStart >= 0 && sigStart > urlStart) {
+    const urlEncoded = queryString.slice(urlStart + urlPrefix.length, sigStart);
+    sig = queryString.slice(sigStart + sigPrefix.length).split("&")[0] ?? null; // sig is hex, no decode
+    try {
+      url = decodeURIComponent(urlEncoded.replace(/\+/g, " "));
+    } catch {
+      url = null;
+    }
+  }
+  if (!url || !sig) {
+    const fallback = new URL(requestUrl);
+    url = url ?? fallback.searchParams.get("url");
+    sig = sig ?? fallback.searchParams.get("sig");
+  }
   if (!url || !sig) {
     return NextResponse.json({ error: "Missing url or sig" }, { status: 400 });
   }
@@ -32,9 +53,12 @@ export async function GET(request: Request) {
       signal: AbortSignal.timeout(15000),
     });
     if (!res.ok) {
+      const status = res.status;
+      // Pass through 4xx from upstream (e.g. 403 expired signed URL) so callers can distinguish from proxy failure
+      const proxyStatus = status === 404 ? 404 : status >= 400 && status < 500 ? status : 502;
       return NextResponse.json(
-        { error: `Upstream returned ${res.status}` },
-        { status: res.status === 404 ? 404 : 502 }
+        { error: `Upstream returned ${status}` },
+        { status: proxyStatus }
       );
     }
     const contentType = res.headers.get("content-type") ?? "image/jpeg";

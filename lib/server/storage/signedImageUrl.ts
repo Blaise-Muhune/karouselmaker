@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 
-const DEFAULT_EXPIRES = 600; // 10 minutes
+const DEFAULT_EXPIRES = 3600; // 1 hour so preview/display links don't expire too quickly
 
 /**
  * Generate a signed URL for displaying an image (no download disposition).

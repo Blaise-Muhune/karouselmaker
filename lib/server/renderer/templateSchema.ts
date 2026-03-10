@@ -24,7 +24,7 @@ const textZoneSchema = z.object({
   fontWeight: z.number().int().min(100).max(900),
   lineHeight: z.number().min(0.5).max(3),
   maxLines: z.number().int().min(1).max(20),
-  align: z.enum(["left", "center"]),
+  align: z.enum(["left", "center", "right"]),
   /** Optional text color (hex). When unset, uses contrasting color from background. */
   color: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
   /** Optional font family: "system", "Inter", "Georgia", or other safe web font. Rendered as font-family stack. */
@@ -120,13 +120,15 @@ const templateDefaultsSchema = z
     body: z.string().nullable().optional(),
     /** Serialized slide background (solid color, gradient, or image refs/URLs). */
     background: z.record(z.string(), z.unknown()).optional(),
-    meta: z
+        meta: z
       .object({
         show_counter: z.boolean().optional(),
         show_watermark: z.boolean().optional(),
         show_made_with: z.boolean().optional(),
         headline_font_size: z.number().optional(),
         body_font_size: z.number().optional(),
+        headline_font_family: z.string().max(80).optional(),
+        body_font_family: z.string().max(80).optional(),
         headline_zone_override: z.record(z.string(), z.unknown()).optional(),
         body_zone_override: z.record(z.string(), z.unknown()).optional(),
         /** Slide number position/size: x (left), y (top), fontSize. Saved with template. */
@@ -139,6 +141,14 @@ const templateDefaultsSchema = z
         body_highlight_style: z.enum(["text", "background", "outline"]).optional(),
         headline_highlights: z.array(z.object({ start: z.number(), end: z.number(), color: z.string() })).optional(),
         body_highlights: z.array(z.object({ start: z.number(), end: z.number(), color: z.string() })).optional(),
+        /** Image layout: pip, full, side-by-side, stacked, grid, overlay-circles, etc. Saved with template. */
+        image_display: z.record(z.string(), z.unknown()).optional(),
+        /** Overlay tint (image overlay blend) when template used with image. 0–1. */
+        overlay_tint_opacity: z.number().min(0).max(1).optional(),
+        /** Overlay tint color (hex). */
+        overlay_tint_color: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
+        /** Background color (hex) for no-image or fallback. */
+        background_color: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
       })
       .optional(),
   })

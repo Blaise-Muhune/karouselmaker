@@ -18,6 +18,7 @@ import { getVideoRenderStoragePaths } from "@/lib/server/db/exports";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { renderSlideHtml } from "@/lib/server/renderer/renderSlideHtml";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
+import { getTemplatePreviewBackgroundOverride } from "@/lib/renderer/getTemplatePreviewBackground";
 import { resolveBrandKitLogo } from "@/lib/server/brandKit";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
 import {
@@ -25,6 +26,12 @@ import {
   getTemplateDefaultOverrides,
   mergeWithTemplateDefaults,
 } from "@/lib/server/export/normalizeSlideMetaForRender";
+import {
+  resolveOverlayTint,
+  resolveBackgroundColorFromMeta,
+  resolveImageDisplay,
+  resolveOverlayEnabled,
+} from "@/lib/server/export/resolveSlideBackgroundFromTemplate";
 import { resolveSlideBackgroundUrls } from "@/lib/server/export/resolveSlideBackgroundUrls";
 import {
   isExternalImageUrl,
@@ -145,19 +152,32 @@ export async function POST(
             storage_path?: string;
             secondary_image_url?: string;
             secondary_storage_path?: string;
-            overlay?: { direction?: string; color?: string; darken?: number; extent?: number; solidSize?: number; gradient?: boolean };
+            overlay?: { direction?: string; color?: string; darken?: number; extent?: number; solidSize?: number; gradient?: boolean; tintColor?: string; tintOpacity?: number };
             image_display?: Record<string, unknown>;
           }
         | null
         | undefined;
 
       const templateCfg = config.data;
+      const slideMetaForBg = (slide.meta ?? null) as Record<string, unknown> | null;
+      const imageDisplayMerged = resolveImageDisplay(config.data, slideBg);
+      const isPip = imageDisplayMerged?.mode === "pip";
+      const { tintOpacity: effectiveTintOpacity, tintColor: effectiveTintColor } = resolveOverlayTint(
+        slideBg,
+        slideMetaForBg,
+        templateCfg,
+        isPip
+      );
+      const overlayEnabled = resolveOverlayEnabled(slideBg);
+      const metaBgColor = resolveBackgroundColorFromMeta(slideMetaForBg, templateCfg);
+      const templateDefaultColor =
+        (templateCfg?.defaults?.background as { color?: string } | undefined)?.color ?? metaBgColor ?? "#0a0a0a";
+
       const dir = slideBg?.overlay?.direction ?? templateCfg?.overlays?.gradient?.direction;
       const gradientDirection: "top" | "bottom" | "left" | "right" =
         dir === "top" || dir === "bottom" || dir === "left" || dir === "right" ? dir : "bottom";
       const gradientColor =
-        slideBg?.overlay?.color ??
-        (templateCfg?.overlays?.gradient?.color || "#0a0a0a");
+        slideBg?.overlay?.color ?? (templateCfg?.overlays?.gradient?.color || "#0a0a0a");
       const templateStrength = templateCfg?.overlays?.gradient?.strength ?? 0.5;
       const gradientStrength =
         slideBg?.overlay?.darken != null && slideBg.overlay.darken !== 0.5
@@ -174,6 +194,8 @@ export async function POST(
         gradientDirection,
         gradientExtent,
         gradientSolidSize,
+        overlayEnabled,
+        ...(effectiveTintOpacity > 0 ? { tintColor: effectiveTintColor, tintOpacity: effectiveTintOpacity } : {}),
       };
       const hasBackgroundImage =
         slideBg?.mode === "image" &&
@@ -183,11 +205,23 @@ export async function POST(
         hasBackgroundImage && (defaultStyle === "none" || defaultStyle === "blur")
           ? false
           : (slideBg?.gradientOn ?? slideBg?.overlay?.gradient ?? true);
+      const templateBg = getTemplatePreviewBackgroundOverride(templateCfg);
+      const effectiveStyle =
+        !hasBackgroundImage ? (slideBg?.style ?? templateBg.style ?? "solid") : slideBg?.style;
+      const effectivePattern =
+        !hasBackgroundImage && effectiveStyle === "pattern"
+          ? (slideBg?.pattern ?? templateBg.pattern)
+          : slideBg?.pattern;
+      const effectiveColorRaw = !hasBackgroundImage ? (slideBg?.color ?? templateBg.color ?? metaBgColor) : (slideBg?.color ?? templateBg.color ?? metaBgColor);
+      const effectiveColor = /^#([0-9A-Fa-f]{3}){1,2}$/.test(effectiveColorRaw ?? "") ? effectiveColorRaw! : "#0a0a0a";
+      const effectiveDecoration = !hasBackgroundImage ? templateBg.decoration : undefined;
+      const effectiveDecorationColor = !hasBackgroundImage ? templateBg.decorationColor : undefined;
       const backgroundOverride = slideBg
         ? {
-            style: (slideBg.style === "solid" || slideBg.style === "gradient" || slideBg.style === "pattern" ? slideBg.style : undefined) as "solid" | "gradient" | "pattern" | undefined,
-            pattern: slideBg.pattern,
-            color: slideBg.color,
+            style: (effectiveStyle === "solid" || effectiveStyle === "gradient" || effectiveStyle === "pattern" ? effectiveStyle : undefined) as "solid" | "gradient" | "pattern" | undefined,
+            pattern: effectivePattern,
+            color: effectiveColor,
+            ...(effectiveDecoration && { decoration: effectiveDecoration, ...(effectiveDecorationColor && { decorationColor: effectiveDecorationColor }) }),
             gradientOn,
             ...overlayFields,
           }
@@ -249,13 +283,7 @@ export async function POST(
       const zoneOverrides = merged.zoneOverrides;
       const chromeOverrides = merged.chromeOverrides;
       const highlightStyles = merged.highlightStyles;
-      type ImageDisplayOption = NonNullable<Parameters<typeof renderSlideHtml>[16]>;
-      const imageDisplayParam: ImageDisplayOption | undefined =
-        slideBg?.image_display != null &&
-        typeof slideBg.image_display === "object" &&
-        !Array.isArray(slideBg.image_display)
-          ? (slideBg.image_display as unknown as ImageDisplayOption)
-          : undefined;
+      const imageDisplayParam = resolveImageDisplay(config.data, slideBg);
 
       const html = renderSlideHtml(
         {

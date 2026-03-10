@@ -34,7 +34,21 @@ export type ImagePromptContext = {
   isHookSlide?: boolean;
   /** User's optional notes (e.g. "focus on accuracy" or "stylized is ok"). When notes ask for a different style we follow that; otherwise we aim for accurate, realistic depictions of real things. */
   userNotes?: string;
+  /** Desired aspect ratio for generated image. Default 4:5; can be overridden from user notes (e.g. "square", "9:16"). */
+  aspectRatio?: "1:1" | "4:5" | "9:16" | "2:3" | "16:9";
 };
+
+/** Parse user notes for aspect ratio preference. Default 4:5 if no match. */
+export function parseAspectRatioFromNotes(notes: string | null | undefined): "1:1" | "4:5" | "9:16" | "2:3" | "16:9" {
+  const t = (notes ?? "").trim().toLowerCase();
+  if (!t) return "4:5";
+  if (/\b(1:1|square|1:1)\b|square\s*image|images?\s*square/.test(t)) return "1:1";
+  if (/\b(9:16|9\s*:\s*16)\b|stories|story\s*format|vertical\s*story|tall\s*format/.test(t)) return "9:16";
+  if (/\b(16:9|16\s*:\s*9)\b|landscape|widescreen|horizontal/.test(t)) return "16:9";
+  if (/\b(2:3|2\s*:\s*3)\b/.test(t)) return "2:3";
+  if (/\b(4:5|4\s*:\s*5)\b|portrait\s*4\s*:\s*5/.test(t)) return "4:5";
+  return "4:5";
+}
 
 /** Truncate long text so we don't blow the prompt. */
 function truncateForContext(s: string, maxLen: number): string {
@@ -198,7 +212,7 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
 }
 
 export type GenerateImageResult =
-  | { ok: true; buffer: Buffer; revisedPrompt?: string }
+  | { ok: true; buffer: Buffer; revisedPrompt?: string; provider: "openai" | "replicate" }
   | { ok: false; error: string };
 
 /**
@@ -206,6 +220,13 @@ export type GenerateImageResult =
  * Default model: gpt-image-1.5 (better for realistic people/faces). Set OPENAI_IMAGE_MODEL=gpt-image-1-mini for faster/cheaper.
  * Pass context so the image matches year/location/topic (avoids wrong era or setting).
  */
+/** OpenAI supports 1024x1024, 1024x1536, 1536x1024. Map our aspect to nearest. */
+function aspectToOpenAISize(aspect: "1:1" | "4:5" | "9:16" | "2:3" | "16:9"): "1024x1024" | "1024x1536" | "1536x1024" {
+  if (aspect === "1:1") return "1024x1024";
+  if (aspect === "16:9") return "1536x1024";
+  return "1024x1536"; // 4:5, 9:16, 2:3 use portrait
+}
+
 export async function generateImageFromPrompt(
   query: string,
   options?: { model?: ImageModel; context?: ImagePromptContext }
@@ -216,12 +237,15 @@ export async function generateImageFromPrompt(
     return { ok: false, error: "OPENAI_API_KEY not configured" };
   }
 
+  const aspect = options?.context?.aspectRatio ?? parseAspectRatioFromNotes(options?.context?.userNotes);
+  const openaiSize = aspectToOpenAISize(aspect);
+
   const openai = new OpenAI({ apiKey });
   const prompt = queryToPrompt(query, options?.context);
   const model = options?.model ?? getDefaultImageModel();
   const quality = model === "gpt-image-1.5" ? "medium" : "low";
 
-  console.log("[openaiImageGenerate] Prompt:", prompt);
+  console.log("[openaiImageGenerate] Prompt:", prompt, "| aspect:", aspect, "| size:", openaiSize);
   console.log("");
 
   try {
@@ -229,7 +253,7 @@ export async function generateImageFromPrompt(
       model,
       prompt,
       n: 1,
-      size: "1024x1536", // Portrait for carousel slides
+      size: openaiSize,
       quality,
       output_format: "jpeg",
     });
@@ -247,6 +271,7 @@ export async function generateImageFromPrompt(
       ok: true,
       buffer,
       revisedPrompt: (first as { revised_prompt?: string })?.revised_prompt,
+      provider: "openai",
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -258,7 +283,7 @@ export async function generateImageFromPrompt(
           model,
           prompt: retryPrompt,
           n: 1,
-          size: "1024x1536",
+          size: openaiSize,
           quality,
           output_format: "jpeg",
         });
@@ -267,17 +292,17 @@ export async function generateImageFromPrompt(
         if (b64) {
           const buffer = Buffer.from(b64, "base64");
           console.log("[openaiImageGenerate] OK (OpenAI retry)\n");
-          return { ok: true, buffer, revisedPrompt: (first as { revised_prompt?: string })?.revised_prompt };
+          return { ok: true, buffer, revisedPrompt: (first as { revised_prompt?: string })?.revised_prompt, provider: "openai" };
         }
       } catch {
         // fall through to Replicate
       }
       const replicatePrompt = buildSafeFallbackPrompt(query);
-      console.log("[openaiImageGenerate] OpenAI retry failed. Using Replicate:", replicatePrompt, "\n");
-      const replicateResult = await generateImageViaReplicate(replicatePrompt);
+      console.log("[openaiImageGenerate] OpenAI retry failed. Using Replicate:", replicatePrompt, "| aspect:", aspect, "\n");
+      const replicateResult = await generateImageViaReplicate(replicatePrompt, aspect);
       if (replicateResult.ok) {
         console.log("[openaiImageGenerate] OK (Replicate)\n");
-        return { ok: true, buffer: replicateResult.buffer };
+        return { ok: true, buffer: replicateResult.buffer, provider: "replicate" };
       }
       console.log("[openaiImageGenerate] Replicate failed:", replicateResult.error, "\n");
       return { ok: false, error: replicateResult.error };

@@ -5,7 +5,14 @@ import { getSubscription } from "@/lib/server/subscription";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { renderSlideHtml } from "@/lib/server/renderer/renderSlideHtml";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
+import { getTemplatePreviewBackgroundOverride } from "@/lib/renderer/getTemplatePreviewBackground";
 import { resolveBrandKitLogo } from "@/lib/server/brandKit";
+import {
+  resolveOverlayTint,
+  resolveBackgroundColorFromMeta,
+  resolveImageDisplay,
+  resolveOverlayEnabled,
+} from "@/lib/server/export/resolveSlideBackgroundFromTemplate";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
 import type { BrandKit } from "@/lib/renderer/renderModel";
 
@@ -66,13 +73,25 @@ export async function GET(
 
   const templateCfg = config.data;
   const slideBg = slide.background as
-    | { style?: "solid" | "gradient" | "pattern"; pattern?: "dots" | "ovals" | "lines" | "circles"; color?: string; gradientOn?: boolean; mode?: string; storage_path?: string; image_url?: string; secondary_storage_path?: string; secondary_image_url?: string; images?: { image_url?: string; storage_path?: string }[]; overlay?: { enabled?: boolean; gradient?: boolean; darken?: number; color?: string; textColor?: string; direction?: "top" | "bottom" | "left" | "right"; extent?: number; solidSize?: number; tintColor?: string; tintOpacity?: number } }
+    | { style?: "solid" | "gradient" | "pattern"; pattern?: "dots" | "ovals" | "lines" | "circles"; color?: string; gradientOn?: boolean; mode?: string; storage_path?: string; image_url?: string; image_display?: { mode?: string }; secondary_storage_path?: string; secondary_image_url?: string; images?: { image_url?: string; storage_path?: string }[]; overlay?: { enabled?: boolean; gradient?: boolean; darken?: number; color?: string; textColor?: string; direction?: "top" | "bottom" | "left" | "right"; extent?: number; solidSize?: number; tintColor?: string; tintOpacity?: number } }
     | null
     | undefined;
-  // Overlay color: slide override > template (no brand logo color; use template or neutral)
+  const slideMeta = (slide.meta ?? null) as Record<string, unknown> | null;
+  const imageDisplayMerged = resolveImageDisplay(templateCfg, slideBg);
+  const isPip = imageDisplayMerged?.mode === "pip";
+  const { tintOpacity: effectiveTintOpacity, tintColor: effectiveTintColor } = resolveOverlayTint(
+    slideBg,
+    slideMeta,
+    templateCfg,
+    isPip
+  );
+  const overlayEnabled = resolveOverlayEnabled(slideBg);
+  const metaBgColor = resolveBackgroundColorFromMeta(slideMeta, templateCfg);
+  const templateDefaultColor =
+    (templateCfg?.defaults?.background as { color?: string } | undefined)?.color ?? metaBgColor ?? "#0a0a0a";
+
   const gradientColor =
-    slideBg?.overlay?.color ??
-    (templateCfg?.overlays?.gradient?.color || "#0a0a0a");
+    slideBg?.overlay?.color ?? (templateCfg?.overlays?.gradient?.color || "#0a0a0a");
   const templateStrength = templateCfg?.overlays?.gradient?.strength ?? 0.5;
   const gradientStrength =
     slideBg?.overlay?.darken != null && slideBg.overlay.darken !== 0.5
@@ -82,8 +101,6 @@ export async function GET(
   const templateSolidSize = templateCfg?.overlays?.gradient?.solidSize ?? 25;
   const gradientExtent = slideBg?.overlay?.extent != null ? slideBg.overlay.extent : templateExtent;
   const gradientSolidSize = slideBg?.overlay?.solidSize != null ? slideBg.overlay.solidSize : templateSolidSize;
-  const templateDefaultColor = (templateCfg?.defaults?.background as { color?: string } | undefined)?.color ?? "#0a0a0a";
-  const overlayEnabled = slideBg?.overlay?.enabled !== false;
   const overlayFields = {
     gradientStrength,
     gradientColor,
@@ -92,9 +109,7 @@ export async function GET(
     gradientExtent,
     gradientSolidSize,
     overlayEnabled,
-    ...(slideBg?.overlay?.tintOpacity != null && slideBg.overlay.tintOpacity > 0
-      ? { tintColor: slideBg.overlay.tintColor ?? templateDefaultColor, tintOpacity: Math.min(1, Math.max(0, slideBg.overlay.tintOpacity)) }
-      : {}),
+    ...(effectiveTintOpacity > 0 ? { tintColor: effectiveTintColor, tintOpacity: effectiveTintOpacity } : {}),
   };
   const hasBackgroundImage =
     slideBg?.mode === "image" &&
@@ -104,11 +119,23 @@ export async function GET(
   const gradientOn = hasBackgroundImage
     ? overlayEnabled && (defaultStyle !== "none" && defaultStyle !== "blur") && (slideBg?.gradientOn ?? slideBg?.overlay?.gradient ?? true)
     : (slideBg?.gradientOn ?? slideBg?.overlay?.gradient ?? true);
+  const templateBg = getTemplatePreviewBackgroundOverride(templateCfg);
+  const effectiveStyle =
+    !hasBackgroundImage ? (slideBg?.style ?? templateBg.style ?? "solid") : slideBg?.style;
+  const effectivePattern =
+    !hasBackgroundImage && effectiveStyle === "pattern"
+      ? (slideBg?.pattern ?? templateBg.pattern)
+      : slideBg?.pattern;
+  const effectiveColorRaw = !hasBackgroundImage ? (slideBg?.color ?? templateBg.color ?? metaBgColor) : (slideBg?.color ?? templateBg.color ?? metaBgColor);
+  const effectiveColor = /^#([0-9A-Fa-f]{3}){1,2}$/.test(effectiveColorRaw ?? "") ? effectiveColorRaw! : "#0a0a0a";
+  const effectiveDecoration = !hasBackgroundImage ? templateBg.decoration : undefined;
+  const effectiveDecorationColor = !hasBackgroundImage ? templateBg.decorationColor : undefined;
   const backgroundOverride = slideBg
     ? {
-        style: slideBg.style,
-        pattern: slideBg.pattern,
-        color: slideBg.color,
+        style: effectiveStyle,
+        pattern: effectivePattern,
+        color: effectiveColor as string,
+        ...(effectiveDecoration && { decoration: effectiveDecoration, ...(effectiveDecorationColor && { decorationColor: effectiveDecorationColor }) }),
         gradientOn,
         ...overlayFields,
       }
@@ -154,12 +181,12 @@ export async function GET(
   }
   const borderedFrame = !!(backgroundImageUrl || backgroundImageUrls?.length);
 
-  const slideMeta = (slide.meta ?? null) as Record<string, unknown> | null;
   const defaultShowWatermark = false; // logo only when user explicitly enabled it
   const {
     normalizeSlideMetaForRender,
     getTemplateDefaultOverrides,
     mergeWithTemplateDefaults,
+    getMergedImageDisplay,
   } = await import("@/lib/server/export/normalizeSlideMetaForRender");
   const normalized = normalizeSlideMetaForRender(slideMeta);
   const templateDefaults = getTemplateDefaultOverrides(config.data);
@@ -171,6 +198,7 @@ export async function GET(
   const zoneOverrides = merged.zoneOverrides;
   const chromeOverrides = merged.chromeOverrides;
   const highlightStyles = merged.highlightStyles;
+  const imageDisplay = getMergedImageDisplay(config.data, slideBg);
 
   const html = renderSlideHtml(
     {
@@ -195,7 +223,8 @@ export async function GET(
     zoneOverrides,
     chromeOverrides,
     highlightStyles,
-    borderedFrame
+    borderedFrame,
+    imageDisplay
   );
 
   return new NextResponse(html, {

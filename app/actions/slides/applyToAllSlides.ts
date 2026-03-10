@@ -7,6 +7,7 @@ import { getCarousel, listSlides, updateSlide, getTemplate } from "@/lib/server/
 import type { Json } from "@/lib/server/db/types";
 import type { Slide } from "@/lib/server/db/types";
 import { getAutoHighlightSpans, normalizeHighlightSpansToWords, getHighlightSpansFromWords, HIGHLIGHT_COLORS } from "@/lib/editor/inlineFormat";
+import { setSlideTemplate } from "@/app/actions/slides/setSlideTemplate";
 
 export type ApplyToAllResult = { ok: true; updated: number } | { ok: false; error: string };
 
@@ -57,11 +58,25 @@ export async function applyToAllSlides(
   const slides = filterSlidesByScope(await listSlides(user.id, carouselId), scope);
   if (slides.length === 0) return { ok: true, updated: 0 };
 
-  const patch: { template_id?: string | null; background?: Json; meta?: Json; headline?: string; body?: string | null } = {};
+  // When applying a template to all, use setSlideTemplate per slide so every template property applies (PIP, overlay, tint, gradient, meta defaults).
   if (payload.template_id !== undefined) {
-    const templateExists = payload.template_id ? await getTemplate(user.id, payload.template_id) : true;
-    patch.template_id = templateExists ? payload.template_id : null;
+    const templateId = payload.template_id;
+    const templateExists = templateId ? await getTemplate(user.id, templateId) : true;
+    const resolvedTemplateId = templateExists ? templateId : null;
+    for (const slide of slides) {
+      const result = await setSlideTemplate(slide.id, resolvedTemplateId);
+      if (!result.ok) return { ok: false, error: result.error };
+    }
+    const paths = revalidatePathname
+      ? Array.isArray(revalidatePathname)
+        ? revalidatePathname
+        : [revalidatePathname]
+      : [];
+    for (const p of paths) revalidatePath(p);
+    return { ok: true, updated: slides.length };
   }
+
+  const patch: { template_id?: string | null; background?: Json; meta?: Json; headline?: string; body?: string | null } = {};
   if (payload.background !== undefined) patch.background = payload.background as Json;
   if (payload.meta !== undefined) patch.meta = payload.meta as Json;
   if (payload.headline !== undefined) patch.headline = payload.headline;
@@ -75,24 +90,7 @@ export async function applyToAllSlides(
       const existingTemplate = await getTemplate(user.id, slide.template_id);
       if (!existingTemplate) (slidePatch as Record<string, unknown>).template_id = null;
     }
-    // When changing template, clear previous slide overrides then apply new template's defaults (so saved zone position/font size apply).
-    if (patch.template_id !== undefined) {
-      const existingMeta = (slide.meta as Record<string, unknown>) ?? {};
-      const metaForNewTemplate = { ...existingMeta };
-      delete metaForNewTemplate.headline_font_size;
-      delete metaForNewTemplate.body_font_size;
-      delete metaForNewTemplate.headline_zone_override;
-      delete metaForNewTemplate.body_zone_override;
-      if (patch.meta !== undefined) {
-        const incomingMeta = { ...(patch.meta as Record<string, unknown>) };
-        delete incomingMeta.headline_highlights;
-        delete incomingMeta.body_highlights;
-        // Keep template defaults (zone overrides, font sizes, etc.) so layout matches the saved template.
-        slidePatch.meta = { ...metaForNewTemplate, ...incomingMeta } as Json;
-      } else {
-        slidePatch.meta = metaForNewTemplate as Json;
-      }
-    } else if (patch.meta !== undefined) {
+    if (patch.meta !== undefined) {
       const existingMeta = (slide.meta as Record<string, unknown>) ?? {};
       const incomingMeta = { ...(patch.meta as Record<string, unknown>) };
       delete incomingMeta.headline_highlights;
