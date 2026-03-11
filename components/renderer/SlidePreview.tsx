@@ -1579,104 +1579,108 @@ export function SlidePreview({
           block.zone.id === "body" &&
           (onBodyChange != null || (positionAndSizeOnly && onBodyPositionChange != null && editToolbarBody != null)) &&
           chromeVisible;
+        const outlineStyle = {
+          WebkitTextStroke: "2px #000",
+          padding: "0 1px",
+          display: "inline" as const,
+        };
+        const readOnlyBlockContent = block.lines.map((line, i) => {
+          const segments = parseInlineFormatting(line);
+          const renderSeg = (seg: (typeof segments)[0], j: number) => {
+            const fillColor = seg.type === "color" && seg.color ? seg.color : zoneColor;
+            if (seg.type === "bold") {
+              return zoneHighlightStyle === "outline" ? (
+                <strong key={j}>
+                  <span style={{ ...outlineStyle, color: fillColor }}>{seg.text}</span>
+                </strong>
+              ) : (
+                <strong key={j}>{seg.text}</strong>
+              );
+            }
+            if (seg.type === "color" && seg.color) {
+              return (
+                <span
+                  key={j}
+                  style={
+                    zoneHighlightStyle === "background"
+                      ? {
+                          backgroundColor: seg.color,
+                          padding: "0.02em 0",
+                          margin: 0,
+                          lineHeight: "inherit",
+                          display: "inline",
+                          borderRadius: 1,
+                          boxDecorationBreak: "clone",
+                          WebkitBoxDecorationBreak: "clone",
+                        }
+                      : zoneHighlightStyle === "outline"
+                        ? { ...outlineStyle, color: fillColor }
+                        : { color: seg.color }
+                  }
+                >
+                  {seg.text}
+                </span>
+              );
+            }
+            return zoneHighlightStyle === "outline" ? (
+              <span key={j} style={{ ...outlineStyle, color: fillColor }}>
+                {seg.text}
+              </span>
+            ) : (
+              <span key={j}>{seg.text}</span>
+            );
+          };
+          const items: ReactNode[] = [];
+          for (let j = 0; j < segments.length; j++) {
+            const seg = segments[j]!;
+            const isShort = seg.text.length <= 2;
+            if (isShort && j + 1 < segments.length) {
+              items.push(
+                <span key={j} style={{ whiteSpace: "nowrap" }}>
+                  {renderSeg(seg, j)}
+                  {renderSeg(segments[j + 1]!, j + 1)}
+                </span>
+              );
+              j++;
+            } else {
+              items.push(renderSeg(seg, j));
+            }
+          }
+          return (
+            <span key={i} className="block" style={{ whiteSpace: "nowrap" }}>
+              {items}
+            </span>
+          );
+        });
+        const readOnlyBlockStyles: CSSProperties = {
+          color: zoneColor,
+          fontSize,
+          fontWeight: block.zone.fontWeight,
+          lineHeight: block.zone.lineHeight,
+          fontFamily: zoneFontFamily(block.zone),
+          textAlign: effectiveAlign,
+          boxSizing: "border-box",
+          textWrap: "pretty",
+          padding: 0,
+          margin: 0,
+          overflowWrap: "break-word",
+          wordBreak: "break-word",
+        };
         const readOnlyBlockEl = (
           <div
             className="absolute flex flex-col justify-center shrink-0 overflow-hidden"
             style={{
-              color: zoneColor,
+              ...readOnlyBlockStyles,
               left: block.zone.x,
               top: block.zone.y,
               width: block.zone.w,
               minWidth: block.zone.w,
               maxWidth: block.zone.w,
               height: block.zone.h,
-              fontSize,
-              fontWeight: block.zone.fontWeight,
-              lineHeight: block.zone.lineHeight,
-              fontFamily: zoneFontFamily(block.zone),
-              textAlign: effectiveAlign,
               zIndex: 5,
-              boxSizing: "border-box",
-              textWrap: "pretty",
-              padding: 0,
-              margin: 0,
-              overflowWrap: "break-word",
-              wordBreak: "break-word",
             }}
           >
-            {block.lines.map((line, i) => {
-              const segments = parseInlineFormatting(line);
-              const outlineStyle = {
-                WebkitTextStroke: "2px #000",
-                padding: "0 1px",
-                display: "inline" as const,
-              };
-              const renderSeg = (seg: (typeof segments)[0], j: number) => {
-                const fillColor = seg.type === "color" && seg.color ? seg.color : zoneColor;
-                if (seg.type === "bold") {
-                  return zoneHighlightStyle === "outline" ? (
-                    <strong key={j}>
-                      <span style={{ ...outlineStyle, color: fillColor }}>{seg.text}</span>
-                    </strong>
-                  ) : (
-                    <strong key={j}>{seg.text}</strong>
-                  );
-                }
-                if (seg.type === "color" && seg.color) {
-                  return (
-                    <span
-                      key={j}
-                      style={
-                        zoneHighlightStyle === "background"
-                          ? {
-                              backgroundColor: seg.color,
-                              padding: "0.02em 0",
-                              margin: 0,
-                              lineHeight: "inherit",
-                              display: "inline",
-                              borderRadius: 1,
-                              boxDecorationBreak: "clone",
-                              WebkitBoxDecorationBreak: "clone",
-                            }
-                          : zoneHighlightStyle === "outline"
-                            ? { ...outlineStyle, color: fillColor }
-                            : { color: seg.color }
-                      }
-                    >
-                      {seg.text}
-                    </span>
-                  );
-                }
-                return zoneHighlightStyle === "outline" ? (
-                  <span key={j} style={{ ...outlineStyle, color: fillColor }}>
-                    {seg.text}
-                  </span>
-                ) : (
-                  <span key={j}>{seg.text}</span>
-                );
-              };
-              const items: ReactNode[] = [];
-              for (let j = 0; j < segments.length; j++) {
-                const seg = segments[j]!;
-                const isShort = seg.text.length <= 2;
-                if (isShort && j + 1 < segments.length) {
-                  items.push(
-                    <span key={j} style={{ whiteSpace: "nowrap" }}>
-                      {renderSeg(seg, j)}
-                      {renderSeg(segments[j + 1]!, j + 1)}
-                    </span>
-                  );
-                  j++;
-                } else {
-                  items.push(renderSeg(seg, j));
-                }
-              }
-              return (
-                <span key={i} className="block" style={{ whiteSpace: "nowrap" }}>
-                  {items}
-                </span>
-              );
-            })}
+            {readOnlyBlockContent}
           </div>
         );
         if (isEditableHeadline) {
@@ -1748,16 +1752,9 @@ export function SlidePreview({
                 className="absolute inset-0 flex min-w-0 flex-col justify-center box-border overflow-hidden cursor-pointer"
                 style={{
                   zIndex: 0,
-                  padding: 0,
-                  margin: 0,
-                  color: zoneColor,
-                  fontSize,
-                  fontWeight: block.zone.fontWeight,
-                  lineHeight: block.zone.lineHeight,
-                  textAlign: effectiveAlign,
-                  fontFamily: zoneFontFamily(block.zone),
-                  wordBreak: "break-word",
-                  overflowWrap: "break-word",
+                  ...readOnlyBlockStyles,
+                  width: "100%",
+                  height: "100%",
                 }}
                 onClick={() => onHeadlineFocus?.()}
                 onPointerDown={(e) => {
@@ -1768,11 +1765,7 @@ export function SlidePreview({
                 tabIndex={-1}
                 aria-label="Headline — drag to move, corners to resize"
               >
-                {(slide.headline || "").split("\n").map((line, i) => (
-                  <span key={i} className="block" style={{ whiteSpace: "pre-wrap" }}>
-                    {line || " "}
-                  </span>
-                ))}
+                {readOnlyBlockContent}
               </div>
               {resizeHandles}
             </>
@@ -1817,7 +1810,7 @@ export function SlidePreview({
           );
           return (
             <Fragment key={block.zone.id}>
-              {readOnlyBlockEl}
+              {positionAndSizeOnly ? null : readOnlyBlockEl}
               <div ref={headlineBlockRef} className="absolute shrink-0" style={{ zIndex: 6 }}>
                 {canDrag && (
                   <div
@@ -2101,7 +2094,7 @@ export function SlidePreview({
           };
           return (
             <Fragment key={block.zone.id}>
-              {readOnlyBlockEl}
+              {positionAndSizeOnly ? null : readOnlyBlockEl}
               <div ref={bodyBlockRef} className="absolute shrink-0" style={{ zIndex: 6 }}>
                 {canDrag && (
                   <div
@@ -2139,16 +2132,9 @@ export function SlidePreview({
                     className="absolute inset-0 flex min-w-0 flex-col justify-center box-border overflow-hidden cursor-pointer"
                     style={{
                       zIndex: 0,
-                      padding: 0,
-                      margin: 0,
-                      color: zoneColor,
-                      fontSize,
-                      fontWeight: block.zone.fontWeight,
-                      lineHeight: block.zone.lineHeight,
-                      textAlign: effectiveAlign,
-                      fontFamily: zoneFontFamily(block.zone),
-                      wordBreak: "break-word",
-                      overflowWrap: "break-word",
+                      ...readOnlyBlockStyles,
+                      width: "100%",
+                      height: "100%",
                     }}
                     onClick={() => onBodyFocus?.()}
                     onPointerDown={(e) => {
@@ -2159,11 +2145,7 @@ export function SlidePreview({
                     tabIndex={-1}
                     aria-label="Body — drag to move, corners to resize"
                   >
-                    {(slide.body ?? "").split("\n").map((line, i) => (
-                      <span key={i} className="block" style={{ whiteSpace: "pre-wrap" }}>
-                        {line || " "}
-                      </span>
-                    ))}
+                    {readOnlyBlockContent}
                   </div>
                 ) : (
                   <div className="absolute inset-0 flex min-w-0 flex-col justify-center box-border overflow-hidden" style={{ zIndex: 0, padding: 0, margin: 0 }}>

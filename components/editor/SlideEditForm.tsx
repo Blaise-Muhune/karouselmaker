@@ -82,6 +82,29 @@ import { ColorPicker } from "@/components/ui/color-picker";
 import { OVERLAY_PRESETS, PRESET_CUSTOM_ID, type OverlayPreset } from "@/lib/editor/overlayPresets";
 import { HIGHLIGHT_COLORS, expandSelectionToWordBoundaries, normalizeHighlightSpansToWords, clampHighlightSpansToText, getAutoHighlightSpans, getHighlightSpansFromWords, ensureHighlightCoverage, type HighlightSpan } from "@/lib/editor/inlineFormat";
 
+/** Font stack for each PREVIEW_FONTS id (so options can be rendered in their font). */
+function getFontStack(id: string): string {
+  if (id === "Georgia") return "Georgia, serif";
+  if (id === "Inter") return "Inter, system-ui, sans-serif";
+  if (id === "system" || id === "sans-serif") return "system-ui, -apple-system, sans-serif";
+  if (id === "Roboto") return "Roboto, system-ui, sans-serif";
+  if (id === "Montserrat") return "Montserrat, system-ui, sans-serif";
+  if (id === "Open Sans") return '"Open Sans", system-ui, sans-serif';
+  if (id === "Lato") return "Lato, system-ui, sans-serif";
+  if (id === "Oswald") return "Oswald, system-ui, sans-serif";
+  if (id === "Poppins") return "Poppins, system-ui, sans-serif";
+  if (id === "Playfair Display") return '"Playfair Display", Georgia, serif';
+  if (id === "Merriweather") return "Merriweather, Georgia, serif";
+  if (id === "Source Sans 3") return '"Source Sans 3", system-ui, sans-serif';
+  if (id === "Bebas Neue") return '"Bebas Neue", system-ui, sans-serif';
+  if (id === "DM Sans") return '"DM Sans", system-ui, sans-serif';
+  if (id?.trim()) return `${id}, system-ui, sans-serif`;
+  return "system-ui, -apple-system, sans-serif";
+}
+
+/** Rainbow gradient for custom highlight color picker (circle, same size as preset swatches). */
+const HIGHLIGHT_RAINBOW = "conic-gradient(from 0deg, #ef4444, #f97316, #eab308, #84cc16, #22c55e, #06b6d4, #3b82f6, #8b5cf6, #ec4899, #ef4444)";
+
 /** +/- stepper with long-press: hold to repeat, interval speeds up over time. */
 function StepperWithLongPress({
   value,
@@ -3566,7 +3589,44 @@ export function SlideEditForm({
                 </span>
               </button>
               <div id="text-section-headline" className={expandedTextSection === "headline" ? "p-3 pt-0 space-y-3" : "hidden"}>
-              {/* Primary: text first, then main actions */}
+              {/* Compact style row above input: size, color, font (each font in its style) */}
+              {isPro && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <StepperWithLongPress
+                    value={headlineFontSize ?? defaultHeadlineSize}
+                    min={24}
+                    max={160}
+                    step={4}
+                    onChange={(v) => setHeadlineFontSize(v)}
+                    label="Size"
+                    className="shrink-0 max-w-[90px]"
+                  />
+                  <div className="flex items-center gap-1 shrink-0 rounded-md border border-input/80 bg-background px-1.5 py-0.5">
+                    <ColorPicker
+                      value={headlineZoneOverride?.color ?? ""}
+                      onChange={(v) => setHeadlineZoneOverride((o) => ({ ...o, color: v.trim() || undefined }))}
+                      placeholder="Auto"
+                      compact
+                      swatchOnly
+                    />
+                  </div>
+                  <Select
+                    value={headlineZoneOverride?.fontFamily ?? headlineZoneFromTemplate?.fontFamily ?? "system"}
+                    onValueChange={(v) => setHeadlineZoneOverride((o) => ({ ...headlineZoneFromTemplate, ...o, fontFamily: v || undefined }))}
+                  >
+                    <SelectTrigger className="h-7 w-[110px] text-xs">
+                      <SelectValue placeholder="Font" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PREVIEW_FONTS.map(({ id, label }) => (
+                        <SelectItem key={id} value={id}>
+                          <span style={id !== "system" ? { fontFamily: getFontStack(id) } : undefined}>{label}</span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <Textarea
                 ref={headlineRef}
                 id="headline"
@@ -3615,44 +3675,12 @@ export function SlideEditForm({
                   <div className="mt-3 space-y-3">
                     {isPro && (
                       <>
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <StepperWithLongPress
-                            value={headlineFontSize ?? defaultHeadlineSize}
-                            min={24}
-                            max={160}
-                            step={4}
-                            onChange={(v) => setHeadlineFontSize(v)}
-                            label="Size"
-                            className="shrink-0 max-w-[100px]"
-                          />
-                          <div className="flex items-center gap-1.5 shrink-0 rounded-md border border-input/80 bg-background px-1.5 py-0.5">
-                            <Label className="text-[11px] text-muted-foreground whitespace-nowrap">Color</Label>
-                            <ColorPicker
-                              value={headlineZoneOverride?.color ?? ""}
-                              onChange={(v) => setHeadlineZoneOverride((o) => ({ ...o, color: v.trim() || undefined }))}
-                              placeholder="Auto"
-                              compact
-                              swatchOnly
-                            />
-                          </div>
-                          <Select
-                            value={headlineZoneOverride?.fontFamily ?? headlineZoneFromTemplate?.fontFamily ?? "system"}
-                            onValueChange={(v) => setHeadlineZoneOverride((o) => ({ ...headlineZoneFromTemplate, ...o, fontFamily: v || undefined }))}
-                          >
-                            <SelectTrigger className="h-7 w-[100px] text-xs">
-                              <SelectValue placeholder="Font" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {PREVIEW_FONTS.map(({ id, label }) => (
-                                <SelectItem key={id} value={id}>{label}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                        <div className="flex flex-wrap items-center gap-2">
                           <Button type="button" variant="secondary" size="sm" className="h-7 text-xs" onClick={() => { setHeadlineHighlightOpen(false); setHeadlineLayoutModalOpen((o) => !o); }} title="Position & size in preview">
                             <LayoutTemplateIcon className="size-3" /> Layout
                           </Button>
                         </div>
-                        <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-border/50 bg-muted/30 px-2 py-1.5">
+                        <div className="flex flex-wrap items-center gap-1.5">
                           <span className="text-[11px] text-muted-foreground shrink-0">Highlight:</span>
                           <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 shrink-0" onClick={() => applyAutoHighlight("headline")} title="Highlight key words automatically">
                             Auto
@@ -3669,6 +3697,20 @@ export function SlideEditForm({
                               aria-label={`Highlight ${preset}`}
                             />
                           ))}
+                          <label className="h-6 w-6 rounded-full border-2 border-transparent shrink-0 cursor-pointer hover:scale-110 transition-transform inline-block overflow-hidden [&:has(input:focus)]:ring-2 [&:has(input:focus)]:ring-primary/50" style={{ background: HIGHLIGHT_RAINBOW }} title="Custom highlight color">
+                            <input
+                              type="color"
+                              className="w-full h-full opacity-0 cursor-pointer block"
+                              value={headlineHighlightColor.startsWith("#") ? headlineHighlightColor : "#facc15"}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setHeadlineHighlightColor(v);
+                                if (savedHighlightSelectionRef.current?.field === "headline") applyHighlightToSelection(v, "headline", true);
+                              }}
+                              onMouseDown={() => saveHighlightSelectionForPicker("headline")}
+                              aria-label="Custom highlight color"
+                            />
+                          </label>
                           <div className="flex rounded border border-border/60 overflow-hidden shrink-0">
                             {(["text", "background"] as const).map((style) => (
                               <Button key={style} type="button" variant={headlineHighlightStyle === style ? "secondary" : "ghost"} size="sm" className="h-6 text-[11px] px-2 rounded-none first:rounded-l last:rounded-r" onClick={() => setHeadlineHighlightStyle(style)} title={style === "text" ? "Colored text" : "Colored background"}>
@@ -3823,7 +3865,44 @@ export function SlideEditForm({
                 </span>
               </button>
               <div id="text-section-body" className={expandedTextSection === "body" ? "p-3 pt-0 space-y-3" : "hidden"}>
-              {/* Primary: text first, then main actions */}
+              {/* Compact style row above input: size, color, font (each font in its style) */}
+              {isPro && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <StepperWithLongPress
+                    value={bodyFontSize ?? defaultBodySize}
+                    min={18}
+                    max={120}
+                    step={4}
+                    onChange={(v) => setBodyFontSize(v)}
+                    label="Size"
+                    className="shrink-0 max-w-[90px]"
+                  />
+                  <div className="flex items-center gap-1 shrink-0 rounded-md border border-input/80 bg-background px-1.5 py-0.5">
+                    <ColorPicker
+                      value={bodyZoneOverride?.color ?? ""}
+                      onChange={(v) => setBodyZoneOverride((o) => ({ ...o, color: v.trim() || undefined }))}
+                      placeholder="Auto"
+                      compact
+                      swatchOnly
+                    />
+                  </div>
+                  <Select
+                    value={bodyZoneOverride?.fontFamily ?? bodyZoneFromTemplate?.fontFamily ?? "system"}
+                    onValueChange={(v) => setBodyZoneOverride((o) => ({ ...bodyZoneFromTemplate, ...o, fontFamily: v || undefined }))}
+                  >
+                    <SelectTrigger className="h-7 w-[110px] text-xs">
+                      <SelectValue placeholder="Font" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PREVIEW_FONTS.map(({ id, label }) => (
+                        <SelectItem key={id} value={id}>
+                          <span style={id !== "system" ? { fontFamily: getFontStack(id) } : undefined}>{label}</span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <Textarea
                 ref={bodyRef}
                 id="body"
@@ -3869,44 +3948,12 @@ export function SlideEditForm({
                   <div className="mt-3 space-y-3">
                     {isPro && (
                       <>
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <StepperWithLongPress
-                            value={bodyFontSize ?? defaultBodySize}
-                            min={18}
-                            max={120}
-                            step={4}
-                            onChange={(v) => setBodyFontSize(v)}
-                            label="Size"
-                            className="shrink-0 max-w-[100px]"
-                          />
-                          <div className="flex items-center gap-1.5 shrink-0 rounded-md border border-input/80 bg-background px-1.5 py-0.5">
-                            <Label className="text-[11px] text-muted-foreground whitespace-nowrap">Color</Label>
-                            <ColorPicker
-                              value={bodyZoneOverride?.color ?? ""}
-                              onChange={(v) => setBodyZoneOverride((o) => ({ ...o, color: v.trim() || undefined }))}
-                              placeholder="Auto"
-                              compact
-                              swatchOnly
-                            />
-                          </div>
-                          <Select
-                            value={bodyZoneOverride?.fontFamily ?? bodyZoneFromTemplate?.fontFamily ?? "system"}
-                            onValueChange={(v) => setBodyZoneOverride((o) => ({ ...bodyZoneFromTemplate, ...o, fontFamily: v || undefined }))}
-                          >
-                            <SelectTrigger className="h-7 w-[100px] text-xs">
-                              <SelectValue placeholder="Font" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {PREVIEW_FONTS.map(({ id, label }) => (
-                                <SelectItem key={id} value={id}>{label}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                        <div className="flex flex-wrap items-center gap-2">
                           <Button type="button" variant="secondary" size="sm" className="h-7 text-xs" onClick={() => { setBodyHighlightOpen(false); setBodyLayoutModalOpen((o) => !o); }} title="Position & size in preview">
                             <LayoutTemplateIcon className="size-3" /> Layout
                           </Button>
                         </div>
-                        <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-border/50 bg-muted/30 px-2 py-1.5">
+                        <div className="flex flex-wrap items-center gap-1.5">
                           <span className="text-[11px] text-muted-foreground shrink-0">Highlight:</span>
                           <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 shrink-0" onClick={() => applyAutoHighlight("body")} title="Highlight key words automatically">
                             Auto
@@ -3923,6 +3970,20 @@ export function SlideEditForm({
                               aria-label={`Highlight ${preset}`}
                             />
                           ))}
+                          <label className="h-6 w-6 rounded-full border-2 border-transparent shrink-0 cursor-pointer hover:scale-110 transition-transform inline-block overflow-hidden [&:has(input:focus)]:ring-2 [&:has(input:focus)]:ring-primary/50" style={{ background: HIGHLIGHT_RAINBOW }} title="Custom highlight color">
+                            <input
+                              type="color"
+                              className="w-full h-full opacity-0 cursor-pointer block"
+                              value={bodyHighlightColor.startsWith("#") ? bodyHighlightColor : "#facc15"}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setBodyHighlightColor(v);
+                                if (savedHighlightSelectionRef.current?.field === "body") applyHighlightToSelection(v, "body", true);
+                              }}
+                              onMouseDown={() => saveHighlightSelectionForPicker("body")}
+                              aria-label="Custom highlight color"
+                            />
+                          </label>
                           <div className="flex rounded border border-border/60 overflow-hidden shrink-0">
                             {(["text", "background"] as const).map((style) => (
                               <Button key={style} type="button" variant={bodyHighlightStyle === style ? "secondary" : "ghost"} size="sm" className="h-6 text-[11px] px-2 rounded-none first:rounded-l last:rounded-r" onClick={() => setBodyHighlightStyle(style)} title={style === "text" ? "Colored text" : "Colored background"}>
