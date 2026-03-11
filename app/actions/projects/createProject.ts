@@ -53,7 +53,21 @@ export async function createProject(formData: FormData) {
   }
 
   const payload = projectFormToDbPayload(parsed.data);
-  const project = await dbCreateProject(user.id, { ...payload, user_id: user.id } as ProjectInsert);
+
+  let project;
+  try {
+    project = await dbCreateProject(user.id, { ...payload, user_id: user.id } as ProjectInsert);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (
+      message.includes("duplicate key") ||
+      message.includes("projects_user_id_name_key") ||
+      message.includes("unique constraint")
+    ) {
+      return { error: { name: ["You already have a project with this name. Choose another."] } };
+    }
+    throw err;
+  }
 
   const logoFile = formData.get("logo") as File | null;
   if (logoFile && logoFile instanceof File && logoFile.size > 0) {

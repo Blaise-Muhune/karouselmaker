@@ -109,7 +109,16 @@ export function NewProjectForm({ isAdmin = false }: { isAdmin?: boolean }) {
     }
     startTransition(async () => {
       try {
-        await createProject(fd);
+        const result = await createProject(fd);
+        if (result && "error" in result && result.error) {
+          const fieldErrors = result.error as Record<string, string[] | undefined>;
+          if (fieldErrors.name?.[0]) {
+            form.setError("name", { type: "server", message: fieldErrors.name[0] });
+          } else {
+            form.setError("root", { type: "server", message: "Failed to create project. Try again." });
+          }
+          return;
+        }
       } catch (err) {
         if (err && typeof err === "object" && "digest" in err && (err as { digest?: string }).digest === "NEXT_REDIRECT") return;
         console.error(err);
