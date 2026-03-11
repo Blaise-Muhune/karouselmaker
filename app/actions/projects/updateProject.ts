@@ -20,8 +20,7 @@ export async function updateProject(projectId: string, formData: FormData) {
     tone_preset: formData.get("tone_preset") as string,
     language: (formData.get("language") as string) || "en",
     number_of_slides: Number(formData.get("number_of_slides")),
-    do_rules: (formData.get("do_rules") as string) ?? "",
-    dont_rules: (formData.get("dont_rules") as string) ?? "",
+    rules: (formData.get("rules") as string) ?? "",
     primary_color: (formData.get("primary_color") as string) ?? "",
     secondary_color: (formData.get("secondary_color") as string) ?? "",
     watermark_text: (formData.get("watermark_text") as string) ?? "",
@@ -39,7 +38,7 @@ export async function updateProject(projectId: string, formData: FormData) {
     tone_preset: raw.tone_preset,
     language: raw.language,
     slide_structure: { number_of_slides: raw.number_of_slides },
-    voice_rules: { do_rules: raw.do_rules, dont_rules: raw.dont_rules },
+    project_rules: { rules: raw.rules },
     brand_kit: {
       primary_color: raw.primary_color,
       secondary_color: raw.secondary_color,

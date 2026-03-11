@@ -36,8 +36,8 @@ Background is stored in `slides.background` (JSONB): `{ style?, color?, gradient
 - **When:** Only for slides with `slide_type === "hook"`. Button “Rewrite hook” in the slide modal.
 - **Inputs:** `slide_id`, `variant_count` (default 5).
 - **Flow:**
-  1. Load slide and parent carousel → project (tone_preset, voice_rules).
-  2. Call OpenAI with `buildHookRewritePrompt({ tone_preset, do_rules, dont_rules, current_headline })`.
+  1. Load slide and parent carousel → project (tone_preset, project_rules).
+  2. Call OpenAI with `buildHookRewritePrompt({ tone_preset, rules, current_headline })`.
   3. Parse AI response as `{ variants: string[] }` (array of 5 hook headlines).
   4. Return variants to the client; **do not** save automatically.
   5. User picks one variant in the modal; that sets local headline state; user clicks Save to persist.

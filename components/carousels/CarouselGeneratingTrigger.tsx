@@ -66,11 +66,15 @@ export function CarouselGeneratingBanner() {
   );
 }
 
+/** After this many ms of polling, force a full reload once to bypass any stale router cache. */
+const POLL_FULL_RELOAD_AFTER_MS = 5 * 60 * 1000;
+
 /**
  * Full-page loading state when user lands on carousel page while status is still "generating".
  * Kicks off generation (POST) and polls until status is no longer "generating". Loading goes away
  * as soon as the next refresh sees the updated status—no reliance on the POST response (which
- * can time out after 1–3 minutes).
+ * can time out after 1–3 minutes). If still loading after 5 minutes, does one full reload to avoid
+ * infinite loading when the result is ready but router.refresh() was serving cached data.
  */
 export function CarouselGeneratingPage({
   projectId,
@@ -81,6 +85,7 @@ export function CarouselGeneratingPage({
 }) {
   const router = useRouter();
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const reloadOnceRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -100,7 +105,15 @@ export function CarouselGeneratingPage({
         setError(err instanceof Error ? err.message : "Failed to start generation");
       });
 
-    pollRef.current = setInterval(() => router.refresh(), 1500);
+    const startedAt = Date.now();
+    pollRef.current = setInterval(() => {
+      if (!reloadOnceRef.current && Date.now() - startedAt >= POLL_FULL_RELOAD_AFTER_MS) {
+        reloadOnceRef.current = true;
+        window.location.reload();
+        return;
+      }
+      router.refresh();
+    }, 1500);
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };

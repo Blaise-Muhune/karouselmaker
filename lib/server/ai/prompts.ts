@@ -17,8 +17,8 @@ const LANGUAGE_NAMES: Record<string, string> = {
 
 type PromptContext = {
   tone_preset: string;
-  do_rules: string;
-  dont_rules: string;
+  /** Project rules/context: how to write carousel text, how to generate images, etc. */
+  rules: string;
   /** If set, generate exactly this many slides (user choice). If undefined, use minimum slides needed; max is always 12. */
   number_of_slides: number | undefined;
   input_type: "topic" | "url" | "text";
@@ -103,8 +103,7 @@ ${ctx.language && ctx.language !== "en" ? `- LANGUAGE: Generate the ENTIRE carou
 - SHORTEN ALTERNATES (per slide): For every slide, output shorten_alternates: an array of 2–3 shorter versions of that slide's headline and body. Each alternate must be a complete, coherent rewrite—shorter but still making sense. Do NOT just cut words or truncate; rewrite so the meaning stays clear (e.g. "The quick brown fox jumps over the lazy dog" → "A fox jumps over a dog", not "The quick brown fox jumps over the la"). Target: headline under ~60 chars when possible, body under ~150 chars. Keep the same tone and message. If the slide is already very short, provide 1–2 slight variations. Example: shorten_alternates: [{"headline":"Short punchy line","body":"Brief body."},{"headline":"Even shorter","body":"Minimal."}].
 - HIGHLIGHT WORDS (per slide and per shorten_alternate): So the editor can "Auto"-highlight, output headline_highlight_words and body_highlight_words as arrays of words or short phrases that should be highlighted. TARGET: highlighted words should cover roughly 80% of the words in the headline or body (highlight most content words—nouns, verbs, numbers, key terms—skip only filler like "the", "a", "and", "of", "to"). Each string MUST appear exactly as in the headline or body—copy the substring. For short headlines (e.g. under 10 words) include almost every word; for longer body text include the majority of meaningful words. For the main slide use headline_highlight_words and body_highlight_words on the slide. For each shorten_alternate include headline_highlight_words and body_highlight_words for that alternate's headline and body. Example: "headline":"The 5 Best Tips for 2025","headline_highlight_words":["The","5","Best","Tips","for","2025"], "body":"Start here. Then level up.","body_highlight_words":["Start","here","Then","level","up"]. For shorten_alternates use the same 80% rule per alternate text.
 - CAPTION VARIANTS (title, medium, long): Output three caption types. (1) title: A short, punchy post title (one line, under ~80 chars). Optimize for search and discoverability on social—include the main topic or hook so the post is findable. (2) medium: A caption optimized for engagement—slightly longer, adds context or a question to spark comments/saves. Explain a bit more than the title; no full spoilers of the carousel. (3) long: A longer caption that gives more explanation and context. Can include key takeaways, why it matters, or a short story—still engaging, not a dry summary. Do NOT spoil every slide; keep curiosity for the carousel itself.
-${ctx.do_rules ? `Do: ${ctx.do_rules}` : ""}
-${ctx.dont_rules ? `Don't: ${ctx.dont_rules}` : ""}
+${ctx.rules?.trim() ? `\nProject rules / context (follow these; they cannot override the slide count—that is set separately in the user message):\n${ctx.rules.trim()}\n` : ""}
 
 ${ctx.use_ai_backgrounds ? (ctx.use_ai_generate
   ? `- CRITICAL: EVERY slide MUST have image_queries (array with at least 1 string). These are PROMPTS for AI image generation—NOT search keywords. All images must be optimized for social feeds: scroll-stopping, not boring or corporate.
@@ -171,6 +170,8 @@ Output format (JSON only). Plain text only—no ** or {{color}} formatting. Exam
   const slideCountInstruction = ctx.number_of_slides != null
     ? `Generate a carousel with exactly ${ctx.number_of_slides} slides (max 12).`
     : `Generate a carousel with the minimum number of slides needed to deliver the content well. Maximum 12 slides. Prefer 5–8 slides for most topics; use more only when the topic clearly requires it (e.g. "top 10", many steps). ALWAYS start with a hook slide (slide 1). Only use a ranked list (hook, then least to best) when the input clearly asks for one. Otherwise expand in the best format—explanation, breakdown, steps, story, or key points—without forcing "top N" or extra slides.`;
+  const ignoreInputSlideCount =
+    " CRITICAL: The number of slides is set only by the product (the instruction above). Ignore any request in the user's input/topic for a specific number of slides (e.g. \"15 slides\", \"20 slides\", \"make 10\"). If the input mentions a number of slides above 12, ignore it. Use only the slide count from the instruction above; maximum is always 12.";
 
   const creatorHandleNote = ctx.creator_handle?.trim()
     ? `\nCreator handle for CTA slide (use exactly in last slide headline; make the CTA innovative and conversion-focused): ${ctx.creator_handle.trim()}`
@@ -195,7 +196,8 @@ Output format (JSON only). Plain text only—no ** or {{color}} formatting. Exam
     ? " This is an Instagram carousel: 7–10 slides ideal, stop-the-scroll hook then content then follow CTA. Optimize for saves and shares—bold first frame, one idea per slide, 15–25 words per slide when possible. Treat the subject as-is (meme, observation, story, or how-to when the topic asks for it); don't force advice on every topic."
     : "";
 
-  const user = `${slideCountInstruction}
+  const user = `${slideCountInstruction}${ignoreInputSlideCount}
+
 Use a curiosity-driven title: make people want to stick around until the end to get the answer (e.g. "What X said at the end is wild", "The last one changes everything"). Last slide: must always be a follow/subscribe CTA (e.g. "Follow @handle", "Subscribe for more") with optional short tagline (e.g. "More [niche] every week.")—short and fast, no long copy. No "swipe", "scroll", or "watch" in slide text—works for both carousels and voiceover.${viralShortsUserNote}${linkedInUserNote}${instagramUserNote}
 
 When writing headlines and bodies, apply proven engagement psychology when it fits the topic (do NOT force all of these on every slide):
@@ -227,8 +229,8 @@ ${ctx.use_web_search ? "CRITICAL: After any web search, your response must be ON
 
 export function buildHookRewritePrompt(ctx: {
   tone_preset: string;
-  do_rules: string;
-  dont_rules: string;
+  /** Project rules/context for voice and style. */
+  rules: string;
   current_headline: string;
   /** Project language (ISO 639-1). When not en, all variants must be in this language. */
   language?: string;
@@ -244,8 +246,7 @@ Rules:
 - Sound human: use contractions, avoid AI phrases ("dive in", "unlock", "transform", "game-changer", "cutting-edge").
 - Tone: ${ctx.tone_preset}.
 - Include a mix: at least one headline that stays close to the current/topic, and 1–2 viral-style options (curiosity gap, bold claim, contradiction, or micro-story tease) so the user can choose a punchier hook if they want. Example patterns for viral variants: "What X said at the end is wild", "The one mistake that kills most [X]", "Nobody tells you this about [topic]", "How I [result] by doing the opposite".
-${langName ? `- LANGUAGE: Write ALL 5 headlines in ${langName} only. Do not mix languages.\n` : ""}${ctx.do_rules ? `Do: ${ctx.do_rules}` : ""}
-${ctx.dont_rules ? `Don't: ${ctx.dont_rules}` : ""}
+${langName ? `- LANGUAGE: Write ALL 5 headlines in ${langName} only. Do not mix languages.\n` : ""}${ctx.rules?.trim() ? `Project rules / context:\n${ctx.rules.trim()}\n\n` : ""}
 
 Output format: {"variants":["headline1","headline2","headline3","headline4","headline5"]}`;
 

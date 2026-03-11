@@ -17,7 +17,12 @@ export default async function EditProjectPage({
 
   if (!project) notFound();
 
-  const voiceRules = project.voice_rules as { do_rules?: string; dont_rules?: string } | undefined;
+  const projectRulesJson = project.project_rules as { rules?: string; do_rules?: string; dont_rules?: string } | undefined;
+  const rulesValue =
+    projectRulesJson?.rules?.trim() ||
+    (projectRulesJson?.do_rules || projectRulesJson?.dont_rules
+      ? [projectRulesJson?.do_rules && `Do: ${projectRulesJson.do_rules}`, projectRulesJson?.dont_rules && `Don't: ${projectRulesJson.dont_rules}`].filter(Boolean).join("\n\n")
+      : "");
   const slideStructure = project.slide_structure as { number_of_slides?: number } | undefined;
   const brandKit = project.brand_kit as {
     primary_color?: string;
@@ -34,10 +39,7 @@ export default async function EditProjectPage({
     tone_preset: project.tone_preset as "neutral" | "funny" | "serious" | "savage" | "inspirational",
     language: projectWithLang.language ?? "en",
     slide_structure: { number_of_slides: slideStructure?.number_of_slides ?? 8 },
-    voice_rules: {
-      do_rules: voiceRules?.do_rules ?? "",
-      dont_rules: voiceRules?.dont_rules ?? "",
-    },
+    project_rules: { rules: rulesValue },
     brand_kit: {
       primary_color: brandKit?.primary_color ?? "",
       secondary_color: brandKit?.secondary_color ?? "",

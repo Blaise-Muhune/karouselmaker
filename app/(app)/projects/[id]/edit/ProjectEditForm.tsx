@@ -30,7 +30,6 @@ import {
   projectFormSchema,
   type ProjectFormInput,
 } from "@/lib/validations/project";
-import { DO_PRESETS, DONT_PRESETS } from "@/lib/editor/voicePresets";
 import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, Settings2Icon } from "lucide-react";
 
 const TONE_OPTIONS = [
@@ -86,8 +85,7 @@ export function ProjectEditForm({
     fd.set("tone_preset", data.tone_preset);
     fd.set("language", data.language ?? "en");
     fd.set("number_of_slides", "8"); // Default; set per carousel on New Carousel page
-    fd.set("do_rules", data.voice_rules.do_rules ?? "");
-    fd.set("dont_rules", data.voice_rules.dont_rules ?? "");
+    fd.set("rules", data.project_rules.rules ?? "");
     fd.set("primary_color", data.brand_kit.primary_color ?? "");
     fd.set("secondary_color", data.brand_kit.secondary_color ?? "");
     fd.set("watermark_text", data.brand_kit.watermark_text ?? "");
@@ -258,78 +256,26 @@ export function ProjectEditForm({
           </div>
         )}
         <div className="space-y-2">
-          <FormLabel>Voice rules (optional)</FormLabel>
+          <FormLabel>Rules or context (optional)</FormLabel>
           <p className="text-muted-foreground text-xs">
-            Click a preset to add it. You can also type your own.
+            How you want carousel text written, how AI-generated images should look, tone, banned words, etc. Applied to all carousels in this project.
           </p>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <FormField
-              control={form.control}
-              name="voice_rules.do_rules"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-muted-foreground text-xs">Do</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      placeholder="Do: use short sentences..."
-                      className="min-h-20"
-                      {...field}
-                    />
-                  </FormControl>
-                  <div className="flex max-h-32 flex-wrap gap-1.5 overflow-y-auto rounded-md border border-dashed border-border/60 bg-muted/30 p-2">
-                    {DO_PRESETS.map((preset) => (
-                      <button
-                        key={preset}
-                        type="button"
-                        onClick={() => {
-                          const current = field.value ?? "";
-                          const sep = current.trim() ? "\n" : "";
-                          field.onChange(current + sep + preset);
-                        }}
-                        className="rounded-md border border-border/60 bg-background px-2 py-1 text-muted-foreground text-xs hover:bg-muted hover:text-foreground transition-colors"
-                      >
-                        + {preset}
-                      </button>
-                    ))}
-                  </div>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="voice_rules.dont_rules"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-muted-foreground text-xs">Don&apos;t</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      placeholder="Don't: use jargon..."
-                      className="min-h-20"
-                      {...field}
-                    />
-                  </FormControl>
-                  <div className="flex max-h-32 flex-wrap gap-1.5 overflow-y-auto rounded-md border border-dashed border-border/60 bg-muted/30 p-2">
-                    {DONT_PRESETS.map((preset) => (
-                      <button
-                        key={preset}
-                        type="button"
-                        onClick={() => {
-                          const current = field.value ?? "";
-                          const sep = current.trim() ? "\n" : "";
-                          field.onChange(current + sep + preset);
-                        }}
-                        className="rounded-md border border-border/60 bg-background px-2 py-1 text-muted-foreground text-xs hover:bg-muted hover:text-foreground transition-colors"
-                      >
-                        + {preset}
-                      </button>
-                    ))}
-                  </div>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
+          <FormField
+            control={form.control}
+            name="project_rules.rules"
+            render={({ field }) => (
+              <FormItem>
+                <FormControl>
+                  <Textarea
+                    placeholder="e.g. Use short sentences. No jargon. For images: natural lighting, no text in images..."
+                    className="min-h-24"
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
         </div>
         <div className="space-y-2">
           <FormLabel>Brand kit (optional)</FormLabel>

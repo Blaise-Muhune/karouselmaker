@@ -263,10 +263,16 @@ export async function generateCarousel(formData: FormData): Promise<
   const hasFreeFullAccess = !isPro && lifetimeCount < FREE_FULL_ACCESS_GENERATIONS;
   const hasFullAccess = isPro || hasFreeFullAccess;
 
-  const voiceRules = project.voice_rules as {
+  const projectRulesJson = project.project_rules as {
+    rules?: string;
     do_rules?: string;
     dont_rules?: string;
   } | undefined;
+  const projectRules =
+    (projectRulesJson?.rules?.trim() && projectRulesJson.rules) ||
+    (projectRulesJson?.do_rules || projectRulesJson?.dont_rules
+      ? [projectRulesJson?.do_rules && `Do: ${projectRulesJson.do_rules}`, projectRulesJson?.dont_rules && `Don't: ${projectRulesJson.dont_rules}`].filter(Boolean).join("\n\n")
+      : "");
   /** Use only carousel-level value. If omitted (user left field empty), AI decides. Do NOT fall back to project default. */
   const number_of_slides = data.number_of_slides ?? undefined;
 
@@ -325,8 +331,7 @@ export async function generateCarousel(formData: FormData): Promise<
   const projectLanguage = (project as { language?: string }).language?.trim() || undefined;
   const ctx = {
     tone_preset: project.tone_preset,
-    do_rules: voiceRules?.do_rules ?? "",
-    dont_rules: voiceRules?.dont_rules ?? "",
+    rules: projectRules,
     number_of_slides,
     input_type: data.input_type as "topic" | "url" | "text",
     input_value: data.input_value,
@@ -454,8 +459,12 @@ export async function generateCarousel(formData: FormData): Promise<
     }
   }
 
+  const resolvedTitle =
+    (validated.title?.trim() && validated.title.trim() !== "Generating…")
+      ? validated.title.trim()
+      : (data.input_value?.trim()?.slice(0, 200) || "Untitled");
   const carouselUpdate: Parameters<typeof updateCarousel>[2] = {
-    title: validated.title,
+    title: resolvedTitle,
     status: "generated",
     caption_variants: validated.caption_variants,
     hashtags: validated.hashtags,
@@ -889,7 +898,8 @@ export async function generateCarousel(formData: FormData): Promise<
     try {
       const current = await getCarousel(user.id, carousel.id);
       if (current?.status === "generating") {
-        await updateCarousel(user.id, carousel.id, { status: "generated" });
+        const fallbackTitle = data.input_value?.trim()?.slice(0, 200) || "Untitled";
+        await updateCarousel(user.id, carousel.id, { status: "generated", title: fallbackTitle });
       }
     } catch {
       // ignore; avoid hiding original error

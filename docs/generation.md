@@ -38,7 +38,7 @@ Validation is done with Zod in `lib/server/ai/carouselSchema.ts`. Invalid output
 ## How project rules influence output
 
 - **tone_preset** (neutral, funny, serious, savage, inspirational) is passed into the system prompt so the model matches the project voice.
-- **voice_rules.do_rules** and **voice_rules.dont_rules** are injected into the system prompt as “Do: …” and “Don’t: …”.
+- **project_rules.rules** is injected into the system prompt as "Project rules / context" when set.
 - **slide_structure.number_of_slides** sets how many slides to generate and enforces a final CTA when ≥ 6.
 
 The prompt is built in `lib/server/ai/prompts.ts` from the current project and input.

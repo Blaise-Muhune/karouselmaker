@@ -329,6 +329,8 @@ export type SlidePreviewProps = {
   };
   /** Scale from design (1080) to screen; used to convert pointer deltas when dragging. */
   editScale?: number;
+  /** When true (edit slide page), only show move/resize container for text zones; no inline editing, toolbar, highlight, or rewrite in preview. */
+  positionAndSizeOnly?: boolean;
 };
 
 const POSITION_TO_CSS: Record<string, string> = {
@@ -356,6 +358,9 @@ const POSITION_TO_PERCENT: Record<string, { x: number; y: number }> = {
   "bottom-right": { x: 100, y: 100 },
 };
 const FRAME_WIDTHS: Record<string, number> = { none: 0, thin: 2, medium: 5, thick: 10, chunky: 16, heavy: 20 };
+/** Resize handle size (touch-friendly). */
+const RESIZE_HANDLE_SIZE = 44;
+const RESIZE_HANDLE_OFFSET = -RESIZE_HANDLE_SIZE / 2;
 
 /** Zigzag clip-paths for 2 images – shared boundary at 50%, zigzagging between 35% and 65%. */
 const ZIGZAG_LEFT = "polygon(0 0, 50% 0, 35% 25%, 65% 50%, 35% 75%, 50% 100%, 0 100%)";
@@ -456,6 +461,7 @@ export function SlidePreview({
   editChromeCounter,
   editChromeWatermark,
   editScale = 1,
+  positionAndSizeOnly = false,
   onBackgroundImagePositionChange,
   onPipPositionChange,
 }: SlidePreviewProps) {
@@ -904,9 +910,9 @@ export function SlidePreview({
     }
   }, [isEditablePreview, focusedZone]);
 
-  // When expand opens with a zone selected, focus only that container (blur the other so only one is focused).
+  // When expand opens with a zone selected, focus only that container (blur the other so only one is focused). Skip when positionAndSizeOnly — user edits in form, not in preview.
   useEffect(() => {
-    if (!chromeVisible || !focusedZone) return;
+    if (positionAndSizeOnly || !chromeVisible || !focusedZone) return;
     const t = setTimeout(() => {
       if (focusedZone === "headline") {
         bodyTextareaRef.current?.blur();
@@ -917,18 +923,18 @@ export function SlidePreview({
       }
     }, 0);
     return () => clearTimeout(t);
-  }, [chromeVisible, focusedZone]);
+  }, [positionAndSizeOnly, chromeVisible, focusedZone]);
 
-  // Keep the focused text container (with the 4 corner resize handles) in view when it gets focus.
+  // Keep the focused text container (with the 4 corner resize handles) in view when it gets focus. Skip when positionAndSizeOnly so we don't scroll the preview while user types in the form.
   useEffect(() => {
-    if (!focusedZone || (focusedZone !== "headline" && focusedZone !== "body")) return;
+    if (positionAndSizeOnly || !focusedZone || (focusedZone !== "headline" && focusedZone !== "body")) return;
     const el = focusedZone === "headline" ? headlineBlockRef.current : bodyBlockRef.current;
     if (!el) return;
     const t = setTimeout(() => {
       el.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
     }, 50);
     return () => clearTimeout(t);
-  }, [focusedZone]);
+  }, [positionAndSizeOnly, focusedZone]);
 
   useEffect(() => {
     if (!chromeVisible || !isEditablePreview) return;
@@ -1565,8 +1571,14 @@ export function SlidePreview({
         const textContentHeight = Math.ceil(block.lines.length * fontSize * lineHeightNum);
         const zoneHighlightStyle = block.zone.id === "headline" ? headlineHighlightStyle : bodyHighlightStyle;
         const zoneColor = block.zone.color ?? textColor;
-        const isEditableHeadline = block.zone.id === "headline" && onHeadlineChange != null && chromeVisible;
-        const isEditableBody = block.zone.id === "body" && onBodyChange != null && chromeVisible;
+        const isEditableHeadline =
+          block.zone.id === "headline" &&
+          (onHeadlineChange != null || (positionAndSizeOnly && onHeadlinePositionChange != null && editToolbarHeadline != null)) &&
+          chromeVisible;
+        const isEditableBody =
+          block.zone.id === "body" &&
+          (onBodyChange != null || (positionAndSizeOnly && onBodyPositionChange != null && editToolbarBody != null)) &&
+          chromeVisible;
         const readOnlyBlockEl = (
           <div
             className="absolute flex flex-col justify-center shrink-0 overflow-hidden"
@@ -1672,7 +1684,7 @@ export function SlidePreview({
           const offX = isDraggingHeadline ? dragOffset.x : 0;
           const offY = isDraggingHeadline ? dragOffset.y : 0;
           const canDrag = onHeadlinePositionChange != null && editScale > 0;
-          const showToolbar = focusedZone === "headline" && editToolbarHeadline;
+          const showToolbar = focusedZone === "headline" && editToolbarHeadline && !positionAndSizeOnly;
           const isFocused = focusedZone === "headline";
           const canResize = editToolbarHeadline != null && editScale > 0;
           const handleHeadlineBlur = () => {
@@ -1706,14 +1718,14 @@ export function SlidePreview({
                       startPtrY: e.clientY,
                     });
                   }}
-                  className="absolute w-4 h-4 rounded-full border-2 border-primary bg-primary/80 cursor-nwse-resize hover:scale-110 z-20"
+                  className="absolute rounded-full border-2 border-primary bg-primary/80 cursor-nwse-resize hover:scale-110 z-20 touch-none"
                   style={{
-                    width: 16,
-                    height: 16,
-                    ...(corner === "nw" && { left: -8, top: -8, cursor: "nwse-resize" }),
-                    ...(corner === "ne" && { right: -8, top: -8, left: "auto", cursor: "nesw-resize" }),
-                    ...(corner === "sw" && { left: -8, bottom: -8, top: "auto", cursor: "nesw-resize" }),
-                    ...(corner === "se" && { right: -8, bottom: -8, left: "auto", top: "auto", cursor: "nwse-resize" }),
+                    width: RESIZE_HANDLE_SIZE,
+                    height: RESIZE_HANDLE_SIZE,
+                    ...(corner === "nw" && { left: RESIZE_HANDLE_OFFSET, top: RESIZE_HANDLE_OFFSET, cursor: "nwse-resize" }),
+                    ...(corner === "ne" && { right: RESIZE_HANDLE_OFFSET, top: RESIZE_HANDLE_OFFSET, left: "auto", cursor: "nesw-resize" }),
+                    ...(corner === "sw" && { left: RESIZE_HANDLE_OFFSET, bottom: RESIZE_HANDLE_OFFSET, top: "auto", cursor: "nesw-resize" }),
+                    ...(corner === "se" && { right: RESIZE_HANDLE_OFFSET, bottom: RESIZE_HANDLE_OFFSET, left: "auto", top: "auto", cursor: "nwse-resize" }),
                   }}
                   aria-label={`Resize headline from ${corner}`}
                 />
@@ -1730,7 +1742,41 @@ export function SlidePreview({
             padding: 0,
             margin: 0,
           };
-          const zoneBoxContent = (
+          const zoneBoxContent = positionAndSizeOnly ? (
+            <>
+              <div
+                className="absolute inset-0 flex min-w-0 flex-col justify-center box-border overflow-hidden cursor-pointer"
+                style={{
+                  zIndex: 0,
+                  padding: 0,
+                  margin: 0,
+                  color: zoneColor,
+                  fontSize,
+                  fontWeight: block.zone.fontWeight,
+                  lineHeight: block.zone.lineHeight,
+                  textAlign: effectiveAlign,
+                  fontFamily: zoneFontFamily(block.zone),
+                  wordBreak: "break-word",
+                  overflowWrap: "break-word",
+                }}
+                onClick={() => onHeadlineFocus?.()}
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  onHeadlineFocus?.();
+                }}
+                role="button"
+                tabIndex={-1}
+                aria-label="Headline — drag to move, corners to resize"
+              >
+                {(slide.headline || "").split("\n").map((line, i) => (
+                  <span key={i} className="block" style={{ whiteSpace: "pre-wrap" }}>
+                    {line || " "}
+                  </span>
+                ))}
+              </div>
+              {resizeHandles}
+            </>
+          ) : (
             <>
                 <div
                   className="absolute inset-0 flex min-w-0 flex-col justify-center box-border overflow-hidden"
@@ -1995,7 +2041,7 @@ export function SlidePreview({
           const offX = isDraggingBody ? dragOffset.x : 0;
           const offY = isDraggingBody ? dragOffset.y : 0;
           const canDrag = onBodyPositionChange != null && editScale > 0;
-          const showToolbar = focusedZone === "body" && editToolbarBody;
+          const showToolbar = focusedZone === "body" && editToolbarBody && !positionAndSizeOnly;
           const isFocused = focusedZone === "body";
           const canResize = editToolbarBody != null && editScale > 0;
           const handleBodyBlur = () => {
@@ -2029,14 +2075,14 @@ export function SlidePreview({
                       startPtrY: e.clientY,
                     });
                   }}
-                  className="absolute w-4 h-4 rounded-full border-2 border-primary bg-primary/80 cursor-nwse-resize hover:scale-110 z-20"
+                  className="absolute rounded-full border-2 border-primary bg-primary/80 cursor-nwse-resize hover:scale-110 z-20 touch-none"
                   style={{
-                    width: 16,
-                    height: 16,
-                    ...(corner === "nw" && { left: -8, top: -8, cursor: "nwse-resize" }),
-                    ...(corner === "ne" && { right: -8, top: -8, left: "auto", cursor: "nesw-resize" }),
-                    ...(corner === "sw" && { left: -8, bottom: -8, top: "auto", cursor: "nesw-resize" }),
-                    ...(corner === "se" && { right: -8, bottom: -8, left: "auto", top: "auto", cursor: "nwse-resize" }),
+                    width: RESIZE_HANDLE_SIZE,
+                    height: RESIZE_HANDLE_SIZE,
+                    ...(corner === "nw" && { left: RESIZE_HANDLE_OFFSET, top: RESIZE_HANDLE_OFFSET, cursor: "nwse-resize" }),
+                    ...(corner === "ne" && { right: RESIZE_HANDLE_OFFSET, top: RESIZE_HANDLE_OFFSET, left: "auto", cursor: "nesw-resize" }),
+                    ...(corner === "sw" && { left: RESIZE_HANDLE_OFFSET, bottom: RESIZE_HANDLE_OFFSET, top: "auto", cursor: "nesw-resize" }),
+                    ...(corner === "se" && { right: RESIZE_HANDLE_OFFSET, bottom: RESIZE_HANDLE_OFFSET, left: "auto", top: "auto", cursor: "nwse-resize" }),
                   }}
                   aria-label={`Resize body from ${corner}`}
                 />
@@ -2088,19 +2134,14 @@ export function SlidePreview({
                     ...bodyZoneBoxStyle,
                   }}
                 >
-                <div className="absolute inset-0 flex min-w-0 flex-col justify-center box-border overflow-hidden" style={{ zIndex: 0, padding: 0, margin: 0 }}>
-                  <textarea
-                    ref={bodyTextareaRef}
-                    value={slide.body ?? ""}
-                    onChange={(e) => onBodyChange!(e.target.value)}
-                    onFocus={onBodyFocus}
-                    onBlur={handleBodyBlur}
-                    placeholder="Subtext"
-                    wrap="soft"
-                    className="w-full min-w-0 resize-none bg-transparent border-none outline-none overflow-hidden cursor-text"
+                {positionAndSizeOnly ? (
+                  <div
+                    className="absolute inset-0 flex min-w-0 flex-col justify-center box-border overflow-hidden cursor-pointer"
                     style={{
-                      color: "transparent",
-                      caretColor: zoneColor,
+                      zIndex: 0,
+                      padding: 0,
+                      margin: 0,
+                      color: zoneColor,
                       fontSize,
                       fontWeight: block.zone.fontWeight,
                       lineHeight: block.zone.lineHeight,
@@ -2108,17 +2149,55 @@ export function SlidePreview({
                       fontFamily: zoneFontFamily(block.zone),
                       wordBreak: "break-word",
                       overflowWrap: "break-word",
-                      padding: 0,
-                      margin: 0,
-                      width: "100%",
-                      maxWidth: "100%",
-                      boxSizing: "border-box",
-                      height: textContentHeight,
-                      minHeight: textContentHeight,
                     }}
-                    aria-label="Edit body text"
-                  />
-                </div>
+                    onClick={() => onBodyFocus?.()}
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      onBodyFocus?.();
+                    }}
+                    role="button"
+                    tabIndex={-1}
+                    aria-label="Body — drag to move, corners to resize"
+                  >
+                    {(slide.body ?? "").split("\n").map((line, i) => (
+                      <span key={i} className="block" style={{ whiteSpace: "pre-wrap" }}>
+                        {line || " "}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="absolute inset-0 flex min-w-0 flex-col justify-center box-border overflow-hidden" style={{ zIndex: 0, padding: 0, margin: 0 }}>
+                    <textarea
+                      ref={bodyTextareaRef}
+                      value={slide.body ?? ""}
+                      onChange={(e) => onBodyChange!(e.target.value)}
+                      onFocus={onBodyFocus}
+                      onBlur={handleBodyBlur}
+                      placeholder="Subtext"
+                      wrap="soft"
+                      className="w-full min-w-0 resize-none bg-transparent border-none outline-none overflow-hidden cursor-text"
+                      style={{
+                        color: "transparent",
+                        caretColor: zoneColor,
+                        fontSize,
+                        fontWeight: block.zone.fontWeight,
+                        lineHeight: block.zone.lineHeight,
+                        textAlign: effectiveAlign,
+                        fontFamily: zoneFontFamily(block.zone),
+                        wordBreak: "break-word",
+                        overflowWrap: "break-word",
+                        padding: 0,
+                        margin: 0,
+                        width: "100%",
+                        maxWidth: "100%",
+                        boxSizing: "border-box",
+                        height: textContentHeight,
+                        minHeight: textContentHeight,
+                      }}
+                      aria-label="Edit body text"
+                    />
+                  </div>
+                )}
                 {resizeHandles}
               </div>
               {showToolbar && editToolbarBody && (
@@ -2463,8 +2542,14 @@ export function SlidePreview({
                   e.currentTarget.setPointerCapture(e.pointerId);
                   setChromeResizeState({ type: "counter", startFontSize: editChromeCounter.fontSize, startPtrX: e.clientX, startPtrY: e.clientY });
                 }}
-                className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-primary bg-primary/80 cursor-nwse-resize hover:scale-110 z-20"
-                style={{ cursor: "nwse-resize" }}
+                className="absolute rounded-full border-2 border-primary bg-primary/80 cursor-nwse-resize hover:scale-110 z-20 touch-none"
+                style={{
+                  width: RESIZE_HANDLE_SIZE,
+                  height: RESIZE_HANDLE_SIZE,
+                  bottom: RESIZE_HANDLE_OFFSET,
+                  right: RESIZE_HANDLE_OFFSET,
+                  cursor: "nwse-resize",
+                }}
                 aria-label="Resize slide number"
               />
             )}
@@ -2563,8 +2648,14 @@ export function SlidePreview({
                       e.currentTarget.setPointerCapture(e.pointerId);
                       setChromeResizeState({ type: "watermark", startFontSize: editChromeWatermark.fontSize, startPtrX: e.clientX, startPtrY: e.clientY });
                     }}
-                    className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-primary bg-primary/80 cursor-nwse-resize hover:scale-110 z-20"
-                    style={{ cursor: "nwse-resize" }}
+                    className="absolute rounded-full border-2 border-primary bg-primary/80 cursor-nwse-resize hover:scale-110 z-20 touch-none"
+                    style={{
+                      width: RESIZE_HANDLE_SIZE,
+                      height: RESIZE_HANDLE_SIZE,
+                      bottom: RESIZE_HANDLE_OFFSET,
+                      right: RESIZE_HANDLE_OFFSET,
+                      cursor: "nwse-resize",
+                    }}
                     aria-label="Resize logo"
                   />
                 )}

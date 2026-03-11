@@ -8,9 +8,8 @@ const tonePresetEnum = z.enum([
   "inspirational",
 ]);
 
-export const voiceRulesSchema = z.object({
-  do_rules: z.string().optional().default(""),
-  dont_rules: z.string().optional().default(""),
+export const projectRulesSchema = z.object({
+  rules: z.string().optional().default(""),
 });
 
 export const slideStructureSchema = z.object({
@@ -46,7 +45,7 @@ export const projectFormSchema = z.object({
   tone_preset: tonePresetEnum.default("neutral"),
   language: languageCode,
   slide_structure: slideStructureSchema.default({ number_of_slides: 8 }),
-  voice_rules: voiceRulesSchema.default({ do_rules: "", dont_rules: "" }),
+  project_rules: projectRulesSchema.default({ rules: "" }),
   brand_kit: brandKitSchema.default({
     primary_color: "",
     secondary_color: "",
@@ -71,7 +70,7 @@ export function projectFormToDbPayload(
   niche: string | null;
   tone_preset: string;
   language: string;
-  voice_rules: Record<string, unknown>;
+  project_rules: Record<string, unknown>;
   slide_structure: Record<string, unknown>;
   brand_kit: Record<string, unknown>;
   sources: Record<string, unknown>;
@@ -83,9 +82,8 @@ export function projectFormToDbPayload(
     niche: input.niche?.trim() || null,
     tone_preset: input.tone_preset,
     language: input.language ?? "en",
-    voice_rules: {
-      do_rules: input.voice_rules.do_rules ?? "",
-      dont_rules: input.voice_rules.dont_rules ?? "",
+    project_rules: {
+      rules: input.project_rules.rules ?? "",
     },
     slide_structure: {
       number_of_slides: input.slide_structure.number_of_slides,

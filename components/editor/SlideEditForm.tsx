@@ -832,6 +832,11 @@ export function SlideEditForm({
   const previewWrapRef = useRef<HTMLDivElement>(null);
   const [previewWrapWidth, setPreviewWrapWidth] = useState<number | null>(null);
   const [activeEditZone, setActiveEditZone] = useState<"headline" | "body" | null>(null);
+  /** Which text section is expanded in the Text tab (click to expand and show green container in preview). */
+  const [expandedTextSection, setExpandedTextSection] = useState<"headline" | "body" | null>(null);
+  /** "Edit more" (style, highlight, layout) open per section. */
+  const [headlineEditMoreOpen, setHeadlineEditMoreOpen] = useState(false);
+  const [bodyEditMoreOpen, setBodyEditMoreOpen] = useState(false);
   const headerRef = useRef<HTMLElement>(null);
   const mainScrollRef = useRef<HTMLDivElement>(null);
   const editorSectionRef = useRef<HTMLElement>(null);
@@ -2630,9 +2635,21 @@ export function SlideEditForm({
                 onHeadlineChange={setHeadline}
                 onBodyChange={(v) => setBody(v)}
                 focusedZone={activeEditZone}
-                onHeadlineFocus={() => { setActiveEditZone("headline"); setEditorTab("text"); setPreviewExpanded(true); }}
+                onHeadlineFocus={() => {
+                  setActiveEditZone("headline");
+                  setEditorTab("text");
+                  setExpandedTextSection("headline");
+                  setPreviewExpanded(true);
+                  setTimeout(() => headlineRef.current?.focus(), 120);
+                }}
                 onHeadlineBlur={() => setActiveEditZone(null)}
-                onBodyFocus={() => { setActiveEditZone("body"); setEditorTab("text"); setPreviewExpanded(true); }}
+                onBodyFocus={() => {
+                  setActiveEditZone("body");
+                  setEditorTab("text");
+                  setExpandedTextSection("body");
+                  setPreviewExpanded(true);
+                  setTimeout(() => bodyRef.current?.focus(), 120);
+                }}
                 onBodyBlur={() => setActiveEditZone(null)}
                 onHeadlinePositionChange={(x, y) => {
                   const head = headlineZoneOverride ?? templateConfig?.textZones?.find((z) => z.id === "headline");
@@ -2668,6 +2685,7 @@ export function SlideEditForm({
                     ? (x, y) => setImageDisplay((d) => ({ ...d, pipX: x, pipY: y }))
                     : undefined
                 }
+                positionAndSizeOnly
                 editToolbarHeadline={
                   templateConfig
                     ? {
@@ -2724,30 +2742,8 @@ export function SlideEditForm({
                       }
                     : undefined
                 }
-                editChromeCounter={
-                  isPro && showCounter && templateConfig
-                    ? {
-                        top: counterZoneOverride?.top ?? 24,
-                        right: counterZoneOverride?.right ?? 24,
-                        fontSize: counterZoneOverride?.fontSize ?? 20,
-                        onTopChange: (v) => setCounterZoneOverride((o) => ({ ...o, top: v })),
-                        onRightChange: (v) => setCounterZoneOverride((o) => ({ ...o, right: v })),
-                        onFontSizeChange: (v) => setCounterZoneOverride((o) => ({ ...o, fontSize: v })),
-                      }
-                    : undefined
-                }
-                editChromeWatermark={
-                  isPro && showWatermark && templateConfig && (brandKit?.watermark_text || brandKit?.logo_url)
-                    ? {
-                        logoX: watermarkZoneOverride?.logoX ?? templateConfig?.chrome?.watermark?.logoX ?? 24,
-                        logoY: watermarkZoneOverride?.logoY ?? templateConfig?.chrome?.watermark?.logoY ?? 24,
-                        fontSize: watermarkZoneOverride?.fontSize ?? 20,
-                        onLogoXChange: (v) => setWatermarkZoneOverride((o) => ({ ...o, logoX: v, position: "custom" })),
-                        onLogoYChange: (v) => setWatermarkZoneOverride((o) => ({ ...o, logoY: v, position: "custom" })),
-                        onFontSizeChange: (v) => setWatermarkZoneOverride((o) => ({ ...o, fontSize: v })),
-                      }
-                    : undefined
-                }
+                editChromeCounter={undefined}
+                editChromeWatermark={undefined}
                 editScale={
                   previewWrapWidth != null && previewWrapWidth > 0
                     ? previewWrapWidth / 1080
@@ -3209,12 +3205,23 @@ export function SlideEditForm({
                         borderedFrame={!!(previewBackgroundImageUrl || previewBackgroundImageUrls?.length)}
                         imageDisplay={isImageMode ? effectiveImageDisplay : undefined}
                         exportSize={exportSize}
+                        positionAndSizeOnly
                         onHeadlineChange={setHeadline}
                         onBodyChange={(v) => setBody(v)}
                         focusedZone={activeEditZone}
-                        onHeadlineFocus={() => { setActiveEditZone("headline"); setEditorTab("text"); }}
+                        onHeadlineFocus={() => {
+                          setActiveEditZone("headline");
+                          setEditorTab("text");
+                          setExpandedTextSection("headline");
+                          setTimeout(() => headlineRef.current?.focus(), 120);
+                        }}
                         onHeadlineBlur={() => setActiveEditZone(null)}
-                        onBodyFocus={() => { setActiveEditZone("body"); setEditorTab("text"); }}
+                        onBodyFocus={() => {
+                          setActiveEditZone("body");
+                          setEditorTab("text");
+                          setExpandedTextSection("body");
+                          setTimeout(() => bodyRef.current?.focus(), 120);
+                        }}
                         onBodyBlur={() => setActiveEditZone(null)}
                         onHeadlinePositionChange={(x, y) => {
                           const head = headlineZoneOverride ?? templateConfig?.textZones?.find((z) => z.id === "headline");
@@ -3306,30 +3313,8 @@ export function SlideEditForm({
                               }
                             : undefined
                         }
-                        editChromeCounter={
-                          isPro && showCounter && templateConfig
-                            ? {
-                                top: counterZoneOverride?.top ?? 24,
-                                right: counterZoneOverride?.right ?? 24,
-                                fontSize: counterZoneOverride?.fontSize ?? 20,
-                                onTopChange: (v) => setCounterZoneOverride((o) => ({ ...o, top: v })),
-                                onRightChange: (v) => setCounterZoneOverride((o) => ({ ...o, right: v })),
-                                onFontSizeChange: (v) => setCounterZoneOverride((o) => ({ ...o, fontSize: v })),
-                              }
-                            : undefined
-                        }
-                        editChromeWatermark={
-                          isPro && showWatermark && templateConfig && (brandKit?.watermark_text || brandKit?.logo_url)
-                            ? {
-                                logoX: watermarkZoneOverride?.logoX ?? templateConfig?.chrome?.watermark?.logoX ?? 24,
-                                logoY: watermarkZoneOverride?.logoY ?? templateConfig?.chrome?.watermark?.logoY ?? 24,
-                                fontSize: watermarkZoneOverride?.fontSize ?? 20,
-                                onLogoXChange: (v) => setWatermarkZoneOverride((o) => ({ ...o, logoX: v, position: "custom" })),
-                                onLogoYChange: (v) => setWatermarkZoneOverride((o) => ({ ...o, logoY: v, position: "custom" })),
-                                onFontSizeChange: (v) => setWatermarkZoneOverride((o) => ({ ...o, fontSize: v })),
-                              }
-                            : undefined
-                        }
+                        editChromeCounter={undefined}
+                        editChromeWatermark={undefined}
                         editScale={dims.scale}
                       />
                     </div>
@@ -3558,107 +3543,38 @@ export function SlideEditForm({
           </section>
           )}
           {editorTab === "text" && (
-          <section className="space-y-5" aria-label="Text">
-            <div className="relative min-h-0 space-y-5">
-            {/* Headline */}
-            <div className="rounded-lg border border-border/50 bg-muted/5 p-3 space-y-2.5">
-              <div className="flex items-center justify-between gap-2 w-full">
-                <h3 className="text-xs font-semibold text-foreground shrink-0">Headline</h3>
-                <div className="flex items-center gap-1 shrink-0">
-                  {totalSlides > 1 && isPro && (
-                    <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={handleApplyHeadlineToAll} disabled={applyingHeadlineZone} title="Apply headline size and position & layout to all frames">
-                      {applyingHeadlineZone ? <Loader2Icon className="size-3 animate-spin" /> : <CopyIcon className="size-3" />}
-                      Apply to all
-                    </Button>
-                  )}
-                  <button type="button" onClick={() => setInfoSection("content")} className="rounded p-0.5 text-muted-foreground hover:bg-muted" aria-label="Content help" title="Help">
-                    <InfoIcon className="size-3.5" />
-                  </button>
-                </div>
-              </div>
-              {isPro && (
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <StepperWithLongPress
-                    value={headlineFontSize ?? defaultHeadlineSize}
-                    min={24}
-                    max={160}
-                    step={4}
-                    onChange={(v) => setHeadlineFontSize(v)}
-                    label="headline size"
-                    className="shrink-0 max-w-[120px]"
-                  />
-                  <div className="flex items-center gap-1.5 shrink-0 rounded-md border border-input/80 bg-background px-1.5 py-0.5">
-                    <Label className="text-[11px] text-muted-foreground whitespace-nowrap">Text</Label>
-                    <ColorPicker
-                      value={headlineZoneOverride?.color ?? ""}
-                      onChange={(v) => setHeadlineZoneOverride((o) => ({ ...o, color: v.trim() || undefined }))}
-                      placeholder="Auto"
-                      compact
-                      swatchOnly
-                    />
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 text-xs text-muted-foreground"
-                    onClick={() => { setHeadlineLayoutModalOpen(false); setHeadlineHighlightOpen(true); }}
-                  >
-                    Highlight
-                  </Button>
-                  <Select
-                    value={headlineZoneOverride?.fontFamily ?? headlineZoneFromTemplate?.fontFamily ?? "system"}
-                    onValueChange={(v) => setHeadlineZoneOverride((o) => ({ ...headlineZoneFromTemplate, ...o, fontFamily: v || undefined }))}
-                  >
-                    <SelectTrigger className="h-7 w-[100px] text-xs">
-                      <SelectValue placeholder="Font" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {PREVIEW_FONTS.map(({ id, label }) => (
-                        <SelectItem key={id} value={id}>{label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button type="button" variant="secondary" size="sm" className="h-7 text-xs" onClick={() => { setHeadlineHighlightOpen(false); setHeadlineLayoutModalOpen((o) => !o); }} title="Headline position & layout">
-                    <LayoutTemplateIcon className="size-3" /> Layout
-                  </Button>
-                </div>
-              )}
-              {isPro && (
-                <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-border/50 bg-muted/30 px-2 py-1.5">
-                  <span className="text-[11px] text-muted-foreground shrink-0">Highlight:</span>
-                  <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 shrink-0" onClick={() => applyAutoHighlight("headline")} title="Highlight key words automatically">
-                    Auto
-                  </Button>
-                  {(["yellow", "amber", "orange", "lime", "cyan", "white"] as const).map((preset) => (
-                    <button
-                      key={preset}
-                      type="button"
-                      onMouseDown={(e) => { e.preventDefault(); saveHighlightSelectionForPicker("headline"); }}
-                      onClick={() => { setHeadlineHighlightColor(HIGHLIGHT_COLORS[preset] ?? "#facc15"); applyHighlightToSelection(preset, "headline", true); }}
-                      className={`h-6 w-6 rounded-full border-2 shrink-0 hover:scale-110 transition-transform ${headlineHighlightColor === (HIGHLIGHT_COLORS[preset] ?? "") ? "border-foreground ring-1 ring-foreground/30" : "border-transparent"}`}
-                      style={{ backgroundColor: HIGHLIGHT_COLORS[preset] }}
-                      title={preset}
-                      aria-label={`Highlight ${preset}`}
-                    />
-                  ))}
-                  <div className="flex rounded border border-border/60 overflow-hidden shrink-0">
-                    {(["text", "background"] as const).map((style) => (
-                      <Button key={style} type="button" variant={headlineHighlightStyle === style ? "secondary" : "ghost"} size="sm" className="h-6 text-[11px] px-2 rounded-none first:rounded-l last:rounded-r" onClick={() => setHeadlineHighlightStyle(style)} title={style === "text" ? "Colored text" : "Colored background"}>
-                        {style === "text" ? "Text" : "Bg"}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-              )}
+          <section className="space-y-3" aria-label="Text">
+            <div className="relative min-h-0 space-y-3">
+            {/* Headline: collapsible */}
+            <div className={`rounded-lg border transition-colors ${activeEditZone === "headline" ? "border-primary/60 ring-1 ring-primary/30" : "border-border/50"} bg-muted/5 overflow-hidden`}>
+              <button
+                type="button"
+                className="w-full flex items-center gap-2 p-3 text-left hover:bg-muted/30 focus:outline-none focus:ring-0"
+                onClick={() => {
+                  if (expandedTextSection === "headline") return;
+                  setExpandedTextSection("headline");
+                  setActiveEditZone("headline");
+                  setTimeout(() => headlineRef.current?.focus(), 80);
+                }}
+                aria-expanded={expandedTextSection === "headline"}
+                aria-controls="text-section-headline"
+              >
+                <ChevronDownIcon className={`size-4 shrink-0 text-muted-foreground transition-transform ${expandedTextSection === "headline" ? "" : "-rotate-90"}`} />
+                <span className="text-xs font-semibold text-foreground">Headline</span>
+                <span className="min-w-0 truncate text-xs text-muted-foreground flex-1">
+                  {headline.trim() ? (headline.length > 36 ? headline.slice(0, 36) + "…" : headline) : "Enter your headline…"}
+                </span>
+              </button>
+              <div id="text-section-headline" className={expandedTextSection === "headline" ? "p-3 pt-0 space-y-3" : "hidden"}>
+              {/* Primary: text first, then main actions */}
               <Textarea
                 ref={headlineRef}
                 id="headline"
                 value={headline}
                 onChange={(e) => setHeadline(e.target.value)}
                 onFocus={() => {
+                  setExpandedTextSection("headline");
                   setActiveEditZone("headline");
-                  setEditorTab("text");
                   if (isMobile) {
                     setTimeout(() => scrollFocusedFieldIntoView(), 350);
                   }
@@ -3668,22 +3584,110 @@ export function SlideEditForm({
                 className="min-h-[72px] w-full md:max-w-[360px] resize-none rounded-md border-input/80 text-sm field-sizing-content px-3 py-2"
                 rows={2}
               />
-              {(isPro || totalSlides > 1) && (
-                <div className="flex flex-wrap items-center gap-2">
-                  {isPro && (
-                    <Button type="button" variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={handleCycleHook} disabled={cyclingHook || ensuringVariants || (isHook && headlineVariants.length === 0)} title={isHook ? "Cycle to next headline variant" : "Generate headline variants (hook slide)"}>
-                      {cyclingHook ? <Loader2Icon className="size-3.5 animate-spin" /> : <SparklesIcon className="size-3.5" />}
-                      Rewrite headline
-                    </Button>
-                  )}
-                  {totalSlides > 1 && isPro && (
-                    <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground gap-1.5" onClick={handleApplyClearHeadlineToAll} disabled={applyingClear} title="Clear headline text on every frame">
-                      {applyingClear ? <Loader2Icon className="size-3.5 animate-spin" /> : <Trash2 className="size-3" />}
-                      Clear text on all slides
-                    </Button>
-                  )}
-                </div>
-              )}
+              <div className="flex flex-wrap items-center gap-2">
+                {isPro && (
+                  <Button type="button" variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={handleCycleHook} disabled={cyclingHook || ensuringVariants || (isHook && headlineVariants.length === 0)} title={isHook ? "Cycle to next headline variant" : "Generate headline variants (hook slide)"}>
+                    {cyclingHook ? <Loader2Icon className="size-3.5 animate-spin" /> : <SparklesIcon className="size-3.5" />}
+                    Rewrite headline
+                  </Button>
+                )}
+                {totalSlides > 1 && isPro && (
+                  <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={handleApplyHeadlineToAll} disabled={applyingHeadlineZone} title="Apply headline size and position to all frames">
+                    {applyingHeadlineZone ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
+                    Apply to all
+                  </Button>
+                )}
+                <button type="button" onClick={() => setInfoSection("content")} className="rounded p-1.5 text-muted-foreground hover:bg-muted" aria-label="Content help" title="Help">
+                  <InfoIcon className="size-3.5" />
+                </button>
+              </div>
+              <div className="border-t border-border/40 pt-2">
+                <button
+                  type="button"
+                  className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                  onClick={() => setHeadlineEditMoreOpen((o) => !o)}
+                  aria-expanded={headlineEditMoreOpen}
+                >
+                  <ChevronDownIcon className={`size-3.5 shrink-0 transition-transform ${headlineEditMoreOpen ? "" : "-rotate-90"}`} />
+                  {headlineEditMoreOpen ? "Less" : "Edit more — style, highlight & layout"}
+                </button>
+                {headlineEditMoreOpen && (
+                  <div className="mt-3 space-y-3">
+                    {isPro && (
+                      <>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <StepperWithLongPress
+                            value={headlineFontSize ?? defaultHeadlineSize}
+                            min={24}
+                            max={160}
+                            step={4}
+                            onChange={(v) => setHeadlineFontSize(v)}
+                            label="Size"
+                            className="shrink-0 max-w-[100px]"
+                          />
+                          <div className="flex items-center gap-1.5 shrink-0 rounded-md border border-input/80 bg-background px-1.5 py-0.5">
+                            <Label className="text-[11px] text-muted-foreground whitespace-nowrap">Color</Label>
+                            <ColorPicker
+                              value={headlineZoneOverride?.color ?? ""}
+                              onChange={(v) => setHeadlineZoneOverride((o) => ({ ...o, color: v.trim() || undefined }))}
+                              placeholder="Auto"
+                              compact
+                              swatchOnly
+                            />
+                          </div>
+                          <Select
+                            value={headlineZoneOverride?.fontFamily ?? headlineZoneFromTemplate?.fontFamily ?? "system"}
+                            onValueChange={(v) => setHeadlineZoneOverride((o) => ({ ...headlineZoneFromTemplate, ...o, fontFamily: v || undefined }))}
+                          >
+                            <SelectTrigger className="h-7 w-[100px] text-xs">
+                              <SelectValue placeholder="Font" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {PREVIEW_FONTS.map(({ id, label }) => (
+                                <SelectItem key={id} value={id}>{label}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Button type="button" variant="secondary" size="sm" className="h-7 text-xs" onClick={() => { setHeadlineHighlightOpen(false); setHeadlineLayoutModalOpen((o) => !o); }} title="Position & size in preview">
+                            <LayoutTemplateIcon className="size-3" /> Layout
+                          </Button>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-border/50 bg-muted/30 px-2 py-1.5">
+                          <span className="text-[11px] text-muted-foreground shrink-0">Highlight:</span>
+                          <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 shrink-0" onClick={() => applyAutoHighlight("headline")} title="Highlight key words automatically">
+                            Auto
+                          </Button>
+                          {(["yellow", "amber", "orange", "lime", "cyan", "white"] as const).map((preset) => (
+                            <button
+                              key={preset}
+                              type="button"
+                              onMouseDown={(e) => { e.preventDefault(); saveHighlightSelectionForPicker("headline"); }}
+                              onClick={() => { setHeadlineHighlightColor(HIGHLIGHT_COLORS[preset] ?? "#facc15"); applyHighlightToSelection(preset, "headline", true); }}
+                              className={`h-6 w-6 rounded-full border-2 shrink-0 hover:scale-110 transition-transform ${headlineHighlightColor === (HIGHLIGHT_COLORS[preset] ?? "") ? "border-foreground ring-1 ring-foreground/30" : "border-transparent"}`}
+                              style={{ backgroundColor: HIGHLIGHT_COLORS[preset] }}
+                              title={preset}
+                              aria-label={`Highlight ${preset}`}
+                            />
+                          ))}
+                          <div className="flex rounded border border-border/60 overflow-hidden shrink-0">
+                            {(["text", "background"] as const).map((style) => (
+                              <Button key={style} type="button" variant={headlineHighlightStyle === style ? "secondary" : "ghost"} size="sm" className="h-6 text-[11px] px-2 rounded-none first:rounded-l last:rounded-r" onClick={() => setHeadlineHighlightStyle(style)} title={style === "text" ? "Colored text" : "Colored background"}>
+                                {style === "text" ? "Text" : "Bg"}
+                              </Button>
+                            ))}
+                          </div>
+                        </div>
+                      </>
+                    )}
+                    {totalSlides > 1 && isPro && (
+                      <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground gap-1.5" onClick={handleApplyClearHeadlineToAll} disabled={applyingClear} title="Clear headline text on every frame">
+                        {applyingClear ? <Loader2Icon className="size-3.5 animate-spin" /> : <Trash2 className="size-3" />}
+                        Clear text on all slides
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
               {editorTab === "text" && (
               <div className="border-t border-border/40 pt-3 mt-3 hidden">
                   <div className="space-y-2">
@@ -3795,104 +3799,39 @@ export function SlideEditForm({
                   </div>
               </div>
               )}
+              </div>
             </div>
 
-            {/* Body */}
-            <div className="relative rounded-lg border border-border/50 bg-muted/5 p-3 space-y-2.5">
-              <div className="flex items-center justify-between gap-2 w-full">
-                <h3 className="text-xs font-semibold text-foreground shrink-0">Body</h3>
-                <div className="flex items-center gap-1 shrink-0">
-                  {totalSlides > 1 && isPro && (
-                    <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={handleApplyBodyToAll} disabled={applyingBodyZone} title="Apply body size and position & layout to all frames">
-                      {applyingBodyZone ? <Loader2Icon className="size-3 animate-spin" /> : <CopyIcon className="size-3" />}
-                      Apply to all
-                    </Button>
-                  )}
-                </div>
-              </div>
-              {isPro && (
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <StepperWithLongPress
-                    value={bodyFontSize ?? defaultBodySize}
-                    min={18}
-                    max={120}
-                    step={4}
-                    onChange={(v) => setBodyFontSize(v)}
-                    label="body size"
-                    className="shrink-0 max-w-[120px]"
-                  />
-                  <div className="flex items-center gap-1.5 shrink-0 rounded-md border border-input/80 bg-background px-1.5 py-0.5">
-                    <Label className="text-[11px] text-muted-foreground whitespace-nowrap">Text</Label>
-                    <ColorPicker
-                      value={bodyZoneOverride?.color ?? ""}
-                      onChange={(v) => setBodyZoneOverride((o) => ({ ...o, color: v.trim() || undefined }))}
-                      placeholder="Auto"
-                      compact
-                      swatchOnly
-                    />
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 text-xs text-muted-foreground"
-                    onClick={() => { setBodyLayoutModalOpen(false); setBodyHighlightOpen(true); }}
-                  >
-                    Highlight
-                  </Button>
-                  <Select
-                    value={bodyZoneOverride?.fontFamily ?? bodyZoneFromTemplate?.fontFamily ?? "system"}
-                    onValueChange={(v) => setBodyZoneOverride((o) => ({ ...bodyZoneFromTemplate, ...o, fontFamily: v || undefined }))}
-                  >
-                    <SelectTrigger className="h-7 w-[100px] text-xs">
-                      <SelectValue placeholder="Font" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {PREVIEW_FONTS.map(({ id, label }) => (
-                        <SelectItem key={id} value={id}>{label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button type="button" variant="secondary" size="sm" className="h-7 text-xs" onClick={() => { setBodyHighlightOpen(false); setBodyLayoutModalOpen((o) => !o); }} title="Body position & layout">
-                    <LayoutTemplateIcon className="size-3" /> Layout
-                  </Button>
-                </div>
-              )}
-              {isPro && (
-                <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-border/50 bg-muted/30 px-2 py-1.5">
-                  <span className="text-[11px] text-muted-foreground shrink-0">Highlight:</span>
-                  <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 shrink-0" onClick={() => applyAutoHighlight("body")} title="Highlight key words automatically">
-                    Auto
-                  </Button>
-                  {(["yellow", "amber", "orange", "lime", "cyan", "white"] as const).map((preset) => (
-                    <button
-                      key={preset}
-                      type="button"
-                      onMouseDown={(e) => { e.preventDefault(); saveHighlightSelectionForPicker("body"); }}
-                      onClick={() => { setBodyHighlightColor(HIGHLIGHT_COLORS[preset] ?? "#facc15"); applyHighlightToSelection(preset, "body", true); }}
-                      className={`h-6 w-6 rounded-full border-2 shrink-0 hover:scale-110 transition-transform ${bodyHighlightColor === (HIGHLIGHT_COLORS[preset] ?? "") ? "border-foreground ring-1 ring-foreground/30" : "border-transparent"}`}
-                      style={{ backgroundColor: HIGHLIGHT_COLORS[preset] }}
-                      title={preset}
-                      aria-label={`Highlight ${preset}`}
-                    />
-                  ))}
-                  <div className="flex rounded border border-border/60 overflow-hidden shrink-0">
-                    {(["text", "background"] as const).map((style) => (
-                      <Button key={style} type="button" variant={bodyHighlightStyle === style ? "secondary" : "ghost"} size="sm" className="h-6 text-[11px] px-2 rounded-none first:rounded-l last:rounded-r" onClick={() => setBodyHighlightStyle(style)} title={style === "text" ? "Colored text" : "Colored background"}>
-                        {style === "text" ? "Text" : "Bg"}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-              )}
+            {/* Body: collapsible */}
+            <div className={`rounded-lg border transition-colors ${activeEditZone === "body" ? "border-primary/60 ring-1 ring-primary/30" : "border-border/50"} bg-muted/5 overflow-hidden`}>
+              <button
+                type="button"
+                className="w-full flex items-center gap-2 p-3 text-left hover:bg-muted/30 focus:outline-none focus:ring-0"
+                onClick={() => {
+                  if (expandedTextSection === "body") return;
+                  setExpandedTextSection("body");
+                  setActiveEditZone("body");
+                  setTimeout(() => bodyRef.current?.focus(), 80);
+                }}
+                aria-expanded={expandedTextSection === "body"}
+                aria-controls="text-section-body"
+              >
+                <ChevronDownIcon className={`size-4 shrink-0 text-muted-foreground transition-transform ${expandedTextSection === "body" ? "" : "-rotate-90"}`} />
+                <span className="text-xs font-semibold text-foreground">Body</span>
+                <span className="min-w-0 truncate text-xs text-muted-foreground flex-1">
+                  {(body ?? "").trim() ? ((body ?? "").length > 36 ? (body ?? "").slice(0, 36) + "…" : (body ?? "")) : "Optional body text…"}
+                </span>
+              </button>
+              <div id="text-section-body" className={expandedTextSection === "body" ? "p-3 pt-0 space-y-3" : "hidden"}>
+              {/* Primary: text first, then main actions */}
               <Textarea
                 ref={bodyRef}
                 id="body"
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
                 onFocus={() => {
+                  setExpandedTextSection("body");
                   setActiveEditZone("body");
-                  setEditorTab("text");
                   if (isMobile) {
                     setTimeout(() => scrollFocusedFieldIntoView(), 350);
                   }
@@ -3902,22 +3841,107 @@ export function SlideEditForm({
                 className="min-h-[60px] w-full md:max-w-[360px] resize-none rounded-md border-input/80 text-sm field-sizing-content px-3 py-2"
                 rows={2}
               />
-              {(isPro || totalSlides > 1) && (
-                <div className="flex flex-wrap items-center gap-2">
-                  {isPro && templateId && (
-                    <Button type="button" variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={handleCycleShorten} disabled={cyclingShorten || ensuringVariants || shortenVariants.length === 0} title="Cycle to next body variant (original / shortened)">
-                      {cyclingShorten || (ensuringVariants && shortenVariants.length === 0) ? <Loader2Icon className="size-3.5 animate-spin" /> : <ScissorsIcon className="size-3.5" />}
-                      Rewrite body
-                    </Button>
-                  )}
-                  {totalSlides > 1 && isPro && (
-                    <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground gap-1.5" onClick={handleApplyClearBodyToAll} disabled={applyingClear} title="Clear body text on every frame">
-                      {applyingClear ? <Loader2Icon className="size-3.5 animate-spin" /> : <Trash2 className="size-3" />}
-                      Clear text on all slides
-                    </Button>
-                  )}
-                </div>
-              )}
+              <div className="flex flex-wrap items-center gap-2">
+                {isPro && templateId && (
+                  <Button type="button" variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={handleCycleShorten} disabled={cyclingShorten || ensuringVariants || shortenVariants.length === 0} title="Cycle to next body variant (original / shortened)">
+                    {cyclingShorten || (ensuringVariants && shortenVariants.length === 0) ? <Loader2Icon className="size-3.5 animate-spin" /> : <ScissorsIcon className="size-3.5" />}
+                    Rewrite body
+                  </Button>
+                )}
+                {totalSlides > 1 && isPro && (
+                  <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={handleApplyBodyToAll} disabled={applyingBodyZone} title="Apply body size and position to all frames">
+                    {applyingBodyZone ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
+                    Apply to all
+                  </Button>
+                )}
+              </div>
+              <div className="border-t border-border/40 pt-2">
+                <button
+                  type="button"
+                  className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                  onClick={() => setBodyEditMoreOpen((o) => !o)}
+                  aria-expanded={bodyEditMoreOpen}
+                >
+                  <ChevronDownIcon className={`size-3.5 shrink-0 transition-transform ${bodyEditMoreOpen ? "" : "-rotate-90"}`} />
+                  {bodyEditMoreOpen ? "Less" : "Edit more — style, highlight & layout"}
+                </button>
+                {bodyEditMoreOpen && (
+                  <div className="mt-3 space-y-3">
+                    {isPro && (
+                      <>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <StepperWithLongPress
+                            value={bodyFontSize ?? defaultBodySize}
+                            min={18}
+                            max={120}
+                            step={4}
+                            onChange={(v) => setBodyFontSize(v)}
+                            label="Size"
+                            className="shrink-0 max-w-[100px]"
+                          />
+                          <div className="flex items-center gap-1.5 shrink-0 rounded-md border border-input/80 bg-background px-1.5 py-0.5">
+                            <Label className="text-[11px] text-muted-foreground whitespace-nowrap">Color</Label>
+                            <ColorPicker
+                              value={bodyZoneOverride?.color ?? ""}
+                              onChange={(v) => setBodyZoneOverride((o) => ({ ...o, color: v.trim() || undefined }))}
+                              placeholder="Auto"
+                              compact
+                              swatchOnly
+                            />
+                          </div>
+                          <Select
+                            value={bodyZoneOverride?.fontFamily ?? bodyZoneFromTemplate?.fontFamily ?? "system"}
+                            onValueChange={(v) => setBodyZoneOverride((o) => ({ ...bodyZoneFromTemplate, ...o, fontFamily: v || undefined }))}
+                          >
+                            <SelectTrigger className="h-7 w-[100px] text-xs">
+                              <SelectValue placeholder="Font" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {PREVIEW_FONTS.map(({ id, label }) => (
+                                <SelectItem key={id} value={id}>{label}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Button type="button" variant="secondary" size="sm" className="h-7 text-xs" onClick={() => { setBodyHighlightOpen(false); setBodyLayoutModalOpen((o) => !o); }} title="Position & size in preview">
+                            <LayoutTemplateIcon className="size-3" /> Layout
+                          </Button>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-border/50 bg-muted/30 px-2 py-1.5">
+                          <span className="text-[11px] text-muted-foreground shrink-0">Highlight:</span>
+                          <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 shrink-0" onClick={() => applyAutoHighlight("body")} title="Highlight key words automatically">
+                            Auto
+                          </Button>
+                          {(["yellow", "amber", "orange", "lime", "cyan", "white"] as const).map((preset) => (
+                            <button
+                              key={preset}
+                              type="button"
+                              onMouseDown={(e) => { e.preventDefault(); saveHighlightSelectionForPicker("body"); }}
+                              onClick={() => { setBodyHighlightColor(HIGHLIGHT_COLORS[preset] ?? "#facc15"); applyHighlightToSelection(preset, "body", true); }}
+                              className={`h-6 w-6 rounded-full border-2 shrink-0 hover:scale-110 transition-transform ${bodyHighlightColor === (HIGHLIGHT_COLORS[preset] ?? "") ? "border-foreground ring-1 ring-foreground/30" : "border-transparent"}`}
+                              style={{ backgroundColor: HIGHLIGHT_COLORS[preset] }}
+                              title={preset}
+                              aria-label={`Highlight ${preset}`}
+                            />
+                          ))}
+                          <div className="flex rounded border border-border/60 overflow-hidden shrink-0">
+                            {(["text", "background"] as const).map((style) => (
+                              <Button key={style} type="button" variant={bodyHighlightStyle === style ? "secondary" : "ghost"} size="sm" className="h-6 text-[11px] px-2 rounded-none first:rounded-l last:rounded-r" onClick={() => setBodyHighlightStyle(style)} title={style === "text" ? "Colored text" : "Colored background"}>
+                                {style === "text" ? "Text" : "Bg"}
+                              </Button>
+                            ))}
+                          </div>
+                        </div>
+                      </>
+                    )}
+                    {totalSlides > 1 && isPro && (
+                      <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground gap-1.5" onClick={handleApplyClearBodyToAll} disabled={applyingClear} title="Clear body text on every frame">
+                        {applyingClear ? <Loader2Icon className="size-3.5 animate-spin" /> : <Trash2 className="size-3" />}
+                        Clear text on all slides
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
               {editorTab === "text" && (
               <div className="border-t border-border/40 pt-3 mt-3 hidden">
                   <div className="space-y-2">
@@ -4024,6 +4048,7 @@ export function SlideEditForm({
                   </div>
               </div>
               )}
+              </div>
             </div>
             </div>
           </section>

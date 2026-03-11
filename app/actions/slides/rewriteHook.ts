@@ -45,18 +45,22 @@ export async function rewriteHook(
 
   const { data: project } = await supabase
     .from("projects")
-    .select("tone_preset, voice_rules")
+    .select("tone_preset, project_rules")
     .eq("id", carousel.project_id)
     .eq("user_id", user.id)
     .single();
   if (!project) return { ok: false, error: "Project not found" };
 
-  const voiceRules = (project.voice_rules as { do_rules?: string; dont_rules?: string }) ?? {};
+  const projectRulesJson = (project.project_rules as { rules?: string; do_rules?: string; dont_rules?: string }) ?? {};
+  const projectRules =
+    (projectRulesJson.rules?.trim() && projectRulesJson.rules) ||
+    (projectRulesJson.do_rules || projectRulesJson.dont_rules
+      ? [projectRulesJson.do_rules && `Do: ${projectRulesJson.do_rules}`, projectRulesJson.dont_rules && `Don't: ${projectRulesJson.dont_rules}`].filter(Boolean).join("\n\n")
+      : "");
   const projectLanguage = (project as { language?: string }).language?.trim() || undefined;
   const { system, user: userMsg } = buildHookRewritePrompt({
     tone_preset: (project.tone_preset as string) ?? "professional",
-    do_rules: voiceRules.do_rules ?? "",
-    dont_rules: voiceRules.dont_rules ?? "",
+    rules: projectRules,
     current_headline: (slide as { headline: string }).headline,
     language: projectLanguage,
   });

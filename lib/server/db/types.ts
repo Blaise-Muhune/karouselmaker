@@ -32,7 +32,7 @@ export interface Project {
   tone_preset: string;
   /** ISO 639-1 language code (e.g. en, es). Default en. All carousels in this project use this language. */
   language?: string;
-  voice_rules: Json;
+  project_rules: Json;
   slide_structure: Json;
   brand_kit: Json;
   sources: Json;
