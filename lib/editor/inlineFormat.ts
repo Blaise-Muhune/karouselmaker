@@ -25,6 +25,31 @@ export const HIGHLIGHT_COLORS: Record<string, string> = {
 };
 
 /**
+ * Remove orphan highlight fragments so they never show as raw in the preview.
+ * - "15}}...{{/}}" (from line-wrap splitting) -> inner text only
+ * - Standalone "{{/}}" (no matching open on this line) -> remove
+ * - Orphan "{{#hex}}" or "{{name}}" (no {{/}} after it on this line) -> remove
+ */
+export function stripOrphanHighlightFragments(text: string): string {
+  return text
+    .replace(/(?<!\{\{(?:#[\da-fA-F]{6}|[a-z]+)\})(?:\d{2,6})?\}\}([\s\S]+?)\{\{\/\}\}/g, "$1")
+    .replace(/\{\{\/\}\}/g, "")
+    .replace(/\{\{(?:#[\da-fA-F]{6}|[a-z]+)\}\}(?=(?:(?!\{\{\/\}\}).)*$)/g, "");
+}
+
+/** Remove all ** from normal segment text so they never show in the preview (line-wrap can leave "**." or "** " etc.). */
+function stripOrphanBoldMarkers(text: string): string {
+  return text.replace(/\*\*/g, "");
+}
+
+/** Strip highlight markup from segment text so {{/}} and {{#hex}} never show as literal (e.g. after line-wrap). */
+function stripHighlightMarkersFromSegment(segmentText: string): string {
+  return segmentText
+    .replace(/\{\{\/\}\}/g, "")
+    .replace(/\{\{(?:#[\da-fA-F]{6}|[a-z]+)\}\}/g, "");
+}
+
+/**
  * Parse a line of slide text for **bold** and {{name}}text{{/}} or {{#hex}}text{{/}}.
  * Unclosed {{name}} or {{#hex}} colors the rest of the line (no literal tag shown).
  * Returns segments in order for rendering.
@@ -46,32 +71,37 @@ export function parseInlineFormatting(text: string): InlineSegment[] {
     const boldIndex = boldMatch ? remaining.indexOf(boldMatch[0]) : -1;
     const unclosedIndex = unclosedMatch ? remaining.indexOf(unclosedMatch[0]) : -1;
 
+    // Skip bold match if its content contains "{{" — likely line-wrap split highlight; treat as normal and parse highlight
+    const boldContent = boldMatch ? (boldMatch[1] ?? "") : "";
+    const boldIsBroken = boldContent.includes("{{");
+
     // Pick the first match
-    if (colorIndex >= 0 && (boldIndex < 0 || colorIndex <= boldIndex)) {
+    if (colorIndex >= 0 && (boldIndex < 0 || boldIsBroken || colorIndex <= boldIndex)) {
       const match = colorMatch!;
       const before = remaining.slice(0, colorIndex);
-      if (before) segments.push({ type: "normal", text: before });
+      if (before) segments.push({ type: "normal", text: stripOrphanBoldMarkers(stripOrphanHighlightFragments(before)) });
       const colorKey = match[1] ?? "";
       const colorHex = colorKey.startsWith("#") ? colorKey : HIGHLIGHT_COLORS[colorKey] ?? "#facc15";
-      segments.push({ type: "color", text: match[2] ?? "", color: colorHex });
+      segments.push({ type: "color", text: stripHighlightMarkersFromSegment(match[2] ?? ""), color: colorHex });
       remaining = remaining.slice(colorIndex + match[0].length);
-    } else if (boldIndex >= 0 && (unclosedIndex < 0 || boldIndex <= unclosedIndex)) {
+    } else if (boldIndex >= 0 && !boldIsBroken && (unclosedIndex < 0 || boldIndex <= unclosedIndex)) {
       const match = boldMatch!;
       const before = remaining.slice(0, boldIndex);
-      if (before) segments.push({ type: "normal", text: before });
-      segments.push({ type: "bold", text: match[1] ?? "" });
+      if (before) segments.push({ type: "normal", text: stripOrphanBoldMarkers(stripOrphanHighlightFragments(before)) });
+      segments.push({ type: "bold", text: stripHighlightMarkersFromSegment(match[1] ?? "") });
       remaining = remaining.slice(boldIndex + match[0].length);
     } else if (unclosedIndex >= 0) {
       const match = unclosedMatch!;
       const before = remaining.slice(0, unclosedIndex);
-      if (before) segments.push({ type: "normal", text: before });
+      if (before) segments.push({ type: "normal", text: stripOrphanBoldMarkers(stripOrphanHighlightFragments(before)) });
       const colorKey = match[1] ?? "";
       const colorHex = colorKey.startsWith("#") ? colorKey : HIGHLIGHT_COLORS[colorKey] ?? "#facc15";
-      const rest = match[2] ?? "";
+      const rest = stripHighlightMarkersFromSegment(match[2] ?? "");
       if (rest) segments.push({ type: "color", text: rest, color: colorHex });
       break;
     } else {
-      segments.push({ type: "normal", text: remaining });
+      // Only strip orphan fragments when showing as normal, so we never display raw }}...{{/}} or orphan **
+      segments.push({ type: "normal", text: stripOrphanBoldMarkers(stripOrphanHighlightFragments(remaining)) });
       break;
     }
   }
@@ -157,9 +187,9 @@ export function clampHighlightSpansToText(text: string, spans: HighlightSpan[]):
 }
 
 /**
- * Inject {{#hex}}...{{/}} into plain text from stored highlight spans.
+ * Inject {{#hex}}...{{/}} around each highlight span. Input text may already contain ** for bold.
+ * Result is "bold wraps word, then color wraps that": {{#hex}}**word**{{/}} for correct parsing.
  * Spans are clamped to text length; overlapping spans are merged (last wins for overlap).
- * Use this when headline/body are stored without brackets and highlights are in meta.
  */
 /**
  * Remove {{name}}, {{#hex}}, and {{/}} from text, leaving only the inner content.
@@ -212,21 +242,21 @@ function getWordRanges(text: string): { start: number; end: number; word: string
   return ranges;
 }
 
-const TARGET_HIGHLIGHT_FRACTION = 0.8;
+const TARGET_HIGHLIGHT_FRACTION = 0.6;
 
 export type AutoHighlightOptions = {
-  /** "headline" = words to ~80% coverage; "body" = same, skip stop words first then fill. */
+  /** "headline" = words to ~60% coverage; "body" = same, skip stop words first then fill. */
   style: "headline" | "body";
   /** Default color for all spans (e.g. HIGHLIGHT_COLORS.yellow). */
   defaultColor?: string;
-  /** Max spans (optional). If not set, target ~80% of words. */
+  /** Max spans (optional). If not set, target ~60% of words. */
   maxSpans?: number;
 };
 
 /**
- * Picks words to highlight so that roughly 80% of words are covered (or up to maxSpans).
- * - Headline: include words in order until we reach ~80% of word count (skip single-letter if it would look odd).
- * - Body: include first word, then content words (skip stop words), until ~80% coverage.
+ * Picks words to highlight so that roughly 60% of words are covered (or up to maxSpans).
+ * - Headline: include words in order until we reach ~60% of word count (skip single-letter if it would look odd).
+ * - Body: include first word, then content words (skip stop words), until ~60% coverage.
  */
 export function getAutoHighlightSpans(text: string, options: AutoHighlightOptions): HighlightSpan[] {
   const words = getWordRanges(text);
@@ -249,7 +279,7 @@ export function getAutoHighlightSpans(text: string, options: AutoHighlightOption
     return spans.slice(0, effectiveMax);
   }
 
-  // Body: first word always, then add content words (skip stop words) until ~80%
+  // Body: first word always, then add content words (skip stop words) until ~60%
   spans.push({ start: words[0]!.start, end: words[0]!.end, color });
   for (let i = 1; i < words.length && spans.length < effectiveMax; i++) {
     const w = words[i]!;
@@ -258,7 +288,7 @@ export function getAutoHighlightSpans(text: string, options: AutoHighlightOption
     const isContentWord = w.word.length >= 2 || isNumber;
     if (isContentWord) spans.push({ start: w.start, end: w.end, color });
   }
-  // If we're under 80% because of stop words, add remaining words to hit target
+  // If we're under 60% because of stop words, add remaining words to hit target
   for (let i = 1; spans.length < effectiveMax && i < words.length; i++) {
     const w = words[i]!;
     if (spans.some((s) => s.start === w.start)) continue;
@@ -311,7 +341,8 @@ function wordRangesCoveredBySpans(wordRanges: { start: number; end: number }[], 
 }
 
 /**
- * If initial spans cover less than target fraction of words, add spans from getAutoHighlightSpans (non-overlapping) until ~80%.
+ * Keep highlight coverage at ~60%: if initial spans cover more than target, randomly trim to 60%;
+ * if less, add spans from getAutoHighlightSpans until ~60%.
  */
 export function ensureHighlightCoverage(
   text: string,
@@ -322,19 +353,78 @@ export function ensureHighlightCoverage(
   const total = wordRanges.length;
   if (total === 0) return initialSpans;
   const targetFraction = options.targetFraction ?? TARGET_HIGHLIGHT_FRACTION;
-  const covered = wordRangesCoveredBySpans(
-    wordRanges.map((r) => ({ start: r.start, end: r.end })),
-    initialSpans
-  );
-  if (covered / total >= targetFraction) return initialSpans;
-  const autoSpans = getAutoHighlightSpans(text, options);
-  const merged = [...initialSpans];
-  for (const s of autoSpans) {
-    const overlaps = merged.some(
-      (m) => s.start < m.end && s.end > m.start
-    );
-    if (!overlaps) merged.push(s);
+  const targetCount = Math.max(1, Math.ceil(total * targetFraction));
+  const ranges = wordRanges.map((r) => ({ start: r.start, end: r.end }));
+
+  let covered = wordRangesCoveredBySpans(ranges, initialSpans);
+
+  if (covered > targetCount) {
+    // Trim: randomly remove spans until coverage is at or just above 60%
+    let result = [...initialSpans];
+    while (result.length > 0) {
+      const currentCovered = wordRangesCoveredBySpans(ranges, result);
+      if (currentCovered <= targetCount) break;
+      const removable = result.filter((s) => {
+        const without = result.filter((x) => x !== s);
+        return without.length > 0 && wordRangesCoveredBySpans(ranges, without) >= targetCount;
+      });
+      if (removable.length === 0) break;
+      const toRemove = removable[Math.floor(Math.random() * removable.length)]!;
+      result = result.filter((x) => x !== toRemove);
+    }
+    result.sort((a, b) => a.start - b.start);
+    return result;
   }
-  merged.sort((a, b) => a.start - b.start);
-  return merged;
+
+  if (covered < targetCount) {
+    const autoSpans = getAutoHighlightSpans(text, options);
+    const merged = [...initialSpans];
+    for (const s of autoSpans) {
+      if (wordRangesCoveredBySpans(ranges, merged) >= targetCount) break;
+      const overlaps = merged.some((m) => s.start < m.end && s.end > m.start);
+      if (!overlaps) merged.push(s);
+    }
+    merged.sort((a, b) => a.start - b.start);
+    return merged;
+  }
+
+  return initialSpans;
+}
+
+/**
+ * When we insert "**" at insertStart and "**" at insertEnd (4 chars total),
+ * shift highlight span indices so they still refer to the same content.
+ * Positions < insertStart: +0; in [insertStart, insertEnd]: +2; > insertEnd: +4.
+ * So a span (insertStart, insertEnd) becomes (insertStart+2, insertEnd+2) and covers only the word between the **.
+ */
+export function shiftHighlightSpansForBoldInsert(
+  spans: HighlightSpan[],
+  insertStart: number,
+  insertEnd: number
+): HighlightSpan[] {
+  if (insertEnd <= insertStart) return spans;
+  const offset = (p: number) => (p < insertStart ? 0 : p <= insertEnd ? 2 : 4);
+  return spans.map((s) => ({
+    ...s,
+    start: s.start + offset(s.start),
+    end: s.end + offset(s.end),
+  }));
+}
+
+/**
+ * When we remove "**" at removeStart and "**" at removeEnd-2 (4 chars total),
+ * shift highlight span indices back. Positions < removeStart+2: 0; in [removeStart+2, removeEnd-2): -2; >= removeEnd: -4.
+ */
+export function shiftHighlightSpansForBoldRemove(
+  spans: HighlightSpan[],
+  removeStart: number,
+  removeEnd: number
+): HighlightSpan[] {
+  if (removeEnd <= removeStart + 4) return spans;
+  const offset = (p: number) => (p >= removeEnd ? -4 : p > removeStart + 2 ? -2 : 0);
+  return spans.map((s) => ({
+    ...s,
+    start: s.start + offset(s.start),
+    end: s.end + offset(s.end),
+  }));
 }

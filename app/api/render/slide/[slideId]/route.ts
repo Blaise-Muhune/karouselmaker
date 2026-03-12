@@ -200,6 +200,14 @@ export async function GET(
   const highlightStyles = merged.highlightStyles;
   const imageDisplay = getMergedImageDisplay(config.data, slideBg);
 
+  const carouselExportSize = (carousel as { export_size?: string }).export_size ?? "1080x1350";
+  const dimensions =
+    carouselExportSize === "1080x1920"
+      ? { w: 1080, h: 1920 }
+      : carouselExportSize === "1080x1080"
+        ? { w: 1080, h: 1080 }
+        : { w: 1080, h: 1350 };
+
   const html = renderSlideHtml(
     {
       headline: slide.headline,
@@ -224,7 +232,8 @@ export async function GET(
     chromeOverrides,
     highlightStyles,
     borderedFrame,
-    imageDisplay
+    imageDisplay,
+    dimensions
   );
 
   return new NextResponse(html, {

@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState, Fragment, type ReactNode, type CSSProperties } from "react";
 import { applyTemplate } from "@/lib/renderer/applyTemplate";
-import { getTextScaleForDimensions, type BrandKit, type SlideData, type TextZoneOverrides, type ChromeOverrides } from "@/lib/renderer/renderModel";
+import { getTextScaleForDimensions, normalizeTextZoneOverrides, type BrandKit, type SlideData, type TextZoneOverrides, type ChromeOverrides } from "@/lib/renderer/renderModel";
+import { getRoundedPolygonClipPath } from "@/lib/renderer/shapeClipPath";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { getContrastingTextColor, hexToRgba } from "@/lib/editor/colorUtils";
-import { parseInlineFormatting, HIGHLIGHT_COLORS, type HighlightSpan } from "@/lib/editor/inlineFormat";
+import { parseInlineFormatting, HIGHLIGHT_COLORS, type HighlightSpan, type InlineSegment } from "@/lib/editor/inlineFormat";
 import { Hand, ChevronsLeft, ChevronsRight, MoveHorizontal, GripHorizontal, Minus, Plus, ChevronDownIcon, SparklesIcon, Loader2Icon } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
@@ -222,8 +223,10 @@ export type SlidePreviewProps = {
     mode?: "full" | "pip";
     /** When mode is "pip": corner for the image box. */
     pipPosition?: "top_left" | "top_right" | "bottom_left" | "bottom_right";
-    /** When mode is "pip": size as fraction of canvas (0.25–0.55). Default 0.4. */
+    /** When mode is "pip": size as fraction of canvas (0.25–1). Default 0.4. */
     pipSize?: number;
+    /** When mode is "pip": rotation in degrees (-180–180). Default 0. */
+    pipRotation?: number;
     /** When mode is "pip": border radius in px. Default 24. */
     pipBorderRadius?: number;
     /** When mode is "pip": custom position X (0–100). When set with pipY, overrides pipPosition preset. */
@@ -409,16 +412,38 @@ function getDividerSegments(
   return segs;
 }
 
-function getShapeStyles(shape: "squircle" | "circle" | "diamond" | "hexagon" | "pill", radius: number): React.CSSProperties {
+/** Pill: rounded square (fixed radius). Circle: perfect circle (50%). So they look different. */
+const PILL_RADIUS_PX = 48;
+
+/** Shapes that use clip-path; CSS border doesn't follow these, so we use a double-layer for the frame. */
+function isClipPathShape(shape: string): boolean {
+  return shape === "diamond" || shape === "hexagon";
+}
+
+const DIAMOND_CLIP = "polygon(50% 0, 100% 50%, 50% 100%, 0 50%)";
+const HEXAGON_CLIP = "polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)";
+
+function getShapeStyles(
+  shape: "squircle" | "circle" | "diamond" | "hexagon" | "pill",
+  radius: number,
+  w?: number,
+  h?: number
+): React.CSSProperties {
   switch (shape) {
     case "circle":
       return { borderRadius: "50%" };
     case "diamond":
-      return { borderRadius: 0, clipPath: "polygon(50% 0, 100% 50%, 50% 100%, 0 50%)" };
+      if (radius > 0 && w != null && h != null) {
+        return { borderRadius: 0, clipPath: getRoundedPolygonClipPath("diamond", w, h, radius) };
+      }
+      return { borderRadius: 0, clipPath: DIAMOND_CLIP };
     case "hexagon":
-      return { borderRadius: 0, clipPath: "polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)" };
+      if (radius > 0 && w != null && h != null) {
+        return { borderRadius: 0, clipPath: getRoundedPolygonClipPath("hexagon", w, h, radius) };
+      }
+      return { borderRadius: 0, clipPath: HEXAGON_CLIP };
     case "pill":
-      return { borderRadius: 9999 };
+      return { borderRadius: PILL_RADIUS_PX };
     default:
       return { borderRadius: radius };
   }
@@ -560,8 +585,8 @@ export function SlidePreview({
       };
       const pos = imageDisplay?.pipPosition ?? "bottom_right";
       const percent = presetToPipPercent(pos);
-      const startX = imageDisplay?.pipX ?? percent.x;
-      const startY = imageDisplay?.pipY ?? percent.y;
+      const startX = Math.min(100, Math.max(0, imageDisplay?.pipX ?? percent.x));
+      const startY = Math.min(100, Math.max(0, imageDisplay?.pipY ?? percent.y));
       pipDragRef.current = { startClientX: e.clientX, startClientY: e.clientY, startX, startY };
       (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
       const scale = editScale || 1;
@@ -819,16 +844,22 @@ export function SlidePreview({
     ...(body_highlights?.length && { body_highlights }),
   };
 
+  /** Normalize zone overrides (coerce numerics) so grid preview matches editor/export layout and line wrap. */
+  const normalizedZoneOverrides = normalizeTextZoneOverrides(zoneOverrides ?? undefined);
+  const headlineFontSize =
+    fontOverrides?.headline_font_size != null ? Number(fontOverrides.headline_font_size) : undefined;
+  const bodyFontSize =
+    fontOverrides?.body_font_size != null ? Number(fontOverrides.body_font_size) : undefined;
   const baseMerged =
-    zoneOverrides || fontOverrides
+    normalizedZoneOverrides || headlineFontSize != null || bodyFontSize != null
       ? {
           headline: {
-            ...zoneOverrides?.headline,
-            ...(fontOverrides?.headline_font_size != null && { fontSize: fontOverrides.headline_font_size }),
+            ...normalizedZoneOverrides?.headline,
+            ...(headlineFontSize != null && !Number.isNaN(headlineFontSize) && { fontSize: headlineFontSize }),
           },
           body: {
-            ...zoneOverrides?.body,
-            ...(fontOverrides?.body_font_size != null && { fontSize: fontOverrides.body_font_size }),
+            ...normalizedZoneOverrides?.body,
+            ...(bodyFontSize != null && !Number.isNaN(bodyFontSize) && { fontSize: bodyFontSize }),
           },
         }
       : undefined;
@@ -1139,7 +1170,6 @@ export function SlidePreview({
           const radius = imageDisplay?.frameRadius ?? 0;
           const frameColor = imageDisplay?.frameColor ?? "#ffffff";
           const frameShape = imageDisplay?.frameShape ?? "squircle";
-          const shapeStyles = getShapeStyles(frameShape, radius);
           const pos = imageDisplay?.position ?? "top";
           const fit = imageDisplay?.fit ?? "cover";
           const layout = imageDisplay?.layout ?? "auto";
@@ -1217,6 +1247,7 @@ export function SlidePreview({
           const pad = frameW > 0 ? 16 : gap;
           const innerW = CANVAS_SIZE - pad * 2;
           const innerH = CANVAS_SIZE - pad * 2;
+          const shapeStylesContainer = getShapeStyles(frameShape, radius, innerW, innerH);
 
           const useCreativeDivider = count === 2 && useSideBySide && (dividerStyle === "zigzag" || dividerStyle === "diagonal");
           const useVisibleDividers = count >= 2 && dividerStyle !== "gap" && !(count === 2 && dividerStyle === "diagonal");
@@ -1226,7 +1257,7 @@ export function SlidePreview({
             return (
               <div
                 className="absolute overflow-hidden"
-                style={{ left: pad, top: pad, width: innerW, height: innerH, ...shapeStyles, border: frameW > 0 ? `${frameW}px solid ${frameColor}` : "none", boxShadow: frameW > 0 ? "0 8px 32px rgba(0,0,0,0.3)" : undefined }}
+                style={{ left: pad, top: pad, width: innerW, height: innerH, ...shapeStylesContainer, border: frameW > 0 ? `${frameW}px solid ${frameColor}` : "none", boxShadow: frameW > 0 ? "0 8px 32px rgba(0,0,0,0.3)" : undefined }}
               >
                 {multiImages.map((url, i) => (
                   <div
@@ -1293,6 +1324,10 @@ export function SlidePreview({
           }
           const segments = getDividerSegments(count, useStacked, useGrid, useSideBySide, pad, innerW, innerH, itemW, itemH, effectiveGap, dividerWidth);
           const flexDir = useStacked ? "column" : "row";
+          const shapeStylesItem = getShapeStyles(frameShape, radius, itemW, itemH);
+          const itemInnerW = itemW - frameW * 2;
+          const itemInnerH = itemH - frameW * 2;
+          const shapeStylesItemInner = getShapeStyles(frameShape, radius, itemInnerW, itemInnerH);
 
           const renderDividerSegment = (seg: DividerSegment, idx: number) => {
             const baseStyle: React.CSSProperties = { position: "absolute" as const, left: seg.x, top: seg.y, width: seg.w, height: seg.h, pointerEvents: "none", zIndex: 0 };
@@ -1349,6 +1384,7 @@ export function SlidePreview({
             return null;
           };
 
+          const useClipPathFrameMulti = frameW > 0 && isClipPathShape(frameShape);
           return (
             <>
               <div
@@ -1365,27 +1401,52 @@ export function SlidePreview({
                 {multiImages.map((url, i) => (
                   <div
                     key={i}
-                    className="overflow-hidden bg-muted"
+                    className="overflow-hidden bg-muted relative"
                     style={{
                       width: itemW,
                       height: itemH,
                       flexGrow: 0,
                       flexShrink: 0,
-                      ...shapeStyles,
-                      border: frameW > 0 ? `${frameW}px solid ${frameColor}` : "none",
-                      boxShadow: frameW > 0 ? "0 8px 32px rgba(0,0,0,0.3)" : undefined,
+                      ...(useClipPathFrameMulti ? {} : { ...shapeStylesItem, border: frameW > 0 ? `${frameW}px solid ${frameColor}` : "none", boxShadow: frameW > 0 ? "0 8px 32px rgba(0,0,0,0.3)" : undefined }),
                     }}
                   >
-                    <img
-                      src={url}
-                      alt=""
-                      referrerPolicy="no-referrer"
-                      className="w-full h-full"
-                      style={{
-                        objectFit: fit,
-                        objectPosition: POSITION_TO_CSS[pos],
-                      }}
-                    />
+                    {useClipPathFrameMulti ? (
+                      <>
+                        <div className="absolute inset-0" style={{ ...shapeStylesItem, backgroundColor: frameColor }} />
+                        <div
+                          className="absolute overflow-hidden"
+                          style={{
+                            left: frameW,
+                            top: frameW,
+                            width: itemInnerW,
+                            height: itemInnerH,
+                            ...shapeStylesItemInner,
+                          }}
+                        >
+                          <img
+                            src={url}
+                            alt=""
+                            referrerPolicy="no-referrer"
+                            className="w-full h-full"
+                            style={{
+                              objectFit: fit,
+                              objectPosition: POSITION_TO_CSS[pos],
+                            }}
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      <img
+                        src={url}
+                        alt=""
+                        referrerPolicy="no-referrer"
+                        className="w-full h-full"
+                        style={{
+                          objectFit: fit,
+                          objectPosition: POSITION_TO_CSS[pos],
+                        }}
+                      />
+                    )}
                   </div>
                 ))}
               </div>
@@ -1397,9 +1458,17 @@ export function SlidePreview({
         (() => {
           const isPip = imageDisplay?.mode === "pip";
           const pipPosition = imageDisplay?.pipPosition ?? "bottom_right";
-          const pipSizePx = Math.round(Math.min(594, Math.max(270, (imageDisplay?.pipSize ?? 0.4) * CANVAS_SIZE)));
-          const pipRadius = imageDisplay?.pipBorderRadius ?? 24;
+          const pipSizePx = Math.round(Math.min(CANVAS_SIZE, Math.max(270, (imageDisplay?.pipSize ?? 0.4) * CANVAS_SIZE)));
           const pipInset = 48;
+          /* PiP uses Frame, Shape, Corner radius, Frame color from Display so those controls apply to the PiP box. */
+          const pipFrame = imageDisplay?.frame ?? "none";
+          const pipFrameW = FRAME_WIDTHS[pipFrame] ?? 0;
+          const pipRadius = imageDisplay?.frameRadius ?? (pipFrameW > 0 ? 24 : 0);
+          const pipFrameColor = imageDisplay?.frameColor ?? "rgba(255,255,255,0.9)";
+          const pipFrameShape = imageDisplay?.frameShape ?? "squircle";
+          const pipShapeStyles = getShapeStyles(pipFrameShape, pipRadius, pipSizePx, pipSizePx);
+          const pipInnerSize = pipSizePx - pipFrameW * 2;
+          const pipInnerShapeStyles = getShapeStyles(pipFrameShape, pipRadius, pipInnerSize, pipInnerSize);
 
           if (isPip) {
             const pipBgColor = backgroundOverride?.color ?? model.background.backgroundColor;
@@ -1411,10 +1480,12 @@ export function SlidePreview({
                 : { backgroundColor: pipBgColor };
             const range = CANVAS_SIZE - pipSizePx;
             const useCustomPipPos = imageDisplay?.pipX != null && imageDisplay?.pipY != null;
+            const pipXClamped = useCustomPipPos ? Math.min(100, Math.max(0, imageDisplay.pipX!)) : 0;
+            const pipYClamped = useCustomPipPos ? Math.min(100, Math.max(0, imageDisplay.pipY!)) : 0;
             const pipPosStyle: CSSProperties = useCustomPipPos
               ? {
-                  left: (imageDisplay.pipX! / 100) * range,
-                  top: (imageDisplay.pipY! / 100) * range,
+                  left: (pipXClamped / 100) * range,
+                  top: (pipYClamped / 100) * range,
                 }
               : pipPosition === "bottom_right"
                 ? { right: pipInset, bottom: pipInset }
@@ -1423,6 +1494,7 @@ export function SlidePreview({
                   : pipPosition === "top_right"
                     ? { right: pipInset, top: pipInset }
                     : { left: pipInset, top: pipInset };
+            const pipUseClipPathFrame = pipFrameW > 0 && isClipPathShape(pipFrameShape);
             return (
               <>
                 <div className="absolute inset-0" style={{ ...pipBgStyle, zIndex: 0 }} />
@@ -1433,8 +1505,9 @@ export function SlidePreview({
                     width: pipSizePx,
                     height: pipSizePx,
                     ...pipPosStyle,
-                    borderRadius: pipRadius,
-                    boxShadow: "0 8px 32px rgba(0,0,0,0.25)",
+                    ...pipShapeStyles,
+                    ...(!pipUseClipPathFrame && pipFrameW > 0 ? { border: `${pipFrameW}px solid ${pipFrameColor}`, boxShadow: "0 8px 32px rgba(0,0,0,0.3)" } : { boxShadow: pipFrameW > 0 ? "0 8px 32px rgba(0,0,0,0.3)" : "0 8px 32px rgba(0,0,0,0.25)" }),
+                    ...((imageDisplay?.pipRotation ?? 0) !== 0 && { transform: `rotate(${imageDisplay?.pipRotation ?? 0}deg)`, transformOrigin: "center" }),
                   }}
                   {...(onPipPositionChange
                     ? {
@@ -1444,13 +1517,47 @@ export function SlidePreview({
                       }
                     : {})}
                 >
-                  <img
-                    src={bgImageUrl}
-                    alt=""
-                    referrerPolicy="no-referrer"
-                    className="absolute inset-0 w-full h-full object-cover pointer-events-none"
-                    style={{ objectPosition: POSITION_TO_CSS[imageDisplay?.position ?? "top"] }}
-                  />
+                  {pipUseClipPathFrame ? (
+                    <>
+                      <div className="absolute inset-0" style={{ ...pipShapeStyles, backgroundColor: pipFrameColor }} />
+                      <div
+                        className="absolute overflow-hidden pointer-events-none"
+                        style={{
+                          left: pipFrameW,
+                          top: pipFrameW,
+                          width: pipInnerSize,
+                          height: pipInnerSize,
+                          ...pipInnerShapeStyles,
+                        }}
+                      >
+                        <img
+                          src={bgImageUrl}
+                          alt=""
+                          referrerPolicy="no-referrer"
+                          className="absolute inset-0 w-full h-full"
+                          style={{
+                            objectFit: imageDisplay?.fit ?? "cover",
+                            objectPosition: imageDisplay?.imagePositionX != null && imageDisplay?.imagePositionY != null
+                              ? `${imageDisplay.imagePositionX}% ${imageDisplay.imagePositionY}%`
+                              : POSITION_TO_CSS[imageDisplay?.position ?? "top"],
+                          }}
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <img
+                      src={bgImageUrl}
+                      alt=""
+                      referrerPolicy="no-referrer"
+                      className="absolute inset-0 w-full h-full pointer-events-none"
+                      style={{
+                        objectFit: imageDisplay?.fit ?? "cover",
+                        objectPosition: imageDisplay?.imagePositionX != null && imageDisplay?.imagePositionY != null
+                          ? `${imageDisplay.imagePositionX}% ${imageDisplay.imagePositionY}%`
+                          : POSITION_TO_CSS[imageDisplay?.position ?? "top"],
+                      }}
+                    />
+                  )}
                 </div>
               </>
             );
@@ -1461,7 +1568,6 @@ export function SlidePreview({
           const radius = imageDisplay?.frameRadius ?? (frameW > 0 ? 24 : 0);
           const frameColor = imageDisplay?.frameColor ?? "rgba(255,255,255,0.9)";
           const frameShape = imageDisplay?.frameShape ?? "squircle";
-          const shapeStyles = getShapeStyles(frameShape, radius);
           const pos = imageDisplay?.position ?? "top";
           const fit = imageDisplay?.fit ?? "cover";
           const inset = frameW > 0 ? 16 : 0;
@@ -1469,34 +1575,77 @@ export function SlidePreview({
             imageDisplay?.imagePositionX != null && imageDisplay?.imagePositionY != null
               ? `${imageDisplay.imagePositionX}% ${imageDisplay.imagePositionY}%`
               : POSITION_TO_CSS[pos];
+          const useClipPathFrame = frameW > 0 && isClipPathShape(frameShape);
+          const contentInset = frameW > 0 ? inset : 0;
+          const contentW = CANVAS_SIZE - contentInset * 2;
+          const contentH = CANVAS_SIZE - contentInset * 2;
+          const shapeStyles = getShapeStyles(frameShape, radius, contentW, contentH);
+          const contentInnerW = contentW - frameW * 2;
+          const contentInnerH = contentH - frameW * 2;
+          const shapeStylesInner = getShapeStyles(frameShape, radius, contentInnerW, contentInnerH);
           return (
             <div
               className="absolute overflow-hidden"
               style={{
                 ...(useBlur ? { filter: "blur(24px)", transform: "scale(1.1)" } : {}),
                 ...(frameW > 0
-                  ? { left: inset, top: inset, width: CANVAS_SIZE - inset * 2, height: CANVAS_SIZE - inset * 2, ...shapeStyles, border: `${frameW}px solid ${frameColor}`, boxShadow: "0 8px 32px rgba(0,0,0,0.3)" }
+                  ? { left: contentInset, top: contentInset, width: contentW, height: contentH, ...shapeStyles, ...(!useClipPathFrame && { border: `${frameW}px solid ${frameColor}` }), boxShadow: frameW > 0 ? "0 8px 32px rgba(0,0,0,0.3)" : undefined }
                   : { inset: 0 }),
               }}
             >
-              <img
-                src={bgImageUrl}
-                alt=""
-                referrerPolicy="no-referrer"
-                className="absolute inset-0 w-full h-full"
-                style={{
-                  objectFit: fit,
-                  objectPosition,
-                }}
-              />
-              {onBackgroundImagePositionChange && (
-                <div
-                  className="absolute inset-0 cursor-grab active:cursor-grabbing"
-                  style={{ zIndex: 1 }}
-                  onPointerDown={handleBgImagePointerDown}
-                  role="presentation"
-                  aria-label="Drag to reposition background image"
-                />
+              {useClipPathFrame ? (
+                <>
+                  <div className="absolute inset-0" style={{ ...shapeStyles, backgroundColor: frameColor }} />
+                  <div
+                    className="absolute overflow-hidden"
+                    style={{
+                      left: frameW,
+                      top: frameW,
+                      width: contentInnerW,
+                      height: contentInnerH,
+                      ...shapeStylesInner,
+                    }}
+                  >
+                    <img
+                      src={bgImageUrl}
+                      alt=""
+                      referrerPolicy="no-referrer"
+                      className="absolute inset-0 w-full h-full"
+                      style={{ objectFit: fit, objectPosition }}
+                    />
+                    {onBackgroundImagePositionChange && (
+                      <div
+                        className="absolute inset-0 cursor-grab active:cursor-grabbing"
+                        style={{ zIndex: 1 }}
+                        onPointerDown={handleBgImagePointerDown}
+                        role="presentation"
+                        aria-label="Drag to reposition background image"
+                      />
+                    )}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <img
+                    src={bgImageUrl}
+                    alt=""
+                    referrerPolicy="no-referrer"
+                    className="absolute inset-0 w-full h-full"
+                    style={{
+                      objectFit: fit,
+                      objectPosition,
+                    }}
+                  />
+                  {onBackgroundImagePositionChange && (
+                    <div
+                      className="absolute inset-0 cursor-grab active:cursor-grabbing"
+                      style={{ zIndex: 1 }}
+                      onPointerDown={handleBgImagePointerDown}
+                      role="presentation"
+                      aria-label="Drag to reposition background image"
+                    />
+                  )}
+                </>
               )}
             </div>
           );
@@ -1586,15 +1735,56 @@ export function SlidePreview({
         };
         const readOnlyBlockContent = block.lines.map((line, i) => {
           const segments = parseInlineFormatting(line);
-          const renderSeg = (seg: (typeof segments)[0], j: number) => {
+          /** Render content that may contain **bold** inside a color span (so bold shows when both highlight and bold apply). */
+          const renderColoredContent = (content: string, color: string, baseKey: number) => {
+            const subSegments = parseInlineFormatting(content);
+            return (
+              <Fragment key={baseKey}>
+                {subSegments.map((sub, k) =>
+                  sub.type === "bold" ? (
+                    <strong key={`${baseKey}-${k}`}>{sub.text}</strong>
+                  ) : (
+                    <Fragment key={`${baseKey}-${k}`}>{sub.text}</Fragment>
+                  )
+                )}
+              </Fragment>
+            );
+          };
+          /** Render content that may contain {{#hex}}...{{/}} inside a bold span (so color inside bold is rendered, not shown as raw). */
+          const renderBoldContent = (content: string, baseKey: number) => {
+            const subSegments = parseInlineFormatting(content);
+            return (
+              <Fragment key={baseKey}>
+                {subSegments.map((sub, k) => {
+                  if (sub.type === "bold") return <strong key={`${baseKey}-${k}`}>{sub.text}</strong>;
+                  if (sub.type === "color" && sub.color) {
+                    return (
+                      <span
+                        key={`${baseKey}-${k}`}
+                        style={
+                          zoneHighlightStyle === "background"
+                            ? { backgroundColor: sub.color, padding: "0.02em 0", display: "inline" as const }
+                            : { color: sub.color }
+                        }
+                      >
+                        {sub.text}
+                      </span>
+                    );
+                  }
+                  return <Fragment key={`${baseKey}-${k}`}>{sub.text}</Fragment>;
+                })}
+              </Fragment>
+            );
+          };
+          const renderSeg = (seg: InlineSegment, j: number) => {
             const fillColor = seg.type === "color" && seg.color ? seg.color : zoneColor;
             if (seg.type === "bold") {
               return zoneHighlightStyle === "outline" ? (
                 <strong key={j}>
-                  <span style={{ ...outlineStyle, color: fillColor }}>{seg.text}</span>
+                  <span style={{ ...outlineStyle, color: fillColor }}>{renderBoldContent(seg.text, j)}</span>
                 </strong>
               ) : (
-                <strong key={j}>{seg.text}</strong>
+                <strong key={j}>{renderBoldContent(seg.text, j)}</strong>
               );
             }
             if (seg.type === "color" && seg.color) {
@@ -1618,7 +1808,7 @@ export function SlidePreview({
                         : { color: seg.color }
                   }
                 >
-                  {seg.text}
+                  {renderColoredContent(seg.text, seg.color, j)}
                 </span>
               );
             }

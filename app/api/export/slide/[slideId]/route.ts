@@ -49,9 +49,11 @@ export async function GET(
   const { slideId } = await context.params;
   const { searchParams } = new URL(request.url);
   const format = (searchParams.get("format") === "jpeg" ? "jpeg" : "png") as ExportFormat;
-  const size = (searchParams.get("size") === "1080x1080" || searchParams.get("size") === "1080x1350" || searchParams.get("size") === "1080x1920"
-    ? searchParams.get("size")
-    : "1080x1350") as ExportSize;
+  const sizeParam = searchParams.get("size");
+  const sizeFromParam =
+    sizeParam === "1080x1080" || sizeParam === "1080x1350" || sizeParam === "1080x1920"
+      ? (sizeParam as ExportSize)
+      : null;
 
   const supabase = await createClient();
   const {
@@ -88,6 +90,13 @@ export async function GET(
   if (!carousel) {
     return NextResponse.json({ error: "Carousel not found" }, { status: 404 });
   }
+
+  const carouselExportSize = (carousel as { export_size?: string }).export_size;
+  const size: ExportSize =
+    sizeFromParam ??
+    (carouselExportSize === "1080x1080" || carouselExportSize === "1080x1350" || carouselExportSize === "1080x1920"
+      ? (carouselExportSize as ExportSize)
+      : "1080x1350");
 
   const project = await getProject(userId, carousel.project_id);
   if (!project) {

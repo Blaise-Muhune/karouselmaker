@@ -2,6 +2,7 @@ import { buildSlideRenderModel, getTextScaleForDimensions, type BrandKit, type S
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { getContrastingTextColor, hexToRgba } from "@/lib/editor/colorUtils";
 import { parseInlineFormatting } from "@/lib/editor/inlineFormat";
+import { getRoundedPolygonClipPath } from "@/lib/renderer/shapeClipPath";
 
 /** Hook slide second image: circle with thick border (matches SlidePreview). */
 const HOOK_CIRCLE_SIZE = 200;
@@ -153,19 +154,32 @@ const ZIGZAG_RIGHT = "polygon(50% 0, 100% 0, 100% 100%, 50% 100%, 35% 75%, 65% 5
 const DIAGONAL_TOP = "polygon(0 0, 100% 0, 0 100%)";
 const DIAGONAL_BOTTOM = "polygon(100% 0, 100% 100%, 0 100%)";
 
-function getShapeCss(shape: string, radius: number): string {
+/** Pill: rounded square (fixed radius). Circle: perfect circle (50%). So they look different. */
+const PILL_RADIUS_PX = 48;
+
+function getShapeCss(shape: string, radius: number, w?: number, h?: number): string {
   switch (shape) {
     case "circle":
       return "border-radius:50%";
     case "diamond":
+      if (radius > 0 && w != null && h != null) {
+        return `border-radius:0;clip-path:${getRoundedPolygonClipPath("diamond", w, h, radius)}`;
+      }
       return "border-radius:0;clip-path:polygon(50% 0, 100% 50%, 50% 100%, 0 50%)";
     case "hexagon":
+      if (radius > 0 && w != null && h != null) {
+        return `border-radius:0;clip-path:${getRoundedPolygonClipPath("hexagon", w, h, radius)}`;
+      }
       return "border-radius:0;clip-path:polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)";
     case "pill":
-      return "border-radius:9999px";
+      return `border-radius:${PILL_RADIUS_PX}px`;
     default:
       return `border-radius:${radius}px`;
   }
+}
+
+function isClipPathShape(shape: string): boolean {
+  return shape === "diamond" || shape === "hexagon";
 }
 
 /**
@@ -224,6 +238,7 @@ export function renderSlideHtml(
     mode?: "full" | "pip";
     pipPosition?: "top_left" | "top_right" | "bottom_left" | "bottom_right";
     pipSize?: number;
+    pipRotation?: number;
     pipBorderRadius?: number;
     /** Custom focal point 0–100. When set with imagePositionY, overrides position preset. */
     imagePositionX?: number;
@@ -398,7 +413,6 @@ export function renderSlideHtml(
   const frameW = FRAME_WIDTHS[frame] ?? 5;
   const radius = disp.frameRadius ?? (isMulti ? 0 : 16);
   const frameShape = disp.frameShape ?? "squircle";
-  const shapeCss = getShapeCss(frameShape, radius);
   const frameColor = disp.frameColor ?? "#ffffff";
   const pos = disp.position ?? "top";
   const posCss = POSITION_TO_CSS[pos] ?? "center center";
@@ -461,7 +475,13 @@ export function renderSlideHtml(
           const divOverlay = isDiagonal
             ? `<div style="position:absolute;inset:0;background:linear-gradient(135deg, transparent calc(50% - ${dividerWidth}px), ${escapeHtml(dividerColor)} calc(50% - ${dividerWidth}px), ${escapeHtml(dividerColor)} calc(50% + ${dividerWidth}px), transparent calc(50% + ${dividerWidth}px));pointer-events:none"></div>`
             : `<svg style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none" viewBox="0 0 100 100" preserveAspectRatio="none"><polyline points="50,0 35,25 65,50 35,75 50,100" fill="none" stroke="${escapeHtml(dividerColor)}" stroke-width="${Math.max(0.8, dividerWidth / 12)}" stroke-linecap="square"/></svg>`;
-          return `<div style="position:absolute;left:${pad}px;top:${pad}px;width:${inner}px;height:${inner}px;overflow:hidden;${shapeCss};${frameW > 0 ? `border:${frameW}px solid ${escapeHtml(frameColor)};box-shadow:0 8px 32px rgba(0,0,0,0.3);` : ""}">${imgs}${divOverlay}</div>`;
+          const shapeCssInner = getShapeCss(frameShape, radius, inner, inner);
+          const useClipPathFrame = frameW > 0 && isClipPathShape(frameShape);
+          if (useClipPathFrame) {
+            const innerInset = inner - frameW * 2;
+            return `<div style="position:absolute;left:${pad}px;top:${pad}px;width:${inner}px;height:${inner}px;"><div style="position:absolute;inset:0;${shapeCssInner};background-color:${escapeHtml(frameColor)}"></div><div style="position:absolute;left:${frameW}px;top:${frameW}px;width:${innerInset}px;height:${innerInset}px;${shapeCssInner};overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.3);">${imgs}${divOverlay}</div></div>`;
+          }
+          return `<div style="position:absolute;left:${pad}px;top:${pad}px;width:${inner}px;height:${inner}px;overflow:hidden;${shapeCssInner};${frameW > 0 ? `border:${frameW}px solid ${escapeHtml(frameColor)};box-shadow:0 8px 32px rgba(0,0,0,0.3);` : ""}">${imgs}${divOverlay}</div>`;
         }
 
         const effectiveGap = useVisibleDividers ? 0 : gap;
@@ -529,9 +549,16 @@ export function renderSlideHtml(
         }).join("") : "";
 
         const multiCoverPos = posCss;
-        const itemsHtml = multiUrls.map((url) =>
-          `<div style="overflow:hidden;${shapeCss};${frameW > 0 ? `border:${frameW}px solid ${escapeHtml(frameColor)};box-shadow:0 8px 32px rgba(0,0,0,0.3);` : ""}width:${itemW}px;height:${itemH}px;flex-shrink:0"><div style="width:100%;height:100%;background-size:${fit};background-position:${multiCoverPos};background-image:url('${escapeHtml(url)}')"></div></div>`
-        ).join("");
+        const shapeCssItem = getShapeCss(frameShape, radius, itemW, itemH);
+        const useClipPathFrameMulti = frameW > 0 && isClipPathShape(frameShape);
+        const itemsHtml = multiUrls.map((url) => {
+          if (useClipPathFrameMulti) {
+            const iw = itemW - frameW * 2;
+            const ih = itemH - frameW * 2;
+            return `<div style="position:relative;width:${itemW}px;height:${itemH}px;flex-shrink:0"><div style="position:absolute;inset:0;${shapeCssItem};background-color:${escapeHtml(frameColor)}"></div><div style="position:absolute;left:${frameW}px;top:${frameW}px;width:${iw}px;height:${ih}px;${shapeCssItem};overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.3);"><div style="width:100%;height:100%;background-size:${fit};background-position:${multiCoverPos};background-image:url('${escapeHtml(url)}')"></div></div></div>`;
+          }
+          return `<div style="overflow:hidden;${shapeCssItem};${frameW > 0 ? `border:${frameW}px solid ${escapeHtml(frameColor)};box-shadow:0 8px 32px rgba(0,0,0,0.3);` : ""}width:${itemW}px;height:${itemH}px;flex-shrink:0"><div style="width:100%;height:100%;background-size:${fit};background-position:${multiCoverPos};background-image:url('${escapeHtml(url)}')"></div></div>`;
+        }).join("");
         return `<div style="position:absolute;left:${pad}px;top:${pad}px;width:${inner}px;height:${inner}px;display:flex;flex-wrap:wrap;flex-direction:${flexDir};gap:${effectiveGap}px;box-sizing:border-box">${itemsHtml}</div>${segsHtml}`;
       })()
     : "";
@@ -542,8 +569,14 @@ export function renderSlideHtml(
   const singleFrame = isSingleImage && !isPip ? "none" : (disp.frame ?? (borderedFrame ? "medium" : "none"));
   const singleFrameW = isSingleImage && !isPip ? 0 : (FRAME_WIDTHS[singleFrame] ?? 0);
   const singleRadius = isSingleImage && !isPip ? 0 : (disp.frameRadius ?? (singleFrameW > 0 ? 24 : 0));
+  const singleFrameOuterW = 1080 - 32;
+  const singleFrameInnerW = singleFrameOuterW - (singleFrameW > 0 ? singleFrameW * 2 : 0);
   const singleShapeCss = getShapeCss(disp.frameShape ?? "squircle", singleRadius);
+  const singleFrameShapeCss = getShapeCss(disp.frameShape ?? "squircle", singleRadius, singleFrameOuterW, singleFrameOuterW);
+  const singleFrameInnerShapeCss = getShapeCss(disp.frameShape ?? "squircle", singleRadius, singleFrameInnerW, singleFrameInnerW);
   const singleFrameColor = disp.frameColor ?? "rgba(255,255,255,0.9)";
+  const singleFrameShape = disp.frameShape ?? "squircle";
+  const singleUseClipPathFrame = singleFrameW > 0 && isClipPathShape(singleFrameShape);
   /** Position controls where image is anchored (cover and contain). Use custom focal point when set. */
   const singleBgPosition =
     disp.imagePositionX != null && disp.imagePositionY != null
@@ -558,8 +591,7 @@ export function renderSlideHtml(
       ? `left:16px;top:16px;width:${1080 - 32}px;height:${1080 - 32}px;${singleShapeCss};border:${singleFrameW}px solid ${escapeHtml(singleFrameColor)};box-shadow:0 8px 32px rgba(0,0,0,0.3);`
       : "left:0;top:0;width:1080px;height:1080px;";
   const pipInset = 48;
-  const pipSizePx = Math.round(Math.min(594, Math.max(270, (disp.pipSize ?? 0.4) * 1080)));
-  const pipRadius = Math.min(72, Math.max(0, disp.pipBorderRadius ?? 24));
+  const pipSizePx = Math.round(Math.min(1080, Math.max(270, (disp.pipSize ?? 0.4) * 1080)));
   const pipRange = 1080 - pipSizePx;
   const useCustomPipPos = disp.pipX != null && disp.pipY != null;
   const pipPos = disp.pipPosition ?? "bottom_right";
@@ -572,15 +604,27 @@ export function renderSlideHtml(
         : pipPos === "top_right"
           ? `right:${pipInset}px;top:${pipInset}px`
           : `left:${pipInset}px;top:${pipInset}px`;
+  const pipShapeCss = getShapeCss(disp.frameShape ?? "squircle", singleRadius, pipSizePx, pipSizePx);
+  const pipInnerSize = pipSizePx - singleFrameW * 2;
+  const pipInnerShapeCss = getShapeCss(disp.frameShape ?? "squircle", singleRadius, pipInnerSize, pipInnerSize);
+  const pipRotation = Math.min(180, Math.max(-180, disp.pipRotation ?? 0));
+  const pipTransform = pipRotation !== 0 ? `transform:rotate(${pipRotation}deg);transform-origin:50% 50%;` : "";
+  /* PiP uses Frame, Shape, Corner radius, Frame color from Display so those controls apply to the PiP box. */
   const singlePipHtml =
     resolvedBgUrl && isPip
-      ? `<div style="position:absolute;${pipPosStyle};width:${pipSizePx}px;height:${pipSizePx}px;border-radius:${pipRadius}px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.25);"><img src="${escapeHtml(resolvedBgUrl)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:${fit};object-position:${singleBgPosition};display:block" /></div>`
+      ? singleFrameW > 0 && singleUseClipPathFrame
+        ? `<div style="position:absolute;${pipPosStyle};width:${pipSizePx}px;height:${pipSizePx}px;${pipTransform}"><div style="position:absolute;inset:0;${pipShapeCss};background-color:${escapeHtml(singleFrameColor)}"></div><div style="position:absolute;left:${singleFrameW}px;top:${singleFrameW}px;width:${pipInnerSize}px;height:${pipInnerSize}px;${pipInnerShapeCss};overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.3);"><img src="${escapeHtml(resolvedBgUrl)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:${fit};object-position:${singleBgPosition};display:block" /></div></div>`
+        : `<div style="position:absolute;${pipPosStyle};width:${pipSizePx}px;height:${pipSizePx}px;overflow:hidden;${pipShapeCss};${singleFrameW > 0 ? `border:${singleFrameW}px solid ${escapeHtml(singleFrameColor)};box-shadow:0 8px 32px rgba(0,0,0,0.3);` : "box-shadow:0 8px 32px rgba(0,0,0,0.25);"}${pipTransform}"><img src="${escapeHtml(resolvedBgUrl)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:${fit};object-position:${singleBgPosition};display:block" /></div>`
       : "";
   /** Use <img> for single full-bleed so data URLs and large images render reliably (no style-attribute length limits). */
   const singleBgImgHtml =
     resolvedBgUrl && isSingleImage && !isPip
       ? singleFrameW > 0
-        ? `<div style="${bgFrameStyle}"><img src="${escapeHtml(resolvedBgUrl)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:${fit};object-position:${singleBgPosition};display:block" /></div>`
+        ? singleUseClipPathFrame
+          ? (() => {
+              return `<div style="position:absolute;left:16px;top:16px;width:${singleFrameOuterW}px;height:${singleFrameOuterW}px;"><div style="position:absolute;inset:0;${singleFrameShapeCss};background-color:${escapeHtml(singleFrameColor)}"></div><div style="position:absolute;left:${singleFrameW}px;top:${singleFrameW}px;width:${singleFrameInnerW}px;height:${singleFrameInnerW}px;${singleFrameInnerShapeCss};overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.3);"><img src="${escapeHtml(resolvedBgUrl)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:${fit};object-position:${singleBgPosition};display:block" /></div></div>`;
+            })()
+          : `<div style="${bgFrameStyle}"><img src="${escapeHtml(resolvedBgUrl)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:${fit};object-position:${singleBgPosition};display:block" /></div>`
         : `<img src="${escapeHtml(resolvedBgUrl)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:${fit};object-position:${singleBgPosition};z-index:0;display:block" />`
       : "";
   const hookCircleHtml =
@@ -647,12 +691,12 @@ export function renderSlideHtml(
 <body>
   <div class="slide-wrap">
   ${(() => { const preloadUrls = [resolvedBgUrl, ...(multiUrls ?? []), secondaryBackgroundImageUrl].filter(Boolean) as string[]; return preloadUrls.length ? preloadUrls.map((url) => `<img src="${escapeHtml(url)}" alt="" decoding="async" class="slide-preload-img" style="position:absolute;width:0;height:0;opacity:0;pointer-events:none;visibility:hidden" />`).join("") : ""; })()}
-  ${useFullCanvasBackground ? `<div class="slide-fullcanvas-bg" style="position:absolute;left:0;top:0;width:${dimW}px;height:${dimH}px;overflow:hidden;z-index:0"><img src="${escapeHtml(resolvedBgUrl!)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:${singleBgPosition};display:block" />${(backgroundOverride?.tintOpacity ?? 0) > 0 ? `<div style="position:absolute;inset:0;background-color:${escapeHtml(backgroundOverride?.tintColor ?? backgroundColor ?? "#0a0a0a")};opacity:${Math.min(1, Math.max(0, backgroundOverride?.tintOpacity ?? 0))};pointer-events:none"></div>` : ""}${useGradient ? `<div style="position:absolute;inset:0;background:${gradientStyle};pointer-events:none"></div>` : ""}</div>` : ""}
+  ${useFullCanvasBackground ? `<div class="slide-fullcanvas-bg" style="position:absolute;left:0;top:0;width:${dimW}px;height:${dimH}px;overflow:hidden;z-index:0"><img src="${escapeHtml(resolvedBgUrl!)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:${singleBgPosition};display:block" />${!noTextOrChrome && (backgroundOverride?.tintOpacity ?? 0) > 0 ? `<div style="position:absolute;inset:0;background-color:${escapeHtml(backgroundOverride?.tintColor ?? backgroundColor ?? "#0a0a0a")};opacity:${Math.min(1, Math.max(0, backgroundOverride?.tintOpacity ?? 0))};pointer-events:none"></div>` : ""}${!noTextOrChrome && useGradient ? `<div style="position:absolute;inset:0;background:${gradientStyle};pointer-events:none"></div>` : ""}</div>` : ""}
   <div class="slide">
   <div class="slide-inner">
     ${decorationHtml}
     ${overlayOnly ? "" : useFullCanvasBackground ? "" : (multiUrls ? multiImagesHtml : isPip ? singlePipHtml : singleBgImgHtml || (isSingleImage ? `<div class="slide-bg-image" style="${bgFrameStyle}${bgImageStyle}"></div>` : ""))}
-    ${!useFullCanvasBackground && (resolvedBgUrl || multiUrls) && (backgroundOverride?.tintOpacity ?? 0) > 0 ? `<div style="position:absolute;inset:0;background-color:${escapeHtml(backgroundOverride?.tintColor ?? backgroundColor ?? "#0a0a0a")};opacity:${Math.min(1, Math.max(0, backgroundOverride?.tintOpacity ?? 0))};pointer-events:none;z-index:0"></div>` : ""}
+    ${!noTextOrChrome && !useFullCanvasBackground && (resolvedBgUrl || multiUrls) && (backgroundOverride?.tintOpacity ?? 0) > 0 ? `<div style="position:absolute;inset:0;background-color:${escapeHtml(backgroundOverride?.tintColor ?? backgroundColor ?? "#0a0a0a")};opacity:${Math.min(1, Math.max(0, backgroundOverride?.tintOpacity ?? 0))};pointer-events:none;z-index:0"></div>` : ""}
     ${noTextOrChrome ? "" : useFullCanvasBackground ? "" : "<div class=\"slide-gradient\"></div>"}
     ${hookCircleHtml}
     ${textBlocksHtml}

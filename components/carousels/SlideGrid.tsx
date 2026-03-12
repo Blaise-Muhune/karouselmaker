@@ -304,6 +304,29 @@ function getImageCount(slide: Slide): number {
   return count;
 }
 
+/** Merge template default image_display with slide's so grid preview matches export/render. */
+function getMergedImageDisplayForPreview(
+  templateConfig: TemplateConfig | null,
+  slide: Slide
+): React.ComponentProps<typeof SlidePreview>["imageDisplay"] {
+  const templateD =
+    templateConfig?.defaults?.meta &&
+    typeof templateConfig.defaults.meta === "object" &&
+    "image_display" in templateConfig.defaults.meta
+      ? (templateConfig.defaults.meta as { image_display?: unknown }).image_display
+      : undefined;
+  const bg = slide.background as { image_display?: Record<string, unknown> } | null;
+  const slideD = bg?.image_display;
+  const fromTemplate =
+    templateD != null && typeof templateD === "object" && !Array.isArray(templateD)
+      ? (templateD as Record<string, unknown>)
+      : {};
+  const fromSlide =
+    slideD != null && typeof slideD === "object" && !Array.isArray(slideD) ? slideD : {};
+  const merged = { ...fromTemplate, ...fromSlide };
+  return (Object.keys(merged).length > 0 ? merged : undefined) as React.ComponentProps<typeof SlidePreview>["imageDisplay"];
+}
+
 function getImageDisplay(slide: Slide): React.ComponentProps<typeof SlidePreview>["imageDisplay"] {
   const bg = slide.background as { image_display?: Record<string, unknown> } | null;
   return (bg?.image_display ?? undefined) as React.ComponentProps<typeof SlidePreview>["imageDisplay"];
@@ -448,7 +471,22 @@ export function SlideGrid({
           const effectiveTemplateConfig = templateConfigFromList ?? fetchedTemplateConfigs[slide.id] ?? null;
           const templateDefaults = getZoneAndFontOverridesFromTemplate(effectiveTemplateConfig);
           const previewZoneOverrides = getZoneOverrides(slide) ?? templateDefaults.zoneOverrides;
-          const previewFontOverrides = getFontOverrides(slide) ?? templateDefaults.fontOverrides;
+          let previewFontOverrides = getFontOverrides(slide) ?? templateDefaults.fontOverrides;
+          const imageDisplayForSlide = getMergedImageDisplayForPreview(effectiveTemplateConfig, slide);
+          const singleImageWithPip =
+            imageDisplayForSlide?.mode === "pip" &&
+            (typeof slideBackgroundImageUrls[slide.id] === "string" ||
+              (Array.isArray(slideBackgroundImageUrls[slide.id]) && (slideBackgroundImageUrls[slide.id] as string[]).length === 1));
+          if (singleImageWithPip && effectiveTemplateConfig) {
+            const headlineZone = effectiveTemplateConfig.textZones?.find((z) => z.id === "headline");
+            const bodyZone = effectiveTemplateConfig.textZones?.find((z) => z.id === "body");
+            const baseHeadline = previewFontOverrides?.headline_font_size ?? (headlineZone as { fontSize?: number } | undefined)?.fontSize ?? 72;
+            const baseBody = previewFontOverrides?.body_font_size ?? (bodyZone as { fontSize?: number } | undefined)?.fontSize ?? 48;
+            previewFontOverrides = {
+              headline_font_size: Math.round(Number(baseHeadline) * 0.85),
+              body_font_size: Math.round(Number(baseBody) * 0.85),
+            };
+          }
           const previewChromeOverrides = getChromeOverrides(slide) ?? templateDefaults.chromeOverrides;
           const currentTemplateId = slide.template_id ?? templates[0]?.id;
           const fromSlide = getBackgroundOverride(slide, effectiveTemplateConfig);
@@ -531,7 +569,8 @@ export function SlideGrid({
                             bodyHighlightStyle={getHighlightStyles(slide).body}
                             headline_highlights={getHighlightSpans(slide).headline_highlights}
                             body_highlights={getHighlightSpans(slide).body_highlights}
-                            imageDisplay={getImageDisplay(slide)}
+                            borderedFrame={hasBackgroundImage}
+                            imageDisplay={imageDisplayForSlide}
                             exportSize={exportSize}
                           />
                         </div>
@@ -617,7 +656,8 @@ export function SlideGrid({
                             bodyHighlightStyle={getHighlightStyles(slide).body}
                             headline_highlights={getHighlightSpans(slide).headline_highlights}
                             body_highlights={getHighlightSpans(slide).body_highlights}
-                            imageDisplay={getImageDisplay(slide)}
+                            borderedFrame={hasBackgroundImage}
+                            imageDisplay={imageDisplayForSlide}
                             exportSize={exportSize}
                           />
                         </div>

@@ -48,6 +48,7 @@ import type { TemplateConfig, TextZone } from "@/lib/server/renderer/templateSch
 import type { Slide, Template } from "@/lib/server/db/types";
 import {
   ArrowLeftIcon,
+  Bold,
   Bookmark,
   CheckIcon,
   ChevronDownIcon,
@@ -80,7 +81,7 @@ import {
 import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { ColorPicker } from "@/components/ui/color-picker";
 import { OVERLAY_PRESETS, PRESET_CUSTOM_ID, type OverlayPreset } from "@/lib/editor/overlayPresets";
-import { HIGHLIGHT_COLORS, expandSelectionToWordBoundaries, normalizeHighlightSpansToWords, clampHighlightSpansToText, getAutoHighlightSpans, getHighlightSpansFromWords, ensureHighlightCoverage, type HighlightSpan } from "@/lib/editor/inlineFormat";
+import { HIGHLIGHT_COLORS, expandSelectionToWordBoundaries, normalizeHighlightSpansToWords, clampHighlightSpansToText, getAutoHighlightSpans, getHighlightSpansFromWords, ensureHighlightCoverage, shiftHighlightSpansForBoldInsert, shiftHighlightSpansForBoldRemove, type HighlightSpan } from "@/lib/editor/inlineFormat";
 
 /** Font stack for each PREVIEW_FONTS id (so options can be rendered in their font). */
 function getFontStack(id: string): string {
@@ -252,8 +253,10 @@ export type ImageDisplayState = {
   mode?: "full" | "pip";
   /** When mode is "pip": corner for the image box. */
   pipPosition?: "top_left" | "top_right" | "bottom_left" | "bottom_right";
-  /** When mode is "pip": size as fraction of canvas (0.25–0.55). Default 0.4. */
+  /** When mode is "pip": size as fraction of canvas (0.25–1). Default 0.4. */
   pipSize?: number;
+  /** When mode is "pip": rotation in degrees (-180–180). Default 0. */
+  pipRotation?: number;
   /** When mode is "pip": border radius in px. Default 24. */
   pipBorderRadius?: number;
   /** When mode is "pip": custom position X (0–100). When set with pipY, overrides pipPosition preset. */
@@ -711,6 +714,11 @@ export function SlideEditForm({
         return v === "background" || v === "outline" ? v : "text";
   });
   type ZoneOverride = { x?: number; y?: number; w?: number; h?: number; fontSize?: number; fontWeight?: number; lineHeight?: number; maxLines?: number; align?: "left" | "center" | "right"; color?: string; fontFamily?: string };
+  /** Max lines that fit in zone height (fontSize * lineHeight per line). Clamped 1–20. */
+  const computeMaxLinesForZone = useCallback((h: number, fontSize: number, lineHeight: number) => {
+    const linePx = fontSize * lineHeight;
+    return Math.max(1, Math.min(20, Math.floor(h / linePx)));
+  }, []);
   const [headlineZoneOverride, setHeadlineZoneOverride] = useState<ZoneOverride | undefined>(() => {
     const m = slide.meta as { headline_zone_override?: ZoneOverride } | null;
     return m?.headline_zone_override && Object.keys(m.headline_zone_override).length > 0 ? m.headline_zone_override : undefined;
@@ -760,6 +768,7 @@ export function SlideEditForm({
   const [headlineHighlightColor, setHeadlineHighlightColor] = useState<string>(defaultHighlightColor);
   const [bodyHighlightColor, setBodyHighlightColor] = useState<string>(defaultHighlightColor);
   const [headlineLayoutModalOpen, setHeadlineLayoutModalOpen] = useState(false);
+  const [expandedColorOverlay, setExpandedColorOverlay] = useState(true);
   const [bodyLayoutModalOpen, setBodyLayoutModalOpen] = useState(false);
   const [chromeLayoutOpen, setChromeLayoutOpen] = useState(false);
   const [headlineHighlightOpen, setHeadlineHighlightOpen] = useState(false);
@@ -788,8 +797,12 @@ export function SlideEditForm({
   const [applyingBodyZone, setApplyingBodyZone] = useState(false);
   const [applyingMadeWith, setApplyingMadeWith] = useState(false);
   const [applyingAutoHighlights, setApplyingAutoHighlights] = useState(false);
+  const [applyingHighlightStyle, setApplyingHighlightStyle] = useState(false);
   const [lastHeadlineHighlightAction, setLastHeadlineHighlightAction] = useState<"auto" | "manual">("manual");
   const [lastBodyHighlightAction, setLastBodyHighlightAction] = useState<"auto" | "manual">("manual");
+  /** Ranges of "**word**" in current text from Auto bold (for toggle-off). Refs so second click always sees them. */
+  const autoBoldRangesHeadlineRef = useRef<{ start: number; end: number }[]>([]);
+  const autoBoldRangesBodyRef = useRef<{ start: number; end: number }[]>([]);
   const [headlineVariants, setHeadlineVariants] = useState<string[]>(() => (slide.meta as { headline_variants?: string[] } | null)?.headline_variants ?? []);
   const [shortenVariants, setShortenVariants] = useState<{ headline: string; body: string }[]>(() => (slide.meta as { shorten_variants?: { headline: string; body: string }[] } | null)?.shorten_variants ?? []);
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
@@ -1289,9 +1302,19 @@ export function SlideEditForm({
     [headline, body]
   );
 
-  /** Auto-highlight: use AI-suggested words from generation when available (per slide/variant), else heuristic. */
+  /** Auto-highlight: toggle — if this field already has auto highlights, remove them; otherwise apply. */
   const applyAutoHighlight = useCallback(
     (target: "headline" | "body") => {
+      if (target === "headline" && lastHeadlineHighlightAction === "auto" && headlineHighlights.length > 0) {
+        setHeadlineHighlights([]);
+        setLastHeadlineHighlightAction("manual");
+        return;
+      }
+      if (target === "body" && lastBodyHighlightAction === "auto" && bodyHighlights.length > 0) {
+        setBodyHighlights([]);
+        setLastBodyHighlightAction("manual");
+        return;
+      }
       const text = target === "headline" ? headline : body;
       if (!text.trim()) return;
       const color = target === "headline" ? headlineHighlightColor : bodyHighlightColor;
@@ -1332,7 +1355,7 @@ export function SlideEditForm({
         setLastBodyHighlightAction("auto");
       }
     },
-    [headline, body, headlineHighlightColor, bodyHighlightColor, slide.meta, slide.headline, slide.body]
+    [headline, body, headlineHighlights.length, bodyHighlights.length, lastHeadlineHighlightAction, lastBodyHighlightAction, headlineHighlightColor, bodyHighlightColor, slide.meta, slide.headline, slide.body]
   );
 
   /** Set all highlights in this field to the chosen color (for that field). */
@@ -1390,6 +1413,138 @@ export function SlideEditForm({
     else setBodyHighlights([]);
   }, []);
 
+  /** Bold the current selection (or saved selection): wrap with ** and shift highlight spans. */
+  const applyBoldToSelection = useCallback(
+    (target: "headline" | "body", useSavedSelection?: boolean) => {
+      const ref =
+        target === "headline"
+          ? headlineHighlightOpen && headlineModalRef.current
+            ? headlineModalRef
+            : headlineRef
+          : bodyHighlightOpen && bodyModalRef.current
+            ? bodyModalRef
+            : bodyRef;
+      let start: number;
+      let end: number;
+      if (useSavedSelection && savedHighlightSelectionRef.current?.field === target) {
+        const saved = savedHighlightSelectionRef.current;
+        start = saved.start;
+        end = saved.end;
+        savedHighlightSelectionRef.current = null;
+      } else {
+        const el = ref.current;
+        if (!el) return;
+        start = el.selectionStart;
+        end = el.selectionEnd;
+      }
+      if (start === end) return;
+      const text = target === "headline" ? headline : body;
+      const expanded = expandSelectionToWordBoundaries(text, start, end);
+      if (!expanded) return;
+      start = expanded.start;
+      end = expanded.end;
+      const newText = text.slice(0, start) + "**" + text.slice(start, end) + "**" + text.slice(end);
+      if (target === "headline") {
+        setHeadline(newText);
+        setHeadlineHighlights((prev) => shiftHighlightSpansForBoldInsert(prev, start, end));
+      } else {
+        setBody(newText);
+        setBodyHighlights((prev) => shiftHighlightSpansForBoldInsert(prev, start, end));
+      }
+      const newEnd = end + 4;
+      setTimeout(() => {
+        ref.current?.focus();
+        ref.current?.setSelectionRange(newEnd, newEnd);
+      }, 0);
+    },
+    [headline, body, headlineHighlightOpen, bodyHighlightOpen]
+  );
+
+  /** Auto-bold: toggle — if text has any '*', strip all; otherwise apply auto bold and store ranges. */
+  const applyAutoBold = useCallback(
+    (target: "headline" | "body") => {
+      const text = target === "headline" ? headline : body;
+      const ref = target === "headline" ? autoBoldRangesHeadlineRef : autoBoldRangesBodyRef;
+      if (text.includes("*")) {
+        const newText = text.replace(/\*/g, "");
+        ref.current = [];
+        const spans = target === "headline" ? headlineHighlights : bodyHighlights;
+        const countStarsBefore = (str: string, pos: number) => (str.slice(0, pos).match(/\*/g) ?? []).length;
+        const shiftedSpans =
+          spans.length > 0
+            ? clampHighlightSpansToText(
+                newText,
+                spans.map((s) => ({
+                  ...s,
+                  start: Math.max(0, s.start - countStarsBefore(text, s.start)),
+                  end: Math.max(0, s.end - countStarsBefore(text, s.end)),
+                }))
+              )
+            : [];
+        if (target === "headline") {
+          setHeadline(newText);
+          if (spans.length > 0) setHeadlineHighlights(shiftedSpans);
+        } else {
+          setBody(newText);
+          if (spans.length > 0) setBodyHighlights(shiftedSpans);
+        }
+        return;
+      }
+      if (!text.trim()) return;
+      const meta = (slide.meta ?? {}) as {
+        headline_highlight_words?: string[];
+        body_highlight_words?: string[];
+        shorten_variants?: { headline: string; body: string; headline_highlight_words?: string[]; body_highlight_words?: string[] }[];
+      };
+      const mainHeadline = slide.headline ?? "";
+      const mainBody = slide.body ?? "";
+      const variants = meta.shorten_variants ?? [];
+      let headlineWords: string[] | undefined;
+      let bodyWords: string[] | undefined;
+      if (headline === mainHeadline && body === mainBody) {
+        headlineWords = meta.headline_highlight_words?.length ? meta.headline_highlight_words : undefined;
+        bodyWords = meta.body_highlight_words?.length ? meta.body_highlight_words : undefined;
+      } else {
+        const idx = variants.findIndex((v) => v.headline === headline && v.body === body);
+        if (idx >= 0) {
+          headlineWords = variants[idx]?.headline_highlight_words?.length ? variants[idx]!.headline_highlight_words : undefined;
+          bodyWords = variants[idx]?.body_highlight_words?.length ? variants[idx]!.body_highlight_words : undefined;
+        }
+      }
+      const wordsToUse = target === "headline" ? headlineWords : bodyWords;
+      const color = target === "headline" ? headlineHighlightColor : bodyHighlightColor;
+      const opts = { style: target, defaultColor: color };
+      const rawSpans =
+        wordsToUse?.length
+          ? getHighlightSpansFromWords(text, wordsToUse, color)
+          : getAutoHighlightSpans(text, opts);
+      const spans = ensureHighlightCoverage(text, rawSpans, opts);
+      const normalized = normalizeHighlightSpansToWords(text, spans);
+      const ranges = normalized.map((s) => ({ start: s.start, end: s.end })).sort((a, b) => b.start - a.start);
+      let newText = text;
+      const existingSpans = target === "headline" ? headlineHighlights : bodyHighlights;
+      let newSpans = existingSpans.length > 0 ? [...existingSpans] : [];
+      const boldRanges: { start: number; end: number }[] = [];
+      for (let i = 0; i < ranges.length; i++) {
+        const r = ranges[i]!;
+        newText = newText.slice(0, r.start) + "**" + newText.slice(r.start, r.end) + "**" + newText.slice(r.end);
+        const startInFinal = r.start + 4 * i;
+        const endInFinal = r.end + 4 + 4 * i;
+        boldRanges.push({ start: startInFinal, end: endInFinal });
+        if (newSpans.length > 0) newSpans = shiftHighlightSpansForBoldInsert(newSpans, r.start, r.end);
+      }
+      ref.current = boldRanges;
+      if (target === "headline") {
+        setHeadline(newText);
+        if (headlineHighlights.length > 0) setHeadlineHighlights(newSpans);
+      } else {
+        setBody(newText);
+        if (bodyHighlights.length > 0) setBodyHighlights(newSpans);
+      }
+    },
+    [headline, body, headlineHighlights, bodyHighlights, headlineHighlightColor, bodyHighlightColor, slide.meta, slide.headline, slide.body]
+  );
+
   /** Save selection when user mousedowns on color picker (before blur). Uses modal textarea ref when modal is open. */
   const saveHighlightSelectionForPicker = useCallback((target: "headline" | "body") => {
     const ref =
@@ -1431,7 +1586,8 @@ export function SlideEditForm({
     if (source.overlayCircleY != null) payload.overlayCircleY = Math.min(100, Math.max(0, source.overlayCircleY));
     if (source.mode != null) payload.mode = source.mode;
     if (source.pipPosition != null) payload.pipPosition = source.pipPosition;
-    if (source.pipSize != null) payload.pipSize = Math.min(0.55, Math.max(0.25, source.pipSize));
+    if (source.pipSize != null) payload.pipSize = Math.min(1, Math.max(0.25, source.pipSize));
+    if (source.pipRotation != null) payload.pipRotation = Math.min(180, Math.max(-180, source.pipRotation));
     if (source.pipBorderRadius != null) payload.pipBorderRadius = Math.min(72, Math.max(0, source.pipBorderRadius));
     if (source.pipX != null) payload.pipX = Math.min(100, Math.max(0, source.pipX));
     if (source.pipY != null) payload.pipY = Math.min(100, Math.max(0, source.pipY));
@@ -1670,14 +1826,13 @@ export function SlideEditForm({
 
   const handleCycleShorten = async () => {
     if (shortenVariants.length === 0) return;
-    const idx = shortenVariants.findIndex((v) => v.headline === headline && (v.body ?? "") === (body ?? ""));
+    const idx = shortenVariants.findIndex((v) => (v.body ?? "") === (body ?? ""));
     const currentIndex = idx >= 0 ? idx : 0;
     const nextIndex = (currentIndex + 1) % shortenVariants.length;
     const next = shortenVariants[nextIndex]!;
-    setHeadline(next.headline);
-    setBody(next.body);
+    setBody(next.body ?? "");
     setCyclingShorten(true);
-    const result = await updateSlide({ slide_id: slide.id, headline: next.headline, body: next.body.trim() || null }, editorPath);
+    const result = await updateSlide({ slide_id: slide.id, headline, body: (next.body ?? "").trim() || null }, editorPath);
     setCyclingShorten(false);
     if (result.ok) router.refresh();
   };
@@ -1793,6 +1948,7 @@ export function SlideEditForm({
       ...(imageDisplay.mode != null && { mode: imageDisplay.mode }),
       ...(imageDisplay.pipPosition != null && { pipPosition: imageDisplay.pipPosition }),
       ...(imageDisplay.pipSize != null && { pipSize: imageDisplay.pipSize }),
+      ...(imageDisplay.pipRotation != null && { pipRotation: imageDisplay.pipRotation }),
       ...(imageDisplay.pipBorderRadius != null && { pipBorderRadius: imageDisplay.pipBorderRadius }),
       ...(imageDisplay.pipX != null && { pipX: imageDisplay.pipX }),
       ...(imageDisplay.pipY != null && { pipY: imageDisplay.pipY }),
@@ -1873,6 +2029,22 @@ export function SlideEditForm({
     if (result.ok) router.refresh();
   };
 
+  /** Apply current headline highlight style (Text/Bg/Outline) to all slides. */
+  const handleApplyHeadlineHighlightStyleToAll = async () => {
+    setApplyingHighlightStyle(true);
+    const result = await applyToAllSlides(slide.carousel_id, { meta: { headline_highlight_style: headlineHighlightStyle } }, editorPath, applyScope);
+    setApplyingHighlightStyle(false);
+    if (result.ok) router.refresh();
+  };
+
+  /** Apply current body highlight style (Text/Bg/Outline) to all slides. */
+  const handleApplyBodyHighlightStyleToAll = async () => {
+    setApplyingHighlightStyle(true);
+    const result = await applyToAllSlides(slide.carousel_id, { meta: { body_highlight_style: bodyHighlightStyle } }, editorPath, applyScope);
+    setApplyingHighlightStyle(false);
+    if (result.ok) router.refresh();
+  };
+
   /** Apply to all highlights: if last action was Auto and multiple slides, run Auto on all slides; else apply current color to all highlights in this field. */
   const handleApplyToAllHighlights = useCallback(
     (field: "headline" | "body") => {
@@ -1908,12 +2080,13 @@ export function SlideEditForm({
     if (result.ok) router.refresh();
   };
 
-  /** Apply headline font size and position & layout to all slides. Used by the single "Apply to all" at top of Headline. */
+  /** Apply headline font size, position, layout, and text color to all slides. Uses effective zone (template + overrides) so color is always included. */
   const handleApplyHeadlineToAll = async () => {
     setApplyingHeadlineZone(true);
     const sizeResult = await applyFontSizeToAllSlides(slide.carousel_id, { headline_font_size: headlineFontSize ?? defaultHeadlineSize }, editorPath, applyScope);
-    if (sizeResult.ok && headlineZoneOverride && Object.keys(headlineZoneOverride).length > 0) {
-      const zoneResult = await applyToAllSlides(slide.carousel_id, { meta: { headline_zone_override: headlineZoneOverride } }, editorPath, applyScope);
+    const effectiveHeadlineZone = { ...(effectiveHeadlineZoneBase ?? {}), ...(headlineZoneOverride ?? {}) } as ZoneOverride;
+    if (sizeResult.ok && Object.keys(effectiveHeadlineZone).length > 0) {
+      const zoneResult = await applyToAllSlides(slide.carousel_id, { meta: { headline_zone_override: effectiveHeadlineZone } }, editorPath, applyScope);
       if (zoneResult.ok) router.refresh();
     } else if (sizeResult.ok) {
       router.refresh();
@@ -1921,12 +2094,13 @@ export function SlideEditForm({
     setApplyingHeadlineZone(false);
   };
 
-  /** Apply body font size and position & layout to all slides. Used by the single "Apply to all" at top of Body. */
+  /** Apply body font size, position, layout, and text color to all slides. Uses effective zone (template + overrides) so color is always included. */
   const handleApplyBodyToAll = async () => {
     setApplyingBodyZone(true);
     const sizeResult = await applyFontSizeToAllSlides(slide.carousel_id, { body_font_size: bodyFontSize ?? defaultBodySize }, editorPath, applyScope);
-    if (sizeResult.ok && bodyZoneOverride && Object.keys(bodyZoneOverride).length > 0) {
-      const zoneResult = await applyToAllSlides(slide.carousel_id, { meta: { body_zone_override: bodyZoneOverride } }, editorPath, applyScope);
+    const effectiveBodyZone = { ...(effectiveBodyZoneBase ?? {}), ...(bodyZoneOverride ?? {}) } as ZoneOverride;
+    if (sizeResult.ok && Object.keys(effectiveBodyZone).length > 0) {
+      const zoneResult = await applyToAllSlides(slide.carousel_id, { meta: { body_zone_override: effectiveBodyZone } }, editorPath, applyScope);
       if (zoneResult.ok) router.refresh();
     } else if (sizeResult.ok) {
       router.refresh();
@@ -2268,27 +2442,35 @@ export function SlideEditForm({
       };
 
   const overlaySection = (
-    <div className="space-y-3 rounded-lg border border-border/50 bg-muted/5 p-3">
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="text-xs font-semibold text-foreground flex items-center gap-2">
-          <PaletteIcon className="size-4 text-muted-foreground" />
-          Color & overlay
-        </h3>
+    <div className={`rounded-lg border transition-colors ${expandedColorOverlay ? "border-border/50" : "border-border/50"} bg-muted/5 overflow-hidden`}>
+      <button
+        type="button"
+        className="w-full flex items-center gap-2 p-3 text-left hover:bg-muted/30 focus:outline-none focus:ring-0"
+        onClick={() => setExpandedColorOverlay((v) => !v)}
+        aria-expanded={expandedColorOverlay}
+        aria-controls="color-overlay-section"
+      >
+        <ChevronDownIcon className={`size-4 shrink-0 text-muted-foreground transition-transform ${expandedColorOverlay ? "" : "-rotate-90"}`} />
+        <PaletteIcon className="size-4 text-muted-foreground" />
+        <span className="text-xs font-semibold text-foreground">Color & overlay</span>
         {totalSlides > 1 && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="text-muted-foreground hover:text-foreground"
-            onClick={handleApplyOverlayToAll}
-            disabled={applyingOverlay}
-            title="Apply overlay to all frames"
-          >
-            {applyingOverlay ? <Loader2Icon className="size-4 animate-spin" /> : <CopyIcon className="size-4" />}
-            Apply to all
-          </Button>
+          <span className="ml-auto" onClick={(e) => e.stopPropagation()}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs text-muted-foreground hover:text-foreground"
+              onClick={handleApplyOverlayToAll}
+              disabled={applyingOverlay}
+              title="Apply overlay to all frames"
+            >
+              {applyingOverlay ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
+              Apply to all
+            </Button>
+          </span>
         )}
-      </div>
+      </button>
+      <div id="color-overlay-section" className={expandedColorOverlay ? "p-3 pt-0 space-y-3" : "hidden"}>
       <p className="text-muted-foreground text-[11px]">Background color (and gradient color when overlay is on). Uses template color until you change it.</p>
       <div className="flex flex-wrap items-center gap-4">
         <div className="flex items-center gap-2">
@@ -2452,6 +2634,7 @@ export function SlideEditForm({
         </div>
       </div>
       )}
+      </div>
     </div>
   );
 
@@ -2662,7 +2845,6 @@ export function SlideEditForm({
                   setActiveEditZone("headline");
                   setEditorTab("text");
                   setExpandedTextSection("headline");
-                  setPreviewExpanded(true);
                   setTimeout(() => headlineRef.current?.focus(), 120);
                 }}
                 onHeadlineBlur={() => setActiveEditZone(null)}
@@ -2670,7 +2852,6 @@ export function SlideEditForm({
                   setActiveEditZone("body");
                   setEditorTab("text");
                   setExpandedTextSection("body");
-                  setPreviewExpanded(true);
                   setTimeout(() => bodyRef.current?.focus(), 120);
                 }}
                 onBodyBlur={() => setActiveEditZone(null)}
@@ -2717,10 +2898,23 @@ export function SlideEditForm({
                         fontWeight: headlineZoneOverride?.fontWeight ?? headlineZoneFromTemplate?.fontWeight ?? 800,
                         width: headlineZoneOverride?.w ?? headlineZoneFromTemplate?.w ?? 920,
                         height: headlineZoneOverride?.h ?? headlineZoneFromTemplate?.h ?? 340,
-                        onFontSizeChange: (v) => setHeadlineZoneOverride((prev) => ({ ...headlineZoneFromTemplate, ...prev, fontSize: v })),
+                        onFontSizeChange: (v) => setHeadlineZoneOverride((prev) => {
+                          const base = headlineZoneFromTemplate;
+                          const h = prev?.h ?? base?.h ?? 340;
+                          const lh = prev?.lineHeight ?? base?.lineHeight ?? 1.2;
+                          return { ...headlineZoneFromTemplate, ...prev, fontSize: v, maxLines: computeMaxLinesForZone(h, v, lh) };
+                        }),
                         onFontWeightChange: (v) => setHeadlineZoneOverride((prev) => ({ ...headlineZoneFromTemplate, ...prev, fontWeight: v })),
                         onWidthChange: (v) => setHeadlineZoneOverride((prev) => ({ ...headlineZoneFromTemplate, ...prev, w: Math.min(1080, Math.max(200, v)) })),
-                        onHeightChange: (v) => setHeadlineZoneOverride((prev) => ({ ...headlineZoneFromTemplate, ...prev, h: Math.min(600, Math.max(60, v)) })),
+                        onHeightChange: (v) => {
+                          const h = Math.min(600, Math.max(60, v));
+                          setHeadlineZoneOverride((prev) => {
+                            const base = headlineZoneFromTemplate;
+                            const fs = prev?.fontSize ?? base?.fontSize ?? 48;
+                            const lh = prev?.lineHeight ?? base?.lineHeight ?? 1.2;
+                            return { ...headlineZoneFromTemplate, ...prev, h, maxLines: computeMaxLinesForZone(h, fs, lh) };
+                          });
+                        },
                         highlight: {
                           color: headlineHighlightColor,
                           onApply: (start, end, color) => applyHighlightToRange("headline", start, end, color),
@@ -2745,10 +2939,23 @@ export function SlideEditForm({
                         fontWeight: bodyZoneOverride?.fontWeight ?? bodyZoneFromTemplate?.fontWeight ?? 500,
                         width: bodyZoneOverride?.w ?? bodyZoneFromTemplate?.w ?? 920,
                         height: bodyZoneOverride?.h ?? bodyZoneFromTemplate?.h ?? 220,
-                        onFontSizeChange: (v) => setBodyZoneOverride((prev) => ({ ...bodyZoneFromTemplate, ...prev, fontSize: v })),
+                        onFontSizeChange: (v) => setBodyZoneOverride((prev) => {
+                          const base = bodyZoneFromTemplate;
+                          const h = prev?.h ?? base?.h ?? 220;
+                          const lh = prev?.lineHeight ?? base?.lineHeight ?? 1.3;
+                          return { ...bodyZoneFromTemplate, ...prev, fontSize: v, maxLines: computeMaxLinesForZone(h, v, lh) };
+                        }),
                         onFontWeightChange: (v) => setBodyZoneOverride((prev) => ({ ...bodyZoneFromTemplate, ...prev, fontWeight: v })),
                         onWidthChange: (v) => setBodyZoneOverride((prev) => ({ ...bodyZoneFromTemplate, ...prev, w: Math.min(1080, Math.max(200, v)) })),
-                        onHeightChange: (v) => setBodyZoneOverride((prev) => ({ ...bodyZoneFromTemplate, ...prev, h: Math.min(600, Math.max(60, v)) })),
+                        onHeightChange: (v) => {
+                          const h = Math.min(600, Math.max(60, v));
+                          setBodyZoneOverride((prev) => {
+                            const base = bodyZoneFromTemplate;
+                            const fs = prev?.fontSize ?? base?.fontSize ?? 36;
+                            const lh = prev?.lineHeight ?? base?.lineHeight ?? 1.3;
+                            return { ...bodyZoneFromTemplate, ...prev, h, maxLines: computeMaxLinesForZone(h, fs, lh) };
+                          });
+                        },
                         highlight: {
                           color: bodyHighlightColor,
                           onApply: (start, end, color) => applyHighlightToRange("body", start, end, color),
@@ -3288,10 +3495,23 @@ export function SlideEditForm({
                                 fontWeight: headlineZoneOverride?.fontWeight ?? headlineZoneFromTemplate?.fontWeight ?? 800,
                                 width: headlineZoneOverride?.w ?? headlineZoneFromTemplate?.w ?? 920,
                                 height: headlineZoneOverride?.h ?? headlineZoneFromTemplate?.h ?? 340,
-                                onFontSizeChange: (v) => setHeadlineZoneOverride((prev) => ({ ...headlineZoneFromTemplate, ...prev, fontSize: v })),
+                                onFontSizeChange: (v) => setHeadlineZoneOverride((prev) => {
+                                  const base = headlineZoneFromTemplate;
+                                  const h = prev?.h ?? base?.h ?? 340;
+                                  const lh = prev?.lineHeight ?? base?.lineHeight ?? 1.2;
+                                  return { ...headlineZoneFromTemplate, ...prev, fontSize: v, maxLines: computeMaxLinesForZone(h, v, lh) };
+                                }),
                                 onFontWeightChange: (v) => setHeadlineZoneOverride((prev) => ({ ...headlineZoneFromTemplate, ...prev, fontWeight: v })),
                                 onWidthChange: (v) => setHeadlineZoneOverride((prev) => ({ ...headlineZoneFromTemplate, ...prev, w: Math.min(1080, Math.max(200, v)) })),
-                                onHeightChange: (v) => setHeadlineZoneOverride((prev) => ({ ...headlineZoneFromTemplate, ...prev, h: Math.min(600, Math.max(60, v)) })),
+                                onHeightChange: (v) => {
+                                  const h = Math.min(600, Math.max(60, v));
+                                  setHeadlineZoneOverride((prev) => {
+                                    const base = headlineZoneFromTemplate;
+                                    const fs = prev?.fontSize ?? base?.fontSize ?? 48;
+                                    const lh = prev?.lineHeight ?? base?.lineHeight ?? 1.2;
+                                    return { ...headlineZoneFromTemplate, ...prev, h, maxLines: computeMaxLinesForZone(h, fs, lh) };
+                                  });
+                                },
                                 highlight: {
                                   color: headlineHighlightColor,
                                   onApply: (start, end, color) => applyHighlightToRange("headline", start, end, color),
@@ -3316,10 +3536,23 @@ export function SlideEditForm({
                                 fontWeight: bodyZoneOverride?.fontWeight ?? bodyZoneFromTemplate?.fontWeight ?? 500,
                                 width: bodyZoneOverride?.w ?? bodyZoneFromTemplate?.w ?? 920,
                                 height: bodyZoneOverride?.h ?? bodyZoneFromTemplate?.h ?? 220,
-                                onFontSizeChange: (v) => setBodyZoneOverride((prev) => ({ ...bodyZoneFromTemplate, ...prev, fontSize: v })),
+                                onFontSizeChange: (v) => setBodyZoneOverride((prev) => {
+                                  const base = bodyZoneFromTemplate;
+                                  const h = prev?.h ?? base?.h ?? 220;
+                                  const lh = prev?.lineHeight ?? base?.lineHeight ?? 1.3;
+                                  return { ...bodyZoneFromTemplate, ...prev, fontSize: v, maxLines: computeMaxLinesForZone(h, v, lh) };
+                                }),
                                 onFontWeightChange: (v) => setBodyZoneOverride((prev) => ({ ...bodyZoneFromTemplate, ...prev, fontWeight: v })),
                                 onWidthChange: (v) => setBodyZoneOverride((prev) => ({ ...bodyZoneFromTemplate, ...prev, w: Math.min(1080, Math.max(200, v)) })),
-                                onHeightChange: (v) => setBodyZoneOverride((prev) => ({ ...bodyZoneFromTemplate, ...prev, h: Math.min(600, Math.max(60, v)) })),
+                                onHeightChange: (v) => {
+                                  const h = Math.min(600, Math.max(60, v));
+                                  setBodyZoneOverride((prev) => {
+                                    const base = bodyZoneFromTemplate;
+                                    const fs = prev?.fontSize ?? base?.fontSize ?? 36;
+                                    const lh = prev?.lineHeight ?? base?.lineHeight ?? 1.3;
+                                    return { ...bodyZoneFromTemplate, ...prev, h, maxLines: computeMaxLinesForZone(h, fs, lh) };
+                                  });
+                                },
                                 highlight: {
                                   color: bodyHighlightColor,
                                   onApply: (start, end, color) => applyHighlightToRange("body", start, end, color),
@@ -3652,7 +3885,7 @@ export function SlideEditForm({
                   </Button>
                 )}
                 {totalSlides > 1 && isPro && (
-                  <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={handleApplyHeadlineToAll} disabled={applyingHeadlineZone} title="Apply headline size and position to all frames">
+                  <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={handleApplyHeadlineToAll} disabled={applyingHeadlineZone} title="Apply headline size, position, layout, and text color to all frames">
                     {applyingHeadlineZone ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
                     Apply to all
                   </Button>
@@ -3682,8 +3915,14 @@ export function SlideEditForm({
                         </div>
                         <div className="flex flex-wrap items-center gap-1.5">
                           <span className="text-[11px] text-muted-foreground shrink-0">Highlight:</span>
-                          <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 shrink-0" onClick={() => applyAutoHighlight("headline")} title="Highlight key words automatically">
+                          <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 shrink-0" onClick={() => applyAutoHighlight("headline")} title="Toggle auto highlight (add or remove)">
                             Auto
+                          </Button>
+                          <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 shrink-0 gap-1" onClick={() => applyBoldToSelection("headline", true)} onMouseDown={() => saveHighlightSelectionForPicker("headline")} title="Bold selected word(s)">
+                            <Bold className="size-3" /> Bold
+                          </Button>
+                          <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 shrink-0" onClick={() => applyAutoBold("headline")} title="Toggle auto bold (add or remove)">
+                            Auto bold
                           </Button>
                           {(["yellow", "amber", "orange", "lime", "cyan", "white"] as const).map((preset) => (
                             <button
@@ -3837,6 +4076,12 @@ export function SlideEditForm({
                       <Button type="button" variant={headlineHighlightStyle === "outline" ? "secondary" : "ghost"} size="sm" className="h-6 text-[11px]" onClick={() => setHeadlineHighlightStyle((s) => (s === "outline" ? "text" : "outline"))} title="Black outline on highlighted characters (toggle on/off)">
                         Outline
                       </Button>
+                      {totalSlides > 1 && (
+                        <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2" onClick={handleApplyHeadlineHighlightStyleToAll} disabled={applyingHighlightStyle} title="Apply headline highlight style (Text/Bg/Outline) to all frames">
+                          {applyingHighlightStyle ? <Loader2Icon className="size-3 animate-spin" /> : <CopyIcon className="size-3" />}
+                          Apply to all
+                        </Button>
+                      )}
                     </div>
                   </div>
               </div>
@@ -3928,7 +4173,7 @@ export function SlideEditForm({
                   </Button>
                 )}
                 {totalSlides > 1 && isPro && (
-                  <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={handleApplyBodyToAll} disabled={applyingBodyZone} title="Apply body size and position to all frames">
+                  <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={handleApplyBodyToAll} disabled={applyingBodyZone} title="Apply body size, position, layout, and text color to all frames">
                     {applyingBodyZone ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
                     Apply to all
                   </Button>
@@ -3955,8 +4200,14 @@ export function SlideEditForm({
                         </div>
                         <div className="flex flex-wrap items-center gap-1.5">
                           <span className="text-[11px] text-muted-foreground shrink-0">Highlight:</span>
-                          <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 shrink-0" onClick={() => applyAutoHighlight("body")} title="Highlight key words automatically">
+                          <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 shrink-0" onClick={() => applyAutoHighlight("body")} title="Toggle auto highlight (add or remove)">
                             Auto
+                          </Button>
+                          <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 shrink-0 gap-1" onClick={() => applyBoldToSelection("body", true)} onMouseDown={() => saveHighlightSelectionForPicker("body")} title="Bold selected word(s)">
+                            <Bold className="size-3" /> Bold
+                          </Button>
+                          <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 shrink-0" onClick={() => applyAutoBold("body")} title="Toggle auto bold (add or remove)">
+                            Auto bold
                           </Button>
                           {(["yellow", "amber", "orange", "lime", "cyan", "white"] as const).map((preset) => (
                             <button
@@ -4105,6 +4356,12 @@ export function SlideEditForm({
                       <Button type="button" variant={bodyHighlightStyle === "outline" ? "secondary" : "ghost"} size="sm" className="h-6 text-[11px]" onClick={() => setBodyHighlightStyle((s) => (s === "outline" ? "text" : "outline"))} title="Black outline on highlighted characters (toggle on/off)">
                         Outline
                       </Button>
+                      {totalSlides > 1 && (
+                        <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2" onClick={handleApplyBodyHighlightStyleToAll} disabled={applyingHighlightStyle} title="Apply body highlight style (Text/Bg/Outline) to all frames">
+                          {applyingHighlightStyle ? <Loader2Icon className="size-3 animate-spin" /> : <CopyIcon className="size-3" />}
+                          Apply to all
+                        </Button>
+                      )}
                     </div>
                   </div>
               </div>
@@ -4115,46 +4372,58 @@ export function SlideEditForm({
           </section>
           )}
           {editorTab === "background" && (
-          <section className="space-y-5" aria-label="Background">
-            <div className="rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-xs font-semibold text-foreground">Source</h3>
-                <div className="flex items-center gap-1">
-                  {!isImageMode && totalSlides > 1 && (
+          <section className="space-y-3" aria-label="Background">
+            {/* Compact action row: no "Source" section */}
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {!isImageMode && totalSlides > 1 && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={handleApplyBackgroundToAll}
+                  disabled={applyingBackground}
+                  title="Apply background (color, style, overlay) to all frames"
+                >
+                  {applyingBackground ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
+                  Apply to all
+                </Button>
+              )}
+              {isImageMode && (
+                <>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    title="Clear image"
+                    className="h-8 text-xs text-muted-foreground hover:text-foreground"
+                    onClick={() => {
+                      const templateBg = getTemplatePreviewBackgroundOverride(templateConfig ?? null);
+                      setBackground((b) => ({ ...b, ...templateBg, gradientOn: true, mode: undefined, asset_id: undefined, storage_path: undefined, image_url: undefined, image_display: undefined }));
+                      setBackgroundImageUrlForPreview(null);
+                      setImageUrls([{ url: "", source: undefined }]);
+                      setImageDisplay({});
+                    }}
+                  >
+                    <ImageOffIcon className="size-3.5" />
+                    Clear
+                  </Button>
+                  {totalSlides > 1 && (
                     <Button
                       type="button"
-                      variant="ghost"
+                      variant="outline"
                       size="sm"
-                      className="h-7 text-xs text-muted-foreground hover:text-foreground"
+                      className="h-8 text-xs"
                       onClick={handleApplyBackgroundToAll}
                       disabled={applyingBackground}
-                      title="Apply background (color, style, overlay) to all frames"
+                      title="Apply background to all frames"
                     >
                       {applyingBackground ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
                       Apply to all
                     </Button>
                   )}
-                  {isImageMode && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      title="Clear image"
-                      className="h-7 text-xs text-muted-foreground hover:text-foreground"
-                      onClick={() => {
-                        const templateBg = getTemplatePreviewBackgroundOverride(templateConfig ?? null);
-                        setBackground((b) => ({ ...b, ...templateBg, gradientOn: true, mode: undefined, asset_id: undefined, storage_path: undefined, image_url: undefined, image_display: undefined }));
-                        setBackgroundImageUrlForPreview(null);
-                        setImageUrls([{ url: "", source: undefined }]);
-                        setImageDisplay({});
-                      }}
-                    >
-                      <ImageOffIcon className="size-3.5" />
-                      Clear
-                    </Button>
-                  )}
-                </div>
-              </div>
+                </>
+              )}
             </div>
             {isImageMode && (
               <div className={`rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3 ${!isPro ? "pointer-events-none opacity-60" : ""}`}>
@@ -4363,18 +4632,20 @@ export function SlideEditForm({
                       <UploadIcon className="size-4" /> Upload
                     </a>
                   </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="rounded-lg h-9 text-muted-foreground hover:text-foreground text-xs"
-                    onClick={handleApplyImageCountToAll}
-                    disabled={applyingImageCount || validImageCount < 1 || totalSlides < 2}
-                    title={totalSlides < 2 ? "Need 2+ frames" : `Apply ${validImageCount} image${validImageCount === 1 ? "" : "s"} to all (reduces frames with more)`}
-                  >
-                    {applyingImageCount ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
-                    Apply {validImageCount} to all
-                  </Button>
+                  {totalSlides > 1 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="rounded-lg h-9 text-muted-foreground hover:text-foreground text-xs"
+                      onClick={handleApplyImageCountToAll}
+                      disabled={applyingImageCount || validImageCount < 1}
+                      title={`Apply ${validImageCount} image${validImageCount === 1 ? "" : "s"} to all (reduces frames with more)`}
+                    >
+                      {applyingImageCount ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
+                      Apply {validImageCount} to all
+                    </Button>
+                  )}
                 </div>
                 {(driveError || driveSuccess) && (
                   <p className={`text-xs ${driveError ? "text-destructive" : "text-emerald-600 dark:text-emerald-400"}`}>
@@ -4430,7 +4701,7 @@ export function SlideEditForm({
                               <input
                                 type="range"
                                 min={25}
-                                max={55}
+                                max={100}
                                 value={Math.round((imageDisplay.pipSize ?? 0.4) * 100)}
                                 onChange={(e) => setImageDisplay((d) => ({ ...d, pipSize: Number(e.target.value) / 100 }))}
                                 className="h-2 flex-1 cursor-pointer appearance-none rounded-full bg-muted accent-primary"
@@ -4438,24 +4709,39 @@ export function SlideEditForm({
                               <span className="text-muted-foreground min-w-8 text-xs tabular-nums">{Math.round((imageDisplay.pipSize ?? 0.4) * 100)}%</span>
                             </div>
                           </div>
+                          <div className="space-y-1.5">
+                            <span className="text-muted-foreground text-xs">PiP rotation</span>
+                            <StepperWithLongPress
+                              value={imageDisplay.pipRotation ?? 0}
+                              min={-180}
+                              max={180}
+                              step={15}
+                              onChange={(v) => setImageDisplay((d) => ({ ...d, pipRotation: v }))}
+                              formatDisplay={(v) => `${v}°`}
+                              label="PiP rotation"
+                              className="w-full max-w-[140px]"
+                            />
+                          </div>
                         </div>
                       )}
                     </>
                   )}
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-muted-foreground text-[11px] font-medium">Position & frame</span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="text-muted-foreground hover:text-foreground text-xs"
-                      onClick={handleApplyImageDisplayToAll}
-                      disabled={applyingImageDisplay || totalSlides < 2}
-                      title={totalSlides < 2 ? "Need 2+ frames to apply" : "Apply position & frame to all frames"}
-                    >
-                      {applyingImageDisplay ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
-                      Apply to all
-                    </Button>
+                    {totalSlides > 1 && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="text-muted-foreground hover:text-foreground text-xs"
+                        onClick={handleApplyImageDisplayToAll}
+                        disabled={applyingImageDisplay}
+                        title="Apply position & frame to all frames"
+                      >
+                        {applyingImageDisplay ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
+                        Apply to all
+                      </Button>
+                    )}
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="space-y-1.5">
@@ -4495,11 +4781,14 @@ export function SlideEditForm({
                         </SelectContent>
                       </Select>
                     </div>
+                    {/* Frame, Shape, Corner radius, Frame color: apply to PiP (single image) or multi-image layout; hidden for single full-bleed where they have no effect */}
+                    {(validImageUrls.length >= 2 || (imageDisplay.mode ?? "full") === "pip") && (
+                      <>
                     <div className="space-y-1.5">
                       <span className="text-muted-foreground text-xs">Frame</span>
                       <Select
                         value={effectiveImageDisplay.frame ?? "medium"}
-                        onValueChange={(v: "none" | "thin" | "medium" | "thick" | "chunky" | "heavy") => setImageDisplay((d) => ({ ...d, frame: v }))}
+                        onValueChange={(v: "none" | "thin" | "medium" | "thick" | "chunky" | "heavy") => setImageDisplay((d) => ({ ...d, frame: v as ImageDisplayState["frame"] }))}
                       >
                         <SelectTrigger className="h-9 rounded-lg border-input/80 bg-background text-sm">
                           <SelectValue />
@@ -4543,7 +4832,11 @@ export function SlideEditForm({
                         formatDisplay={(v) => `${v}px`}
                         label="corner radius"
                         className="w-full max-w-[140px]"
+                        disabled={(imageDisplay.frameShape ?? "squircle") === "circle" || (imageDisplay.frameShape ?? "squircle") === "pill"}
                       />
+                      {((imageDisplay.frameShape ?? "squircle") === "circle" || (imageDisplay.frameShape ?? "squircle") === "pill") && (
+                        <p className="text-muted-foreground text-[11px]">Not used for Circle or Pill.</p>
+                      )}
                     </div>
                     <div className="space-y-1.5 sm:col-span-2">
                       <span className="text-muted-foreground text-xs">Frame color</span>
@@ -4562,6 +4855,8 @@ export function SlideEditForm({
                         />
                       </div>
                     </div>
+                      </>
+                    )}
                     {validImageUrls.length >= 2 && (
                       <>
                         <div className="space-y-1.5">
@@ -4920,7 +5215,16 @@ export function SlideEditForm({
                               min={minVal}
                               max={1080}
                               step={step}
-                              onChange={(v) => setHeadlineZoneOverride((o) => ({ ...(effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!), ...o, [key]: v }))}
+                              onChange={(v) => {
+                                const baseZone = effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!;
+                                if (key === "h") {
+                                  const fs = headlineZoneOverride?.fontSize ?? baseZone.fontSize ?? 48;
+                                  const lh = headlineZoneOverride?.lineHeight ?? baseZone.lineHeight ?? 1.2;
+                                  setHeadlineZoneOverride((o) => ({ ...baseZone, ...o, h: v, maxLines: computeMaxLinesForZone(v, fs, lh) }));
+                                } else {
+                                  setHeadlineZoneOverride((o) => ({ ...baseZone, ...o, [key]: v }));
+                                }
+                              }}
                               label={label.toLowerCase()}
                               className="w-full max-w-[140px]"
                             />
@@ -4963,7 +5267,13 @@ export function SlideEditForm({
                           min={0.5}
                           max={3}
                           step={0.05}
-                          onChange={(v) => setHeadlineZoneOverride((o) => ({ ...(effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!), ...o, lineHeight: Math.round(v * 20) / 20 }))}
+                          onChange={(v) => {
+                            const lh = Math.round(v * 20) / 20;
+                            const baseZone = effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!;
+                            const h = headlineZoneOverride?.h ?? baseZone.h ?? 340;
+                            const fs = headlineZoneOverride?.fontSize ?? baseZone.fontSize ?? 48;
+                            setHeadlineZoneOverride((o) => ({ ...baseZone, ...o, lineHeight: lh, maxLines: computeMaxLinesForZone(h, fs, lh) }));
+                          }}
                           formatDisplay={(v) => v.toFixed(1)}
                           label="line height"
                           className="w-full max-w-[100px]"
@@ -5032,7 +5342,16 @@ export function SlideEditForm({
                               min={minVal}
                               max={1080}
                               step={step}
-                              onChange={(v) => setBodyZoneOverride((o) => ({ ...(effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!), ...o, [key]: v }))}
+                              onChange={(v) => {
+                                const baseZone = effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!;
+                                if (key === "h") {
+                                  const fs = bodyZoneOverride?.fontSize ?? baseZone.fontSize ?? 36;
+                                  const lh = bodyZoneOverride?.lineHeight ?? baseZone.lineHeight ?? 1.3;
+                                  setBodyZoneOverride((o) => ({ ...baseZone, ...o, h: v, maxLines: computeMaxLinesForZone(v, fs, lh) }));
+                                } else {
+                                  setBodyZoneOverride((o) => ({ ...baseZone, ...o, [key]: v }));
+                                }
+                              }}
                               label={label.toLowerCase()}
                               className="w-full max-w-[140px]"
                             />
@@ -5075,7 +5394,13 @@ export function SlideEditForm({
                           min={0.5}
                           max={3}
                           step={0.05}
-                          onChange={(v) => setBodyZoneOverride((o) => ({ ...(effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!), ...o, lineHeight: Math.round(v * 20) / 20 }))}
+                          onChange={(v) => {
+                            const lh = Math.round(v * 20) / 20;
+                            const baseZone = effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!;
+                            const h = bodyZoneOverride?.h ?? baseZone.h ?? 220;
+                            const fs = bodyZoneOverride?.fontSize ?? baseZone.fontSize ?? 36;
+                            setBodyZoneOverride((o) => ({ ...baseZone, ...o, lineHeight: lh, maxLines: computeMaxLinesForZone(h, fs, lh) }));
+                          }}
                           formatDisplay={(v) => v.toFixed(1)}
                           label="line height"
                           className="w-full max-w-[100px]"

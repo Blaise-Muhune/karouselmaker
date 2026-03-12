@@ -71,8 +71,10 @@ export const imageDisplaySchema = z.object({
   mode: z.enum(["full", "pip"]).optional(),
   /** When mode is "pip": corner for the image box. */
   pipPosition: z.enum(["top_left", "top_right", "bottom_left", "bottom_right"]).optional(),
-  /** When mode is "pip": size as fraction of canvas (0.25–0.55). */
-  pipSize: z.number().min(0.25).max(0.55).optional(),
+  /** When mode is "pip": size as fraction of canvas (0.25–1). */
+  pipSize: z.number().min(0.25).max(1).optional(),
+  /** When mode is "pip": rotation in degrees (-180–180). */
+  pipRotation: z.number().min(-180).max(180).optional(),
   /** When mode is "pip": border radius in px. 0–72. */
   pipBorderRadius: z.number().min(0).max(72).optional(),
   /** Single image: custom focal point X (0–100). Overrides position preset when set with imagePositionY. */

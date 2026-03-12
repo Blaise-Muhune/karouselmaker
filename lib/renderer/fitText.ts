@@ -1,12 +1,17 @@
 import type { TextZone } from "@/lib/server/renderer/templateSchema";
+import { stripOrphanHighlightFragments } from "@/lib/editor/inlineFormat";
 
 /**
  * Approximate chars per line from zone width and font size.
  * Conservative (0.54) so lines stay inside the zone and wrap instead of overflowing.
+ * Coerces w/fontSize to numbers so wrap is consistent when zone comes from meta (e.g. JSON strings).
  */
 function charsPerLine(zone: TextZone): number {
-  const approxCharWidth = zone.fontSize * 0.54;
-  return Math.max(1, Math.floor(zone.w / approxCharWidth));
+  const w = Number(zone.w);
+  const fontSize = Number(zone.fontSize);
+  if (!Number.isFinite(w) || !Number.isFinite(fontSize) || fontSize <= 0) return 1;
+  const approxCharWidth = fontSize * 0.54;
+  return Math.max(1, Math.floor(w / approxCharWidth));
 }
 
 /** True if string is a complete {{name}}content{{/}} or {{#hex}}content{{/}} span (must not be split). */
@@ -15,17 +20,23 @@ function isCompleteHighlight(token: string): boolean {
 }
 
 /**
- * Visible character count for wrap decisions. Strips {{#hex}}...{{/}} markers and counts only the inner text
- * so highlighted words don't get isolated (markup was being counted and made lines appear "full" too early).
+ * Visible character count for wrap decisions. Strips {{#hex}}...{{/}} and ** so only the inner text
+ * is counted; bold/highlight markup must not affect line breaks or position.
  */
 function displayLength(s: string): number {
-  const stripped = s.replace(/\{\{(?:#[\da-fA-F]{6}|[a-z]+)\}\}/g, "").replace(/\{\{\/\}\}/g, "");
+  const stripped = s
+    .replace(/\{\{(?:#[\da-fA-F]{6}|[a-z]+)\}\}/g, "")
+    .replace(/\{\{\/\}\}/g, "")
+    .replace(/\*\*/g, "");
   return stripped.length;
 }
 
-/** Visible text (strip highlight markers) for "is this a word?" checks. */
+/** Visible text (strip highlight and bold markers) for "is this a word?" checks. */
 function visibleText(s: string): string {
-  return s.replace(/\{\{(?:#[\da-fA-F]{6}|[a-z]+)\}\}/g, "").replace(/\{\{\/\}\}/g, "");
+  return s
+    .replace(/\{\{(?:#[\da-fA-F]{6}|[a-z]+)\}\}/g, "")
+    .replace(/\{\{\/\}\}/g, "")
+    .replace(/\*\*/g, "");
 }
 
 /** True if the token is a short word (1–2 chars) that contains a letter — avoid leaving it alone on a line. */
@@ -64,13 +75,19 @@ function tokens(text: string): string[] {
   let m: RegExpExecArray | null;
   highlightRe.lastIndex = 0;
   while ((m = highlightRe.exec(trimmed)) !== null) {
-    const before = trimmed.slice(lastIndex, m.index).trim();
-    if (before) result.push(...before.split(/\s+/).filter(Boolean));
+    let before = trimmed.slice(lastIndex, m.index).trim();
+    if (before) {
+      before = stripOrphanHighlightFragments(before);
+      if (before) result.push(...before.split(/\s+/).filter(Boolean));
+    }
     result.push(m[0]);
     lastIndex = highlightRe.lastIndex;
   }
-  const after = trimmed.slice(lastIndex).trim();
-  if (after) result.push(...after.split(/\s+/).filter(Boolean));
+  let after = trimmed.slice(lastIndex).trim();
+  if (after) {
+    after = stripOrphanHighlightFragments(after);
+    if (after) result.push(...after.split(/\s+/).filter(Boolean));
+  }
   return result.length ? result : [trimmed];
 }
 
@@ -159,9 +176,10 @@ function wrapParagraph(paragraph: string, zone: TextZone, maxLines: number): str
 export function fitTextToZone(text: string, zone: TextZone): string[] {
   if (!text.trim()) return [];
 
+  const maxLines = Math.max(1, Math.min(20, Math.round(Number(zone.maxLines)) || 1));
   const paragraphs = text.split(/\n/);
   const allLines: string[] = [];
-  let remainingLines = zone.maxLines;
+  let remainingLines = maxLines;
 
   for (const para of paragraphs) {
     if (remainingLines <= 0) break;
@@ -176,7 +194,7 @@ export function fitTextToZone(text: string, zone: TextZone): string[] {
     }
   }
 
-  return allLines.slice(0, zone.maxLines);
+  return allLines.slice(0, maxLines);
 }
 
 /**

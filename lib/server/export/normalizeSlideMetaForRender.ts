@@ -23,6 +23,7 @@ export type ImageDisplayForRender = {
   mode?: "full" | "pip";
   pipPosition?: "top_left" | "top_right" | "bottom_left" | "bottom_right";
   pipSize?: number;
+  pipRotation?: number;
   pipBorderRadius?: number;
   imagePositionX?: number;
   imagePositionY?: number;

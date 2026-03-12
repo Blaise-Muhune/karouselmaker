@@ -99,6 +99,53 @@ export type TextZoneOverrides = {
   body?: Partial<TextZone>;
 };
 
+const ZONE_NUMERIC_KEYS = ["x", "y", "w", "h", "fontSize", "fontWeight", "lineHeight", "maxLines"] as const;
+const ZONE_ALIGN_VALUES = new Set(["left", "center", "right"]);
+
+/**
+ * Normalize a single zone override so numeric fields are numbers (layout and wrap match export).
+ * Use when zone overrides come from slide.meta (e.g. JSON/DB) where values may be strings.
+ */
+export function normalizeZoneOverrideSingle(
+  raw: Record<string, unknown> | null | undefined
+): Partial<TextZone> | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const out: Record<string, unknown> = {};
+  for (const key of ZONE_NUMERIC_KEYS) {
+    const v = raw[key];
+    if (v === null || v === undefined) continue;
+    const n = Number(v);
+    if (Number.isNaN(n)) continue;
+    (out as Record<string, number>)[key] = key === "lineHeight" ? n : Math.round(n);
+  }
+  if (raw.align && ZONE_ALIGN_VALUES.has(raw.align as string)) out.align = raw.align;
+  if (typeof raw.color === "string" && /^#([0-9A-Fa-f]{3}){1,2}$/.test(raw.color)) out.color = raw.color;
+  if (typeof raw.fontFamily === "string" && raw.fontFamily.trim() !== "") out.fontFamily = raw.fontFamily.trim();
+  return Object.keys(out).length > 0 ? (out as Partial<TextZone>) : undefined;
+}
+
+/**
+ * Normalize headline/body zone overrides so preview and carousel page use same numerics as export.
+ */
+export function normalizeTextZoneOverrides(
+  overrides: TextZoneOverrides | null | undefined
+): TextZoneOverrides | undefined {
+  if (!overrides) return undefined;
+  const headline =
+    overrides.headline != null && typeof overrides.headline === "object"
+      ? normalizeZoneOverrideSingle(overrides.headline as Record<string, unknown>)
+      : undefined;
+  const body =
+    overrides.body != null && typeof overrides.body === "object"
+      ? normalizeZoneOverrideSingle(overrides.body as Record<string, unknown>)
+      : undefined;
+  if (!headline && !body) return undefined;
+  return {
+    ...(headline && { headline }),
+    ...(body && { body }),
+  };
+}
+
 /** Per-slide or template defaults: counter, logo watermark, and "Made with" position/size. */
 export type ChromeOverrides = {
   counter?: { top?: number; right?: number; fontSize?: number };
