@@ -125,6 +125,7 @@ export default async function NewCarouselPage({
           initialUseAiGenerate={regenerateCarousel?.generation_options?.use_ai_generate}
           initialUseWebSearch={regenerateCarousel?.generation_options?.use_web_search}
           initialCarouselFor={(regenerateCarousel?.generation_options as { carousel_for?: "instagram" | "linkedin" } | undefined)?.carousel_for}
+          initialNotes={(regenerateCarousel?.generation_options as { notes?: string } | undefined)?.notes}
           templateOptions={templateOptions}
           defaultTemplateId={defaultTemplateId}
           defaultTemplateConfig={defaultTemplateConfig}

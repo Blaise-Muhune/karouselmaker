@@ -24,11 +24,13 @@ const textZoneSchema = z.object({
   fontWeight: z.number().int().min(100).max(900),
   lineHeight: z.number().min(0.5).max(3),
   maxLines: z.number().int().min(1).max(20),
-  align: z.enum(["left", "center", "right"]),
+  align: z.enum(["left", "center", "right", "justify"]),
   /** Optional text color (hex). When unset, uses contrasting color from background. */
   color: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
   /** Optional font family: "system", "Inter", "Georgia", or other safe web font. Rendered as font-family stack. */
   fontFamily: z.string().max(80).optional(),
+  /** Optional text rotation in degrees (-180 to 180). Default 0. */
+  rotation: z.number().min(-180).max(180).optional(),
 });
 
 const gradientOverlaySchema = z.object({

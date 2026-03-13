@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { startCarouselGeneration, generateCarousel } from "@/app/actions/carousels/generateCarousel";
+import { generateCarousel } from "@/app/actions/carousels/generateCarousel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -65,6 +65,7 @@ export function NewCarouselForm({
   initialUseAiGenerate,
   initialUseWebSearch,
   initialCarouselFor,
+  initialNotes,
   templateOptions = [],
   defaultTemplateId = null,
   defaultTemplateConfig = null,
@@ -98,6 +99,8 @@ export function NewCarouselForm({
   initialUseWebSearch?: boolean;
   /** Pre-fill "Carousel for" (Instagram vs LinkedIn). */
   initialCarouselFor?: "instagram" | "linkedin";
+  /** Pre-fill Notes when regenerating (from carousel.generation_options.notes). */
+  initialNotes?: string;
   /** Templates the user can choose before generating (with parsed config for preview). */
   templateOptions?: TemplateOption[];
   defaultTemplateId?: string | null;
@@ -124,7 +127,7 @@ export function NewCarouselForm({
   const [useWebSearch, setUseWebSearch] = useState(initialUseWebSearch ?? false);
   const [carouselFor, setCarouselFor] = useState<"instagram" | "linkedin">(initialCarouselFor ?? "instagram");
   const [viralShortsStyle, setViralShortsStyle] = useState(false);
-  const [notes, setNotes] = useState("");
+  const [notes, setNotes] = useState(initialNotes ?? "");
   const [backgroundPickerOpen, setBackgroundPickerOpen] = useState(false);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [visibleTemplateCount, setVisibleTemplateCount] = useState(TEMPLATE_PAGE_SIZE);
@@ -211,30 +214,15 @@ export function NewCarouselForm({
       if (notes.trim()) formData.set("notes", notes.trim());
       if (selectedTemplateId) formData.set("template_id", selectedTemplateId);
       else if (carouselFor === "linkedin" && defaultLinkedInTemplateId) formData.set("template_id", defaultLinkedInTemplateId);
-      if (regenerateCarouselId) {
-        const result = await generateCarousel(formData);
-        if ("error" in result && !("carouselId" in result)) {
-          setError(result.error);
-          return;
-        }
-        const carouselId = "carouselId" in result ? result.carouselId : undefined;
-        if (carouselId) {
-          const hasPartialError = "partialError" in result && result.partialError;
-          router.push(hasPartialError ? `/p/${projectId}/c/${carouselId}?generation=partial` : `/p/${projectId}/c/${carouselId}`);
-        }
-      } else {
-        const result = await startCarouselGeneration(formData);
-        if ("error" in result) {
-          setError(result.error);
-          setIsPending(false);
-          return;
-        }
-        if (result.carouselId) {
-          // Redirect immediately to carousel page; it runs the generate API and shows loading there.
-          // Avoids keeping a long-running fetch on this page (client/proxy timeouts would leave loading stuck).
-          router.push(`/p/${projectId}/c/${result.carouselId}`);
-          return;
-        }
+      const result = await generateCarousel(formData);
+      if ("error" in result && !("carouselId" in result)) {
+        setError(result.error);
+        return;
+      }
+      const carouselId = "carouselId" in result ? result.carouselId : undefined;
+      if (carouselId) {
+        const hasPartialError = "partialError" in result && result.partialError;
+        router.push(hasPartialError ? `/p/${projectId}/c/${carouselId}?generation=partial` : `/p/${projectId}/c/${carouselId}`);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Something went wrong. Please try again.";
@@ -267,9 +255,7 @@ export function NewCarouselForm({
               {regenerateCarouselId ? "Regenerating your carousel…" : "Generating your carousel…"}
             </p>
             <p className="text-xs text-muted-foreground">
-              {regenerateCarouselId
-                ? "This may take a minute or two."
-                : "This usually takes 1–3 minutes. Please don't leave this page."}
+              This may take a minute or two.
             </p>
           </div>
         </div>

@@ -1,11 +1,12 @@
 export default function SlideEditLoading() {
   return (
-    <div className="flex min-h-[calc(100vh-8rem)] flex-col">
-      <header className="flex items-center gap-3 shrink-0 px-2 py-2 border-b border-border/60 bg-card/50">
-        <div className="h-9 w-9 animate-pulse rounded-md bg-muted" />
-        <div className="h-5 w-28 animate-pulse rounded bg-muted" />
+    <div className="flex h-[calc(100vh-8rem)] min-h-0 flex-col">
+      <header className="flex flex-row items-center gap-2 shrink-0 px-3 py-1.5 border-b border-border/60 bg-card/50">
+        <div className="h-8 w-8 shrink-0 animate-pulse rounded-md bg-muted" />
+        <div className="h-4 flex-1 min-w-0 max-w-[200px] animate-pulse rounded bg-muted" />
+        <div className="h-4 w-16 shrink-0 animate-pulse rounded bg-muted" />
       </header>
-      <main className="flex flex-1 items-center justify-center p-4 bg-muted/20">
+      <main className="flex flex-1 min-h-0 items-center justify-center p-4 bg-muted/20">
         <div className="flex flex-col items-center gap-3 text-muted-foreground">
           <div className="size-8 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden />
           <p className="text-sm">Loading frame…</p>

@@ -4,6 +4,9 @@
  * - {{yellow}}word{{/}} or {{#facc15}}word{{/}} → colored/highlight text (good contrast on dark bg)
  */
 
+/** Font weight used for **bold** segments in preview and export (fixed value, not a delta). */
+export const BOLD_FONT_WEIGHT = 700;
+
 export type InlineSegment = {
   type: "normal" | "bold" | "color";
   text: string;

@@ -1,4 +1,6 @@
 import { FFmpeg } from "@ffmpeg/ffmpeg";
+import { generateImpactWav, generateRiserWav } from "@/lib/video/soundEffects";
+import { generateWhooshWav } from "@/lib/video/whooshSfx";
 
 export const SECONDS_PER_SLIDE = 4;
 /** Minimum total video duration when using voiceover (e.g. 30s). */
@@ -229,6 +231,12 @@ export type CreateVideoOptions = {
   captionCues?: CaptionCue[];
   /** Where to draw captions. */
   captionPosition?: CaptionPosition;
+  /** Add whoosh/transition sound effects at slide changes to keep viewers hooked. Only used when audioBuffer is set. */
+  soundEffects?: boolean;
+  /** Play a short riser (tension build) at video start when sound effects are on. Default true. */
+  soundEffectIntroRiser?: boolean;
+  /** Transition SFX: "whoosh" or "impact". Default "whoosh". */
+  soundEffectTransition?: "whoosh" | "impact";
   /** Optional step label callback for UI progress (e.g. "Preparing…", "Encoding video…"). */
   onStep?: (step: string) => void;
 };
@@ -439,6 +447,32 @@ export async function createVideoFromLayeredSlides(
   if (options?.audioBuffer) {
     await ffmpeg.writeFile("voiceover.mp3", new Uint8Array(options.audioBuffer));
   }
+  const useSoundEffects = !!(options?.soundEffects && options?.audioBuffer);
+  const introRiser = options?.soundEffectIntroRiser !== false;
+  const transitionType = options?.soundEffectTransition ?? "whoosh";
+  const transitionTimesSec: number[] = [];
+  let wroteRiser = false;
+  let wroteWhoosh = false;
+  let wroteImpact = false;
+  if (useSoundEffects) {
+    transitionTimesSec.push(0);
+    let cumul = 0;
+    for (let i = 0; i < n - 1; i++) {
+      cumul += Math.max(0.1, secPerSlideArray[i]! - FADE_DURATION_SEC);
+      transitionTimesSec.push(cumul);
+    }
+    if (introRiser) {
+      await ffmpeg.writeFile("riser.wav", new Uint8Array(generateRiserWav()));
+      wroteRiser = true;
+    }
+    if (transitionType === "impact") {
+      await ffmpeg.writeFile("impact.wav", new Uint8Array(generateImpactWav()));
+      wroteImpact = true;
+    } else {
+      await ffmpeg.writeFile("whoosh.wav", new Uint8Array(generateWhooshWav()));
+      wroteWhoosh = true;
+    }
+  }
   const captionCuesFiltered = (options?.captionCues ?? []).filter((c) => c.text.replace(/\s/g, "").length > 0);
   const scaledCaptionCues =
     voiceSpeed !== 1 && captionCuesFiltered.length > 0
@@ -541,7 +575,21 @@ export async function createVideoFromLayeredSlides(
   if (options?.audioBuffer) {
     inputArgs.push("-i", "voiceover.mp3");
   }
-  const totalInputs = videoInputIndex + writtenCaptions.length;
+  if (useSoundEffects) {
+    const transitionFile = transitionType === "impact" ? "impact.wav" : "whoosh.wav";
+    if (introRiser) {
+      inputArgs.push("-i", "riser.wav");
+      for (let i = 0; i < transitionTimesSec.length - 1; i++) {
+        inputArgs.push("-i", transitionFile);
+      }
+    } else {
+      for (let i = 0; i < transitionTimesSec.length; i++) {
+        inputArgs.push("-i", transitionFile);
+      }
+    }
+  }
+  const totalInputs = videoInputIndex + writtenCaptions.length + (options?.audioBuffer ? 1 : 0) + transitionTimesSec.length;
+  const audioInputIndex = options?.audioBuffer ? videoInputIndex + writtenCaptions.length : -1;
 
   const filters: string[] = [];
   const slideBgLabels: string[] = [];
@@ -664,18 +712,32 @@ export async function createVideoFromLayeredSlides(
     filters.push(`[${videoBaseLabel}]format=yuv420p[vout]`);
   }
 
-  const audioInputIndex = totalInputs; // voiceover.mp3 is last input when present
   const useAtempo = !!options?.audioBuffer && voiceSpeed !== 1;
-  const filterComplex =
-    filters.join(";") +
-    (useAtempo ? `;[${audioInputIndex}:a]atempo=${voiceSpeed}[aout]` : "");
-  const audioMap = useAtempo ? "[aout]" : `${audioInputIndex}:a:0`;
+  let audioFilter = "";
+  if (options?.audioBuffer) {
+    if (useSoundEffects && transitionTimesSec.length > 0) {
+      const voPart = useAtempo ? `[${audioInputIndex}:a]atempo=${voiceSpeed}[vo]` : `[${audioInputIndex}:a]anull[vo]`;
+      const whooshParts: string[] = [];
+      for (let i = 0; i < transitionTimesSec.length; i++) {
+        const ms = Math.round(transitionTimesSec[i]! * 1000);
+        whooshParts.push(`[${audioInputIndex + 1 + i}:a]adelay=${ms}|${ms}[w${i}]`);
+      }
+      // Always use [vo] so anull/atempo output is connected to amix
+      const mixInputs = "[vo]" + whooshParts.map((_, i) => `[w${i}]`).join("");
+      audioFilter =
+        ";" + voPart + ";" + whooshParts.join(";") + ";" + mixInputs + "amix=inputs=" + (transitionTimesSec.length + 1) + ":duration=longest:dropout_transition=0[aout]";
+    } else {
+      audioFilter = useAtempo ? `;[${audioInputIndex}:a]atempo=${voiceSpeed}[aout]` : "";
+    }
+  }
+  const audioMap = options?.audioBuffer ? (useSoundEffects && transitionTimesSec.length > 0 ? "[aout]" : useAtempo ? "[aout]" : `${audioInputIndex}:a:0`) : undefined;
+  const filterComplex = filters.join(";") + (audioFilter || "");
   const args = options?.audioBuffer
     ? [
         ...inputArgs,
         "-filter_complex", filterComplex,
         "-map", "[vout]",
-        "-map", audioMap,
+        "-map", audioMap!,
         "-c:v", "libx264",
         "-c:a", "aac",
         "-shortest",
@@ -733,6 +795,15 @@ export async function createVideoFromLayeredSlides(
   }
   if (options?.audioBuffer) {
     try { await ffmpeg.deleteFile("voiceover.mp3"); } catch { /* ignore */ }
+  }
+  if (wroteRiser) {
+    try { await ffmpeg.deleteFile("riser.wav"); } catch { /* ignore */ }
+  }
+  if (wroteWhoosh) {
+    try { await ffmpeg.deleteFile("whoosh.wav"); } catch { /* ignore */ }
+  }
+  if (wroteImpact) {
+    try { await ffmpeg.deleteFile("impact.wav"); } catch { /* ignore */ }
   }
   if (hasCaptions) {
     try { await ffmpeg.deleteFile("captions.srt"); } catch { /* ignore */ }

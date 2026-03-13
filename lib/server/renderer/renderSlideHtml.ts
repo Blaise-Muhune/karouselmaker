@@ -1,7 +1,7 @@
 import { buildSlideRenderModel, getTextScaleForDimensions, type BrandKit, type SlideData, type TextZoneOverrides, type ChromeOverrides } from "@/lib/renderer/renderModel";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { getContrastingTextColor, hexToRgba } from "@/lib/editor/colorUtils";
-import { parseInlineFormatting } from "@/lib/editor/inlineFormat";
+import { parseInlineFormatting, BOLD_FONT_WEIGHT } from "@/lib/editor/inlineFormat";
 import { getRoundedPolygonClipPath } from "@/lib/renderer/shapeClipPath";
 
 /** Hook slide second image: circle with thick border (matches SlidePreview). */
@@ -353,9 +353,10 @@ export function renderSlideHtml(
     const outlineSpan = (inner: string) =>
       `<span style="color:${escapeHtml(fillColor)};-webkit-text-stroke:2px #000;padding:0 1px;display:inline">${inner}</span>`;
     if (seg.type === "bold") {
+      const strongStyle = `font-weight:${BOLD_FONT_WEIGHT}`;
       return zoneHighlightStyle === "outline"
-        ? `<strong>${outlineSpan(escaped)}</strong>`
-        : `<strong>${escaped}</strong>`;
+        ? `<strong style="${strongStyle}">${outlineSpan(escaped)}</strong>`
+        : `<strong style="${strongStyle}">${escaped}</strong>`;
     }
     if (seg.type === "color" && seg.color) {
       if (zoneHighlightStyle === "background") {
@@ -401,7 +402,9 @@ export function renderSlideHtml(
           const lineHeight = block.zone.lineHeight;
           const fontStack = getFontFamilyStack((block.zone as { fontFamily?: string }).fontFamily);
           const zoneAlign = block.zone.align ?? "left";
-          return `<div class="text-block" style="left:${block.zone.x}px;top:${block.zone.y}px;width:${block.zone.w}px;height:${block.zone.h}px;font-size:${fontSize}px;font-weight:${block.zone.fontWeight};line-height:${lineHeight};text-align:${zoneAlign};color:${escapeHtml(zoneColor)};font-family:${fontStack};z-index:5">${block.lines.map((line) => `<span>${lineToHtml(line, zoneHighlightStyle, zoneColor)}</span>`).join("")}</div>`;
+          const rotation = (block.zone as { rotation?: number }).rotation ?? 0;
+          const transformCss = rotation !== 0 ? `transform:rotate(${rotation}deg) translateZ(0);transform-origin:50% 50%;` : "";
+          return `<div class="text-block" style="left:${block.zone.x}px;top:${block.zone.y}px;width:${block.zone.w}px;height:${block.zone.h}px;font-size:${fontSize}px;font-weight:${block.zone.fontWeight};line-height:${lineHeight};text-align:${zoneAlign};color:${escapeHtml(zoneColor)};font-family:${fontStack};z-index:5;${transformCss}">${block.lines.map((line) => `<span>${lineToHtml(line, zoneHighlightStyle, zoneColor)}</span>`).join("")}</div>`;
         })
         .join("");
 

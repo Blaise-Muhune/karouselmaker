@@ -70,8 +70,8 @@ export type NormalizedSlideMeta = {
   body_highlights?: { start: number; end: number; color: string }[];
 };
 
-const NUMERIC_KEYS = ["x", "y", "w", "h", "fontSize", "fontWeight", "lineHeight", "maxLines"] as const;
-const ALIGN_VALUES = new Set(["left", "center", "right"]);
+const NUMERIC_KEYS = ["x", "y", "w", "h", "fontSize", "fontWeight", "lineHeight", "maxLines", "rotation"] as const;
+const ALIGN_VALUES = new Set(["left", "center", "right", "justify"]);
 
 /**
  * Normalize zone override from slide meta so export/overlay render matches editor preview.
@@ -88,7 +88,7 @@ function normalizeZoneOverride(
     if (v === null || v === undefined) continue;
     const n = Number(v);
     if (Number.isNaN(n)) continue;
-    out[key] = key === "lineHeight" ? n : Math.round(n);
+    out[key] = key === "lineHeight" ? n : key === "rotation" ? Math.max(-180, Math.min(180, Math.round(n))) : Math.round(n);
   }
   if (raw.align && ALIGN_VALUES.has(raw.align as string)) out.align = raw.align;
   if (typeof raw.color === "string" && /^#([0-9A-Fa-f]{3}){1,2}$/.test(raw.color)) out.color = raw.color;

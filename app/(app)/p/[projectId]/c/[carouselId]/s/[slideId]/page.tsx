@@ -167,23 +167,23 @@ export default async function EditSlidePage({
   const carouselIncludeLast = (carousel as { include_last_slide?: boolean }).include_last_slide;
 
   return (
-    <div className="min-h-[calc(100vh-8rem)] flex flex-col p-0 md:p-2">
+    <div className="min-h-0 flex flex-col p-0">
       {hasFullAccess && !isPro && (
-        <div className="shrink-0 px-4 py-2">
+        <div className="shrink-0 px-3 py-1.5">
           <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-2 text-sm text-foreground">
             You have full access for your <strong>{FREE_FULL_ACCESS_GENERATIONS} free carousel generations</strong>. {freeGenerationsLeft} {freeGenerationsLeft === 1 ? "generation" : "generations"} left with full access—then upgrade to Pro to keep editing template, background, and all features.
           </div>
         </div>
       )}
       {!hasFullAccess && (
-        <div className="shrink-0 px-4 py-2">
+        <div className="shrink-0 px-3 py-1.5">
           <UpgradeBanner
             message="You've used your 3 free generations with full access. Upgrade to Pro to edit template, background, and all carousel features."
             variant="inline"
           />
         </div>
       )}
-      <div className="flex-1 min-h-0 flex flex-col">
+      <div className="min-h-0 flex flex-col w-full">
         <SlideEditForm
           isPro={hasFullAccess}
           slide={slide}

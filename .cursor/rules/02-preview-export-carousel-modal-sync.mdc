@@ -1,0 +1,22 @@
+---
+description: Keep preview, export, carousel page, and template modal in sync when editing
+alwaysApply: true
+---
+
+# Preview / export / carousel page / template modal sync
+
+When you make an edit that **affects how a slide is rendered** (layout, text zones, fonts, overlays, image display, chrome, etc.), ensure the change is reflected in all of these:
+
+1. **Live preview** — Editor’s `SlidePreview` (e.g. in `SlideEditForm`).
+2. **Export image** — Server render used for download/export: `lib/server/renderer/renderSlideHtml.ts` and any export API routes that build images (e.g. `api/export/slide/[slideId]`, `api/export/[carouselId]`, render-for-video).
+3. **Carousel page** — `p/[projectId]/c/[carouselId]`: `SlideGrid` uses `SlidePreview` with zone/font overrides from slide meta and template defaults; keep normalization and PiP/layout logic aligned with the editor.
+4. **Template modal** — Template picker and template builder previews: `TemplateSelectCards`, `SlideEditorModal`, `TemplateBuilderForm`, etc. They use `SlidePreview` and/or template config; any new layout or zone option should be supported there (e.g. via `getOverridesFromConfig`, zone overrides, or template defaults).
+
+Checklist when adding or changing a render-affecting feature:
+
+- [ ] **Preview**: Does `SlidePreview` (and any inline preview in the editor) use the new data?
+- [ ] **Export**: Does `renderSlideHtml` (and export pipelines) apply the same logic and normalized meta?
+- [ ] **Carousel page**: Does `SlideGrid` pass the same overrides/normalization so grid thumbnails match the editor and export?
+- [ ] **Template modal**: Do template cards and template builder previews pass the new props or config so the modal matches?
+
+If a feature is only in the editor preview, the carousel page and export will look different; if it’s only in export, the preview will be misleading. Keep all four in sync.

@@ -205,10 +205,19 @@ export async function applyImageCountToAllSlides(
   return { ok: true, updated };
 }
 
-/** Merge overlay (gradient overlay only) into each slide's existing background. */
+/** Payload for applying color and overlay to all slides. Merge into each slide's existing background so images/mode are preserved. */
+export type ColorAndOverlayPayload = {
+  overlay: { gradient?: boolean; darken?: number; color?: string; textColor?: string; direction?: "top" | "bottom" | "left" | "right"; extent?: number; solidSize?: number; tintOpacity?: number; tintColor?: string; enabled?: boolean };
+  color?: string;
+  style?: "solid" | "pattern" | "gradient";
+  pattern?: string;
+  gradientOn?: boolean;
+};
+
+/** Merge color, style, pattern, gradientOn, and overlay into each slide's existing background. Preserves each slide's mode (image vs solid) and images. */
 export async function applyOverlayToAllSlides(
   carouselId: string,
-  overlay: { gradient?: boolean; darken?: number; color?: string; textColor?: string; direction?: "top" | "bottom" | "left" | "right"; extent?: number; solidSize?: number },
+  payload: ColorAndOverlayPayload,
   revalidatePathname?: string,
   scope?: ApplyScope
 ): Promise<ApplyToAllResult> {
@@ -221,9 +230,16 @@ export async function applyOverlayToAllSlides(
   const slides = filterSlidesByScope(await listSlides(user.id, carouselId), scope);
   if (slides.length === 0) return { ok: true, updated: 0 };
 
+  const { overlay, color, style, pattern, gradientOn } = payload;
+  const mergeFields: Record<string, unknown> = { overlay };
+  if (color !== undefined) mergeFields.color = color;
+  if (style !== undefined) mergeFields.style = style;
+  if (pattern !== undefined) mergeFields.pattern = pattern;
+  if (gradientOn !== undefined) mergeFields.gradientOn = gradientOn;
+
   for (const slide of slides) {
     const existing = (slide.background as Record<string, unknown>) ?? {};
-    const merged: Record<string, unknown> = { ...existing, overlay };
+    const merged: Record<string, unknown> = { ...existing, ...mergeFields };
     await updateSlide(user.id, slide.id, { background: merged as Json });
   }
 

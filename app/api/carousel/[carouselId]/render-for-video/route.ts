@@ -161,12 +161,13 @@ export async function POST(
       const templateCfg = config.data;
       const slideMetaForBg = (slide.meta ?? null) as Record<string, unknown> | null;
       const imageDisplayMerged = resolveImageDisplay(config.data, slideBg);
-      const isPip = imageDisplayMerged?.mode === "pip";
+      // Video uses full-bleed image (no PiP), so resolve overlay/tint as non-PiP for correct gradient and tint.
+      const isPipForVideo = false;
       const { tintOpacity: effectiveTintOpacity, tintColor: effectiveTintColor } = resolveOverlayTint(
         slideBg,
         slideMetaForBg,
         templateCfg,
-        isPip
+        isPipForVideo
       );
       const overlayEnabled = resolveOverlayEnabled(slideBg);
       const metaBgColor = resolveBackgroundColorFromMeta(slideMetaForBg, templateCfg);
@@ -284,6 +285,15 @@ export async function POST(
       const chromeOverrides = merged.chromeOverrides;
       const highlightStyles = merged.highlightStyles;
       const imageDisplayParam = resolveImageDisplay(config.data, slideBg);
+      // Video uses full-bleed image (no PiP) so the frame works with burned-in captions and voiceover.
+      const imageDisplayForVideo =
+        imageDisplayParam?.mode === "pip"
+          ? { ...imageDisplayParam, mode: "full" as const }
+          : imageDisplayParam;
+      // Video = background image (if any) + caption if enabled. No tint, no gradient overlay.
+      const backgroundOverrideForVideo = backgroundOverride
+        ? { ...backgroundOverride, overlayEnabled: false, gradientOn: false, tintOpacity: 0 }
+        : undefined;
 
       const html = renderSlideHtml(
         {
@@ -297,7 +307,7 @@ export async function POST(
         config.data,
         brandKit,
         slides.length,
-        backgroundOverride,
+        backgroundOverrideForVideo,
         backgroundImageUrl,
         backgroundImageUrls,
         secondaryBackgroundImageUrl,
@@ -309,7 +319,7 @@ export async function POST(
         chromeOverrides,
         highlightStyles,
         borderedFrame,
-        imageDisplayParam,
+        imageDisplayForVideo,
         dimensions
       );
 
@@ -337,24 +347,24 @@ export async function POST(
             ...(merged.headline_highlights?.length && { headline_highlights: merged.headline_highlights }),
             ...(merged.body_highlights?.length && { body_highlights: merged.body_highlights }),
           },
-          config.data,
-          brandKit,
-          slides.length,
-          backgroundOverride,
-          undefined,
-          undefined,
-          undefined,
-          showCounterOverride,
-          showWatermarkOverride,
-          showMadeWithOverride,
-          fontOverrides,
-          zoneOverrides,
-          chromeOverrides,
-          highlightStyles,
-          borderedFrame,
-          imageDisplayParam,
-          dimensions,
-          true
+        config.data,
+        brandKit,
+        slides.length,
+        backgroundOverrideForVideo,
+        undefined,
+        undefined,
+        undefined,
+        showCounterOverride,
+        showWatermarkOverride,
+        showMadeWithOverride,
+        fontOverrides,
+        zoneOverrides,
+        chromeOverrides,
+        highlightStyles,
+        borderedFrame,
+        imageDisplayForVideo,
+        dimensions,
+        true
         );
         await page.setContent(overlayHtml, { waitUntil: "load", timeout: CONTENT_TIMEOUT_MS });
         await page.waitForSelector(".slide-wrap", { state: "visible", timeout: SELECTOR_TIMEOUT_MS });
@@ -381,7 +391,7 @@ export async function POST(
             config.data,
             brandKit,
             slides.length,
-            backgroundOverride,
+            backgroundOverrideForVideo,
             singleBgUrl,
             null,
             null,
@@ -393,7 +403,7 @@ export async function POST(
             chromeOverrides,
             highlightStyles,
             borderedFrame,
-            imageDisplayParam,
+            imageDisplayForVideo,
             dimensions,
             undefined,
             true

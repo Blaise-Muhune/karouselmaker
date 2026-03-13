@@ -474,6 +474,7 @@ export async function generateCarousel(formData: FormData): Promise<
       use_ai_generate: useAiGenerate,
       use_web_search: useWebSearch,
       ...(carouselFor && { carousel_for: carouselFor }),
+      ...(data.notes?.trim() && { notes: data.notes.trim() }),
     },
   };
   try {

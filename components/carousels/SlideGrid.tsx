@@ -5,12 +5,12 @@ import { useEffect, useState, useTransition } from "react";
 import { SlidePreview } from "@/components/renderer/SlidePreview";
 import { Button } from "@/components/ui/button";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { TemplateSelectCards, type TemplateOption } from "@/components/carousels/TemplateSelectCards";
 import { setSlideTemplate } from "@/app/actions/slides/setSlideTemplate";
 import { getTemplateConfigAction } from "@/app/actions/templates/getTemplateConfig";
 import { reorderSlides } from "@/app/actions/slides/reorderSlides";
@@ -24,7 +24,7 @@ import { getTemplatePreviewBackgroundOverride } from "@/lib/renderer/getTemplate
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import type { Slide, Template } from "@/lib/server/db/types";
 import { useRouter } from "next/navigation";
-import { ChevronLeftIcon, ChevronRightIcon, DownloadIcon, GripVerticalIcon, Images, Loader2Icon, PencilIcon, PlusIcon, Shuffle, Trash2Icon } from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon, DownloadIcon, GripVerticalIcon, Images, LayoutTemplateIcon, Loader2Icon, PencilIcon, PlusIcon, Shuffle, Trash2Icon } from "lucide-react";
 
 const PREVIEW_SCALE = 0.25;
 
@@ -370,6 +370,15 @@ export function SlideGrid({
   const router = useRouter();
   const editorPath = `/p/${projectId}/c/${carouselId}`;
   const [fetchedTemplateConfigs, setFetchedTemplateConfigs] = useState<Record<string, TemplateConfig>>({});
+  const [templateModalSlideId, setTemplateModalSlideId] = useState<string | null>(null);
+
+  const templateOptions: TemplateOption[] = templates.map((t) => ({
+    id: t.id,
+    name: t.name,
+    parsedConfig: t.parsedConfig,
+    category: t.category ?? undefined,
+    isSystemTemplate: t.user_id == null,
+  }));
 
   useEffect(() => {
     const missing = slidesOrder.filter(
@@ -672,50 +681,20 @@ export function SlideGrid({
                     </Link>
                   )}
                   <div className="flex items-center gap-2 flex-wrap">
-                    <Select
-                      value={currentTemplateId ?? ""}
-                      onValueChange={(templateId) => {
-                        if (!templateId || templateId === currentTemplateId) return;
-                        const selectedTemplate = templates.find((t) => t.id === templateId);
-                        const templateOverlay = overlayFromTemplateGradient(selectedTemplate?.parsedConfig?.overlays?.gradient);
-                        startTransition(async () => {
-                          const result = await setSlideTemplate(slide.id, templateId, editorPath);
-                          if (result.ok) {
-                            router.refresh();
-                            // Optimistically update local state so overlay (e.g. purple) shows immediately without waiting for refresh
-                            if (templateOverlay) {
-                              setSlidesOrder((prev) =>
-                                prev.map((s) =>
-                                  s.id === slide.id
-                                    ? {
-                                        ...s,
-                                        template_id: templateId,
-                                        background: {
-                                          ...(typeof s.background === "object" && s.background ? s.background : {}),
-                                          overlay: { ...((s.background as Record<string, unknown>)?.overlay as Record<string, unknown> | undefined), ...templateOverlay },
-                                        } as Slide["background"],
-                                      }
-                                    : s
-                                )
-                              );
-                            }
-                          }
-                        });
-                      }}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-xs justify-start min-w-0 max-w-[180px]"
                       disabled={!canEdit || isPending || reorderPending || templates.length === 0}
+                      onClick={() => setTemplateModalSlideId(slide.id)}
+                      title="Change template"
                     >
-                      <SelectTrigger size="sm" className="text-xs">
-                        <SelectValue placeholder="Template" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {templates.map((t) => (
-                          <SelectItem key={t.id} value={t.id}>
-                            {t.name}
-                            {t.user_id == null ? " (system)" : ""}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                      <LayoutTemplateIcon className="size-3.5 shrink-0 mr-1.5 text-muted-foreground" />
+                      <span className="truncate">
+                        {templates.find((t) => t.id === currentTemplateId)?.name ?? "Template"}
+                        {templates.find((t) => t.id === currentTemplateId)?.user_id == null ? " (system)" : ""}
+                      </span>
+                    </Button>
                     {getImageCount(slide) > 1 && (
                       <span
                         className="inline-flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
@@ -852,6 +831,76 @@ export function SlideGrid({
           </li>
         ) : null}
       </ul>
+
+      <Dialog open={templateModalSlideId != null} onOpenChange={(open) => !open && setTemplateModalSlideId(null)}>
+        <DialogContent className="flex flex-col max-w-[calc(100%-2rem)] max-h-[85vh] sm:max-w-2xl md:max-w-[92vw] md:max-h-[92vh] md:w-[92vw] md:h-[92vh] lg:max-w-[94vw] lg:max-h-[94vh] lg:w-[94vw] lg:h-[94vh]">
+          <DialogHeader>
+            <DialogTitle>Choose template</DialogTitle>
+          </DialogHeader>
+          <p className="text-muted-foreground text-sm -mt-2">
+            Pick a layout for this slide.
+          </p>
+          {templateModalSlideId != null && (() => {
+            const slideForModal = slidesOrder.find((s) => s.id === templateModalSlideId);
+            const currentTemplateIdForModal = slideForModal?.template_id ?? templates[0]?.id ?? null;
+            if (!slideForModal) return null;
+            const slideBgImages = slideBackgroundImageUrls[slideForModal.id];
+            const previewImageUrlsForModal =
+              typeof slideBgImages === "string" && slideBgImages
+                ? [slideBgImages]
+                : Array.isArray(slideBgImages) && slideBgImages.length > 0
+                  ? slideBgImages
+                  : undefined;
+            return (
+              <div className="overflow-y-auto overflow-x-hidden flex-1 min-h-0 min-w-0 w-full pr-1 -mb-2">
+                <TemplateSelectCards
+                  templates={templateOptions}
+                  defaultTemplateId={templates[0]?.id ?? null}
+                  defaultTemplateConfig={templates[0]?.parsedConfig ?? null}
+                  defaultTemplateCategory={templates[0]?.category ?? undefined}
+                  value={currentTemplateIdForModal === templates[0]?.id ? null : currentTemplateIdForModal}
+                  previewImageUrls={previewImageUrlsForModal}
+                  onChange={async (id) => {
+                    const templateId = id === null ? templates[0]?.id ?? null : id;
+                    if (!templateId || templateId === slideForModal.template_id) {
+                      setTemplateModalSlideId(null);
+                      return;
+                    }
+                    const selectedTemplate = templates.find((t) => t.id === templateId);
+                    const templateOverlay = overlayFromTemplateGradient(selectedTemplate?.parsedConfig?.overlays?.gradient);
+                    startTransition(async () => {
+                      const result = await setSlideTemplate(slideForModal.id, templateId, editorPath);
+                      if (result.ok) {
+                        setTemplateModalSlideId(null);
+                        router.refresh();
+                        if (templateOverlay) {
+                          setSlidesOrder((prev) =>
+                            prev.map((s) =>
+                              s.id === slideForModal.id
+                                ? {
+                                    ...s,
+                                    template_id: templateId,
+                                    background: {
+                                      ...(typeof s.background === "object" && s.background ? s.background : {}),
+                                      overlay: { ...((s.background as Record<string, unknown>)?.overlay as Record<string, unknown> | undefined), ...templateOverlay },
+                                    } as Slide["background"],
+                                  }
+                                : s
+                            )
+                          );
+                        }
+                      }
+                    });
+                  }}
+                  primaryColor={brandKit.primary_color ?? undefined}
+                  showCategoryTabs
+                  paginateInternally
+                />
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

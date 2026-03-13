@@ -99,8 +99,8 @@ export type TextZoneOverrides = {
   body?: Partial<TextZone>;
 };
 
-const ZONE_NUMERIC_KEYS = ["x", "y", "w", "h", "fontSize", "fontWeight", "lineHeight", "maxLines"] as const;
-const ZONE_ALIGN_VALUES = new Set(["left", "center", "right"]);
+const ZONE_NUMERIC_KEYS = ["x", "y", "w", "h", "fontSize", "fontWeight", "lineHeight", "maxLines", "rotation"] as const;
+const ZONE_ALIGN_VALUES = new Set(["left", "center", "right", "justify"]);
 
 /**
  * Normalize a single zone override so numeric fields are numbers (layout and wrap match export).
@@ -116,7 +116,7 @@ export function normalizeZoneOverrideSingle(
     if (v === null || v === undefined) continue;
     const n = Number(v);
     if (Number.isNaN(n)) continue;
-    (out as Record<string, number>)[key] = key === "lineHeight" ? n : Math.round(n);
+    (out as Record<string, number>)[key] = key === "lineHeight" ? n : key === "rotation" ? Math.max(-180, Math.min(180, Math.round(n))) : Math.round(n);
   }
   if (raw.align && ZONE_ALIGN_VALUES.has(raw.align as string)) out.align = raw.align;
   if (typeof raw.color === "string" && /^#([0-9A-Fa-f]{3}){1,2}$/.test(raw.color)) out.color = raw.color;
@@ -192,12 +192,12 @@ export function buildSlideRenderModel(
     const mergedZone = overrides ? { ...zone, ...overrides } : zone;
     // Preserve template align when override omits it so preview and export match
     if (mergedZone.align === undefined) {
-      mergedZone.align = ((zone as { align?: string }).align ?? "left") as "left" | "center" | "right";
+      mergedZone.align = ((zone as { align?: string }).align ?? "left") as "left" | "center" | "right" | "justify";
     }
     const wrapOverride = wrapOverrides?.[zone.id as "headline" | "body"];
     const mergedZoneForWrap = wrapOverride ? { ...zone, ...wrapOverride } : zone;
     if (mergedZoneForWrap.align === undefined) {
-      mergedZoneForWrap.align = ((zone as { align?: string }).align ?? "left") as "left" | "center" | "right";
+      mergedZoneForWrap.align = ((zone as { align?: string }).align ?? "left") as "left" | "center" | "right" | "justify";
     }
     let text =
       zone.id === "headline"

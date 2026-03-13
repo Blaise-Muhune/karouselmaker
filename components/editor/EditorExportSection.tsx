@@ -153,6 +153,9 @@ export function EditorExportSection({
   const [videoDownloadError, setVideoDownloadError] = useState<string | null>(null);
   const [captionPosition, setCaptionPosition] = useState<CaptionPosition>("safe_lower");
   const [withCaption, setWithCaption] = useState(false);
+  const [withSoundEffects, setWithSoundEffects] = useState(true);
+  const [soundEffectIntroRiser, setSoundEffectIntroRiser] = useState(true);
+  const [soundEffectTransition, setSoundEffectTransition] = useState<"whoosh" | "impact">("whoosh");
   const [zipDownloading, setZipDownloading] = useState(false);
   const [withVoiceover, setWithVoiceover] = useState(true);
   const [selectedVoiceId, setSelectedVoiceId] = useState(ADAM_VOICE_ID);
@@ -187,13 +190,13 @@ export function EditorExportSection({
     if (!withVoiceover) setWithCaption(false);
   }, [withVoiceover]);
 
-  // Changing format or voice/caption settings invalidates the generated video; user must regenerate
+  // Changing format or voice/caption/sound-effect settings invalidates the generated video; user must regenerate
   useEffect(() => {
     if (generatedVideoUrl) {
       setGeneratedVideoUrl(null);
       setGeneratedVideoBlob(null);
     }
-  }, [videoSize, withVoiceover, withCaption, captionPosition, selectedVoiceId, voiceSpeed]);
+  }, [videoSize, withVoiceover, withCaption, withSoundEffects, soundEffectIntroRiser, soundEffectTransition, captionPosition, selectedVoiceId, voiceSpeed]);
 
   /** Clean up stored export files when user navigates away or after delay. */
   const cleanupExportStorageRef = useRef<{ exportId: string; timeoutId: ReturnType<typeof setTimeout> } | null>(null);
@@ -309,12 +312,14 @@ export function EditorExportSection({
     setVideoDownloadError(null);
     setVideoDownloadProgress(0);
     setVideoDownloadStep("");
+    let lockAcquired = false;
+    let runId: string | undefined;
     try {
       const startRes = await fetch("/api/video-gen/start", { method: "POST" });
       if (startRes.status === 429) {
         const data = await startRes.json().catch(() => ({}));
         setVideoDownloadError(
-          data.error ?? "Another video is being generated. Please wait and try again."
+          data.error ?? "Another video is being generated. If no other tab is generating, wait a few minutes and try again."
         );
         return;
       }
@@ -322,18 +327,12 @@ export function EditorExportSection({
         setVideoDownloadError("Could not start video generation. Try again.");
         return;
       }
-    } catch {
-      setVideoDownloadError("Could not start video generation. Try again.");
-      return;
-    }
-    const { urls, videoData, runId } = await loadVideoUrls();
-    if (urls.length === 0) {
-      await fetch("/api/video-gen/end", { method: "POST" });
-      setVideoDownloading(false);
-      return;
-    }
-    const previousVideoUrl = generatedVideoUrl;
-    try {
+      lockAcquired = true;
+      const loadResult = await loadVideoUrls();
+      const { urls, videoData, runId: loadedRunId } = loadResult;
+      runId = loadedRunId ?? undefined;
+      if (urls.length === 0) return;
+      const previousVideoUrl = generatedVideoUrl;
       const { width, height } = videoSizeToDimensions(videoSize);
       let audioBuffer: ArrayBuffer | undefined;
       let slideDurationsSec: number[] | undefined;
@@ -363,7 +362,6 @@ export function EditorExportSection({
           for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
           audioBuffer = bytes.buffer;
           slideDurationsSec = ttsData.slideDurationsSec;
-          // Only use caption cues when user opted in to captions
           if (withCaption) captionCues = ttsData.captionCues;
         }
       }
@@ -378,6 +376,9 @@ export function EditorExportSection({
                   audioBuffer,
                   slideDurationsSec,
                   voiceSpeed,
+                  soundEffects: withSoundEffects,
+                  soundEffectIntroRiser: soundEffectIntroRiser,
+                  soundEffectTransition: soundEffectTransition,
                   ...(withCaption && captionCues
                     ? { captionCues, captionPosition }
                     : {}),
@@ -388,7 +389,6 @@ export function EditorExportSection({
                 }
           )
         : await createVideoFromImages(urls, width, height, setVideoDownloadProgress);
-      // Keep blob and URL so we can show a real <video> with play/pause and re-download
       setGeneratedVideoBlob(blob);
       if (previousVideoUrl) URL.revokeObjectURL(previousVideoUrl);
       setGeneratedVideoUrl(URL.createObjectURL(blob));
@@ -401,7 +401,9 @@ export function EditorExportSection({
     } catch (e) {
       setVideoDownloadError(e instanceof Error ? e.message : "Video download failed");
     } finally {
-      await fetch("/api/video-gen/end", { method: "POST" });
+      if (lockAcquired) {
+        await fetch("/api/video-gen/end", { method: "POST" });
+      }
       if (runId) {
         await fetch(`/api/carousel/${carouselId}/video-render/${runId}/cleanup`, { method: "POST" }).catch(() => {});
       }
@@ -624,6 +626,53 @@ export function EditorExportSection({
                         With caption
                       </Label>
                     </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="with-sound-effects"
+                        checked={withSoundEffects}
+                        disabled={!withVoiceover || videoDownloading}
+                        onChange={(e) => setWithSoundEffects(e.target.checked)}
+                        className="rounded border-input accent-primary disabled:opacity-50"
+                      />
+                      <Label htmlFor="with-sound-effects" className={`text-sm font-medium cursor-pointer ${!withVoiceover ? "text-muted-foreground" : ""}`} title="Riser + whoosh/impact to keep viewers hooked">
+                        Sound effects
+                      </Label>
+                    </div>
+                    {withVoiceover && withSoundEffects && (
+                      <>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            id="sound-intro-riser"
+                            checked={soundEffectIntroRiser}
+                            disabled={videoDownloading}
+                            onChange={(e) => setSoundEffectIntroRiser(e.target.checked)}
+                            className="rounded border-input accent-primary disabled:opacity-50"
+                          />
+                          <Label htmlFor="sound-intro-riser" className="text-sm font-medium cursor-pointer" title="Tension-building riser at video start">
+                            Intro riser
+                          </Label>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Label htmlFor="sound-transition" className="text-sm text-muted-foreground whitespace-nowrap">
+                            Transition
+                          </Label>
+                          <Select
+                            value={soundEffectTransition}
+                            onValueChange={(v: "whoosh" | "impact") => setSoundEffectTransition(v)}
+                          >
+                            <SelectTrigger id="sound-transition" className="w-[120px]" disabled={videoDownloading}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="whoosh">Whoosh</SelectItem>
+                              <SelectItem value="impact">Impact</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </>
+                    )}
                     {withVoiceover && (
                       <>
                         <div className="flex items-center gap-2">

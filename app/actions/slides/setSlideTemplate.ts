@@ -73,18 +73,25 @@ export async function setSlideTemplate(
     // Apply template overlay (e.g. purple), gradient on/off, image overlay blend (tint), and image_display so the slide matches the template and persists after refresh.
     const existingBg = slide.background as Record<string, unknown> | null | undefined;
     const defaultsMeta = parsed.data?.defaults?.meta as Record<string, unknown> | undefined;
-    const overlayTintOpacity = defaultsMeta != null && typeof defaultsMeta.overlay_tint_opacity === "number"
-      ? defaultsMeta.overlay_tint_opacity
-      : undefined;
+    // Use template's overlay_tint_opacity when defined (including 0). When template has defaults but no overlay_tint_opacity, use 0 so "no blend" templates don't keep the previous slide's blend.
+    const overlayTintOpacity =
+      defaultsMeta != null && typeof defaultsMeta.overlay_tint_opacity === "number"
+        ? defaultsMeta.overlay_tint_opacity
+        : defaultsMeta != null
+          ? 0
+          : undefined;
     const overlayTintColor =
       defaultsMeta != null &&
       typeof defaultsMeta.overlay_tint_color === "string" &&
       /^#([0-9A-Fa-f]{3}){1,2}$/.test(defaultsMeta.overlay_tint_color)
         ? defaultsMeta.overlay_tint_color
         : undefined;
+    // When template has no gradient config, set gradient: false so the slide doesn't keep the previous template's gradient overlay.
+    const overlayFromTemplate =
+      templateOverlay ?? (defaultsMeta != null ? { gradient: false } : undefined);
     const mergedOverlay: Record<string, unknown> = {
       ...(existingBg?.overlay as Record<string, unknown> | undefined),
-      ...(templateOverlay ?? {}),
+      ...(overlayFromTemplate ?? {}),
       ...(overlayTintOpacity != null && { tintOpacity: overlayTintOpacity }),
       ...(overlayTintColor != null && { tintColor: overlayTintColor }),
     };
@@ -92,7 +99,7 @@ export async function setSlideTemplate(
       defaultsMeta != null && typeof defaultsMeta === "object" && defaultsMeta.image_display != null && typeof defaultsMeta.image_display === "object" && !Array.isArray(defaultsMeta.image_display)
         ? (defaultsMeta.image_display as Record<string, unknown>)
         : undefined;
-    const hasOverlayOrTint = templateOverlay || overlayTintOpacity != null || overlayTintColor != null;
+    const hasOverlayOrTint = overlayFromTemplate != null || overlayTintOpacity != null || overlayTintColor != null;
     const hasImageDisplay = templateImageDisplay != null && Object.keys(templateImageDisplay).length > 0;
 
     // Resolve template background color/style/pattern so they persist after reload (editor reads slide.background.color).
