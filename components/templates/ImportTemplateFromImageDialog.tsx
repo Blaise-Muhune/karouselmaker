@@ -50,16 +50,19 @@ function getOverridesFromConfig(config: TemplateConfig) {
   return { zoneOverrides, fontOverrides };
 }
 
+/** Build full imageDisplay from template defaults so preview shows shape, frame, frameColor, position (PIP or full). */
 function getImageDisplayFromConfig(config: TemplateConfig): ComponentProps<typeof SlidePreview>["imageDisplay"] {
   const raw = config.defaults?.meta && typeof config.defaults.meta === "object" && "image_display" in config.defaults.meta
     ? (config.defaults.meta as { image_display?: unknown }).image_display
     : undefined;
   if (raw == null || typeof raw !== "object" || Array.isArray(raw)) return undefined;
   const d = raw as Record<string, unknown>;
-  if (d.mode !== "pip") return undefined;
   const pipPos = d.pipPosition;
-  const valid = pipPos === "top_left" || pipPos === "top_right" || pipPos === "bottom_left" || pipPos === "bottom_right" ? pipPos : undefined;
-  return { ...d, pipPosition: valid } as ComponentProps<typeof SlidePreview>["imageDisplay"];
+  const validPipPos = pipPos === "top_left" || pipPos === "top_right" || pipPos === "bottom_left" || pipPos === "bottom_right" ? pipPos : undefined;
+  return {
+    ...d,
+    pipPosition: d.mode === "pip" ? (validPipPos ?? "bottom_right") : undefined,
+  } as ComponentProps<typeof SlidePreview>["imageDisplay"];
 }
 
 /** Unsplash sample images for template preview (single or multiple). Ensures correct position/layout for PIP and multi-image. */
@@ -319,6 +322,9 @@ export function ImportTemplateFromImageDialog({
         {step === "create" && importedConfig && dataUrl && (() => {
           const imageDisplay = getImageDisplayFromConfig(importedConfig);
           const isPip = imageDisplay?.mode === "pip";
+          const isMultiImageLayout = imageDisplay?.layout && ["side-by-side", "stacked", "grid"].includes(imageDisplay.layout);
+          const singleUrl = IMPORT_PREVIEW_UNSPLASH_URLS[0];
+          const multiUrls = IMPORT_PREVIEW_UNSPLASH_URLS.slice(0, 3);
           return (
           <div className="space-y-4">
             <div className="space-y-2">
@@ -353,8 +359,8 @@ export function ImportTemplateFromImageDialog({
                         templateConfig={importedConfig}
                         brandKit={{ primary_color: "#0a0a0a" }}
                         totalSlides={8}
-                        backgroundImageUrl={isPip ? IMPORT_PREVIEW_UNSPLASH_URLS[0] : undefined}
-                        backgroundImageUrls={!isPip ? IMPORT_PREVIEW_UNSPLASH_URLS.slice(0, 3) : undefined}
+                        backgroundImageUrl={!isMultiImageLayout ? singleUrl : undefined}
+                        backgroundImageUrls={isMultiImageLayout ? multiUrls : undefined}
                         backgroundOverride={getTemplatePreviewOverlayOverride(importedConfig) ?? getTemplatePreviewBackgroundOverride(importedConfig)}
                         showCounterOverride={importedConfig.chrome?.showCounter ?? true}
                         showWatermarkOverride={importedConfig.chrome?.watermark?.enabled ?? false}

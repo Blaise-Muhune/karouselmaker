@@ -40,6 +40,18 @@ function ensureTextZoneColors(config: TemplateConfig): TemplateConfig {
 const VALID_LAYOUTS = ["headline_bottom", "headline_center", "split_top_bottom", "headline_only"] as const;
 const VALID_WATERMARK_POSITIONS = ["top_left", "top_right", "bottom_left", "bottom_right", "custom"] as const;
 const VALID_HIGHLIGHT_STYLES = ["text", "background", "outline"] as const;
+const VALID_FRAME = ["none", "thin", "medium", "thick", "chunky", "heavy"] as const;
+const VALID_FRAME_SHAPE = ["squircle", "circle", "diamond", "hexagon", "pill"] as const;
+const VALID_IMAGE_POSITION = ["center", "top", "bottom", "left", "right", "top-left", "top-right", "bottom-left", "bottom-right"] as const;
+const VALID_PIP_POSITION = ["top_left", "top_right", "bottom_left", "bottom_right"] as const;
+const VALID_FIT = ["cover", "contain"] as const;
+const VALID_SWIPE_TYPES = ["text", "arrow-left", "arrow-right", "arrows", "hand-left", "hand-right", "chevrons", "dots", "finger-swipe", "finger-left", "finger-right", "circle-arrows", "line-dots", "custom"] as const;
+const VALID_SWIPE_POSITIONS = ["bottom_left", "bottom_center", "bottom_right", "top_left", "top_center", "top_right", "center_left", "center_right"] as const;
+const VALID_GRADIENT_DIRECTIONS = ["bottom", "top", "left", "right"] as const;
+const VALID_DEFAULT_STYLES = ["darken", "blur", "none"] as const;
+const VALID_ALIGN = ["left", "center", "right", "justify"] as const;
+const VALID_DIVIDER_STYLES = ["gap", "line", "zigzag", "diagonal", "wave", "dashed", "scalloped"] as const;
+const VALID_IMAGE_LAYOUTS = ["auto", "side-by-side", "stacked", "grid", "overlay-circles"] as const;
 
 /** Keys that should be numbers; coerce string numbers. */
 const NUMERIC_KEYS = new Set([
@@ -100,8 +112,21 @@ function normalizeToValidConfig(parsed: unknown): TemplateConfig {
     },
   };
   const merged = deepMergeWithCoercion(fullDefault, parsed) as Record<string, unknown>;
+  if (typeof merged.layout === "string" && !VALID_LAYOUTS.includes(merged.layout as (typeof VALID_LAYOUTS)[number])) {
+    merged.layout = fullDefault.layout;
+  }
   if (Array.isArray(merged.textZones)) {
-    merged.textZones = coerceNumericInArray(merged.textZones, NUMERIC_KEYS);
+    const zones = coerceNumericInArray(merged.textZones, NUMERIC_KEYS);
+    merged.textZones = zones;
+    for (const z of zones) {
+      if (z && typeof z === "object") {
+        const zr = z as Record<string, unknown>;
+        if (zr.align !== undefined && (typeof zr.align !== "string" || !VALID_ALIGN.includes(zr.align as (typeof VALID_ALIGN)[number]))) {
+          zr.align = "center";
+        }
+        if (zr.color !== undefined && typeof zr.color === "string" && !HEX_COLOR.test(zr.color)) zr.color = undefined;
+      }
+    }
   }
   if (merged.safeArea && typeof merged.safeArea === "object") {
     const sa = merged.safeArea as Record<string, unknown>;
@@ -109,7 +134,7 @@ function normalizeToValidConfig(parsed: unknown): TemplateConfig {
       if (typeof sa[k] === "string" && /^\d+$/.test(String(sa[k]))) sa[k] = Number(sa[k]);
     }
   }
-  // Coerce chrome.watermark.position (AI sometimes returns e.g. "bottom_center" which is invalid for watermark)
+  // Coerce chrome: watermark.position, swipeType, swipePosition
   if (merged.chrome && typeof merged.chrome === "object") {
     const chrome = merged.chrome as Record<string, unknown>;
     if (!chrome.watermark || typeof chrome.watermark !== "object") {
@@ -121,6 +146,34 @@ function normalizeToValidConfig(parsed: unknown): TemplateConfig {
         ? pos
         : "bottom_right";
       wm.position = validPos;
+    }
+    if (chrome.swipeType !== undefined && (typeof chrome.swipeType !== "string" || !VALID_SWIPE_TYPES.includes(chrome.swipeType as (typeof VALID_SWIPE_TYPES)[number]))) {
+      chrome.swipeType = "chevrons";
+    }
+    if (chrome.swipePosition !== undefined && (typeof chrome.swipePosition !== "string" || !VALID_SWIPE_POSITIONS.includes(chrome.swipePosition as (typeof VALID_SWIPE_POSITIONS)[number]))) {
+      chrome.swipePosition = "bottom_center";
+    }
+  }
+  // Coerce overlays.gradient.direction and strip nulls
+  if (merged.overlays && typeof merged.overlays === "object") {
+    const ov = merged.overlays as Record<string, unknown>;
+    if (ov.gradient != null && typeof ov.gradient === "object") {
+      const g = ov.gradient as Record<string, unknown>;
+      if (g.direction !== undefined && (typeof g.direction !== "string" || !VALID_GRADIENT_DIRECTIONS.includes(g.direction as (typeof VALID_GRADIENT_DIRECTIONS)[number]))) {
+        g.direction = "bottom";
+      }
+      for (const k of Object.keys(g)) { if (g[k] === null) g[k] = undefined; }
+    }
+    if (ov.vignette != null && typeof ov.vignette === "object") {
+      const v = ov.vignette as Record<string, unknown>;
+      for (const k of Object.keys(v)) { if (v[k] === null) v[k] = undefined; }
+    }
+  }
+  // Coerce backgroundRules.defaultStyle
+  if (merged.backgroundRules && typeof merged.backgroundRules === "object") {
+    const br = merged.backgroundRules as Record<string, unknown>;
+    if (br.defaultStyle !== undefined && (typeof br.defaultStyle !== "string" || !VALID_DEFAULT_STYLES.includes(br.defaultStyle as (typeof VALID_DEFAULT_STYLES)[number]))) {
+      br.defaultStyle = "darken";
     }
   }
   // Sanitize defaults: nulls, invalid enums, invalid hex colors
@@ -150,6 +203,54 @@ function normalizeToValidConfig(parsed: unknown): TemplateConfig {
       }
       if (hlBody === null || hlBody === "" || (typeof hlBody !== "string") || !VALID_HIGHLIGHT_STYLES.includes(hlBody as (typeof VALID_HIGHLIGHT_STYLES)[number])) {
         meta.body_highlight_style = undefined;
+      }
+      // Zone overrides: strip nulls, coerce watermark position
+      for (const key of ["counter_zone_override", "watermark_zone_override", "made_with_zone_override", "headline_zone_override", "body_zone_override"]) {
+        const zo = meta[key];
+        if (zo != null && typeof zo === "object" && !Array.isArray(zo)) {
+          const obj = zo as Record<string, unknown>;
+          for (const k of Object.keys(obj)) { if (obj[k] === null) obj[k] = undefined; }
+          if (key === "watermark_zone_override" && obj.position !== undefined && (typeof obj.position !== "string" || !VALID_WATERMARK_POSITIONS.includes(obj.position as (typeof VALID_WATERMARK_POSITIONS)[number]))) {
+            obj.position = "bottom_right";
+          }
+        }
+      }
+      // Sanitize image_display so shape, frame, frameColor, position are valid
+      const imgDisp = meta.image_display;
+      if (imgDisp != null && typeof imgDisp === "object" && !Array.isArray(imgDisp)) {
+        const d = imgDisp as Record<string, unknown>;
+        if (d.frame !== undefined && (typeof d.frame !== "string" || !VALID_FRAME.includes(d.frame as (typeof VALID_FRAME)[number]))) d.frame = "none";
+        if (d.frameShape !== undefined && (typeof d.frameShape !== "string" || !VALID_FRAME_SHAPE.includes(d.frameShape as (typeof VALID_FRAME_SHAPE)[number]))) d.frameShape = "squircle";
+        if (typeof d.frameColor === "string" && !HEX_COLOR.test(d.frameColor)) d.frameColor = "#ffffff";
+        if (d.position !== undefined && (typeof d.position !== "string" || !VALID_IMAGE_POSITION.includes(d.position as (typeof VALID_IMAGE_POSITION)[number]))) d.position = "center";
+        if (d.pipPosition !== undefined && (typeof d.pipPosition !== "string" || !VALID_PIP_POSITION.includes(d.pipPosition as (typeof VALID_PIP_POSITION)[number]))) d.pipPosition = "bottom_right";
+        if (d.mode !== undefined && d.mode !== "full" && d.mode !== "pip") d.mode = "full";
+        if (d.fit !== undefined && (typeof d.fit !== "string" || !VALID_FIT.includes(d.fit as (typeof VALID_FIT)[number]))) d.fit = "cover";
+        if (d.layout !== undefined && (typeof d.layout !== "string" || !VALID_IMAGE_LAYOUTS.includes(d.layout as (typeof VALID_IMAGE_LAYOUTS)[number]))) d.layout = "auto";
+        if (d.dividerStyle !== undefined && (typeof d.dividerStyle !== "string" || !VALID_DIVIDER_STYLES.includes(d.dividerStyle as (typeof VALID_DIVIDER_STYLES)[number]))) d.dividerStyle = undefined;
+        if (typeof d.dividerColor === "string" && !HEX_COLOR.test(d.dividerColor)) d.dividerColor = "#ffffff";
+        if (typeof d.overlayCircleBorderColor === "string" && !HEX_COLOR.test(d.overlayCircleBorderColor)) d.overlayCircleBorderColor = undefined;
+        const clampNum = (key: string, min: number, max: number) => {
+          const v = d[key];
+          if (v === null || v === undefined) return;
+          const n = typeof v === "number" ? v : Number(v);
+          if (!Number.isFinite(n)) d[key] = undefined;
+          else d[key] = Math.min(max, Math.max(min, n));
+        };
+        clampNum("frameRadius", 0, 48);
+        clampNum("pipSize", 0.25, 1);
+        clampNum("pipRotation", -180, 180);
+        clampNum("pipBorderRadius", 0, 72);
+        clampNum("pipX", 0, 100);
+        clampNum("pipY", 0, 100);
+        clampNum("imagePositionX", 0, 100);
+        clampNum("imagePositionY", 0, 100);
+        clampNum("gap", 0, 48);
+        clampNum("dividerWidth", 2, 100);
+        clampNum("overlayCircleSize", 120, 400);
+        clampNum("overlayCircleBorderWidth", 4, 24);
+        clampNum("overlayCircleX", 0, 100);
+        clampNum("overlayCircleY", 0, 100);
       }
     }
   }
@@ -231,10 +332,20 @@ TEXT (exact from visual hierarchy):
 CHROME:
 - Counter (e.g. "1/7") → showCounter true, counterStyle "1/7".
 - Dots or line at bottom → showSwipe true, swipeType "dots" or "line-dots", swipePosition "bottom_center".
-- Watermark → watermark.enabled, position.
+- Watermark → watermark.enabled, position (only: top_left, top_right, bottom_left, bottom_right, custom—never bottom_center).
+
+IMAGE & FRAME (critical—extract every visible detail so the template matches the import):
+- Image placement: If the photo/image is in a corner or small box → mode "pip". If it fills most of the slide or a large central area → mode "full". Always set mode.
+- Shape of the image container: Look carefully. Output frameShape as exactly one of: "squircle" (rounded rectangle), "circle", "diamond", "hexagon", "pill". Hexagon = six-sided; diamond = four-sided rotated square; circle = round; squircle = rounded corners; pill = very rounded long shape. Do not default to squircle if you see hexagon or circle.
+- Frame/border: If the image has a visible border or frame, set frame to "none"|"thin"|"medium"|"thick"|"chunky"|"heavy" (thin≈2px, medium≈5px, thick≈10px) and frameColor to the exact border color in hex. Describe the color precisely: reddish-brown → "#8B4513" or "#A0522D"; cream → "#FFF8DC"; white → "#ffffff"; black → "#111111"; gold → "#DAA520". Never omit frameColor when there is a visible frame.
+- Position: For mode "full", set position to "center"|"top"|"bottom"|"left"|"right"|"top-left"|"top-right"|"bottom-left"|"bottom-right" based on where the image sits. For mode "pip", set pipPosition to the corner (top_left, top_right, bottom_left, bottom_right).
+- Other image_display: frameRadius 0–48 (rounded corners in px); pipSize 0.25–1 (fraction of canvas for PIP); pipRotation degrees if tilted; pipBorderRadius 0–72 for PIP; pipX/pipY 0–100 for custom PIP position; imagePositionX/imagePositionY 0–100 for focal point when full; fit "cover"|"contain"; layout for multi-image (side-by-side, stacked, grid).
 
 PIP (small image in corner):
-- defaults.meta.image_display: mode "pip", pipPosition (e.g. "bottom_right"), pipSize 0.35–0.5, pipRotation if tilted (e.g. 6), pipBorderRadius 16–24, frame "thin"|"medium" if white border, frameColor "#ffffff" if framed.
+- defaults.meta.image_display: mode "pip", pipPosition, pipSize 0.35–0.5, pipRotation if tilted, pipBorderRadius 16–24, frame "thin"|"medium" if bordered, frameColor hex (exact border color), frameShape (hexagon|circle|squircle|diamond|pill).
+
+FULL-BLEED / CENTRAL IMAGE (image is main visual, not in corner):
+- defaults.meta.image_display: mode "full", position "center" (or top/bottom/left/right), frameShape (hexagon|circle|squircle|diamond|pill), frame "none"|"thin"|"medium"|"thick", frameColor hex, frameRadius 0–48.
 
 EXAMPLE — split slide (green left, blue right, headline cream, PIP bottom-right):
 overlays.gradient: { enabled: true, direction: "left", strength: 1, extent: 25, color: "#32CD32", solidSize: 100 }
@@ -242,16 +353,34 @@ defaults.background: { style: "solid", color: "#0a2540" }
 defaults.meta: { background_color: "#0a2540", image_display: { mode: "pip", pipPosition: "bottom_right", pipSize: 0.4, pipRotation: 6, pipBorderRadius: 20, frame: "medium", frameColor: "#ffffff" } }
 textZones: headline color "#FFFEF0" or "#f5f5dc", body color "#b0b0b0"; headline_highlight_style "outline", headline_outline_stroke 1 if text has outline/shadow.
 
-Full config shape (include all):
-- layout: "headline_bottom"|"headline_center"|"split_top_bottom"|"headline_only"
-- safeArea: { top, right, bottom, left } (0–200)
-- textZones: [{ id, x, y, w, h, fontSize, fontWeight, lineHeight, maxLines, align, color (hex), fontFamily?, rotation? }, ...]
-- overlays: { gradient: { enabled, direction, strength, extent, color, solidSize }, vignette: { enabled, strength } }
-- chrome: { showSwipe, swipeType, swipePosition, showCounter, counterStyle, watermark: { enabled, position } }
-- backgroundRules: { allowImage: true, defaultStyle: "darken"|"blur"|"none" }
-- defaults: { background: { style, color }, meta: { show_counter, show_watermark, show_made_with, background_color, headline_highlight_style?, body_highlight_style?, overlay_tint_opacity?, overlay_tint_color?, image_overlay_blend_enabled?, image_display? } }
+COMPLETE PROPERTY LIST — you must output every property you can infer. No shortcuts. Match the image exactly.
 
-Keep positions in 0–1080. Always output a complete config with all details you can infer.`;
+LAYOUT & SAFE AREA:
+- layout: exactly one of "headline_bottom" | "headline_center" | "split_top_bottom" | "headline_only"
+- safeArea: { top, right, bottom, left } numbers 0–200 (padding from edges)
+
+TEXT TAB (textZones and defaults.meta text/font):
+- textZones: array. Each zone: id ("headline" or "body"), x, y, w, h (0–1080), fontSize (8–200), fontWeight (100–900), lineHeight (0.5–3), maxLines (1–20), align ("left"|"center"|"right"|"justify"), color (hex, required), fontFamily? ("system"|"Inter"|"Georgia"|…), rotation? (-180–180).
+- defaults.meta: headline_font_size?, body_font_size? (8–200), headline_font_family?, body_font_family?, headline_zone_override? { x,y,w,h, fontSize, fontWeight, lineHeight, maxLines, align, color, fontFamily, rotation }, body_zone_override? (same shape), headline_highlight_style? ("text"|"background"|"outline"), body_highlight_style?, headline_outline_stroke? (0–8), body_outline_stroke?, headline_highlights? [{ start, end, color }], body_highlights? (same).
+
+BACKGROUND TAB (overlays, defaults.background, backgroundRules, defaults.meta background):
+- overlays.gradient: enabled, direction ("bottom"|"top"|"left"|"right"), strength (0–1), extent (0–100), color (hex), solidSize (0–100).
+- overlays.vignette: enabled, strength (0–1).
+- defaults.background: style ("solid"|"gradient"), color (hex). Optional: pattern?, decoration?, decorationColor?.
+- defaults.meta: background_color (hex), image_overlay_blend_enabled?, overlay_tint_opacity (0–1), overlay_tint_color (hex).
+- backgroundRules: allowImage (boolean), defaultStyle ("darken"|"blur"|"none").
+
+CHROME / LAYOUT (counter, swipe, watermark, made with):
+- chrome: showSwipe, swipeType ("text"|"arrow-left"|"arrow-right"|"arrows"|"hand-left"|"hand-right"|"chevrons"|"dots"|"finger-swipe"|"finger-left"|"finger-right"|"circle-arrows"|"line-dots"|"custom"), swipePosition ("bottom_left"|"bottom_center"|"bottom_right"|"top_left"|"top_center"|"top_right"|"center_left"|"center_right"), showCounter, counterStyle (e.g. "1/8"), watermark: { enabled, position ("top_left"|"top_right"|"bottom_left"|"bottom_right"|"custom"), logoX?, logoY?, fontSize?, maxWidth?, maxHeight? }.
+- defaults.meta: show_counter?, show_watermark?, show_made_with?, counter_zone_override? { top?, right?, fontSize? }, watermark_zone_override? { position?, logoX?, logoY?, fontSize?, maxWidth?, maxHeight? }, made_with_zone_override? { fontSize?, x?, y?, bottom? }.
+
+IMAGE DISPLAY (defaults.meta.image_display — shape, frame, position, PIP):
+- mode: "full"|"pip". position: "center"|"top"|"bottom"|"left"|"right"|"top-left"|"top-right"|"bottom-left"|"bottom-right". pipPosition: "top_left"|"top_right"|"bottom_left"|"bottom_right".
+- frame: "none"|"thin"|"medium"|"thick"|"chunky"|"heavy". frameShape: "squircle"|"circle"|"diamond"|"hexagon"|"pill". frameColor (hex). frameRadius (0–48).
+- pipSize (0.25–1), pipRotation (-180–180), pipBorderRadius (0–72), pipX, pipY (0–100), imagePositionX, imagePositionY (0–100).
+- fit: "cover"|"contain". layout (multi-image): "auto"|"side-by-side"|"stacked"|"grid"|"overlay-circles". gap (0–48). dividerStyle?, dividerColor?, dividerWidth?. overlayCircleSize?, overlayCircleBorderWidth?, overlayCircleBorderColor?, overlayCircleX?, overlayCircleY?.
+
+Output valid JSON with every key from the list above that you can infer from the image. Omit only keys that do not apply. Keep all numbers in range. All colors hex.`;
 
 export type ImportTemplateFromImageResult =
   | { ok: true; config: TemplateConfig; suggestedName: string }
