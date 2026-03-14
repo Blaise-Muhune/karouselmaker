@@ -10,6 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import { CarouselVideoPlayer } from "@/components/carousels/CarouselVideoPlayer";
 import {
@@ -20,8 +21,9 @@ import {
   type LayeredSlideInput,
 } from "@/lib/video/createVideoFromImages";
 import { ADAM_VOICE_ID, VOICE_PRESETS } from "@/lib/video/voices";
-import { DownloadIcon, ExternalLinkIcon, Loader2Icon, PlayIcon, RefreshCwIcon, VideoIcon } from "lucide-react";
+import { DownloadIcon, ExternalLinkIcon, Loader2Icon, PlayIcon, PlusIcon, RefreshCwIcon, Trash2Icon, VideoIcon } from "lucide-react";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -32,6 +34,7 @@ import {
 import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
 import { WaitingGamesDialog } from "@/components/waiting/WaitingGamesDialog";
 import { PLAN_LIMITS } from "@/lib/constants";
+import { slugifyForFilename } from "@/lib/utils";
 import { PostToTiktokVideoButton } from "@/components/platforms/PostToTiktokVideoButton";
 import { PostToFacebookVideoButton } from "@/components/platforms/PostToFacebookVideoButton";
 import { PostToInstagramVideoButton } from "@/components/platforms/PostToInstagramVideoButton";
@@ -45,6 +48,20 @@ export type ExportRowDisplay = {
   storage_path: string | null;
   created_at: string;
 };
+
+export type SoundEffectPreset = "riser" | "whoosh" | "impact";
+
+export type SoundEffectItem = {
+  id: string;
+  name: string;
+  preset: SoundEffectPreset;
+};
+
+const DEFAULT_SOUND_EFFECTS: SoundEffectItem[] = [
+  { id: "se-riser", name: "Riser", preset: "riser" },
+  { id: "se-whoosh", name: "Whoosh", preset: "whoosh" },
+  { id: "se-impact", name: "Impact", preset: "impact" },
+];
 
 /** Video output size (preview + download). Includes 16:9 and 5:4. */
 export type VideoSize = "1080x1080" | "1080x864" | "1080x1350" | "1080x1920" | "1920x1080";
@@ -116,6 +133,10 @@ type EditorExportSectionProps = {
   hashtags?: string[];
   /** When true (e.g. carousel is generating), disable all actions. */
   disabled?: boolean;
+  /** Carousel title for personalized download filenames. */
+  carouselTitle?: string;
+  /** Project name for personalized download filenames. */
+  projectName?: string;
 };
 
 export function EditorExportSection({
@@ -132,7 +153,11 @@ export function EditorExportSection({
   captionVariants = {},
   hashtags = [],
   disabled = false,
+  carouselTitle,
+  projectName,
 }: EditorExportSectionProps) {
+  const downloadSlug =
+    slugifyForFilename([projectName, carouselTitle].filter(Boolean).join(" - ")) || "carousel";
   const connectedSet = new Set(connectedPlatforms);
   const enabledVideoPostPlatforms = postToPlatforms
     ? (["facebook", "tiktok", "instagram", "linkedin", "youtube"] as const).filter((k) => postToPlatforms[k])
@@ -154,8 +179,13 @@ export function EditorExportSection({
   const [captionPosition, setCaptionPosition] = useState<CaptionPosition>("safe_lower");
   const [withCaption, setWithCaption] = useState(false);
   const [withSoundEffects, setWithSoundEffects] = useState(true);
-  const [soundEffectIntroRiser, setSoundEffectIntroRiser] = useState(true);
-  const [soundEffectTransition, setSoundEffectTransition] = useState<"whoosh" | "impact">("whoosh");
+  const [soundEffectList, setSoundEffectList] = useState<SoundEffectItem[]>(() => [...DEFAULT_SOUND_EFFECTS]);
+  const [introSoundId, setIntroSoundId] = useState<string | null>(() => DEFAULT_SOUND_EFFECTS[0]!.id);
+  const [transitionSoundId, setTransitionSoundId] = useState<string>(() => DEFAULT_SOUND_EFFECTS[1]!.id);
+  const [addSfxOpen, setAddSfxOpen] = useState(false);
+  const [addSfxName, setAddSfxName] = useState("");
+  const [addSfxPreset, setAddSfxPreset] = useState<SoundEffectPreset>("whoosh");
+  const [editingSfxId, setEditingSfxId] = useState<string | null>(null);
   const [zipDownloading, setZipDownloading] = useState(false);
   const [withVoiceover, setWithVoiceover] = useState(true);
   const [selectedVoiceId, setSelectedVoiceId] = useState(ADAM_VOICE_ID);
@@ -196,7 +226,7 @@ export function EditorExportSection({
       setGeneratedVideoUrl(null);
       setGeneratedVideoBlob(null);
     }
-  }, [videoSize, withVoiceover, withCaption, withSoundEffects, soundEffectIntroRiser, soundEffectTransition, captionPosition, selectedVoiceId, voiceSpeed]);
+  }, [videoSize, withVoiceover, withCaption, withSoundEffects, introSoundId, transitionSoundId, soundEffectList, captionPosition, selectedVoiceId, voiceSpeed]);
 
   /** Clean up stored export files when user navigates away or after delay. */
   const cleanupExportStorageRef = useRef<{ exportId: string; timeoutId: ReturnType<typeof setTimeout> } | null>(null);
@@ -220,7 +250,7 @@ export function EditorExportSection({
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = "carousel.zip";
+        a.download = res.headers.get("X-Suggested-Filename") || `${downloadSlug}.zip`;
         a.click();
         URL.revokeObjectURL(url);
         router.refresh();
@@ -377,8 +407,14 @@ export function EditorExportSection({
                   slideDurationsSec,
                   voiceSpeed,
                   soundEffects: withSoundEffects,
-                  soundEffectIntroRiser: soundEffectIntroRiser,
-                  soundEffectTransition: soundEffectTransition,
+                  soundEffectIntroRiser: (() => {
+                    const eff = soundEffectList.find((e) => e.id === introSoundId);
+                    return !!eff && eff.preset === "riser";
+                  })(),
+                  soundEffectTransition: (() => {
+                    const eff = soundEffectList.find((e) => e.id === transitionSoundId);
+                    return (eff?.preset === "impact" ? "impact" : "whoosh") as "whoosh" | "impact";
+                  })(),
                   ...(withCaption && captionCues
                     ? { captionCues, captionPosition }
                     : {}),
@@ -395,7 +431,7 @@ export function EditorExportSection({
       const downloadUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = downloadUrl;
-      a.download = "carousel.mp4";
+      a.download = `${downloadSlug}.mp4`;
       a.click();
       URL.revokeObjectURL(downloadUrl);
     } catch (e) {
@@ -425,7 +461,7 @@ export function EditorExportSection({
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "carousel.zip";
+      a.download = res.headers.get("X-Suggested-Filename") || `${downloadSlug}.zip`;
       a.click();
       URL.revokeObjectURL(url);
     } catch {
@@ -478,7 +514,7 @@ export function EditorExportSection({
               </Button>
             ) : (
               <Button asChild size="sm" disabled={exporting}>
-                <a href={downloadUrl} download="carousel.zip" target="_blank" rel="noopener noreferrer">
+                <a href={downloadUrl} download={`${downloadSlug}.zip`} target="_blank" rel="noopener noreferrer">
                   <DownloadIcon className="mr-2 size-4" />
                   Download ZIP
                 </a>
@@ -641,33 +677,150 @@ export function EditorExportSection({
                     </div>
                     {withVoiceover && withSoundEffects && (
                       <>
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            id="sound-intro-riser"
-                            checked={soundEffectIntroRiser}
-                            disabled={videoDownloading}
-                            onChange={(e) => setSoundEffectIntroRiser(e.target.checked)}
-                            className="rounded border-input accent-primary disabled:opacity-50"
-                          />
-                          <Label htmlFor="sound-intro-riser" className="text-sm font-medium cursor-pointer" title="Tension-building riser at video start">
-                            Intro riser
-                          </Label>
+                        <div className="flex flex-col gap-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <Label className="text-sm font-medium">Sound effects</Label>
+                            <Dialog open={addSfxOpen} onOpenChange={setAddSfxOpen}>
+                              <DialogTrigger asChild>
+                                <Button type="button" variant="outline" size="sm" className="gap-1" disabled={videoDownloading}>
+                                  <PlusIcon className="size-3.5" />
+                                  Add
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent className="sm:max-w-xs" showCloseButton>
+                                <DialogHeader>
+                                  <DialogTitle>Add sound effect</DialogTitle>
+                                </DialogHeader>
+                                <div className="grid gap-3 py-2">
+                                  <div className="grid gap-1.5">
+                                    <Label htmlFor="add-sfx-name" className="text-sm">Name</Label>
+                                    <Input
+                                      id="add-sfx-name"
+                                      placeholder="e.g. Dramatic whoosh"
+                                      value={addSfxName}
+                                      onChange={(e) => setAddSfxName(e.target.value)}
+                                    />
+                                  </div>
+                                  <div className="grid gap-1.5">
+                                    <Label htmlFor="add-sfx-preset" className="text-sm">Type</Label>
+                                    <Select value={addSfxPreset} onValueChange={(v) => setAddSfxPreset(v as SoundEffectPreset)}>
+                                      <SelectTrigger id="add-sfx-preset">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="riser">Riser</SelectItem>
+                                        <SelectItem value="whoosh">Whoosh</SelectItem>
+                                        <SelectItem value="impact">Impact</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                </div>
+                                <DialogFooter showCloseButton={false}>
+                                  <Button type="button" variant="outline" onClick={() => setAddSfxOpen(false)}>
+                                    Cancel
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    onClick={() => {
+                                      const name = addSfxName.trim() || (addSfxPreset === "riser" ? "Riser" : addSfxPreset === "impact" ? "Impact" : "Whoosh");
+                                      setSoundEffectList((prev) => [
+                                        ...prev,
+                                        { id: `se-${Date.now()}`, name, preset: addSfxPreset },
+                                      ]);
+                                      setAddSfxName("");
+                                      setAddSfxPreset("whoosh");
+                                      setAddSfxOpen(false);
+                                    }}
+                                  >
+                                    Add
+                                  </Button>
+                                </DialogFooter>
+                              </DialogContent>
+                            </Dialog>
+                          </div>
+                          <ul className="flex flex-col gap-1.5 max-h-32 overflow-y-auto rounded-md border bg-muted/30 p-2">
+                            {soundEffectList.map((sfx) => (
+                              <li key={sfx.id} className="flex items-center gap-2 text-sm">
+                                {editingSfxId === sfx.id ? (
+                                  <Input
+                                    className="h-7 flex-1 text-sm"
+                                    value={soundEffectList.find((e) => e.id === sfx.id)?.name ?? ""}
+                                    onChange={(e) =>
+                                      setSoundEffectList((prev) =>
+                                        prev.map((x) => (x.id === sfx.id ? { ...x, name: e.target.value } : x))
+                                      )
+                                    }
+                                    onBlur={() => setEditingSfxId(null)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") setEditingSfxId(null);
+                                    }}
+                                    autoFocus
+                                  />
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className="flex-1 min-w-0 text-left truncate rounded px-1.5 py-0.5 hover:bg-muted"
+                                    onClick={() => setEditingSfxId(sfx.id)}
+                                    title="Click to rename"
+                                  >
+                                    {sfx.name}
+                                  </button>
+                                )}
+                                <span className="shrink-0 text-xs text-muted-foreground capitalize">{sfx.preset}</span>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="size-6 shrink-0"
+                                  disabled={soundEffectList.length <= 1 || videoDownloading}
+                                  onClick={() => {
+                                    const nextList = soundEffectList.filter((e) => e.id !== sfx.id);
+                                    setSoundEffectList(nextList);
+                                    if (introSoundId === sfx.id) setIntroSoundId(nextList.find((e) => e.preset === "riser")?.id ?? null);
+                                    if (transitionSoundId === sfx.id) setTransitionSoundId(nextList.find((e) => e.preset === "whoosh" || e.preset === "impact")?.id ?? "se-whoosh");
+                                  }}
+                                  title="Remove"
+                                >
+                                  <Trash2Icon className="size-3" />
+                                </Button>
+                              </li>
+                            ))}
+                          </ul>
                         </div>
                         <div className="flex items-center gap-2">
-                          <Label htmlFor="sound-transition" className="text-sm text-muted-foreground whitespace-nowrap">
+                          <Label htmlFor="intro-sound" className="text-sm text-muted-foreground whitespace-nowrap">
+                            Intro
+                          </Label>
+                          <Select
+                            value={introSoundId ?? "none"}
+                            onValueChange={(v) => setIntroSoundId(v === "none" ? null : v)}
+                          >
+                            <SelectTrigger id="intro-sound" className="w-[140px]" disabled={videoDownloading}>
+                              <SelectValue placeholder="None" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">None</SelectItem>
+                              {soundEffectList.filter((e) => e.preset === "riser").map((e) => (
+                                <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Label htmlFor="transition-sound" className="text-sm text-muted-foreground whitespace-nowrap">
                             Transition
                           </Label>
                           <Select
-                            value={soundEffectTransition}
-                            onValueChange={(v: "whoosh" | "impact") => setSoundEffectTransition(v)}
+                            value={transitionSoundId}
+                            onValueChange={setTransitionSoundId}
                           >
-                            <SelectTrigger id="sound-transition" className="w-[120px]" disabled={videoDownloading}>
+                            <SelectTrigger id="transition-sound" className="w-[140px]" disabled={videoDownloading}>
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="whoosh">Whoosh</SelectItem>
-                              <SelectItem value="impact">Impact</SelectItem>
+                              {soundEffectList.filter((e) => e.preset === "whoosh" || e.preset === "impact").map((e) => (
+                                <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>
+                              ))}
                             </SelectContent>
                           </Select>
                         </div>
@@ -750,7 +903,7 @@ export function EditorExportSection({
                           const url = URL.createObjectURL(generatedVideoBlob);
                           const a = document.createElement("a");
                           a.href = url;
-                          a.download = "carousel.mp4";
+                          a.download = `${downloadSlug}.mp4`;
                           a.click();
                           URL.revokeObjectURL(url);
                         }}

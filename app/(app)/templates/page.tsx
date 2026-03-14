@@ -7,6 +7,7 @@ import Link from "next/link";
 import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
 import { DeleteTemplateButton } from "@/components/templates/DeleteTemplateButton";
 import { DuplicateTemplateButton } from "@/components/templates/DuplicateTemplateButton";
+import { ImportTemplateButton } from "@/components/templates/ImportTemplateButton";
 import { Button } from "@/components/ui/button";
 import { LockIcon, PencilIcon, PlusIcon } from "lucide-react";
 
@@ -43,22 +44,31 @@ export default async function TemplatesPage() {
               : `System templates only · Pro for custom layouts`}
           </p>
           {subscription.isPro && (
-            <Button
-              variant={atTemplateLimit ? "outline" : "default"}
-              size="sm"
-              className="mt-4 gap-1.5"
-              disabled={atTemplateLimit}
-              asChild={!atTemplateLimit}
-            >
-              {atTemplateLimit ? (
-                <>Limit reached</>
-              ) : (
-                <Link href="/templates/new">
-                  <PlusIcon className="size-4" />
-                  Craft template
-                </Link>
-              )}
-            </Button>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button
+                variant={atTemplateLimit ? "outline" : "default"}
+                size="sm"
+                className="gap-1.5"
+                disabled={atTemplateLimit}
+                asChild={!atTemplateLimit}
+              >
+                {atTemplateLimit ? (
+                  <>Limit reached</>
+                ) : (
+                  <Link href="/templates/new">
+                    <PlusIcon className="size-4" />
+                    Craft template
+                  </Link>
+                )}
+              </Button>
+              <ImportTemplateButton
+                isPro={subscription.isPro}
+                atLimit={atTemplateLimit}
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+              />
+            </div>
           )}
         </header>
 

@@ -108,7 +108,13 @@ function buildSafeRetryPrompt(query: string): string {
     .replace(/\b(3000x2000|4k|official photo|wallpaper)\b/gi, "")
     .replace(/\s{2,}/g, " ")
     .trim();
-  const subjectRaw = q ? q.slice(0, 120).trim() : "a compelling scene";
+  const maxLen = 120;
+  let subjectRaw = q?.trim() || "a compelling scene";
+  if (subjectRaw.length > maxLen) {
+    const cut = subjectRaw.slice(0, maxLen);
+    const lastSpace = cut.lastIndexOf(" ");
+    subjectRaw = lastSpace > 60 ? cut.slice(0, lastSpace).trim() : cut.trim();
+  }
   const concept = softenForSafety(subjectRaw);
   return `Generate a single professional image that closely resembles the following concept. Same subject, setting, and mood—appropriate for a general audience. No text, no logos. Concept: ${concept}. Soft lighting, subtle cinematic feel, suitable as a background.`;
 }
@@ -123,7 +129,13 @@ function buildSafeFallbackPrompt(query: string): string {
     .replace(/\b(3000x2000|4k|official photo|wallpaper)\b/gi, "")
     .replace(/\s{2,}/g, " ")
     .trim();
-  const subject = q ? q.slice(0, 220).trim() : "a compelling scene";
+  const maxLen = 220;
+  let subject = q?.trim() || "a compelling scene";
+  if (subject.length > maxLen) {
+    const cut = subject.slice(0, maxLen);
+    const lastSpace = cut.lastIndexOf(" ");
+    subject = lastSpace > 100 ? cut.slice(0, lastSpace).trim() : cut.trim();
+  }
   return `Professional cinematic image: ${subject}. Atmospheric, dramatic lighting, moody and evocative. No text, no logos. High quality, suitable as a background.`;
 }
 
@@ -138,7 +150,14 @@ function isBibleAsObjectOnly(s: string): boolean {
 /** Generic off-topic phrases that must be replaced with topic-derived subject when we have context. */
 const GENERIC_OFF_TOPIC = /^(nature\s+landscape\s+peaceful|peaceful\s+nature|nature\s+scene|landscape\s+peaceful|calm\s+landscape|nature\s+background)$/i;
 
-/** Convert image_query to a generation prompt. Injects context so the image relates to the user's topic and the current slide. Keeps styling natural—avoids heavy cinematic/golden hour. */
+/** Max length for the context block so the "Generate this image: {base}" part always has room and is never truncated. Base is sent in full. */
+const MAX_CONTEXT_BLOCK_LEN = 1200;
+
+/** Short global line: real people accurate, inclusive. Reused instead of long repeated preamble. */
+const GLOBAL_REAL_PEOPLE_LINE =
+  "Real people/places/events: photorealistic and accurate. Inclusive, diverse depiction; no single default ethnicity.";
+
+/** Convert image_query to a generation prompt. Injects context so the image relates to the user's topic and the current slide. Keeps styling natural—avoids heavy cinematic/golden hour. Preamble kept short so the image description (base) is never truncated and gets most of the token budget. */
 function queryToPrompt(query: string, context?: ImagePromptContext): string {
   let q = query
     .replace(/\b(3000x2000|4k|official photo|wallpaper)\b/gi, "")
@@ -159,55 +178,43 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
   const lightingCue = suggestsIndoor
     ? "Lighting appropriate for indoor setting (soft window light, lamp, or overhead); no golden hour."
     : "Subtle cinematic feel; a touch of golden hour only if outdoor/sun fits; not overly heavy.";
+  /** Image description sent in full—never truncated. */
   const base =
     subject.length > 50 && (hasDramaCue || /(of|in|with|on|at)\s+\w+/i.test(subject))
       ? `${subject}. ${lightingCue} No text, no logos.`
       : `Professional photo: ${subject}. ${lightingCue} Suitable as a background. No text, no logos.`;
 
-  const styleNote = "Match lighting to setting: do not always use golden hour. For indoor or windowless settings use indoor-appropriate lighting (soft window light, lamp, overhead, warm interior). For outdoor you may use subtle cinematic or golden hour. No racial bias—depict people in an inclusive, diverse way; do not default to one ethnicity or skin tone unless the topic specifies a person or group.";
-
   const parts: string[] = [];
 
   const notesLower = (context?.userNotes ?? "").toLowerCase();
   const notesAskForStyle = /\b(stylized|stylise|artistic|art style|cartoon|illustration|animated|painting|drawing|abstract|creative style|different style)\b/i.test(notesLower);
-  if (!notesAskForStyle) {
-    parts.push(
-      "When the topic or slide refers to real people, real events, or real places: generate an accurate, realistic depiction—photorealistic and true to life. Do not stylize, reinterpret, or fictionalize; aim for accuracy unless the user has asked otherwise in their notes. No racial bias: depict people inclusively and diversely; do not default to one ethnicity or stereotype."
-    );
-  }
-  if (context?.userNotes?.trim()) {
-    parts.push(`User notes: ${truncateForContext(context.userNotes, 100)}`);
-  }
+  if (!notesAskForStyle) parts.push(GLOBAL_REAL_PEOPLE_LINE);
+  if (context?.userNotes?.trim()) parts.push(`User notes: ${truncateForContext(context.userNotes, 80)}`);
 
   if (context?.isHookSlide) {
     parts.push(
-      "This is the FIRST SLIDE (the hook). The image must be striking, memorable, and scroll-stopping. VARY the approach—do not always use a close-up face. Rotate among: close-up face with emotion or eye contact; full-body or mid-shot action (person in mid-motion doing something); bold scale contrast (giant/tiny, unexpected object); bright saturated color as accent; micro-story (emotion + object interaction); or before/after split when it fits. Use one or two of these, not always close-up. Prefer a famous public figure when it fits the topic; otherwise a recognizable archetype. No racial bias—inclusive, diverse depiction; do not default to one ethnicity. AVOID generic stock clichés: no person from behind at window/sunset, no hands with coffee and notebook, no silhouette at sunrise, no generic person at city skyline, no steaming cup by window alone. Match lighting to setting: no golden hour for indoor/windowless scenes—use indoor lighting (soft window, lamp, overhead). Bold composition; not safe or basic."
+      "First slide (hook): striking, scroll-stopping. Vary—close-up, mid-shot action, scale contrast, or micro-story. Avoid clichés: no person from behind at window, no coffee+notebook, no silhouette at sunrise. Indoor = indoor lighting, not golden hour."
     );
     if (isBibleChristianTopic) {
-      parts.push(
-        "For this topic do NOT show the Bible as an object (no book on table, no open Bible). Show a specific Bible character, story event, or figure related to the topic (e.g. David and Goliath, Moses, a prophet, a scene from the story)—a person or moment, not the physical book."
-      );
+      parts.push("No Bible as object; show a character or scene from the topic (e.g. David and Goliath, prophet), not the book.");
     }
+  } else if (context?.carouselTitle || context?.topic || context?.slideHeadline || context?.slideBody) {
+    parts.push("Image must relate to this slide and the topic. Avoid generic stock; use a specific moment or detail. Indoor = indoor lighting.");
   }
 
-  if (!context?.carouselTitle && !context?.topic && !context?.slideHeadline && !context?.slideBody && !context?.year && !context?.location && !context?.isHookSlide) {
-    if (parts.length) return `${parts.join(". ")}. Generate this image: ${base}. ${styleNote}`;
-    return `${base} ${styleNote}`;
+  if (context?.carouselTitle?.trim()) parts.push(`Carousel: ${truncateForContext(context.carouselTitle, 80)}`);
+  if (context?.topic?.trim()) parts.push(`Topic: ${truncateForContext(context.topic, 100)}`);
+  if (context?.slideHeadline?.trim()) parts.push(`Headline: ${truncateForContext(context.slideHeadline, 90)}`);
+  if (context?.slideBody?.trim()) parts.push(`Content: ${truncateForContext(context.slideBody, 120)}`);
+  if (context?.year?.trim()) parts.push(`Era: ${context.year.trim()}`);
+  if (context?.location?.trim()) parts.push(`Setting: ${context.location.trim()}`);
+
+  let contextBlock = parts.join(". ");
+  if (contextBlock.length > MAX_CONTEXT_BLOCK_LEN) {
+    contextBlock = contextBlock.slice(0, MAX_CONTEXT_BLOCK_LEN).trim().replace(/\s+[^\s]*$/, "") + ".";
   }
 
-  if (!context?.isHookSlide) {
-    parts.push(
-      "The image MUST relate to the user's topic and to THIS slide's content—do not generate a generic or off-topic image. Avoid stock clichés: no person from behind at window, no hands with coffee and notebook, no silhouette at sunrise, no steaming cup by window alone; use a specific moment, angle, or detail that fits this slide. Match lighting to setting: for indoor or windowless scenes use indoor-appropriate lighting, not golden hour."
-    );
-  }
-  if (context.carouselTitle?.trim()) parts.push(`Carousel: ${context.carouselTitle.trim()}`);
-  if (context.topic?.trim()) parts.push(`User topic: ${truncateForContext(context.topic, 120)}`);
-  if (context.slideHeadline?.trim()) parts.push(`This slide headline: ${truncateForContext(context.slideHeadline, 100)}`);
-  if (context.slideBody?.trim()) parts.push(`This slide content: ${truncateForContext(context.slideBody, 150)}`);
-  if (context.year?.trim()) parts.push(`Era/time: ${context.year.trim()}`);
-  if (context.location?.trim()) parts.push(`Setting: ${context.location.trim()}`);
-  parts.push(styleNote);
-  const contextBlock = parts.join(". ");
+  if (!contextBlock.trim()) return `${base}`;
   return `${contextBlock}. Generate this image: ${base}`;
 }
 
@@ -245,7 +252,9 @@ export async function generateImageFromPrompt(
   const model = options?.model ?? getDefaultImageModel();
   const quality = model === "gpt-image-1.5" ? "medium" : "low";
 
-  console.log("[openaiImageGenerate] Prompt:", prompt, "| aspect:", aspect, "| size:", openaiSize);
+  const imagePart = prompt.includes("Generate this image: ") ? prompt.slice(prompt.indexOf("Generate this image: ")) : prompt;
+  console.log("[openaiImageGenerate] Prompt length:", prompt.length, "| aspect:", aspect, "| size:", openaiSize);
+  console.log("[openaiImageGenerate] Image:", imagePart);
   console.log("");
 
   try {

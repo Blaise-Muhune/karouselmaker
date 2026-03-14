@@ -25,6 +25,7 @@ import { searchPexelsPhotos } from "@/lib/server/pexels";
 import { generateImageFromPrompt } from "@/lib/server/openaiImageGenerate";
 import { uploadGeneratedImage } from "@/lib/server/storage/uploadGeneratedImage";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
+import { setSlideTemplate } from "@/app/actions/slides/setSlideTemplate";
 import { generateCarouselInputSchema } from "@/lib/validations/carousel";
 import { FREE_FULL_ACCESS_GENERATIONS, AI_GENERATE_LIMIT_PRO } from "@/lib/constants";
 
@@ -881,6 +882,15 @@ export async function generateCarousel(formData: FormData): Promise<
         return updateSlide(user.id, slide.id, { background: bg });
       })
     );
+  }
+
+  // Apply full template (overlay, defaults.meta, image_display, etc.) so it matches "select template in editor" and Apply to all.
+  if (defaultTemplateId) {
+    LOG("backgrounds", "applying template defaults to all slides");
+    for (const slide of createdSlides) {
+      const result = await setSlideTemplate(slide.id, defaultTemplateId);
+      if (!result.ok) LOG("backgrounds", `setSlideTemplate failed for ${slide.id}: ${result.error}`);
+    }
   }
 
   LOG("backgrounds", `done in ${elapsedMs(backgroundsStart) / 1000}s`);

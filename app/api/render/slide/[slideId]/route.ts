@@ -231,6 +231,8 @@ export async function GET(
     zoneOverrides,
     chromeOverrides,
     highlightStyles,
+    merged.outlineStrokes,
+    merged.boldWeights,
     borderedFrame,
     imageDisplay,
     dimensions

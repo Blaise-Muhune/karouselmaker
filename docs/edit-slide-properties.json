@@ -1,0 +1,229 @@
+{
+  "description": "All properties editable from the Edit Slide page (SlideEditForm). Top-level keys match updateSlide payload; nested objects match slide.background and slide.meta.",
+  "source": "components/editor/SlideEditForm.tsx, app/actions/slides/updateSlide.ts, lib/validations/slide.ts",
+  "topLevel": {
+    "slide_id": { "type": "string", "format": "uuid", "description": "Slide ID (required for update)" },
+    "headline": { "type": "string", "maxLength": 500, "description": "Headline text" },
+    "body": { "type": "string | null", "maxLength": 2000, "description": "Body/subtext" },
+    "template_id": { "type": "string | null", "format": "uuid", "description": "Template applied to this slide" },
+    "background": { "$ref": "#/definitions/background", "description": "Slide background (color, image(s), overlay)" },
+    "meta": { "$ref": "#/definitions/meta", "description": "Slide meta (chrome, zones, highlights, fonts)" }
+  },
+  "definitions": {
+    "background": {
+      "description": "slide.background – no-image (solid/gradient) or image mode",
+      "properties": {
+        "style": { "type": "string", "enum": ["solid", "gradient"], "description": "No-image: solid or gradient" },
+        "color": { "type": "string", "description": "Background color (hex or name)" },
+        "gradientOn": { "type": "boolean", "description": "No-image: gradient on/off" },
+        "mode": { "type": "string", "enum": ["image"], "description": "Set when slide has image(s)" },
+        "asset_id": { "type": "string", "format": "uuid", "description": "User-uploaded image asset ID" },
+        "storage_path": { "type": "string", "description": "Storage path for uploaded image" },
+        "image_url": { "type": "string", "format": "uri", "description": "Single image URL (pasted or AI)" },
+        "image_source": { "type": "string", "enum": ["brave", "unsplash", "google", "pixabay", "pexels"], "description": "Source of single image" },
+        "unsplash_attribution": {
+          "type": "object",
+          "properties": {
+            "photographerName": "string",
+            "photographerUsername": "string",
+            "profileUrl": "string",
+            "unsplashUrl": "string"
+          }
+        },
+        "pixabay_attribution": {
+          "type": "object",
+          "properties": { "userName": "string", "userId": "number", "pageURL": "string", "photoURL": "string" }
+        },
+        "pexels_attribution": {
+          "type": "object",
+          "properties": { "photographer": "string", "photographer_url": "string", "photo_url": "string" }
+        },
+        "images": {
+          "type": "array",
+          "maxItems": 4,
+          "description": "Multiple images (2–4). Each: image_url, source?, attributions?, alternates?",
+          "items": {
+            "image_url": "string",
+            "asset_id": "string",
+            "storage_path": "string",
+            "source": "string",
+            "unsplash_attribution": "object",
+            "pixabay_attribution": "object",
+            "pexels_attribution": "object",
+            "alternates": "string[]"
+          }
+        },
+        "fit": { "type": "string", "enum": ["cover", "contain"], "description": "Image fit" },
+        "image_display": { "$ref": "#/definitions/image_display" },
+        "overlay": { "$ref": "#/definitions/overlay" }
+      }
+    },
+    "overlay": {
+      "description": "Gradient/tint overlay on background or image",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "gradient": { "type": "boolean" },
+        "darken": { "type": "number", "min": 0, "max": 1 },
+        "blur": { "type": "number", "min": 0, "max": 1 },
+        "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{3,6}$" },
+        "textColor": { "type": "string", "pattern": "^#[0-9A-Fa-f]{3,6}$", "description": "Text color override" },
+        "direction": { "type": "string", "enum": ["top", "bottom", "left", "right"] },
+        "extent": { "type": "number", "min": 0, "max": 100, "description": "Gradient coverage %" },
+        "solidSize": { "type": "number", "min": 0, "max": 100 },
+        "tintColor": { "type": "string", "pattern": "^#[0-9A-Fa-f]{3,6}$", "description": "Tint on image" },
+        "tintOpacity": { "type": "number", "min": 0, "max": 1 }
+      }
+    },
+    "image_display": {
+      "description": "How image(s) are displayed (position, frame, PIP, multi-image layout)",
+      "properties": {
+        "position": { "type": "string", "enum": ["center", "top", "bottom", "left", "right", "top-left", "top-right", "bottom-left", "bottom-right"] },
+        "fit": { "type": "string", "enum": ["cover", "contain"] },
+        "frame": { "type": "string", "enum": ["none", "thin", "medium", "thick", "chunky", "heavy"] },
+        "frameShape": { "type": "string", "enum": ["squircle", "circle", "diamond", "hexagon", "pill"] },
+        "frameRadius": { "type": "number", "min": 0, "max": 48 },
+        "frameColor": { "type": "string", "pattern": "^#[0-9A-Fa-f]{3,6}$" },
+        "layout": { "type": "string", "enum": ["auto", "side-by-side", "stacked", "grid", "overlay-circles"] },
+        "gap": { "type": "number", "min": 0, "max": 48 },
+        "dividerStyle": { "type": "string", "enum": ["gap", "line", "zigzag", "diagonal", "wave", "dashed", "scalloped"] },
+        "dividerColor": { "type": "string" },
+        "dividerWidth": { "type": "number", "min": 2, "max": 100 },
+        "overlayCircleSize": { "type": "number", "min": 120, "max": 400 },
+        "overlayCircleBorderWidth": { "type": "number", "min": 4, "max": 24 },
+        "overlayCircleBorderColor": { "type": "string" },
+        "overlayCircleX": { "type": "number", "min": 0, "max": 100 },
+        "overlayCircleY": { "type": "number", "min": 0, "max": 100 },
+        "mode": { "type": "string", "enum": ["full", "pip"], "description": "full = fill slide, pip = picture-in-picture" },
+        "pipPosition": { "type": "string", "enum": ["top_left", "top_right", "bottom_left", "bottom_right"] },
+        "pipSize": { "type": "number", "min": 0.25, "max": 1 },
+        "pipRotation": { "type": "number", "min": -180, "max": 180 },
+        "pipBorderRadius": { "type": "number", "min": 0, "max": 72 },
+        "pipX": { "type": "number", "min": 0, "max": 100 },
+        "pipY": { "type": "number", "min": 0, "max": 100 },
+        "imagePositionX": { "type": "number", "min": 0, "max": 100, "description": "Focal point X" },
+        "imagePositionY": { "type": "number", "min": 0, "max": 100, "description": "Focal point Y" }
+      }
+    },
+    "meta": {
+      "description": "slide.meta – chrome, text zones, highlights, fonts",
+      "properties": {
+        "show_counter": { "type": "boolean", "description": "Show slide number" },
+        "show_watermark": { "type": "boolean", "description": "Show logo/watermark" },
+        "show_made_with": { "type": "boolean", "description": "Show Made with attribution" },
+        "show_swipe": { "type": "boolean", "description": "Show swipe hint. When undefined, use template chrome." },
+        "swipe_type": { "type": "string", "enum": ["text", "arrow-left", "arrow-right", "arrows", "hand-left", "hand-right", "chevrons", "dots", "finger-swipe", "finger-left", "finger-right", "circle-arrows", "line-dots", "custom"], "description": "Swipe hint style" },
+        "swipe_position": { "type": "string", "enum": ["bottom_left", "bottom_center", "bottom_right", "top_left", "top_center", "top_right", "center_left", "center_right"], "description": "Swipe hint position" },
+        "overlay_tint_opacity": { "type": "number", "min": 0, "max": 1, "description": "Saved from background overlay when image" },
+        "overlay_tint_color": { "type": "string", "description": "Saved tint color (hex)" },
+        "headline_font_size": { "type": "number", "min": 8, "max": 200 },
+        "body_font_size": { "type": "number", "min": 8, "max": 200 },
+        "headline_zone_override": { "$ref": "#/definitions/text_zone_override" },
+        "body_zone_override": { "$ref": "#/definitions/text_zone_override" },
+        "counter_zone_override": {
+          "type": "object",
+          "properties": {
+            "top": { "type": "number", "min": 0, "max": 1080 },
+            "right": { "type": "number", "min": 0, "max": 1080 },
+            "fontSize": { "type": "number", "min": 10, "max": 48 }
+          }
+        },
+        "watermark_zone_override": {
+          "type": "object",
+          "properties": {
+            "position": { "type": "string", "enum": ["top_left", "top_right", "bottom_left", "bottom_right", "custom"] },
+            "logoX": { "type": "number", "min": 0, "max": 1080 },
+            "logoY": { "type": "number", "min": 0, "max": 1080 },
+            "fontSize": { "type": "number", "min": 8, "max": 72 },
+            "maxWidth": { "type": "number", "min": 24, "max": 400 },
+            "maxHeight": { "type": "number", "min": 24, "max": 200 }
+          }
+        },
+        "made_with_zone_override": {
+          "type": "object",
+          "properties": {
+            "fontSize": { "type": "number", "min": 12, "max": 48 },
+            "x": { "type": "number", "min": 0, "max": 968 },
+            "y": { "type": "number", "min": 0, "max": 1032 },
+            "bottom": { "type": "number", "min": 0, "max": 200 }
+          }
+        },
+        "made_with_text": { "type": "string", "maxLength": 200, "description": "Custom Made with text" },
+        "headline_highlight_style": { "type": "string", "enum": ["text", "background", "outline"] },
+        "body_highlight_style": { "type": "string", "enum": ["text", "background", "outline"] },
+        "headline_outline_stroke": { "type": "number", "min": 0, "max": 8, "description": "0 = off" },
+        "body_outline_stroke": { "type": "number", "min": 0, "max": 8, "description": "0 = off" },
+        "headline_bold_weight": { "type": "number", "min": 100, "max": 900, "description": "Font weight for **bold**" },
+        "body_bold_weight": { "type": "number", "min": 100, "max": 900 },
+        "headline_highlights": {
+          "type": "array",
+          "items": { "type": "object", "properties": { "start": "number", "end": "number", "color": "string" } }
+        },
+        "body_highlights": {
+          "type": "array",
+          "items": { "type": "object", "properties": { "start": "number", "end": "number", "color": "string" } }
+        }
+      }
+    },
+    "text_zone_override": {
+      "description": "Per-slide overrides for headline or body zone (position, size, font)",
+      "properties": {
+        "x": { "type": "number", "min": 0, "max": 1080 },
+        "y": { "type": "number", "min": 0, "max": 1080 },
+        "w": { "type": "number", "min": 1, "max": 1080 },
+        "h": { "type": "number", "min": 1, "max": 1080 },
+        "fontSize": { "type": "number", "min": 8, "max": 200 },
+        "fontWeight": { "type": "number", "min": 100, "max": 900 },
+        "lineHeight": { "type": "number", "min": 0.5, "max": 3 },
+        "maxLines": { "type": "number", "min": 1, "max": 20 },
+        "align": { "type": "string", "enum": ["left", "center", "right", "justify"], "description": "Schema allows left|center; renderer also supports right|justify" },
+        "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{3,6}$" },
+        "fontFamily": { "type": "string", "maxLength": 80 },
+        "rotation": { "type": "number", "min": -180, "max": 180, "description": "Text zone rotation (used in normalizeSlideMetaForRender)" }
+      }
+    }
+  },
+  "uiSections": {
+    "Text tab": [
+      "headline",
+      "body",
+      "meta.headline_font_size",
+      "meta.body_font_size",
+      "meta.headline_zone_override",
+      "meta.body_zone_override",
+      "meta.headline_highlight_style",
+      "meta.body_highlight_style",
+      "meta.headline_outline_stroke",
+      "meta.body_outline_stroke",
+      "meta.headline_bold_weight",
+      "meta.body_bold_weight",
+      "meta.headline_highlights",
+      "meta.body_highlights"
+    ],
+    "Background tab": [
+      "background.style",
+      "background.color",
+      "background.gradientOn",
+      "background.mode",
+      "background.image_url",
+      "background.images",
+      "background.fit",
+      "background.overlay",
+      "background.image_display"
+    ],
+    "Chrome / Layout": [
+      "meta.show_counter",
+      "meta.show_watermark",
+      "meta.show_made_with",
+      "meta.show_swipe",
+      "meta.swipe_type",
+      "meta.swipe_position",
+      "meta.counter_zone_override",
+      "meta.watermark_zone_override",
+      "meta.made_with_zone_override",
+      "meta.made_with_text"
+    ],
+    "Template": [
+      "template_id"
+    ]
+  }
+}

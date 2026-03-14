@@ -186,6 +186,12 @@ export const slideMetaSchema = z.object({
   show_watermark: z.boolean().optional(),
   /** When false, hide "Made with KarouselMaker.com" attribution. Pro only. Default true. */
   show_made_with: z.boolean().optional(),
+  /** Override template: show or hide swipe hint. When undefined, use template chrome. */
+  show_swipe: z.boolean().optional(),
+  /** Override template: swipe hint style (text, chevrons, arrows, etc.). */
+  swipe_type: z.enum(["text", "arrow-left", "arrow-right", "arrows", "hand-left", "hand-right", "chevrons", "dots", "finger-swipe", "finger-left", "finger-right", "circle-arrows", "line-dots", "custom"]).optional(),
+  /** Override template: swipe hint position (bottom_center, top_left, etc.). */
+  swipe_position: z.enum(["bottom_left", "bottom_center", "bottom_right", "top_left", "top_center", "top_right", "center_left", "center_right"]).optional(),
   /** Override headline font size (px). 8–200. */
   headline_font_size: z.number().int().min(8).max(200).optional(),
   /** Override body font size (px). 8–200. */
@@ -222,6 +228,14 @@ export const slideMetaSchema = z.object({
   headline_highlight_style: highlightStyleSchema.optional(),
   /** How body {{color}} highlights render. */
   body_highlight_style: highlightStyleSchema.optional(),
+  /** Outline stroke width (px) for headline; 0 = off. Independent of highlight. 0–8. */
+  headline_outline_stroke: z.number().min(0).max(8).optional(),
+  /** Outline stroke width (px) for body; 0 = off. Independent of highlight. 0–8. */
+  body_outline_stroke: z.number().min(0).max(8).optional(),
+  /** Font weight (100–900) for **bold** in headline. Default 700. */
+  headline_bold_weight: z.number().int().min(100).max(900).optional(),
+  /** Font weight (100–900) for **bold** in body. Default 700. */
+  body_bold_weight: z.number().int().min(100).max(900).optional(),
   /** Headline highlight spans (plain text, no brackets). Each { start, end, color } with color as hex. */
   headline_highlights: z.array(z.object({ start: z.number().int().min(0), end: z.number().int().min(0), color: z.string() })).optional(),
   /** Body highlight spans. */

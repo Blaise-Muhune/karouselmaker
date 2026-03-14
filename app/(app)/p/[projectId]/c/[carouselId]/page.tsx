@@ -27,6 +27,7 @@ import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
 import type { BrandKit } from "@/lib/renderer/renderModel";
 import type { ExportFormat, ExportSize, PlatformName } from "@/lib/server/db/types";
 import { FREE_FULL_ACCESS_GENERATIONS } from "@/lib/constants";
+import { slugifyForFilename } from "@/lib/utils";
 import { GenerationPartialBanner } from "@/components/carousels/GenerationPartialBanner";
 import { CarouselGeneratingPage } from "@/components/carousels/CarouselGeneratingTrigger";
 import { ArrowLeftIcon } from "lucide-react";
@@ -261,6 +262,8 @@ export default async function CarouselEditorPage({
           connectedPlatforms={userIsAdmin ? Array.from(connectedPlatforms) : undefined}
           captionVariants={captionVariants}
           hashtags={hashtags}
+          carouselTitle={carousel.title}
+          projectName={project.name}
         />
 
         {/* Post to (admin only) */}
@@ -325,6 +328,7 @@ export default async function CarouselEditorPage({
             exportFormat={getExportFormat(carousel)}
             isPro={subscription.isPro}
             disabled={isGenerating}
+            downloadFilenameSlug={slugifyForFilename([project.name, carousel.title].filter(Boolean).join(" - ")) || undefined}
           />
         </section>
 

@@ -39,7 +39,7 @@ export type SlideMetaForResolve = Record<string, unknown> | null | undefined;
 
 /**
  * Single source of truth for resolving image overlay blend (tint) when rendering/exporting a slide.
- * Precedence: slide.background.overlay (tintOpacity/tintColor) > slide.meta (overlay_tint_*) > template.defaults.meta > default (pip: 0, else 0.75).
+ * Precedence: slide.background.overlay (tintOpacity/tintColor) > slide.meta (overlay_tint_*) > template.defaults.meta > default 0 (no blend unless template or slide sets it).
  */
 export function resolveOverlayTint(
   slideBg: SlideBackgroundForResolve,
@@ -49,18 +49,23 @@ export function resolveOverlayTint(
 ): { tintOpacity: number; tintColor: string } {
   const templateMeta =
     templateConfig?.defaults?.meta && typeof templateConfig.defaults.meta === "object"
-      ? (templateConfig.defaults.meta as { overlay_tint_opacity?: number; overlay_tint_color?: string })
+      ? (templateConfig.defaults.meta as { overlay_tint_opacity?: number; overlay_tint_color?: string; image_overlay_blend_enabled?: boolean })
       : undefined;
   const templateDefaultColor =
     (templateConfig?.defaults?.background && typeof templateConfig.defaults.background === "object" && "color" in templateConfig.defaults.background
       ? (templateConfig.defaults.background as { color?: string }).color
       : undefined) ?? templateMeta?.overlay_tint_color ?? "#0a0a0a";
 
+  const templateTintFromMeta =
+    templateMeta?.image_overlay_blend_enabled === false
+      ? undefined
+      : (templateMeta?.overlay_tint_opacity != null ? templateMeta.overlay_tint_opacity : undefined);
   const effectiveTintOpacity =
     (typeof slideBg?.overlay?.tintOpacity === "number" ? slideBg.overlay.tintOpacity : undefined) ??
+    (templateMeta?.image_overlay_blend_enabled === false ? 0 : undefined) ??
     (typeof slideMeta?.overlay_tint_opacity === "number" ? (slideMeta as { overlay_tint_opacity?: number }).overlay_tint_opacity : undefined) ??
-    templateMeta?.overlay_tint_opacity ??
-    (isPip ? 0 : 0.75);
+    templateTintFromMeta ??
+    (isPip ? 0 : 0);
 
   const slideMetaTint = (slideMeta as { overlay_tint_color?: string })?.overlay_tint_color;
   const effectiveTintColor =

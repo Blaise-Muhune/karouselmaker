@@ -62,7 +62,11 @@ export type NormalizedSlideMeta = {
   zoneOverrides: TextZoneOverrides | undefined;
   fontOverrides: { headline_font_size?: number; body_font_size?: number } | undefined;
   chromeOverrides: ChromeOverrides | undefined;
-  highlightStyles: { headline?: "background" | "outline"; body?: "background" | "outline" };
+  highlightStyles: { headline?: "background"; body?: "background" };
+  /** Outline stroke width (px); 0 = off. Independent of highlight style; can combine with Text or Bg. */
+  outlineStrokes?: { headline?: number; body?: number };
+  /** Font weight for **bold** segments. Default 700. */
+  boldWeights?: { headline?: number; body?: number };
   showCounterOverride: boolean;
   showWatermarkOverride: boolean | undefined;
   showMadeWithOverride: boolean | undefined;
@@ -140,6 +144,8 @@ export function mergeWithTemplateDefaults(
     fontOverrides: normalized.fontOverrides ?? templateDefaults.fontOverrides,
     chromeOverrides: normalized.chromeOverrides ?? templateDefaults.chromeOverrides,
     highlightStyles: normalized.highlightStyles,
+    outlineStrokes: normalized.outlineStrokes ?? templateDefaults.outlineStrokes,
+    boldWeights: normalized.boldWeights ?? templateDefaults.boldWeights,
     showCounterOverride: normalized.showCounterOverride || (templateDefaults.showCounterOverride ?? false),
     showWatermarkOverride: normalized.showWatermarkOverride ?? templateDefaults.showWatermarkOverride,
     showMadeWithOverride: normalized.showMadeWithOverride ?? templateDefaults.showMadeWithOverride,
@@ -208,12 +214,21 @@ export function normalizeSlideMetaForRender(meta: Record<string, unknown> | null
   if (Object.keys(madeWith).length === 0) (madeWith as { bottom?: number }).bottom = 16;
   const madeWithTextRaw = typeof m.made_with_text === "string" && m.made_with_text.trim() !== "" ? m.made_with_text.trim() : undefined;
   if (madeWithTextRaw) (madeWith as { text?: string }).text = madeWithTextRaw;
+  const swipePositions = ["bottom_left", "bottom_center", "bottom_right", "top_left", "top_center", "top_right", "center_left", "center_right"] as const;
+  const swipeTypes = ["text", "arrow-left", "arrow-right", "arrows", "hand-left", "hand-right", "chevrons", "dots", "finger-swipe", "finger-left", "finger-right", "circle-arrows", "line-dots", "custom"] as const;
+  const showSwipeVal = m.show_swipe;
+  const swipeTypeVal = typeof m.swipe_type === "string" && swipeTypes.includes(m.swipe_type as (typeof swipeTypes)[number]) ? (m.swipe_type as (typeof swipeTypes)[number]) : undefined;
+  const swipePositionVal = typeof m.swipe_position === "string" && swipePositions.includes(m.swipe_position as (typeof swipePositions)[number]) ? (m.swipe_position as (typeof swipePositions)[number]) : undefined;
+  const hasSwipeOverrides = typeof showSwipeVal === "boolean" || swipeTypeVal != null || swipePositionVal != null;
   const chromeOverrides: ChromeOverrides | undefined =
-    (counter && Object.keys(counter).length > 0) || (watermark && Object.keys(watermark).length > 0) || (Object.keys(madeWith).length > 0)
+    (counter && Object.keys(counter).length > 0) || (watermark && Object.keys(watermark).length > 0) || (Object.keys(madeWith).length > 0) || hasSwipeOverrides
       ? {
           ...(counter && Object.keys(counter).length > 0 && { counter }),
           ...(watermark && Object.keys(watermark).length > 0 && { watermark }),
           ...(Object.keys(madeWith).length > 0 && { madeWith }),
+          ...(typeof showSwipeVal === "boolean" && { showSwipe: showSwipeVal }),
+          ...(swipeTypeVal != null && { swipeType: swipeTypeVal }),
+          ...(swipePositionVal != null && { swipePosition: swipePositionVal }),
         }
       : undefined;
 
@@ -230,20 +245,33 @@ export function normalizeSlideMetaForRender(meta: Record<string, unknown> | null
         }
       : undefined;
 
+  /** Highlight style: only text (default) or background. Outline is independent (see outlineStrokes). */
   const highlightStyles = {
-    headline:
-      m.headline_highlight_style === "background"
-        ? ("background" as const)
-        : m.headline_highlight_style === "outline"
-          ? ("outline" as const)
-          : undefined,
-    body:
-      m.body_highlight_style === "background"
-        ? ("background" as const)
-        : m.body_highlight_style === "outline"
-          ? ("outline" as const)
-          : undefined,
+    headline: m.headline_highlight_style === "background" ? ("background" as const) : undefined,
+    body: m.body_highlight_style === "background" ? ("background" as const) : undefined,
   };
+
+  const headlineOutline = m.headline_outline_stroke != null ? Number(m.headline_outline_stroke) : undefined;
+  const bodyOutline = m.body_outline_stroke != null ? Number(m.body_outline_stroke) : undefined;
+  const outlineStrokes =
+    (headlineOutline != null && !Number.isNaN(headlineOutline) && headlineOutline >= 0 && headlineOutline <= 8) ||
+    (bodyOutline != null && !Number.isNaN(bodyOutline) && bodyOutline >= 0 && bodyOutline <= 8)
+      ? {
+          ...(headlineOutline != null && !Number.isNaN(headlineOutline) && headlineOutline >= 0 && headlineOutline <= 8 && { headline: headlineOutline }),
+          ...(bodyOutline != null && !Number.isNaN(bodyOutline) && bodyOutline >= 0 && bodyOutline <= 8 && { body: bodyOutline }),
+        }
+      : undefined;
+
+  const headlineBold = m.headline_bold_weight != null ? Number(m.headline_bold_weight) : undefined;
+  const bodyBold = m.body_bold_weight != null ? Number(m.body_bold_weight) : undefined;
+  const boldWeights =
+    (headlineBold != null && !Number.isNaN(headlineBold) && headlineBold >= 100 && headlineBold <= 900) ||
+    (bodyBold != null && !Number.isNaN(bodyBold) && bodyBold >= 100 && bodyBold <= 900)
+      ? {
+          ...(headlineBold != null && !Number.isNaN(headlineBold) && headlineBold >= 100 && headlineBold <= 900 && { headline: Math.round(headlineBold) }),
+          ...(bodyBold != null && !Number.isNaN(bodyBold) && bodyBold >= 100 && bodyBold <= 900 && { body: Math.round(bodyBold) }),
+        }
+      : undefined;
 
   const showCounterOverride = m.show_counter === true;
   const showWatermarkOverride = m.show_watermark as boolean | undefined;
@@ -256,6 +284,8 @@ export function normalizeSlideMetaForRender(meta: Record<string, unknown> | null
     fontOverrides,
     chromeOverrides,
     highlightStyles,
+    outlineStrokes,
+    boldWeights,
     showCounterOverride,
     showWatermarkOverride,
     showMadeWithOverride,

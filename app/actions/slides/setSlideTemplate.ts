@@ -100,7 +100,15 @@ export async function setSlideTemplate(
         ? (defaultsMeta.image_display as Record<string, unknown>)
         : undefined;
     const hasOverlayOrTint = overlayFromTemplate != null || overlayTintOpacity != null || overlayTintColor != null;
-    const hasImageDisplay = templateImageDisplay != null && Object.keys(templateImageDisplay).length > 0;
+    const templateIsPip = templateImageDisplay != null && templateImageDisplay.mode === "pip";
+    // When applying a template that is NOT PIP, force image to full screen so slides that had PIP from a previous template don't keep it.
+    const resolvedImageDisplay =
+      templateImageDisplay != null && Object.keys(templateImageDisplay).length > 0
+        ? { ...(existingBg?.image_display as Record<string, unknown> | undefined), ...templateImageDisplay, ...(templateIsPip ? {} : { mode: "full" as const }) }
+        : existingBg?.image_display != null && typeof existingBg.image_display === "object" && !Array.isArray(existingBg.image_display)
+          ? { ...(existingBg.image_display as Record<string, unknown>), mode: "full" as const }
+          : undefined;
+    const hasImageDisplay = resolvedImageDisplay != null && Object.keys(resolvedImageDisplay).length > 0;
 
     // Resolve template background color/style/pattern so they persist after reload (editor reads slide.background.color).
     const defaultsBg = parsed.data?.defaults?.background as { color?: string; style?: string; pattern?: string } | undefined;
@@ -120,7 +128,7 @@ export async function setSlideTemplate(
         ...(templateBgStyle != null && { style: templateBgStyle }),
         ...(templateBgPattern != null && { pattern: templateBgPattern }),
         ...(hasOverlayOrTint && { overlay: mergedOverlay }),
-        ...(hasImageDisplay && { image_display: { ...(existingBg.image_display as Record<string, unknown> | undefined), ...templateImageDisplay } }),
+        ...(hasImageDisplay && { image_display: resolvedImageDisplay }),
       } as Json;
     }
 

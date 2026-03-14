@@ -6,7 +6,7 @@ import { getTextScaleForDimensions, normalizeTextZoneOverrides, type BrandKit, t
 import { getRoundedPolygonClipPath } from "@/lib/renderer/shapeClipPath";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { getContrastingTextColor, hexToRgba } from "@/lib/editor/colorUtils";
-import { parseInlineFormatting, BOLD_FONT_WEIGHT, HIGHLIGHT_COLORS, type HighlightSpan, type InlineSegment } from "@/lib/editor/inlineFormat";
+import { parseInlineFormatting, HIGHLIGHT_COLORS, type HighlightSpan, type InlineSegment } from "@/lib/editor/inlineFormat";
 import { Hand, ChevronsLeft, ChevronsRight, MoveHorizontal, GripHorizontal, Minus, Plus, ChevronDownIcon, SparklesIcon, Loader2Icon } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
@@ -195,10 +195,18 @@ export type SlidePreviewProps = {
   zoneOverrides?: TextZoneOverrides | null;
   /** Counter, logo watermark, and "Made with" position/size overrides (from slide meta or template defaults). */
   chromeOverrides?: ChromeOverrides | null;
-  /** Headline {{color}} style: "text" or "background" (highlighter) or "outline" (color + black stroke). */
-  headlineHighlightStyle?: "text" | "background" | "outline";
-  /** Body {{color}} style: "text" or "background" (highlighter) or "outline" (color + black stroke). */
-  bodyHighlightStyle?: "text" | "background" | "outline";
+  /** Headline {{color}} style: "text" or "background" (highlighter). Outline is independent. */
+  headlineHighlightStyle?: "text" | "background";
+  /** Body {{color}} style: "text" or "background" (highlighter). Outline is independent. */
+  bodyHighlightStyle?: "text" | "background";
+  /** Outline stroke width (px) for headline; 0 = off. Independent of highlight; can combine with Text or Bg. */
+  headlineOutlineStroke?: number;
+  /** Outline stroke width (px) for body; 0 = off. Independent of highlight; can combine with Text or Bg. */
+  bodyOutlineStroke?: number;
+  /** Font weight (100–900) for **bold** in headline. Default 700. */
+  headlineBoldWeight?: number;
+  /** Font weight (100–900) for **bold** in body. Default 700. */
+  bodyBoldWeight?: number;
   /** When true, wrap background image in a bordered frame (nice separation for multi-image carousels). */
   borderedFrame?: boolean;
   /** Image display options: position, fit, frame, layout, gap, frameShape, dividerStyle, pip. */
@@ -466,6 +474,10 @@ export function SlidePreview({
   chromeOverrides,
   headlineHighlightStyle = "text",
   bodyHighlightStyle = "text",
+  headlineOutlineStroke = 0,
+  bodyOutlineStroke = 0,
+  headlineBoldWeight = 700,
+  bodyBoldWeight = 700,
   borderedFrame = false,
   imageDisplay,
   exportSize,
@@ -908,10 +920,12 @@ export function SlidePreview({
   const multiImages = allowImage ? rawMultiImages : null;
   const hasBackgroundImage = !!(bgImageUrl || multiImages);
   const defaultStyle = templateConfig.backgroundRules?.defaultStyle;
-  /** Only applies when there is a background image: gate gradient/tint on top of the picture. */
+  /** Only applies when there is a background image: gate gradient/tint on top of the picture. When user explicitly enables gradient in the editor (gradientOn true), show it even if template defaultStyle is "none"/"blur". */
   const overlayEnabled = backgroundOverride?.overlayEnabled !== false;
+  const templateAllowsOverlay = defaultStyle !== "none" && defaultStyle !== "blur";
+  const userExplicitlyEnabledGradient = backgroundOverride?.gradientOn === true && overlayEnabled;
   const useGradient = hasBackgroundImage
-    ? overlayEnabled && (defaultStyle !== "none" && defaultStyle !== "blur") && baseUseGradient
+    ? overlayEnabled && baseUseGradient && (templateAllowsOverlay || userExplicitlyEnabledGradient)
     : baseUseGradient;
   const useBlur = hasBackgroundImage && defaultStyle === "blur";
   const gradientDir = gradientDirectionToCss(
@@ -1752,6 +1766,9 @@ export function SlidePreview({
         const textContentHeight = Math.ceil(block.lines.length * fontSize * lineHeightNum);
         const zoneHighlightStyle = block.zone.id === "headline" ? headlineHighlightStyle : bodyHighlightStyle;
         const zoneColor = block.zone.color ?? textColor;
+        const zoneOutlineStrokePx = block.zone.id === "headline" ? (headlineOutlineStroke ?? 0) : (bodyOutlineStroke ?? 0);
+        const useOutline = zoneOutlineStrokePx > 0;
+        const zoneBoldWeight = block.zone.id === "headline" ? headlineBoldWeight : bodyBoldWeight;
         const isEditableHeadline =
           block.zone.id === "headline" &&
           (onHeadlineChange != null || (positionAndSizeOnly && onHeadlinePositionChange != null && editToolbarHeadline != null)) &&
@@ -1761,7 +1778,7 @@ export function SlidePreview({
           (onBodyChange != null || (positionAndSizeOnly && onBodyPositionChange != null && editToolbarBody != null)) &&
           chromeVisible;
         const outlineStyle = {
-          WebkitTextStroke: "2px #000",
+          WebkitTextStroke: `${zoneOutlineStrokePx}px #000`,
           padding: "0 1px",
           display: "inline" as const,
         };
@@ -1774,7 +1791,7 @@ export function SlidePreview({
               <Fragment key={baseKey}>
                 {subSegments.map((sub, k) =>
                   sub.type === "bold" ? (
-                    <strong key={`${baseKey}-${k}`} style={{ fontWeight: BOLD_FONT_WEIGHT }}>{sub.text}</strong>
+                    <strong key={`${baseKey}-${k}`} style={{ fontWeight: zoneBoldWeight }}>{sub.text}</strong>
                   ) : (
                     <Fragment key={`${baseKey}-${k}`}>{sub.text}</Fragment>
                   )
@@ -1788,7 +1805,7 @@ export function SlidePreview({
             return (
               <Fragment key={baseKey}>
                 {subSegments.map((sub, k) => {
-                  if (sub.type === "bold") return <strong key={`${baseKey}-${k}`} style={{ fontWeight: BOLD_FONT_WEIGHT }}>{sub.text}</strong>;
+                  if (sub.type === "bold") return <strong key={`${baseKey}-${k}`} style={{ fontWeight: zoneBoldWeight }}>{sub.text}</strong>;
                   if (sub.type === "color" && sub.color) {
                     return (
                       <span
@@ -1811,8 +1828,8 @@ export function SlidePreview({
           const renderSeg = (seg: InlineSegment, j: number) => {
             const fillColor = seg.type === "color" && seg.color ? seg.color : zoneColor;
             if (seg.type === "bold") {
-              const boldStyle = { fontWeight: BOLD_FONT_WEIGHT };
-              return zoneHighlightStyle === "outline" ? (
+              const boldStyle = { fontWeight: zoneBoldWeight };
+              return useOutline ? (
                 <strong key={j} style={boldStyle}>
                   <span style={{ ...outlineStyle, color: fillColor }}>{renderBoldContent(seg.text, j)}</span>
                 </strong>
@@ -1821,31 +1838,29 @@ export function SlidePreview({
               );
             }
             if (seg.type === "color" && seg.color) {
+              const baseStyle =
+                zoneHighlightStyle === "background"
+                  ? {
+                      backgroundColor: seg.color,
+                      padding: "0.02em 0",
+                      margin: 0,
+                      lineHeight: "inherit" as const,
+                      display: "inline" as const,
+                      borderRadius: 1,
+                      boxDecorationBreak: "clone" as const,
+                      WebkitBoxDecorationBreak: "clone" as const,
+                      ...(useOutline && outlineStyle),
+                    }
+                  : useOutline
+                    ? { ...outlineStyle, color: fillColor }
+                    : { color: seg.color };
               return (
-                <span
-                  key={j}
-                  style={
-                    zoneHighlightStyle === "background"
-                      ? {
-                          backgroundColor: seg.color,
-                          padding: "0.02em 0",
-                          margin: 0,
-                          lineHeight: "inherit",
-                          display: "inline",
-                          borderRadius: 1,
-                          boxDecorationBreak: "clone",
-                          WebkitBoxDecorationBreak: "clone",
-                        }
-                      : zoneHighlightStyle === "outline"
-                        ? { ...outlineStyle, color: fillColor }
-                        : { color: seg.color }
-                  }
-                >
+                <span key={j} style={baseStyle}>
                   {renderColoredContent(seg.text, seg.color, j)}
                 </span>
               );
             }
-            return zoneHighlightStyle === "outline" ? (
+            return useOutline ? (
               <span key={j} style={{ ...outlineStyle, color: fillColor }}>
                 {seg.text}
               </span>
@@ -2039,49 +2054,89 @@ export function SlidePreview({
                 {resizeHandles}
               </>
           );
+          const headlineDragHandleEl = canDrag ? (
+            <div
+              role="button"
+              tabIndex={-1}
+              onPointerDown={(e) => {
+                e.preventDefault();
+                e.currentTarget.setPointerCapture(e.pointerId);
+                dragZoneRef.current = { zone: "headline", baseX: block.zone.x, baseY: block.zone.y };
+                setDragOffset({ zone: "headline", x: 0, y: 0 });
+              }}
+              className="absolute left-0 right-0 flex items-center justify-center border-b-2 border-primary/50 bg-primary/20 cursor-move rounded-t-sm hover:bg-primary/30 z-[1]"
+              style={{
+                left: zoneRotation !== 0 ? 0 : block.zone.x + offX,
+                top: zoneRotation !== 0 ? 0 : block.zone.y + offY - DRAG_HANDLE_H,
+                width: block.zone.w,
+                height: DRAG_HANDLE_H,
+              }}
+              aria-label="Drag to move headline"
+            >
+              <GripHorizontal className="size-4 text-white" style={zoneRotation !== 0 ? { transform: `rotate(${-zoneRotation}deg)` } : undefined} />
+            </div>
+          ) : null;
+          const headlineZoneBoxEl = (
+            <div
+              className={`rounded-sm transition-shadow ${isFocused ? "ring-2 ring-primary/80 shadow-lg" : ""}`}
+              style={{
+                position: "absolute",
+                left: zoneRotation !== 0 ? 0 : block.zone.x + offX,
+                top: zoneRotation !== 0 ? DRAG_HANDLE_H : block.zone.y + offY,
+                ...zoneBoxStyle,
+                ...(zoneRotation !== 0 && {
+                  overflow: "visible",
+                  backfaceVisibility: "hidden",
+                }),
+              }}
+            >
+              {zoneBoxContent}
+            </div>
+          );
           return (
             <Fragment key={block.zone.id}>
               {positionAndSizeOnly ? null : readOnlyBlockEl}
               <div ref={headlineBlockRef} className="absolute shrink-0" style={{ zIndex: 6 }}>
-                {canDrag && (
+                {zoneRotation !== 0 && canDrag ? (
                   <div
-                    role="button"
-                    tabIndex={-1}
-                    onPointerDown={(e) => {
-                      e.preventDefault();
-                      e.currentTarget.setPointerCapture(e.pointerId);
-                      dragZoneRef.current = { zone: "headline", baseX: block.zone.x, baseY: block.zone.y };
-                      setDragOffset({ zone: "headline", x: 0, y: 0 });
-                    }}
-                    className="absolute left-0 right-0 flex items-center justify-center border-b-2 border-primary/50 bg-primary/20 cursor-move rounded-t-sm hover:bg-primary/30 z-[1]"
+                    className="absolute"
                     style={{
                       left: block.zone.x + offX,
                       top: block.zone.y + offY - DRAG_HANDLE_H,
                       width: block.zone.w,
-                      height: DRAG_HANDLE_H,
-                    }}
-                    aria-label="Drag to move headline"
-                  >
-                    <GripHorizontal className="size-4 text-white" />
-                  </div>
-                )}
-                <div
-                  className={`rounded-sm transition-shadow ${isFocused ? "ring-2 ring-primary/80 shadow-lg" : ""}`}
-                  style={{
-                    position: "absolute",
-                    left: block.zone.x + offX,
-                    top: block.zone.y + offY,
-                    ...zoneBoxStyle,
-                    ...(zoneRotation !== 0 && {
+                      height: DRAG_HANDLE_H + block.zone.h,
                       transform: `rotate(${zoneRotation}deg) translateZ(0)`,
-                      transformOrigin: "50% 50%",
+                      transformOrigin: "50% 100%",
                       overflow: "visible",
                       backfaceVisibility: "hidden",
-                    }),
-                  }}
-                >
-                  {zoneBoxContent}
-                </div>
+                    }}
+                  >
+                    {headlineDragHandleEl}
+                    {headlineZoneBoxEl}
+                  </div>
+                ) : (
+                  <>
+                    {headlineDragHandleEl}
+                    {zoneRotation !== 0 ? (
+                      <div
+                        style={{
+                          position: "absolute",
+                          left: block.zone.x + offX,
+                          top: block.zone.y + offY,
+                          ...zoneBoxStyle,
+                          transform: `rotate(${zoneRotation}deg) translateZ(0)`,
+                          transformOrigin: "50% 50%",
+                          overflow: "visible",
+                          backfaceVisibility: "hidden",
+                        }}
+                      >
+                        {zoneBoxContent}
+                      </div>
+                    ) : (
+                      headlineZoneBoxEl
+                    )}
+                  </>
+                )}
                 {showToolbar && editToolbarHeadline && (
                 <div
                   className="flex flex-nowrap items-center gap-3 rounded-xl border border-primary/40 bg-black/95 px-3 py-2.5 shadow-xl backdrop-blur-sm"
@@ -2329,103 +2384,148 @@ export function SlidePreview({
             padding: 0,
             margin: 0,
           };
+          const bodyDragHandleEl = canDrag ? (
+            <div
+              role="button"
+              tabIndex={-1}
+              onPointerDown={(e) => {
+                e.preventDefault();
+                e.currentTarget.setPointerCapture(e.pointerId);
+                dragZoneRef.current = { zone: "body", baseX: block.zone.x, baseY: block.zone.y };
+                setDragOffset({ zone: "body", x: 0, y: 0 });
+              }}
+              className="absolute flex items-center justify-center border-b-2 border-primary/50 bg-primary/20 cursor-move rounded-t-sm hover:bg-primary/30 z-[1]"
+              style={{
+                left: zoneRotation !== 0 ? 0 : block.zone.x + offX,
+                top: zoneRotation !== 0 ? 0 : block.zone.y + offY - BODY_DRAG_HANDLE_H,
+                width: block.zone.w,
+                height: BODY_DRAG_HANDLE_H,
+              }}
+              aria-label="Drag to move body"
+            >
+              <GripHorizontal className="size-4 text-white" style={zoneRotation !== 0 ? { transform: `rotate(${-zoneRotation}deg)` } : undefined} />
+            </div>
+          ) : null;
+          const bodyZoneBoxContent = (
+            <>
+              {positionAndSizeOnly ? (
+                <div
+                  className="absolute inset-0 flex min-w-0 flex-col justify-center box-border overflow-hidden cursor-pointer"
+                  style={{
+                    zIndex: 0,
+                    ...readOnlyBlockStyles,
+                    width: "100%",
+                    height: "100%",
+                  }}
+                  onClick={() => onBodyFocus?.()}
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    onBodyFocus?.();
+                  }}
+                  role="button"
+                  tabIndex={-1}
+                  aria-label="Body — drag to move, corners to resize"
+                >
+                  {readOnlyBlockContent}
+                </div>
+              ) : (
+                <div className="absolute inset-0 flex min-w-0 flex-col justify-center box-border overflow-hidden" style={{ zIndex: 0, padding: 0, margin: 0 }}>
+                  <textarea
+                    ref={bodyTextareaRef}
+                    value={slide.body ?? ""}
+                    onChange={(e) => onBodyChange!(e.target.value)}
+                    onFocus={onBodyFocus}
+                    onBlur={handleBodyBlur}
+                    placeholder="Subtext"
+                    wrap="soft"
+                    className="w-full min-w-0 resize-none bg-transparent border-none outline-none overflow-hidden cursor-text"
+                    style={{
+                      color: "transparent",
+                      caretColor: zoneColor,
+                      fontSize,
+                      fontWeight: block.zone.fontWeight,
+                      lineHeight: block.zone.lineHeight,
+                      textAlign: effectiveAlign,
+                      fontFamily: zoneFontFamily(block.zone),
+                      wordBreak: "break-word",
+                      overflowWrap: "break-word",
+                      padding: 0,
+                      margin: 0,
+                      width: "100%",
+                      maxWidth: "100%",
+                      boxSizing: "border-box",
+                      height: textContentHeight,
+                      minHeight: textContentHeight,
+                    }}
+                    aria-label="Edit body text"
+                  />
+                </div>
+              )}
+              {resizeHandles}
+            </>
+          );
+          const bodyZoneBoxEl = (
+            <div
+              className={`rounded-sm transition-shadow ${isFocused ? "ring-2 ring-primary/80 shadow-lg" : ""}`}
+              style={{
+                position: "absolute",
+                left: zoneRotation !== 0 ? 0 : block.zone.x + offX,
+                top: zoneRotation !== 0 ? BODY_DRAG_HANDLE_H : block.zone.y + offY,
+                ...bodyZoneBoxStyle,
+                ...(zoneRotation !== 0 && {
+                  overflow: "visible",
+                  backfaceVisibility: "hidden",
+                }),
+              }}
+            >
+              {bodyZoneBoxContent}
+            </div>
+          );
           return (
             <Fragment key={block.zone.id}>
               {positionAndSizeOnly ? null : readOnlyBlockEl}
               <div ref={bodyBlockRef} className="absolute shrink-0" style={{ zIndex: 6 }}>
-                {canDrag && (
+                {zoneRotation !== 0 && canDrag ? (
                   <div
-                    role="button"
-                    tabIndex={-1}
-                    onPointerDown={(e) => {
-                      e.preventDefault();
-                      e.currentTarget.setPointerCapture(e.pointerId);
-                      dragZoneRef.current = { zone: "body", baseX: block.zone.x, baseY: block.zone.y };
-                      setDragOffset({ zone: "body", x: 0, y: 0 });
-                    }}
-                    className="absolute flex items-center justify-center border-b-2 border-primary/50 bg-primary/20 cursor-move rounded-t-sm hover:bg-primary/30 z-[1]"
+                    className="absolute"
                     style={{
                       left: block.zone.x + offX,
                       top: block.zone.y + offY - BODY_DRAG_HANDLE_H,
                       width: block.zone.w,
-                      height: BODY_DRAG_HANDLE_H,
-                    }}
-                    aria-label="Drag to move body"
-                  >
-                    <GripHorizontal className="size-4 text-white" />
-                  </div>
-                )}
-                <div
-                  className={`rounded-sm transition-shadow ${isFocused ? "ring-2 ring-primary/80 shadow-lg" : ""}`}
-                  style={{
-                    position: "absolute",
-                    left: block.zone.x + offX,
-                    top: block.zone.y + offY,
-                    ...bodyZoneBoxStyle,
-                    ...(zoneRotation !== 0 && {
+                      height: BODY_DRAG_HANDLE_H + block.zone.h,
                       transform: `rotate(${zoneRotation}deg) translateZ(0)`,
-                      transformOrigin: "50% 50%",
+                      transformOrigin: "50% 100%",
                       overflow: "visible",
                       backfaceVisibility: "hidden",
-                    }),
-                  }}
-                >
-                {positionAndSizeOnly ? (
-                  <div
-                    className="absolute inset-0 flex min-w-0 flex-col justify-center box-border overflow-hidden cursor-pointer"
-                    style={{
-                      zIndex: 0,
-                      ...readOnlyBlockStyles,
-                      width: "100%",
-                      height: "100%",
                     }}
-                    onClick={() => onBodyFocus?.()}
-                    onPointerDown={(e) => {
-                      e.stopPropagation();
-                      onBodyFocus?.();
-                    }}
-                    role="button"
-                    tabIndex={-1}
-                    aria-label="Body — drag to move, corners to resize"
                   >
-                    {readOnlyBlockContent}
+                    {bodyDragHandleEl}
+                    {bodyZoneBoxEl}
                   </div>
                 ) : (
-                  <div className="absolute inset-0 flex min-w-0 flex-col justify-center box-border overflow-hidden" style={{ zIndex: 0, padding: 0, margin: 0 }}>
-                    <textarea
-                      ref={bodyTextareaRef}
-                      value={slide.body ?? ""}
-                      onChange={(e) => onBodyChange!(e.target.value)}
-                      onFocus={onBodyFocus}
-                      onBlur={handleBodyBlur}
-                      placeholder="Subtext"
-                      wrap="soft"
-                      className="w-full min-w-0 resize-none bg-transparent border-none outline-none overflow-hidden cursor-text"
-                      style={{
-                        color: "transparent",
-                        caretColor: zoneColor,
-                        fontSize,
-                        fontWeight: block.zone.fontWeight,
-                        lineHeight: block.zone.lineHeight,
-                        textAlign: effectiveAlign,
-                        fontFamily: zoneFontFamily(block.zone),
-                        wordBreak: "break-word",
-                        overflowWrap: "break-word",
-                        padding: 0,
-                        margin: 0,
-                        width: "100%",
-                        maxWidth: "100%",
-                        boxSizing: "border-box",
-                        height: textContentHeight,
-                        minHeight: textContentHeight,
-                      }}
-                      aria-label="Edit body text"
-                    />
-                  </div>
+                  <>
+                    {bodyDragHandleEl}
+                    {zoneRotation !== 0 && !canDrag ? (
+                      <div
+                        style={{
+                          position: "absolute",
+                          left: block.zone.x + offX,
+                          top: block.zone.y + offY,
+                          ...bodyZoneBoxStyle,
+                          transform: `rotate(${zoneRotation}deg) translateZ(0)`,
+                          transformOrigin: "50% 50%",
+                          overflow: "visible",
+                          backfaceVisibility: "hidden",
+                        }}
+                      >
+                        {bodyZoneBoxContent}
+                      </div>
+                    ) : (
+                      bodyZoneBoxEl
+                    )}
+                  </>
                 )}
-                {resizeHandles}
-              </div>
-              {showToolbar && editToolbarBody && (
+                {showToolbar && editToolbarBody && (
                 <div
                   className="flex flex-nowrap items-center gap-3 rounded-xl border border-primary/40 bg-black/95 px-3 py-2.5 shadow-xl backdrop-blur-sm"
                   style={{

@@ -14,6 +14,7 @@ import { importFromGoogleDrive, importFilesFromGoogleDrive } from "@/app/actions
 import { TemplateSelectCards } from "@/components/carousels/TemplateSelectCards";
 import type { TemplateOption } from "@/components/carousels/TemplateSelectCards";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
+import { ImportTemplateButton } from "@/components/templates/ImportTemplateButton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { createCheckoutSession } from "@/app/actions/subscription/createCheckoutSession";
@@ -517,12 +518,24 @@ export function NewCarouselForm({
             </Button>
             <Dialog open={templateModalOpen} onOpenChange={setTemplateModalOpen}>
               <DialogContent className="flex flex-col max-w-[calc(100%-2rem)] max-h-[85vh] sm:max-w-2xl md:max-w-[92vw] md:max-h-[92vh] md:w-[92vw] md:h-[92vh] lg:max-w-[94vw] lg:max-h-[94vh] lg:w-[94vw] lg:h-[94vh]">
-                <DialogHeader>
-                  <DialogTitle>Choose template</DialogTitle>
+                <DialogHeader className="flex flex-row items-start justify-between gap-2">
+                  <div>
+                    <DialogTitle>Choose template</DialogTitle>
+                    <p className="text-muted-foreground text-sm mt-1">
+                      {carouselFor === "linkedin" ? "LinkedIn templates." : "Pick a layout for your carousel."} You can load more below.
+                    </p>
+                  </div>
+                  {isPro && (
+                    <ImportTemplateButton
+                      isPro={isPro}
+                      atLimit={false}
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0 gap-1.5"
+                      onCreated={() => router.refresh()}
+                    />
+                  )}
                 </DialogHeader>
-                <p className="text-muted-foreground text-sm -mt-2">
-                  {carouselFor === "linkedin" ? "LinkedIn templates." : "Pick a layout for your carousel."} You can load more below.
-                </p>
                 <div className="overflow-y-auto overflow-x-hidden flex-1 min-h-0 min-w-0 w-full pr-1">
                   <TemplateSelectCards
                     templates={templateOptionsForPlatform.slice(0, visibleTemplateCount)}
@@ -541,6 +554,7 @@ export function NewCarouselForm({
                       setTemplateModalOpen(false);
                       router.refresh();
                     }}
+                    showMyTemplatesSection={true}
                   />
                 </div>
                 {visibleTemplateCount < templateOptionsForPlatform.length && (

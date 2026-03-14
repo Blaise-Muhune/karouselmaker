@@ -26,8 +26,8 @@ type HighlightModalProps = {
   highlights: HighlightSpan[];
   highlightColor: string;
   onHighlightColorChange: (color: string) => void;
-  highlightStyle: "text" | "background" | "outline";
-  onHighlightStyleChange: (style: "text" | "background" | "outline") => void;
+  highlightStyle: "text" | "background";
+  onHighlightStyleChange: (style: "text" | "background") => void;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   onSaveSelection: () => void;
   onApplyToSelection: (color: string, useSaved: boolean) => void;
@@ -113,21 +113,7 @@ export function HighlightModal({
         </p>
         <div className="space-y-4 min-w-0">
           <div>
-            <div className="flex items-center justify-between gap-2">
-              <Label className="text-xs text-muted-foreground">Text</Label>
-              <Button
-                type="button"
-                variant={highlightStyle === "outline" ? "secondary" : "ghost"}
-                size="sm"
-                className="h-7 text-xs shrink-0"
-                onClick={() =>
-                  onHighlightStyleChange(highlightStyle === "outline" ? "text" : "outline")
-                }
-                title="Black outline on all highlighted words (toggle on/off)"
-              >
-                Outline
-              </Button>
-            </div>
+            <Label className="text-xs text-muted-foreground">Text</Label>
             <Textarea
               ref={textareaRef}
               value={value}
@@ -254,21 +240,7 @@ export function HighlightModal({
 
         <div className="space-y-4">
           <div>
-            <div className="flex items-center justify-between gap-2">
-              <Label className="text-xs text-muted-foreground">Text</Label>
-              <Button
-                type="button"
-                variant={highlightStyle === "outline" ? "secondary" : "ghost"}
-                size="sm"
-                className="h-7 text-xs shrink-0"
-                onClick={() =>
-                  onHighlightStyleChange(highlightStyle === "outline" ? "text" : "outline")
-                }
-                title="Black outline on all highlighted words (toggle on/off)"
-              >
-                Outline
-              </Button>
-            </div>
+            <Label className="text-xs text-muted-foreground">Text</Label>
             <Textarea
               ref={textareaRef}
               value={value}

@@ -28,6 +28,7 @@ import {
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
 import { createProxyImageUrl } from "@/lib/server/proxyImageUrl";
 import type { BrandKit } from "@/lib/renderer/renderModel";
+import { slugifyForFilename } from "@/lib/utils";
 
 const BUCKET = "carousel-assets";
 export const dynamic = "force-dynamic";
@@ -325,6 +326,8 @@ export async function GET(
     zoneOverrides,
     chromeOverrides,
     highlightStyles,
+    merged.outlineStrokes,
+    merged.boldWeights,
     borderedFrame,
     imageDisplayParam,
     dimensions
@@ -344,7 +347,9 @@ export async function GET(
       const buffer = await page.locator(".slide-wrap").screenshot({ type: format, timeout: SELECTOR_TIMEOUT_MS });
       const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
       const ext = format === "jpeg" ? "jpg" : "png";
-      const filename = `slide-${slide.slide_index}.${ext}`;
+      const slug =
+        slugifyForFilename([project.name, carousel.title].filter(Boolean).join(" - ")) || "slide";
+      const filename = `${slug}-${String(slide.slide_index).padStart(2, "0")}.${ext}`;
       return new NextResponse(new Uint8Array(buf), {
         status: 200,
         headers: {

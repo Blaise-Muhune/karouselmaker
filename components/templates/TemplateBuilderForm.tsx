@@ -1001,6 +1001,20 @@ export function TemplateBuilderForm({
                 </div>
               </div>
             )}
+            <div className="flex items-center justify-between pt-3 border-t border-border/50 mt-3">
+              <div>
+                <Label className="text-sm">Image overlay blend</Label>
+                <p className="text-muted-foreground text-[11px]">When enabled, slides with a background image can use a color tint overlay. When off, blend is 0% by default.</p>
+              </div>
+              <label className="flex cursor-pointer items-center gap-2 shrink-0">
+                <input
+                  type="checkbox"
+                  checked={defaultsMeta.image_overlay_blend_enabled !== false}
+                  onChange={(e) => updateDefaultsMeta({ image_overlay_blend_enabled: e.target.checked })}
+                />
+                <span className="text-sm">Enabled</span>
+              </label>
+            </div>
             </>
             )}
           </div>

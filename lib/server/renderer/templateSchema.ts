@@ -141,6 +141,10 @@ const templateDefaultsSchema = z
         made_with_zone_override: z.record(z.string(), z.unknown()).optional(),
         headline_highlight_style: z.enum(["text", "background", "outline"]).optional(),
         body_highlight_style: z.enum(["text", "background", "outline"]).optional(),
+        /** Outline stroke width for headline (0 = off). Used when headline_highlight_style is "outline". */
+        headline_outline_stroke: z.number().min(0).max(8).optional(),
+        /** Outline stroke width for body (0 = off). Used when body_highlight_style is "outline". */
+        body_outline_stroke: z.number().min(0).max(8).optional(),
         headline_highlights: z.array(z.object({ start: z.number(), end: z.number(), color: z.string() })).optional(),
         body_highlights: z.array(z.object({ start: z.number(), end: z.number(), color: z.string() })).optional(),
         /** Image layout: pip, full, side-by-side, stacked, grid, overlay-circles, etc. Saved with template. */
@@ -149,6 +153,8 @@ const templateDefaultsSchema = z
         overlay_tint_opacity: z.number().min(0).max(1).optional(),
         /** Overlay tint color (hex). */
         overlay_tint_color: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
+        /** When false, image overlay blend is off (0%) by default. When true or unset, blend uses overlay_tint_opacity. */
+        image_overlay_blend_enabled: z.boolean().optional(),
         /** Background color (hex) for no-image or fallback. */
         background_color: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
       })

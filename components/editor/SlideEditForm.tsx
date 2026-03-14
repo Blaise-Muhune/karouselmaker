@@ -10,6 +10,7 @@ import { AssetPickerModal } from "@/components/assets/AssetPickerModal";
 import { GoogleDriveFilePicker } from "@/components/drive/GoogleDriveFilePicker";
 import { importSingleFileFromGoogleDrive } from "@/app/actions/assets/importFromGoogleDrive";
 import { TemplateSelectCards } from "@/components/carousels/TemplateSelectCards";
+import { ImportTemplateButton } from "@/components/templates/ImportTemplateButton";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -40,6 +41,7 @@ import { createTemplateAction } from "@/app/actions/templates/createTemplate";
 import { updateTemplateAction } from "@/app/actions/templates/updateTemplate";
 import { getTemplateConfigAction } from "@/app/actions/templates/getTemplateConfig";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
+import { slugifyForFilename } from "@/lib/utils";
 import { isSupabaseSignedUrl } from "@/lib/server/storage/signedUrlUtils";
 import { getTemplatePreviewBackgroundOverride } from "@/lib/renderer/getTemplatePreviewBackground";
 import type { BrandKit } from "@/lib/renderer/renderModel";
@@ -523,6 +525,8 @@ export function SlideEditForm({
   isAdmin = false,
 }: SlideEditFormProps) {
   const router = useRouter();
+  const downloadSlug =
+    slugifyForFilename([projectName, carouselTitle].filter(Boolean).join(" - ")) || undefined;
   const [headline, setHeadline] = useState(() => slide.headline);
   const [body, setBody] = useState(() => slide.body ?? "");
   const [templateId, setTemplateId] = useState<string | null>(() => slide.template_id ?? templates[0]?.id ?? null);
@@ -550,26 +554,23 @@ export function SlideEditForm({
         const meta = slide.meta as { overlay_tint_opacity?: number; overlay_tint_color?: string } | null;
         const templateImageDisplay = (initTemplateConfig?.defaults?.meta as { image_display?: { mode?: string } })?.image_display;
         const isPipInit = bg.image_display?.mode === "pip" || templateImageDisplay?.mode === "pip";
-        if (bg.mode === "image" && (meta?.overlay_tint_opacity != null || meta?.overlay_tint_color != null)) {
+        const templateMetaTint = initTemplateConfig?.defaults?.meta && typeof initTemplateConfig.defaults.meta === "object" ? (initTemplateConfig.defaults.meta as { overlay_tint_opacity?: number; overlay_tint_color?: string; image_overlay_blend_enabled?: boolean }) : undefined;
+        const defaultTintOpacity = templateMetaTint?.image_overlay_blend_enabled === false ? 0 : (templateMetaTint?.overlay_tint_opacity != null ? templateMetaTint.overlay_tint_opacity : (isPipInit ? 0 : 0));
+        const defaultTintColor = (templateMetaTint?.overlay_tint_color && /^#([0-9A-Fa-f]{3}){1,2}$/.test(templateMetaTint.overlay_tint_color)) ? templateMetaTint.overlay_tint_color : (initTemplateConfig?.defaults?.background && typeof initTemplateConfig.defaults.background === "object" && "color" in initTemplateConfig.defaults.background ? (initTemplateConfig.defaults.background as { color?: string }).color : undefined) ?? defaultOverlayColor;
+        if (bg.mode === "image") {
+          const templateBlendOff = templateMetaTint?.image_overlay_blend_enabled === false;
           base.overlay = {
             ...base.overlay,
-            tintOpacity: meta.overlay_tint_opacity ?? base.overlay?.tintOpacity ?? (isPipInit ? 0 : 0.75),
-            ...(meta.overlay_tint_color != null && /^#([0-9A-Fa-f]{3}){1,2}$/.test(meta.overlay_tint_color) && { tintColor: meta.overlay_tint_color }),
+            tintOpacity: templateBlendOff ? 0 : (meta?.overlay_tint_opacity != null ? meta.overlay_tint_opacity : (base.overlay?.tintOpacity ?? defaultTintOpacity)),
+            ...(meta?.overlay_tint_color != null && /^#([0-9A-Fa-f]{3}){1,2}$/.test(meta.overlay_tint_color) ? { tintColor: meta.overlay_tint_color } : (base.overlay?.tintColor ? {} : { tintColor: defaultTintColor })),
           };
-        } else if (bg.mode === "image" && isPipInit) {
-          base.overlay = { ...base.overlay, tintOpacity: base.overlay?.tintOpacity ?? 0 };
-        }
-        const initTemplate = (slide.template_id ?? templates[0]?.id) ? templates.find((t) => t.id === (slide.template_id ?? templates[0]?.id)) : templates[0];
-        if (bg.mode === "image" && initTemplate?.category === "linkedin" && base.overlay?.tintOpacity == null && base.overlay?.tintColor == null) {
-          const tintColor = (initTemplateConfig?.defaults?.background as { color?: string } | undefined)?.color ?? defaultOverlayColor;
-          base.overlay = { ...base.overlay, enabled: false, tintColor, tintOpacity: 0.75 };
         }
       } else {
         const grad = initTemplateConfig?.overlays?.gradient;
         const defaultOverlayColor = grad?.color ?? "#0a0a0a";
-        const initTemplate = (slide.template_id ?? templates[0]?.id) ? templates.find((t) => t.id === (slide.template_id ?? templates[0]?.id)) : templates[0];
-        const isLinkedIn = initTemplate?.category === "linkedin";
-        const tintColor = (initTemplateConfig?.defaults?.background as { color?: string } | undefined)?.color ?? defaultOverlayColor;
+        const templateMetaForTint = initTemplateConfig?.defaults?.meta && typeof initTemplateConfig.defaults.meta === "object" ? (initTemplateConfig.defaults.meta as { overlay_tint_opacity?: number; overlay_tint_color?: string; image_overlay_blend_enabled?: boolean }) : undefined;
+        const tintOpacityFromTemplate = templateMetaForTint?.image_overlay_blend_enabled === false ? 0 : templateMetaForTint?.overlay_tint_opacity;
+        const tintColorFromTemplate = templateMetaForTint?.overlay_tint_color && /^#([0-9A-Fa-f]{3}){1,2}$/.test(templateMetaForTint.overlay_tint_color) ? templateMetaForTint.overlay_tint_color : (initTemplateConfig?.defaults?.background && typeof initTemplateConfig.defaults.background === "object" && "color" in initTemplateConfig.defaults.background ? (initTemplateConfig.defaults.background as { color?: string }).color : undefined) ?? defaultOverlayColor;
         base.overlay = {
           gradient: grad?.enabled ?? true,
           darken: templateOverlayStrength,
@@ -578,7 +579,8 @@ export function SlideEditForm({
           direction: grad?.direction ?? "bottom",
           extent: grad?.extent ?? 50,
           solidSize: grad?.solidSize ?? 25,
-          ...(isLinkedIn ? { enabled: false, tintColor, tintOpacity: 0.75 } : {}),
+          ...(tintOpacityFromTemplate != null ? { tintOpacity: tintOpacityFromTemplate } : {}),
+          ...(tintColorFromTemplate ? { tintColor: tintColorFromTemplate } : {}),
         };
       }
       if (bg.image_display) base.image_display = { ...bg.image_display };
@@ -603,32 +605,47 @@ export function SlideEditForm({
   const [imageDisplay, setImageDisplay] = useState<ImageDisplayState>(() => {
     const bg = slide.background as { image_display?: ImageDisplayState; images?: unknown[] } | null;
     const meta = slide.meta as { image_display?: ImageDisplayState } | null;
-    const d = bg?.image_display ? { ...bg.image_display } : (meta?.image_display && typeof meta.image_display === "object" ? { ...meta.image_display } as ImageDisplayState : {});
-    const ds = d.dividerStyle as string | undefined;
-    if (ds === "dotted") d.dividerStyle = "dashed";
-    else if (ds === "double" || ds === "triple") d.dividerStyle = "scalloped";
+    const initTemplateConfig = getTemplateConfig(slide.template_id ?? templates[0]?.id ?? null, templates);
+    const templateImageDisplay = initTemplateConfig?.defaults?.meta && typeof initTemplateConfig.defaults.meta === "object" && "image_display" in initTemplateConfig.defaults.meta
+      ? (initTemplateConfig.defaults.meta as { image_display?: unknown }).image_display
+      : undefined;
+    const templateBase =
+      templateImageDisplay != null && typeof templateImageDisplay === "object" && !Array.isArray(templateImageDisplay)
+        ? (templateImageDisplay as Record<string, unknown>)
+        : {};
+    let slideOverrides: Record<string, unknown> =
+      bg?.image_display && typeof bg.image_display === "object"
+        ? { ...bg.image_display }
+        : (meta?.image_display && typeof meta.image_display === "object" ? { ...meta.image_display } as Record<string, unknown> : {});
+    if (templateBase.mode === "pip" && Object.keys(slideOverrides).length > 0) {
+      slideOverrides = { ...slideOverrides };
+      delete slideOverrides.pipX;
+      delete slideOverrides.pipY;
+    }
     const hasMultiImages = (bg?.images?.length ?? 0) >= 2 || (initialBackgroundImageUrls?.length ?? 0) >= 2;
-    if (Object.keys(d).length === 0 && hasMultiImages) {
+    if (hasMultiImages && Object.keys(templateBase).length === 0 && Object.keys(slideOverrides).length === 0) {
       const fc = brandKit.primary_color?.trim() || "#ffffff";
       const dc = brandKit.secondary_color?.trim() || "#ffffff";
       return { position: "top", fit: "cover", frame: "none", frameRadius: 16, frameColor: fc, frameShape: "squircle", layout: "auto", gap: 0, dividerStyle: "wave", dividerColor: dc, dividerWidth: 48 };
     }
-    if (Object.keys(d).length === 0) {
-      const fc = brandKit.primary_color?.trim() || "#ffffff";
-      const initTemplateId = slide.template_id ?? templates[0]?.id ?? null;
-      const initTemplate = initTemplateId ? templates.find((t) => t.id === initTemplateId) : templates[0];
-      const isLinkedIn = initTemplate?.category === "linkedin";
-      return {
-        position: "top",
-        fit: "cover",
-        frame: "none",
-        frameRadius: 16,
-        frameColor: fc,
-        frameShape: "squircle",
-        ...(isLinkedIn ? { mode: "pip" as const, pipPosition: "bottom_right" as const, pipSize: 0.4 } : {}),
-      };
-    }
-    return d;
+    const merged = { ...templateBase, ...slideOverrides } as ImageDisplayState;
+    const ds = merged.dividerStyle as string | undefined;
+    if (ds === "dotted") merged.dividerStyle = "dashed";
+    else if (ds === "double" || ds === "triple") merged.dividerStyle = "scalloped";
+    if (Object.keys(merged).length > 0) return merged;
+    const fc = brandKit.primary_color?.trim() || "#ffffff";
+    const initTemplateId = slide.template_id ?? templates[0]?.id ?? null;
+    const initTemplate = initTemplateId ? templates.find((t) => t.id === initTemplateId) : templates[0];
+    const isLinkedIn = initTemplate?.category === "linkedin";
+    return {
+      position: "top",
+      fit: "cover",
+      frame: "none",
+      frameRadius: 16,
+      frameColor: fc,
+      frameShape: "squircle",
+      ...(isLinkedIn ? { mode: "pip" as const, pipPosition: "bottom_right" as const, pipSize: 0.4 } : {}),
+    };
   });
   const [backgroundImageUrlForPreview, setBackgroundImageUrlForPreview] = useState<string | null>(() => initialBackgroundImageUrl ?? null);
   const [secondaryBackgroundImageUrlForPreview, setSecondaryBackgroundImageUrlForPreview] = useState<string | null>(() => initialSecondaryBackgroundImageUrl ?? null);
@@ -680,37 +697,92 @@ export function SlideEditForm({
     }
     return [{ url: "", source: undefined }];
   });
+  const initialTemplateForChrome = getTemplateConfig(slide.template_id ?? templates[0]?.id ?? null, templates);
+  const templateDefaultsMeta = initialTemplateForChrome?.defaults?.meta && typeof initialTemplateForChrome.defaults.meta === "object"
+    ? (initialTemplateForChrome.defaults.meta as {
+        show_counter?: boolean;
+        show_watermark?: boolean;
+        show_made_with?: boolean;
+        headline_font_size?: number;
+        body_font_size?: number;
+        headline_highlight_style?: string;
+        body_highlight_style?: string;
+        headline_outline_stroke?: number;
+        body_outline_stroke?: number;
+      })
+    : undefined;
   const [showCounter, setShowCounter] = useState<boolean>(() => {
     const m = slide.meta as { show_counter?: boolean } | null;
-    return m?.show_counter ?? false;
+    if (m != null && typeof m.show_counter === "boolean") return m.show_counter;
+    return templateDefaultsMeta?.show_counter ?? initialTemplateForChrome?.chrome?.showCounter ?? false;
   });
   const [showWatermark, setShowWatermark] = useState<boolean>(() => {
     const m = slide.meta as { show_watermark?: boolean } | null;
     if (m != null && typeof m.show_watermark === "boolean") return m.show_watermark;
-    return false; // default off for Pro; Free users cannot edit
+    return templateDefaultsMeta?.show_watermark ?? initialTemplateForChrome?.chrome?.watermark?.enabled ?? false;
   });
   const [showMadeWith, setShowMadeWith] = useState<boolean>(() => {
     const m = slide.meta as { show_made_with?: boolean } | null;
     if (m != null && typeof m.show_made_with === "boolean") return m.show_made_with;
-    return !isPro; // default hide for Pro; default show for Free (Free cannot edit)
+    return templateDefaultsMeta?.show_made_with ?? !isPro;
+  });
+  const initialTemplateForSwipe = initialTemplateForChrome;
+  const [showSwipe, setShowSwipe] = useState<boolean>(() => {
+    const m = slide.meta as { show_swipe?: boolean } | null;
+    if (m != null && typeof m.show_swipe === "boolean") return m.show_swipe;
+    return initialTemplateForSwipe?.chrome?.showSwipe ?? true;
+  });
+  type SwipePosition = "bottom_left" | "bottom_center" | "bottom_right" | "top_left" | "top_center" | "top_right" | "center_left" | "center_right";
+  type SwipeType = "text" | "arrow-left" | "arrow-right" | "arrows" | "hand-left" | "hand-right" | "chevrons" | "dots" | "finger-swipe" | "finger-left" | "finger-right" | "circle-arrows" | "line-dots" | "custom";
+  const [swipePosition, setSwipePosition] = useState<SwipePosition>(() => {
+    const m = slide.meta as { swipe_position?: SwipePosition } | null;
+    if (m?.swipe_position && ["bottom_left", "bottom_center", "bottom_right", "top_left", "top_center", "top_right", "center_left", "center_right"].includes(m.swipe_position)) return m.swipe_position;
+    return (initialTemplateForSwipe?.chrome?.swipePosition as SwipePosition) ?? "bottom_center";
+  });
+  const [swipeType, setSwipeType] = useState<SwipeType>(() => {
+    const m = slide.meta as { swipe_type?: SwipeType } | null;
+    if (m?.swipe_type && ["text", "arrow-left", "arrow-right", "arrows", "hand-left", "hand-right", "chevrons", "dots", "finger-swipe", "finger-left", "finger-right", "circle-arrows", "line-dots", "custom"].includes(m.swipe_type)) return m.swipe_type;
+    return (initialTemplateForSwipe?.chrome?.swipeType as SwipeType) ?? "text";
   });
   const [headlineFontSize, setHeadlineFontSize] = useState<number | undefined>(() => {
     const m = slide.meta as { headline_font_size?: number } | null;
-    return m?.headline_font_size;
+    if (m?.headline_font_size != null) return m.headline_font_size;
+    return templateDefaultsMeta?.headline_font_size;
   });
   const [bodyFontSize, setBodyFontSize] = useState<number | undefined>(() => {
     const m = slide.meta as { body_font_size?: number } | null;
-    return m?.body_font_size;
+    if (m?.body_font_size != null) return m.body_font_size;
+    return templateDefaultsMeta?.body_font_size;
   });
-  const [headlineHighlightStyle, setHeadlineHighlightStyle] = useState<"text" | "background" | "outline">(() => {
+  const [headlineHighlightStyle, setHeadlineHighlightStyle] = useState<"text" | "background">(() => {
     const m = slide.meta as { headline_highlight_style?: "text" | "background" | "outline" } | null;
-    const v = m?.headline_highlight_style;
-        return v === "background" || v === "outline" ? v : "text";
+    const v = m?.headline_highlight_style ?? templateDefaultsMeta?.headline_highlight_style;
+    return v === "background" ? "background" : "text";
   });
-  const [bodyHighlightStyle, setBodyHighlightStyle] = useState<"text" | "background" | "outline">(() => {
+  const [bodyHighlightStyle, setBodyHighlightStyle] = useState<"text" | "background">(() => {
     const m = slide.meta as { body_highlight_style?: "text" | "background" | "outline" } | null;
-    const v = m?.body_highlight_style;
-        return v === "background" || v === "outline" ? v : "text";
+    const v = m?.body_highlight_style ?? templateDefaultsMeta?.body_highlight_style;
+    return v === "background" ? "background" : "text";
+  });
+  const [headlineOutlineStroke, setHeadlineOutlineStroke] = useState<number>(() => {
+    const m = slide.meta as { headline_outline_stroke?: number } | null;
+    const v = m?.headline_outline_stroke ?? templateDefaultsMeta?.headline_outline_stroke;
+    return typeof v === "number" && v >= 0 && v <= 8 ? v : 0;
+  });
+  const [bodyOutlineStroke, setBodyOutlineStroke] = useState<number>(() => {
+    const m = slide.meta as { body_outline_stroke?: number } | null;
+    const v = m?.body_outline_stroke ?? templateDefaultsMeta?.body_outline_stroke;
+    return typeof v === "number" && v >= 0 && v <= 8 ? v : 0;
+  });
+  const [headlineBoldWeight, setHeadlineBoldWeight] = useState<number>(() => {
+    const m = slide.meta as { headline_bold_weight?: number } | null;
+    const v = m?.headline_bold_weight;
+    return typeof v === "number" && v >= 100 && v <= 900 ? v : 700;
+  });
+  const [bodyBoldWeight, setBodyBoldWeight] = useState<number>(() => {
+    const m = slide.meta as { body_bold_weight?: number } | null;
+    const v = m?.body_bold_weight;
+    return typeof v === "number" && v >= 100 && v <= 900 ? v : 700;
   });
   type ZoneOverride = { x?: number; y?: number; w?: number; h?: number; fontSize?: number; fontWeight?: number; lineHeight?: number; maxLines?: number; align?: "left" | "center" | "right" | "justify"; color?: string; fontFamily?: string; rotation?: number };
   /** Max lines that fit in zone height (fontSize * lineHeight per line). Clamped 1–20. */
@@ -859,9 +931,12 @@ export function SlideEditForm({
       headline: slide.headline,
       body: slide.body ?? "",
       templateId: slide.template_id ?? null,
-      showCounter: (slide.meta as { show_counter?: boolean } | null)?.show_counter ?? false,
-      showWatermark: (slide.meta as { show_watermark?: boolean } | null)?.show_watermark ?? false,
-      showMadeWith: (slide.meta as { show_made_with?: boolean } | null)?.show_made_with ?? !isPro,
+      showCounter: (slide.meta as { show_counter?: boolean } | null)?.show_counter ?? templateDefaultsMeta?.show_counter ?? initialTemplateForSwipe?.chrome?.showCounter ?? false,
+      showWatermark: (slide.meta as { show_watermark?: boolean } | null)?.show_watermark ?? templateDefaultsMeta?.show_watermark ?? initialTemplateForSwipe?.chrome?.watermark?.enabled ?? false,
+      showMadeWith: (slide.meta as { show_made_with?: boolean } | null)?.show_made_with ?? templateDefaultsMeta?.show_made_with ?? !isPro,
+      showSwipe: (slide.meta as { show_swipe?: boolean } | null)?.show_swipe ?? initialTemplateForSwipe?.chrome?.showSwipe ?? true,
+      swipeType: (slide.meta as { swipe_type?: string } | null)?.swipe_type ?? initialTemplateForSwipe?.chrome?.swipeType ?? "text",
+      swipePosition: (slide.meta as { swipe_position?: string } | null)?.swipe_position ?? initialTemplateForSwipe?.chrome?.swipePosition ?? "bottom_center",
     })
   );
   const previewWrapRef = useRef<HTMLDivElement>(null);
@@ -893,6 +968,9 @@ export function SlideEditForm({
     showCounter,
     showWatermark,
     showMadeWith,
+    showSwipe,
+    swipeType,
+    swipePosition,
   });
   const hasUnsavedChanges = currentSnapshot !== lastSavedRef.current;
 
@@ -1163,6 +1241,9 @@ export function SlideEditForm({
     previewChromeOverrides
       ? {
           ...previewChromeOverrides,
+          showSwipe,
+          swipeType,
+          swipePosition,
           madeWith: {
             ...previewChromeOverrides.madeWith,
             text: isPro
@@ -1172,6 +1253,9 @@ export function SlideEditForm({
           },
         }
       : {
+          showSwipe,
+          swipeType,
+          swipePosition,
           madeWith: {
             text: isPro
               ? (madeWithText.trim() || initialMadeWithText || "")
@@ -1676,10 +1760,13 @@ export function SlideEditForm({
           show_counter: showCounter,
           show_watermark: showWatermark,
           show_made_with: showMadeWith,
+          show_swipe: showSwipe,
+          swipe_type: swipeType,
+          swipe_position: swipePosition,
           ...(background.mode === "image" || validUrls.length > 0
             ? (() => {
                 const isPip = imageDisplayPayload?.mode === "pip";
-                const tintOpacity = isPip ? 0 : (typeof background.overlay?.tintOpacity === "number" ? background.overlay.tintOpacity : 0.75);
+                const tintOpacity = isPip ? 0 : (typeof background.overlay?.tintOpacity === "number" ? background.overlay.tintOpacity : (templateConfig?.defaults?.meta as { overlay_tint_opacity?: number } | undefined)?.overlay_tint_opacity ?? 0);
                 return {
                   overlay_tint_opacity: Math.min(1, Math.max(0, tintOpacity)),
                   overlay_tint_color: background.overlay?.tintColor != null && /^#([0-9A-Fa-f]{3}){1,2}$/.test(background.overlay.tintColor) ? background.overlay.tintColor : effectiveColorForSave,
@@ -1700,6 +1787,10 @@ export function SlideEditForm({
           ...(madeWithText.trim() !== "" && { made_with_text: madeWithText.trim() }),
           headline_highlight_style: headlineHighlightStyle,
           body_highlight_style: bodyHighlightStyle,
+          headline_outline_stroke: headlineOutlineStroke,
+          body_outline_stroke: bodyOutlineStroke,
+          ...(headlineBoldWeight !== 700 && { headline_bold_weight: headlineBoldWeight }),
+          ...(bodyBoldWeight !== 700 && { body_bold_weight: bodyBoldWeight }),
           ...(() => {
             const norm = normalizeHighlightSpansToWords(headline, headlineHighlights);
             return norm.length > 0 ? { headline_highlights: norm } : {};
@@ -1721,6 +1812,9 @@ export function SlideEditForm({
         showCounter,
         showWatermark,
         showMadeWith,
+        showSwipe,
+        swipeType,
+        swipePosition,
       });
       setSavedFeedback(true);
       setTimeout(() => setSavedFeedback(false), 1500);
@@ -1738,7 +1832,10 @@ export function SlideEditForm({
     try {
       const saveResult = await performSave(false);
       if (!saveResult.ok) return;
-      const filename = `slide-${slide.slide_index}.${exportFormat === "jpeg" ? "jpg" : "png"}`;
+      const ext = exportFormat === "jpeg" ? "jpg" : "png";
+      const filename = downloadSlug
+        ? `${downloadSlug}-${String(slide.slide_index).padStart(2, "0")}.${ext}`
+        : `slide-${slide.slide_index}.${ext}`;
       const url = `/api/export/slide/${slide.id}?format=${exportFormat}&size=${exportSize}`;
       const res = await fetch(url, { credentials: "include" });
       if (!res.ok) return;
@@ -1893,26 +1990,43 @@ export function SlideEditForm({
     setApplyingTemplate(true);
     await setSlideTemplate(slide.id, newTemplateId /* no revalidate: avoid remount that clears overrideTemplateConfig and shows stale list config */);
     if (!options?.reloadAfter) setApplyingTemplate(false);
-    // Apply new template's overlay to local state so preview updates immediately without refresh (when not reloading)
+    // Apply new template's overlay, background, and image_display to local state so preview updates without refresh (when not reloading)
     if (newTemplateId && !options?.reloadAfter) {
       const newConfig = getTemplateConfig(newTemplateId, templates);
       const grad = newConfig?.overlays?.gradient;
-      if (grad) {
-        const color = (typeof grad.color === "string" && /^#([0-9A-Fa-f]{3}){1,2}$/.test(grad.color)) ? grad.color : "#0a0a0a";
-        setBackground((prev) => ({
+      const defaultsMeta = newConfig?.defaults?.meta && typeof newConfig.defaults.meta === "object" ? (newConfig.defaults.meta as { overlay_tint_opacity?: number; overlay_tint_color?: string; image_overlay_blend_enabled?: boolean; image_display?: unknown }) : undefined;
+      const templateTintOpacity = defaultsMeta?.image_overlay_blend_enabled === false ? 0 : defaultsMeta?.overlay_tint_opacity;
+      const templateTintColor = defaultsMeta?.overlay_tint_color && /^#([0-9A-Fa-f]{3}){1,2}$/.test(defaultsMeta.overlay_tint_color) ? defaultsMeta.overlay_tint_color : (newConfig?.defaults?.background && typeof newConfig.defaults.background === "object" && "color" in newConfig.defaults.background ? (newConfig.defaults.background as { color?: string }).color : undefined);
+      setBackground((prev) => {
+        const templateBg = newConfig?.defaults?.background && typeof newConfig.defaults.background === "object" ? (newConfig.defaults.background as { style?: string; color?: string; pattern?: string }) : undefined;
+        const bgColor = templateBg?.color && /^#([0-9A-Fa-f]{3}){1,2}$/.test(templateBg.color) ? templateBg.color : (grad?.color && /^#([0-9A-Fa-f]{3}){1,2}$/.test(grad.color) ? grad.color : undefined) ?? prev.color ?? "#0a0a0a";
+        const style = templateBg?.style === "pattern" || templateBg?.style === "gradient" || templateBg?.style === "solid" ? templateBg.style : (templateBg ? prev.style : undefined);
+        const pattern = templateBg?.pattern && ["dots", "ovals", "lines", "circles"].includes(templateBg.pattern) ? (templateBg.pattern as "dots" | "ovals" | "lines" | "circles") : (templateBg ? prev.pattern : undefined);
+        return {
           ...prev,
+          ...(templateBg ? { style, pattern, color: bgColor } : {}),
           overlay: {
             ...prev?.overlay,
-            gradient: true,
-            color,
-            textColor: getContrastingTextColor(color),
-            direction: (grad.direction ?? "bottom") as "top" | "bottom" | "left" | "right",
-            darken: grad.strength ?? 0.5,
-            extent: grad.extent ?? 50,
-            solidSize: grad.solidSize ?? 25,
+            ...(grad != null ? { gradient: grad.enabled ?? true, color: bgColor, textColor: getContrastingTextColor(bgColor), direction: (grad.direction ?? "bottom") as "top" | "bottom" | "left" | "right", darken: grad.strength ?? 0.5, extent: grad.extent ?? 50, solidSize: grad.solidSize ?? 25 } : {}),
+            ...(templateTintOpacity != null ? { tintOpacity: templateTintOpacity } : {}),
+            ...(templateTintColor ? { tintColor: templateTintColor } : {}),
           },
-        }));
+        };
+      });
+      if (defaultsMeta?.image_display != null && typeof defaultsMeta.image_display === "object" && !Array.isArray(defaultsMeta.image_display)) {
+        const d = { ...defaultsMeta.image_display } as ImageDisplayState;
+        const ds = d.dividerStyle as string | undefined;
+        if (ds === "dotted") d.dividerStyle = "dashed";
+        else if (ds === "double" || ds === "triple") d.dividerStyle = "scalloped";
+        setImageDisplay(d);
       }
+      const newMeta = newConfig?.defaults?.meta && typeof newConfig.defaults.meta === "object" ? (newConfig.defaults.meta as { show_counter?: boolean; show_watermark?: boolean; show_made_with?: boolean }) : undefined;
+      setShowCounter(newMeta?.show_counter ?? newConfig?.chrome?.showCounter ?? false);
+      setShowWatermark(newMeta?.show_watermark ?? newConfig?.chrome?.watermark?.enabled ?? false);
+      if (newMeta?.show_made_with != null && typeof newMeta.show_made_with === "boolean") setShowMadeWith(newMeta.show_made_with);
+      setShowSwipe(newConfig?.chrome?.showSwipe ?? true);
+      setSwipeType((newConfig?.chrome?.swipeType as SwipeType) ?? "text");
+      setSwipePosition((newConfig?.chrome?.swipePosition as SwipePosition) ?? "bottom_center");
     }
   };
 
@@ -1991,7 +2105,7 @@ export function SlideEditForm({
         const url = data.downloadUrl as string;
         const a = document.createElement("a");
         a.href = url;
-        a.download = "carousel.zip";
+        a.download = `${downloadSlug || "carousel"}.zip`;
         a.target = "_blank";
         a.rel = "noopener noreferrer";
         a.click();
@@ -2146,7 +2260,7 @@ export function SlideEditForm({
     // Use only current form state for tint so saved template always reflects user's choices. PIP always saves tint 0.
     const effectiveTintOpacity = isPipForTemplate
       ? 0
-      : (typeof background.overlay?.tintOpacity === "number" ? background.overlay.tintOpacity : 0.75);
+      : (typeof background.overlay?.tintOpacity === "number" ? background.overlay.tintOpacity : (templateConfig?.defaults?.meta as { overlay_tint_opacity?: number } | undefined)?.overlay_tint_opacity ?? 0);
     const effectiveTintColor =
       background.overlay?.tintColor != null && /^#([0-9A-Fa-f]{3}){1,2}$/.test(background.overlay.tintColor)
         ? background.overlay.tintColor
@@ -2157,6 +2271,9 @@ export function SlideEditForm({
         show_counter: showCounter,
         show_watermark: showWatermark,
         show_made_with: showMadeWith,
+        show_swipe: showSwipe,
+        swipe_type: swipeType,
+        swipe_position: swipePosition,
         ...(headlineFontSize != null && { headline_font_size: headlineFontSize }),
         ...(bodyFontSize != null && { body_font_size: bodyFontSize }),
         ...(headlineFontFamily != null && headlineFontFamily.trim() !== "" && { headline_font_family: headlineFontFamily.trim() }),
@@ -2171,6 +2288,7 @@ export function SlideEditForm({
         ...(imageDisplayPayload != null && Object.keys(imageDisplayPayload).length > 0 && { image_display: imageDisplayPayload }),
         overlay_tint_opacity: Math.min(1, Math.max(0, effectiveTintOpacity)),
         overlay_tint_color: /^#([0-9A-Fa-f]{3}){1,2}$/.test(effectiveTintColor) ? effectiveTintColor : effectiveBgColor,
+        image_overlay_blend_enabled: effectiveTintOpacity > 0,
         background_color: /^#([0-9A-Fa-f]{3}){1,2}$/.test(effectiveBgColor) ? effectiveBgColor : "#0a0a0a",
         ...(normalizeHighlightSpansToWords(headline, headlineHighlights).length > 0 ? { headline_highlights: normalizeHighlightSpansToWords(headline, headlineHighlights) } : {}),
         ...(normalizeHighlightSpansToWords(body, bodyHighlights).length > 0 ? { body_highlights: normalizeHighlightSpansToWords(body, bodyHighlights) } : {}),
@@ -2179,7 +2297,7 @@ export function SlideEditForm({
     return {
       ...templateConfig,
       overlays: { ...templateConfig.overlays, gradient: gradientOverlay },
-      chrome: { ...templateConfig.chrome, showCounter, watermark: { ...templateConfig.chrome.watermark, enabled: showWatermark } },
+      chrome: { ...templateConfig.chrome, showCounter, showSwipe, swipeType, swipePosition, watermark: { ...templateConfig.chrome.watermark, enabled: showWatermark } },
       defaults,
     };
   };
@@ -2371,10 +2489,12 @@ export function SlideEditForm({
     const enabled = ov?.enabled !== false;
     const gradientOn = enabled && (ov?.gradient !== false);
     const isPip = effectiveImageDisplay?.mode === "pip";
+    const templateMetaTint = templateConfig?.defaults?.meta && typeof templateConfig.defaults.meta === "object" ? (templateConfig.defaults.meta as { overlay_tint_opacity?: number; image_overlay_blend_enabled?: boolean }) : undefined;
+    const templateTintFallback = templateMetaTint?.image_overlay_blend_enabled === false ? 0 : (templateMetaTint?.overlay_tint_opacity ?? 0);
     const effectiveTint =
       isPip
         ? (ov?.tintOpacity ?? (typeof (slide.meta as { overlay_tint_opacity?: number })?.overlay_tint_opacity === "number" ? (slide.meta as { overlay_tint_opacity?: number }).overlay_tint_opacity : 0) ?? 0)
-        : (ov?.tintOpacity ?? (templateConfig?.defaults?.meta as { overlay_tint_opacity?: number } | undefined)?.overlay_tint_opacity ?? 0.75);
+        : (ov?.tintOpacity ?? templateTintFallback);
     const tintColor = ov?.tintColor ?? (templateConfig?.defaults?.background as { color?: string } | undefined)?.color ?? "#0a0a0a";
     return {
       overlayEnabled: enabled,
@@ -2397,9 +2517,11 @@ export function SlideEditForm({
         overlayEnabled,
         ...((() => {
           const isPip = effectiveImageDisplay?.mode === "pip";
+          const templateMetaTintPreview = templateConfig?.defaults?.meta && typeof templateConfig.defaults.meta === "object" ? (templateConfig.defaults.meta as { overlay_tint_opacity?: number; image_overlay_blend_enabled?: boolean }) : undefined;
+          const templateTintFallbackPreview = templateMetaTintPreview?.image_overlay_blend_enabled === false ? 0 : (templateMetaTintPreview?.overlay_tint_opacity ?? 0);
           const effectiveTint: number = isPip
             ? (background.overlay?.tintOpacity ?? (typeof (slide.meta as { overlay_tint_opacity?: number })?.overlay_tint_opacity === "number" ? (slide.meta as { overlay_tint_opacity?: number }).overlay_tint_opacity : 0) ?? 0)
-            : (background.overlay?.tintOpacity ?? (templateConfig?.defaults?.meta as { overlay_tint_opacity?: number } | undefined)?.overlay_tint_opacity ?? 0.75);
+            : (background.overlay?.tintOpacity ?? templateTintFallbackPreview);
           return effectiveTint > 0
             ? {
                 tintColor: background.overlay?.tintColor ?? (templateConfig?.defaults?.background as { color?: string } | undefined)?.color ?? "#0a0a0a",
@@ -2597,29 +2719,56 @@ export function SlideEditForm({
   );
 
   const isPipImageStyle = effectiveImageDisplay?.mode === "pip";
+  const isBlendOn = (background.overlay?.tintOpacity ?? 0) > 0;
   const templateTintSection = isImageMode && (
-    <div className={`flex items-center gap-3 rounded-lg border border-border/50 bg-muted/5 p-3 ${isPipImageStyle ? "opacity-70" : ""}`}>
-      <span className="text-xs font-medium text-foreground shrink-0">Image overlay blend</span>
-      <Slider
-        value={[Math.round((isPipImageStyle ? 0 : (background.overlay?.tintOpacity ?? 0)) * 100)]}
-        onValueChange={([v]) => {
-          if (isPipImageStyle) return;
-          const opacity = (v ?? 0) / 100;
-          const tintColor = templateConfig?.defaults?.background && typeof templateConfig.defaults.background === "object" && "color" in templateConfig.defaults.background
-            ? (templateConfig.defaults.background as { color?: string }).color
-            : brandKit.primary_color ?? "#0a0a0a";
-          setBackground((b) => ({
-            ...b,
-            overlay: { ...b.overlay, tintOpacity: opacity, tintColor: opacity > 0 ? (b.overlay?.tintColor ?? tintColor) : undefined },
-          }));
-        }}
-        min={0}
-        max={100}
-        step={5}
-        className="flex-1 max-w-[160px]"
-        disabled={isPipImageStyle}
-      />
-      <span className="text-muted-foreground text-xs tabular-nums w-8">{isPipImageStyle ? "0%" : `${Math.round((background.overlay?.tintOpacity ?? 0) * 100)}%`}</span>
+    <div className={`flex flex-col gap-2 rounded-lg border border-border/50 bg-muted/5 p-3 ${isPipImageStyle ? "opacity-70" : ""}`}>
+      <div className="flex items-center gap-3">
+        <span className="text-xs font-medium text-foreground shrink-0">Image overlay blend</span>
+        <button
+          type="button"
+          onClick={() => {
+            if (isPipImageStyle) return;
+            const tintColor = templateConfig?.defaults?.background && typeof templateConfig.defaults.background === "object" && "color" in templateConfig.defaults.background
+              ? (templateConfig.defaults.background as { color?: string }).color
+              : brandKit.primary_color ?? "#0a0a0a";
+            if (isBlendOn) {
+              setBackground((b) => ({ ...b, overlay: { ...b.overlay, tintOpacity: 0, tintColor: undefined } }));
+            } else {
+              const defaultOpacity = (templateConfig?.defaults?.meta && typeof templateConfig.defaults.meta === "object" && typeof (templateConfig.defaults.meta as { overlay_tint_opacity?: number }).overlay_tint_opacity === "number")
+                ? (templateConfig.defaults.meta as { overlay_tint_opacity: number }).overlay_tint_opacity
+                : 0.75;
+              setBackground((b) => ({ ...b, overlay: { ...b.overlay, tintOpacity: defaultOpacity, tintColor: b.overlay?.tintColor ?? tintColor } }));
+            }
+          }}
+          disabled={isPipImageStyle}
+          className="rounded-md border border-input bg-background px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50 disabled:pointer-events-none"
+        >
+          {isBlendOn ? "On" : "Off"}
+        </button>
+        {!isPipImageStyle && (
+          <>
+            <Slider
+              value={[Math.round((background.overlay?.tintOpacity ?? 0) * 100)]}
+              onValueChange={([v]) => {
+                const opacity = (v ?? 0) / 100;
+                const tintColor = templateConfig?.defaults?.background && typeof templateConfig.defaults.background === "object" && "color" in templateConfig.defaults.background
+                  ? (templateConfig.defaults.background as { color?: string }).color
+                  : brandKit.primary_color ?? "#0a0a0a";
+                setBackground((b) => ({
+                  ...b,
+                  overlay: { ...b.overlay, tintOpacity: opacity, tintColor: opacity > 0 ? (b.overlay?.tintColor ?? tintColor) : undefined },
+                }));
+              }}
+              min={0}
+              max={100}
+              step={5}
+              className="flex-1 max-w-[160px]"
+              disabled={!isBlendOn}
+            />
+            <span className="text-muted-foreground text-xs tabular-nums w-8">{`${Math.round((background.overlay?.tintOpacity ?? 0) * 100)}%`}</span>
+          </>
+        )}
+      </div>
       {isPipImageStyle && <span className="text-muted-foreground text-[11px]">Only for full slide</span>}
     </div>
   );
@@ -2791,6 +2940,10 @@ export function SlideEditForm({
                 chromeOverrides={previewChromeOverridesWithText}
                 headlineHighlightStyle={headlineHighlightStyle}
                 bodyHighlightStyle={bodyHighlightStyle}
+                headlineOutlineStroke={headlineOutlineStroke}
+                bodyOutlineStroke={bodyOutlineStroke}
+                headlineBoldWeight={headlineBoldWeight}
+                bodyBoldWeight={bodyBoldWeight}
                 headline_highlights={headlineHighlights.length > 0 ? headlineHighlights : undefined}
                 body_highlights={bodyHighlights.length > 0 ? bodyHighlights : undefined}
                 borderedFrame={!!(previewBackgroundImageUrl || previewBackgroundImageUrls?.length)}
@@ -3156,12 +3309,65 @@ export function SlideEditForm({
 
       <Dialog open={templateModalOpen} onOpenChange={(open) => !applyingTemplate && setTemplateModalOpen(open)}>
         <DialogContent className="flex flex-col max-w-[calc(100%-2rem)] max-h-[85vh] sm:max-w-2xl md:max-w-[92vw] md:max-h-[92vh] md:w-[92vw] md:h-[92vh] lg:max-w-[94vw] lg:max-h-[94vh] lg:w-[94vw] lg:h-[94vh]">
-          <DialogHeader>
-            <DialogTitle>Choose template</DialogTitle>
+          <DialogHeader className="flex flex-row items-start justify-between gap-2">
+            <div>
+              <DialogTitle>Choose template</DialogTitle>
+              <p className="text-muted-foreground text-sm mt-1">
+                Pick a layout for your slide. You can load more below.
+              </p>
+            </div>
+            {isPro && (
+              <ImportTemplateButton
+                isPro={isPro}
+                atLimit={false}
+                variant="outline"
+                size="sm"
+                className="shrink-0 gap-1.5"
+                onSuccess={(newId, newName, config) => {
+                  setRecentlyCreatedTemplates((prev) => [...prev, { id: newId, name: newName, parsedConfig: config, isSystemTemplate: false }]);
+                  setTemplateId(newId);
+                  setOverrideTemplateConfig(config);
+                  const templateBg = getTemplatePreviewBackgroundOverride(config);
+                  const grad = config.overlays?.gradient;
+                  const defaultBgColor =
+                    config.defaults?.background && typeof config.defaults.background === "object" && "color" in config.defaults.background
+                      ? (config.defaults.background as { color?: string }).color
+                      : undefined;
+                  const newColor =
+                    (grad?.color && /^#[0-9A-Fa-f]{3,6}$/i.test(grad.color) ? grad.color : defaultBgColor) ?? templateBg.color ?? "#0a0a0a";
+                  setBackground((prev) => ({
+                    ...prev,
+                    style: templateBg.style ?? "solid",
+                    pattern: templateBg.pattern ?? prev.pattern,
+                    color: newColor,
+                    overlay: {
+                      ...prev.overlay,
+                      gradient: prev.overlay?.gradient ?? (grad?.enabled ?? true),
+                      darken: prev.overlay?.darken ?? (grad?.strength ?? 0.5),
+                      color: newColor,
+                      textColor: getContrastingTextColor(newColor),
+                      direction: prev.overlay?.direction ?? (grad?.direction ?? "bottom"),
+                      extent: prev.overlay?.extent ?? (grad?.extent ?? 50),
+                      solidSize: prev.overlay?.solidSize ?? (grad?.solidSize ?? 25),
+                    },
+                  }));
+                  const metaImageDisplay = config.defaults?.meta && typeof config.defaults.meta === "object" && "image_display" in config.defaults.meta
+                    ? (config.defaults.meta as { image_display?: unknown }).image_display
+                    : undefined;
+                  if (metaImageDisplay != null && typeof metaImageDisplay === "object" && !Array.isArray(metaImageDisplay)) {
+                    const d = { ...metaImageDisplay } as ImageDisplayState;
+                    const ds = d.dividerStyle as string | undefined;
+                    if (ds === "dotted") d.dividerStyle = "dashed";
+                    else if (ds === "double" || ds === "triple") d.dividerStyle = "scalloped";
+                    setImageDisplay(d);
+                  } else {
+                    setImageDisplay({});
+                  }
+                }}
+                onCreated={() => router.refresh()}
+              />
+            )}
           </DialogHeader>
-          <p className="text-muted-foreground text-sm -mt-2">
-            Pick a layout for your slide. You can load more below.
-          </p>
           <div className="relative flex-1 min-h-0 min-w-0 flex flex-col">
             {applyingTemplate && (
               <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-lg bg-background/95 backdrop-blur-sm">
@@ -3207,6 +3413,10 @@ export function SlideEditForm({
                       (grad?.color && /^#[0-9A-Fa-f]{3,6}$/i.test(grad.color) ? grad.color : defaultBgColor) ?? templateBg.color ?? "#0a0a0a";
                     const isLinkedIn = newTemplate && "category" in newTemplate && newTemplate.category === "linkedin";
                     const linkedInTintColor = defaultBgColor && /^#[0-9A-Fa-f]{3,6}$/i.test(defaultBgColor) ? defaultBgColor : newColor;
+                    const configMeta = config.defaults?.meta && typeof config.defaults.meta === "object" ? (config.defaults.meta as { overlay_tint_opacity?: number; overlay_tint_color?: string; image_overlay_blend_enabled?: boolean }) : undefined;
+                    const metaTintOpacity = configMeta?.image_overlay_blend_enabled === false ? 0 : (typeof configMeta?.overlay_tint_opacity === "number" ? configMeta.overlay_tint_opacity : undefined);
+                    const metaTintColor = configMeta?.overlay_tint_color && /^#([0-9A-Fa-f]{3}){1,2}$/.test(configMeta.overlay_tint_color) ? configMeta.overlay_tint_color : linkedInTintColor;
+                    const appliedTintOpacity = metaTintOpacity ?? 0;
                     setBackground((prev) => ({
                       ...prev,
                       style: templateBg.style ?? "solid",
@@ -3221,7 +3431,7 @@ export function SlideEditForm({
                         direction: prev.overlay?.direction ?? (grad?.direction ?? "bottom"),
                         extent: prev.overlay?.extent ?? (grad?.extent ?? 50),
                         solidSize: prev.overlay?.solidSize ?? (grad?.solidSize ?? 25),
-                        ...(isLinkedIn && hasImage ? { enabled: false, tintColor: linkedInTintColor, tintOpacity: 0.75 } : {}),
+                        ...(hasImage ? { tintColor: metaTintColor, tintOpacity: appliedTintOpacity } : {}),
                       },
                     }));
                     const metaImageDisplay = config.defaults?.meta && typeof config.defaults.meta === "object" && "image_display" in config.defaults.meta
@@ -3379,6 +3589,10 @@ export function SlideEditForm({
                         chromeOverrides={previewChromeOverridesWithText}
                         headlineHighlightStyle={headlineHighlightStyle}
                         bodyHighlightStyle={bodyHighlightStyle}
+                        headlineOutlineStroke={headlineOutlineStroke}
+                        bodyOutlineStroke={bodyOutlineStroke}
+                        headlineBoldWeight={headlineBoldWeight}
+                        bodyBoldWeight={bodyBoldWeight}
                         headline_highlights={headlineHighlights.length > 0 ? headlineHighlights : undefined}
                         body_highlights={bodyHighlights.length > 0 ? bodyHighlights : undefined}
                         borderedFrame={!!(previewBackgroundImageUrl || previewBackgroundImageUrls?.length)}
@@ -3605,6 +3819,12 @@ export function SlideEditForm({
                     Watermark
                   </label>
                 )}
+                {isPro && (
+                  <label className="flex cursor-pointer items-center gap-1.5 text-xs">
+                    <input type="checkbox" checked={showSwipe} onChange={(e) => setShowSwipe(e.target.checked)} className="rounded border-input accent-primary" />
+                    Swipe
+                  </label>
+                )}
               </div>
               {isPro && (
                 <>
@@ -3654,6 +3874,54 @@ export function SlideEditForm({
                             <div>
                               <Label className="text-xs">Font size</Label>
                               <StepperWithLongPress value={watermarkZoneOverride?.fontSize ?? 20} min={8} max={72} step={1} onChange={(v) => setWatermarkZoneOverride((o) => ({ ...o, fontSize: v }))} label="Font size" className="w-full max-w-[80px]" disabled={!showWatermark} />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      {showSwipe && (
+                        <div className="space-y-2">
+                          <p className="text-[11px] font-medium text-foreground mb-2">Swipe</p>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <Label className="text-xs">Position</Label>
+                              <Select value={swipePosition} onValueChange={(v) => setSwipePosition(v as SwipePosition)}>
+                                <SelectTrigger className="h-8 text-xs mt-0.5">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="bottom_left">Bottom left</SelectItem>
+                                  <SelectItem value="bottom_center">Bottom center</SelectItem>
+                                  <SelectItem value="bottom_right">Bottom right</SelectItem>
+                                  <SelectItem value="top_left">Top left</SelectItem>
+                                  <SelectItem value="top_center">Top center</SelectItem>
+                                  <SelectItem value="top_right">Top right</SelectItem>
+                                  <SelectItem value="center_left">Center left</SelectItem>
+                                  <SelectItem value="center_right">Center right</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div>
+                              <Label className="text-xs">Style</Label>
+                              <Select value={swipeType} onValueChange={(v) => setSwipeType(v as SwipeType)}>
+                                <SelectTrigger className="h-8 text-xs mt-0.5">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="text">Text</SelectItem>
+                                  <SelectItem value="chevrons">Chevrons</SelectItem>
+                                  <SelectItem value="arrows">Arrows</SelectItem>
+                                  <SelectItem value="arrow-left">Arrow left</SelectItem>
+                                  <SelectItem value="arrow-right">Arrow right</SelectItem>
+                                  <SelectItem value="hand-left">Hand left</SelectItem>
+                                  <SelectItem value="hand-right">Hand right</SelectItem>
+                                  <SelectItem value="finger-swipe">Finger swipe</SelectItem>
+                                  <SelectItem value="finger-left">Finger left</SelectItem>
+                                  <SelectItem value="finger-right">Finger right</SelectItem>
+                                  <SelectItem value="dots">Dots</SelectItem>
+                                  <SelectItem value="circle-arrows">Circle arrows</SelectItem>
+                                  <SelectItem value="line-dots">Line dots</SelectItem>
+                                </SelectContent>
+                              </Select>
                             </div>
                           </div>
                         </div>
@@ -3934,6 +4202,34 @@ export function SlideEditForm({
                             ))}
                           </div>
                         </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] text-muted-foreground shrink-0">Outline</span>
+                          <Button
+                            type="button"
+                            variant={headlineOutlineStroke > 0 ? "secondary" : "ghost"}
+                            size="sm"
+                            className="h-7 text-[11px] px-2 shrink-0"
+                            onClick={() => setHeadlineOutlineStroke((v) => (v > 0 ? 0 : 2))}
+                            title={headlineOutlineStroke > 0 ? "Turn outline off" : "Turn outline on"}
+                          >
+                            {headlineOutlineStroke > 0 ? "On" : "Off"}
+                          </Button>
+                          <div className="flex items-center rounded border border-border/60 overflow-hidden">
+                            <Button type="button" variant="ghost" size="sm" className="h-7 w-7 rounded-none shrink-0" onClick={() => setHeadlineOutlineStroke((v) => Math.max(0, v - 0.5))} aria-label="Decrease outline size" disabled={headlineOutlineStroke === 0}>−</Button>
+                            <span className="min-w-[2.5rem] text-center text-xs tabular-nums px-1">{headlineOutlineStroke}</span>
+                            <Button type="button" variant="ghost" size="sm" className="h-7 w-7 rounded-none shrink-0" onClick={() => setHeadlineOutlineStroke((v) => Math.min(8, v + 0.5))} aria-label="Increase outline size">+</Button>
+                          </div>
+                        </div>
+                        {(headline ?? "").includes("**") && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] text-muted-foreground shrink-0">Bold</span>
+                            <div className="flex items-center rounded border border-border/60 overflow-hidden">
+                              <Button type="button" variant="ghost" size="sm" className="h-7 w-7 rounded-none shrink-0" onClick={() => setHeadlineBoldWeight((v) => Math.max(100, Math.min(900, v - 100)))} aria-label="Decrease bold weight">−</Button>
+                              <span className="min-w-[2.5rem] text-center text-xs tabular-nums px-1">{headlineBoldWeight}</span>
+                              <Button type="button" variant="ghost" size="sm" className="h-7 w-7 rounded-none shrink-0" onClick={() => setHeadlineBoldWeight((v) => Math.min(900, Math.max(100, v + 100)))} aria-label="Increase bold weight">+</Button>
+                            </div>
+                          </div>
+                        )}
                       </>
                     )}
                     {totalSlides > 1 && isPro && (
@@ -4049,11 +4345,8 @@ export function SlideEditForm({
                       <Button type="button" variant={headlineHighlightStyle === "background" ? "secondary" : "ghost"} size="sm" className="h-6 text-[11px]" onClick={() => setHeadlineHighlightStyle("background")} title="Highlight style: colored background">
                         Bg
                       </Button>
-                      <Button type="button" variant={headlineHighlightStyle === "outline" ? "secondary" : "ghost"} size="sm" className="h-6 text-[11px]" onClick={() => setHeadlineHighlightStyle((s) => (s === "outline" ? "text" : "outline"))} title="Black outline on highlighted characters (toggle on/off)">
-                        Outline
-                      </Button>
                       {totalSlides > 1 && (
-                        <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2" onClick={handleApplyHeadlineHighlightStyleToAll} disabled={applyingHighlightStyle} title="Apply headline highlight style (Text/Bg/Outline) to all frames">
+                        <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2" onClick={handleApplyHeadlineHighlightStyleToAll} disabled={applyingHighlightStyle} title="Apply headline highlight style (Text/Bg) to all frames">
                           {applyingHighlightStyle ? <Loader2Icon className="size-3 animate-spin" /> : <CopyIcon className="size-3" />}
                           Apply to all
                         </Button>
@@ -4246,6 +4539,34 @@ export function SlideEditForm({
                             ))}
                           </div>
                         </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] text-muted-foreground shrink-0">Outline</span>
+                          <Button
+                            type="button"
+                            variant={bodyOutlineStroke > 0 ? "secondary" : "ghost"}
+                            size="sm"
+                            className="h-7 text-[11px] px-2 shrink-0"
+                            onClick={() => setBodyOutlineStroke((v) => (v > 0 ? 0 : 2))}
+                            title={bodyOutlineStroke > 0 ? "Turn outline off" : "Turn outline on"}
+                          >
+                            {bodyOutlineStroke > 0 ? "On" : "Off"}
+                          </Button>
+                          <div className="flex items-center rounded border border-border/60 overflow-hidden">
+                            <Button type="button" variant="ghost" size="sm" className="h-7 w-7 rounded-none shrink-0" onClick={() => setBodyOutlineStroke((v) => Math.max(0, v - 0.5))} aria-label="Decrease outline size" disabled={bodyOutlineStroke === 0}>−</Button>
+                            <span className="min-w-[2.5rem] text-center text-xs tabular-nums px-1">{bodyOutlineStroke}</span>
+                            <Button type="button" variant="ghost" size="sm" className="h-7 w-7 rounded-none shrink-0" onClick={() => setBodyOutlineStroke((v) => Math.min(8, v + 0.5))} aria-label="Increase outline size">+</Button>
+                          </div>
+                        </div>
+                        {(body ?? "").includes("**") && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] text-muted-foreground shrink-0">Bold</span>
+                            <div className="flex items-center rounded border border-border/60 overflow-hidden">
+                              <Button type="button" variant="ghost" size="sm" className="h-7 w-7 rounded-none shrink-0" onClick={() => setBodyBoldWeight((v) => Math.max(100, Math.min(900, v - 100)))} aria-label="Decrease bold weight">−</Button>
+                              <span className="min-w-[2.5rem] text-center text-xs tabular-nums px-1">{bodyBoldWeight}</span>
+                              <Button type="button" variant="ghost" size="sm" className="h-7 w-7 rounded-none shrink-0" onClick={() => setBodyBoldWeight((v) => Math.min(900, Math.max(100, v + 100)))} aria-label="Increase bold weight">+</Button>
+                            </div>
+                          </div>
+                        )}
                       </>
                     )}
                     {totalSlides > 1 && isPro && (
@@ -4356,11 +4677,8 @@ export function SlideEditForm({
                       <Button type="button" variant={bodyHighlightStyle === "background" ? "secondary" : "ghost"} size="sm" className="h-6 text-[11px]" onClick={() => setBodyHighlightStyle("background")} title="Highlight style: colored background">
                         Bg
                       </Button>
-                      <Button type="button" variant={bodyHighlightStyle === "outline" ? "secondary" : "ghost"} size="sm" className="h-6 text-[11px]" onClick={() => setBodyHighlightStyle((s) => (s === "outline" ? "text" : "outline"))} title="Black outline on highlighted characters (toggle on/off)">
-                        Outline
-                      </Button>
                       {totalSlides > 1 && (
-                        <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2" onClick={handleApplyBodyHighlightStyleToAll} disabled={applyingHighlightStyle} title="Apply body highlight style (Text/Bg/Outline) to all frames">
+                        <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2" onClick={handleApplyBodyHighlightStyleToAll} disabled={applyingHighlightStyle} title="Apply body highlight style (Text/Bg) to all frames">
                           {applyingHighlightStyle ? <Loader2Icon className="size-3 animate-spin" /> : <CopyIcon className="size-3" />}
                           Apply to all
                         </Button>

@@ -146,7 +146,7 @@ export function normalizeTextZoneOverrides(
   };
 }
 
-/** Per-slide or template defaults: counter, logo watermark, and "Made with" position/size. */
+/** Per-slide or template defaults: counter, logo watermark, "Made with", and swipe hint. */
 export type ChromeOverrides = {
   counter?: { top?: number; right?: number; fontSize?: number };
   watermark?: {
@@ -158,6 +158,12 @@ export type ChromeOverrides = {
     maxHeight?: number;
   };
   madeWith?: { fontSize?: number; x?: number; y?: number; bottom?: number; text?: string };
+  /** Override template showSwipe (visibility of swipe hint). */
+  showSwipe?: boolean;
+  /** Override template swipe hint style. */
+  swipeType?: "text" | "arrow-left" | "arrow-right" | "arrows" | "hand-left" | "hand-right" | "chevrons" | "dots" | "finger-swipe" | "finger-left" | "finger-right" | "circle-arrows" | "line-dots" | "custom";
+  /** Override template swipe hint position. */
+  swipePosition?: "bottom_left" | "bottom_center" | "bottom_right" | "top_left" | "top_center" | "top_right" | "center_left" | "center_right";
 };
 
 /**
@@ -253,10 +259,10 @@ export function buildSlideRenderModel(
     },
     textBlocks,
     chrome: {
-      showSwipe: templateConfig.chrome.showSwipe,
-      swipeType: templateConfig.chrome.swipeType ?? "text",
+      showSwipe: chromeOverrides?.showSwipe ?? templateConfig.chrome.showSwipe,
+      swipeType: chromeOverrides?.swipeType ?? templateConfig.chrome.swipeType ?? "text",
       swipeIconUrl: templateConfig.chrome.swipeIconUrl,
-      swipePosition: templateConfig.chrome.swipePosition ?? "bottom_center",
+      swipePosition: chromeOverrides?.swipePosition ?? templateConfig.chrome.swipePosition ?? "bottom_center",
       showCounter: templateConfig.chrome.showCounter,
       counterText,
       counterTop: chromeOverrides?.counter?.top,

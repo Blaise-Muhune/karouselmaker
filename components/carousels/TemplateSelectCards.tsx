@@ -74,6 +74,8 @@ export type TemplateSelectCardsProps = {
   onTemplateDeleted?: () => void;
   /** When set, use this overlay for the card of the currently selected template (value === t.id) so the card matches the live slide (e.g. gradient/tint saved on slide). */
   selectedTemplateOverlayOverride?: SlideBackgroundOverride | null;
+  /** When true, show a "My templates" section first (user-owned / modified / imported). Default true when showCategoryTabs. */
+  showMyTemplatesSection?: boolean;
 };
 
 type TabId = "linkedin" | "other" | "all";
@@ -93,6 +95,7 @@ export function TemplateSelectCards({
   isPro = false,
   onTemplateDeleted,
   selectedTemplateOverlayOverride,
+  showMyTemplatesSection,
 }: TemplateSelectCardsProps) {
   const { w: PREVIEW_W, h: PREVIEW_H, scale: SCALE } = usePreviewSize();
   const brandKit = { primary_color: primaryColor };
@@ -115,6 +118,10 @@ export function TemplateSelectCards({
 
   const [activeTab, setActiveTab] = useState<TabId>(() => (showTabs ? initialTabForMount : "all"));
   const [visibleCount, setVisibleCount] = useState(TEMPLATE_PAGE_SIZE);
+
+  const myTemplates = useMemo(() => templates.filter((t) => !t.isSystemTemplate), [templates]);
+  const showMySection = showMyTemplatesSection ?? showCategoryTabs;
+  const hasMyTemplates = showMySection && myTemplates.length > 0;
 
   const linkedinTemplates = useMemo(() => templates.filter((t) => (t.category ?? "").toLowerCase() === "linkedin"), [templates]);
   const otherTemplates = useMemo(() => templates.filter((t) => (t.category ?? "").toLowerCase() !== "linkedin"), [templates]);
@@ -183,8 +190,97 @@ export function TemplateSelectCards({
       ]
     : [];
 
+  const renderCard = (t: TemplateOption, idx: number) => {
+    const isSystem = t.isSystemTemplate === true;
+    const showDelete = (isAdmin && isSystem) || (!isSystem && isPro);
+    return (
+      <div
+        key={t.id}
+        className={cn(
+          "relative flex flex-col rounded-lg border-2 p-2 text-left transition-colors min-w-0",
+          value === t.id
+            ? "border-primary bg-primary/5 ring-1 ring-primary/20"
+            : "border-border/60 hover:border-muted-foreground/40 hover:bg-muted/30"
+        )}
+      >
+        {showDelete && (
+          <div className="absolute right-2 top-2 z-10">
+            <DeleteTemplateButton
+              templateId={t.id}
+              templateName={t.name}
+              isPro={isPro}
+              isAdmin={isAdmin}
+              isSystemTemplate={isSystem}
+              onDeleted={onTemplateDeleted}
+            />
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={() => onChange(t.id)}
+          className={cn(
+            "relative flex flex-col rounded-lg border-0 text-left transition-colors min-w-0 w-full bg-transparent -m-2 p-2",
+            "focus:outline-none focus:ring-0"
+          )}
+        >
+          {value === t.id && (
+            <span className="absolute right-2 top-2 z-[5] rounded-full bg-primary p-0.5 text-primary-foreground">
+              <CheckIcon className="size-3.5" />
+            </span>
+          )}
+          <div
+            className="mb-2 overflow-hidden rounded-md bg-muted/50 shrink-0 relative"
+            style={{ width: PREVIEW_W, height: PREVIEW_H, minWidth: PREVIEW_W, minHeight: PREVIEW_H }}
+          >
+            <div
+              className="absolute origin-top-left"
+              style={{
+                left: INSET,
+                top: INSET,
+                transform: `scale(${SCALE})`,
+                width: 1080,
+                height: 1350,
+              }}
+            >
+              <SlidePreview
+                slide={sampleSlide}
+                templateConfig={t.parsedConfig}
+                brandKit={brandKit}
+                totalSlides={8}
+                backgroundImageUrl={getPreviewImage(idx + 1)}
+                backgroundOverride={
+                  !getPreviewImage(idx + 1)
+                    ? getTemplatePreviewBackgroundOverride(t.parsedConfig)
+                    : t.category === "linkedin"
+                      ? getLinkedInPreviewOverlayOverride(t.parsedConfig)
+                      : getTemplatePreviewOverlayOverride(t.parsedConfig)
+                }
+                showCounterOverride={false}
+                showWatermarkOverride={false}
+                exportSize="1080x1350"
+                imageDisplay={getImageDisplayFromConfig(t.parsedConfig)}
+                {...getOverridesFromConfig(t.parsedConfig)}
+              />
+            </div>
+          </div>
+          <span className="text-xs font-medium text-foreground line-clamp-2 min-h-8 break-words" title={t.name}>
+            {t.name}
+          </span>
+        </button>
+      </div>
+    );
+  };
+
   return (
     <div className="flex flex-col gap-3 min-w-0 w-full max-w-full">
+      {hasMyTemplates && (
+        <div className="space-y-2">
+          <p className="text-muted-foreground text-xs font-medium uppercase tracking-wider">My templates</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
+            {myTemplates.map((t, idx) => renderCard(t, idx))}
+          </div>
+        </div>
+      )}
       {tabButtons.length > 0 && (
         <div className="flex gap-1 p-1 rounded-lg bg-muted/50 border border-border/60 w-fit">
           {tabButtons.map((tab) => (
@@ -265,87 +361,7 @@ export function TemplateSelectCards({
         <span className="text-[10px] text-muted-foreground">Recommended</span>
       </button>
 
-        {displayList.map((t, idx) => {
-          const isSystem = t.isSystemTemplate === true;
-          const showDelete =
-            (isAdmin && isSystem) || (!isSystem && isPro);
-          return (
-            <div
-              key={t.id}
-              className={cn(
-                "relative flex flex-col rounded-lg border-2 p-2 text-left transition-colors min-w-0",
-                value === t.id
-                  ? "border-primary bg-primary/5 ring-1 ring-primary/20"
-                  : "border-border/60 hover:border-muted-foreground/40 hover:bg-muted/30"
-              )}
-            >
-              {showDelete && (
-                <div className="absolute right-2 top-2 z-10">
-                  <DeleteTemplateButton
-                    templateId={t.id}
-                    templateName={t.name}
-                    isPro={isPro}
-                    isAdmin={isAdmin}
-                    isSystemTemplate={isSystem}
-                    onDeleted={onTemplateDeleted}
-                  />
-                </div>
-              )}
-              <button
-                type="button"
-                onClick={() => onChange(t.id)}
-                className={cn(
-                  "relative flex flex-col rounded-lg border-0 text-left transition-colors min-w-0 w-full bg-transparent -m-2 p-2",
-                  "focus:outline-none focus:ring-0"
-                )}
-              >
-                {value === t.id && (
-                  <span className="absolute right-2 top-2 z-[5] rounded-full bg-primary p-0.5 text-primary-foreground">
-                    <CheckIcon className="size-3.5" />
-                  </span>
-                )}
-                <div
-                  className="mb-2 overflow-hidden rounded-md bg-muted/50 shrink-0 relative"
-                  style={{ width: PREVIEW_W, height: PREVIEW_H, minWidth: PREVIEW_W, minHeight: PREVIEW_H }}
-                >
-                  <div
-                    className="absolute origin-top-left"
-                    style={{
-                      left: INSET,
-                      top: INSET,
-                      transform: `scale(${SCALE})`,
-                      width: 1080,
-                      height: 1350,
-                    }}
-                  >
-                    <SlidePreview
-                      slide={sampleSlide}
-                      templateConfig={t.parsedConfig}
-                      brandKit={brandKit}
-                      totalSlides={8}
-                      backgroundImageUrl={getPreviewImage(idx + 1)}
-                      backgroundOverride={
-                        !getPreviewImage(idx + 1)
-                          ? getTemplatePreviewBackgroundOverride(t.parsedConfig)
-                          : t.category === "linkedin"
-                            ? getLinkedInPreviewOverlayOverride(t.parsedConfig)
-                            : getTemplatePreviewOverlayOverride(t.parsedConfig)
-                      }
-                      showCounterOverride={false}
-                      showWatermarkOverride={false}
-                      exportSize="1080x1350"
-                      imageDisplay={getImageDisplayFromConfig(t.parsedConfig)}
-                      {...getOverridesFromConfig(t.parsedConfig)}
-                    />
-                  </div>
-                </div>
-                <span className="text-xs font-medium text-foreground line-clamp-2 min-h-8 break-words" title={t.name}>
-                  {t.name}
-                </span>
-              </button>
-            </div>
-          );
-        })}
+        {displayList.map((t, idx) => renderCard(t, idx))}
       </div>
 
       {hasMore && (

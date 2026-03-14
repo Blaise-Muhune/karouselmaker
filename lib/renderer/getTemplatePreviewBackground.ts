@@ -92,20 +92,17 @@ export function getTemplatePreviewOverlayOverride(
     overlay_tint_color?: string;
     background_color?: string;
     image_display?: { mode?: string };
+    image_overlay_blend_enabled?: boolean;
   } | undefined;
   const isPip = meta?.image_display?.mode === "pip";
   const gradientEnabled = config.overlays?.gradient?.enabled;
-  const defaultStyle = config.backgroundRules?.defaultStyle;
-  /** Only show gradient when explicitly enabled; when undefined or false, no dark overlay. */
-  const overlayEnabled =
-    defaultStyle === "none" || defaultStyle === "blur"
-      ? false
-      : gradientEnabled === true;
-  /** Use saved tint; default to 0 so card preview has no dark layer unless template explicitly has one. PIP: never show tint. */
+  /** Show gradient when template has it enabled. Template cards always honor overlays.gradient.enabled so designs with a colored strip (e.g. green left) display correctly even when defaultStyle is "none". */
+  const overlayEnabled = gradientEnabled === true;
+  /** Use saved tint; when image_overlay_blend_enabled is false or no opacity saved, 0. PIP: never show tint. */
   const rawTintOpacity =
-    typeof meta?.overlay_tint_opacity === "number"
-      ? meta.overlay_tint_opacity
-      : 0;
+    meta?.image_overlay_blend_enabled === false
+      ? 0
+      : (typeof meta?.overlay_tint_opacity === "number" ? meta.overlay_tint_opacity : 0);
   const tintOpacity = isPip ? 0 : rawTintOpacity;
   let tintColor: string = FALLBACK_PREVIEW_BG;
   if (typeof meta?.overlay_tint_color === "string" && /^#([0-9A-Fa-f]{3}){1,2}$/.test(meta.overlay_tint_color)) {

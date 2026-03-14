@@ -58,6 +58,8 @@ type SlideGridProps = {
   isPro?: boolean;
   /** When true, disable editing and navigation (e.g. carousel is generating). */
   disabled?: boolean;
+  /** Slug for personalized image download filenames (e.g. "My-Project - Carousel-Title"). */
+  downloadFilenameSlug?: string;
 };
 
 /** Build overlay object from template gradient for optimistic UI update. */
@@ -226,8 +228,13 @@ type SlideMeta = {
   made_with_zone_override?: { fontSize?: number; x?: number; y?: number };
   headline_highlight_style?: "text" | "background" | "outline";
   body_highlight_style?: "text" | "background" | "outline";
+  headline_outline_stroke?: number;
+  body_outline_stroke?: number;
   headline_highlights?: { start: number; end: number; color: string }[];
   body_highlights?: { start: number; end: number; color: string }[];
+  show_swipe?: boolean;
+  swipe_type?: string;
+  swipe_position?: string;
 };
 
 function getZoneOverrides(slide: Slide): { headline?: Record<string, unknown>; body?: Record<string, unknown> } | undefined {
@@ -239,6 +246,9 @@ function getZoneOverrides(slide: Slide): { headline?: Record<string, unknown>; b
     body: m.body_zone_override && Object.keys(m.body_zone_override).length > 0 ? m.body_zone_override : undefined,
   };
 }
+
+const SWIPE_POSITIONS = ["bottom_left", "bottom_center", "bottom_right", "top_left", "top_center", "top_right", "center_left", "center_right"] as const;
+const SWIPE_TYPES = ["text", "arrow-left", "arrow-right", "arrows", "hand-left", "hand-right", "chevrons", "dots", "finger-swipe", "finger-left", "finger-right", "circle-arrows", "line-dots", "custom"] as const;
 
 function getChromeOverrides(slide: Slide): import("@/lib/renderer/renderModel").ChromeOverrides | undefined {
   const m = slide.meta as SlideMeta | null;
@@ -263,17 +273,38 @@ function getChromeOverrides(slide: Slide): import("@/lib/renderer/renderModel").
           };
         })()
       : undefined;
-  if (!counter && !watermark && !madeWith) return undefined;
-  return { counter, watermark, madeWith };
+  const showSwipe = typeof m.show_swipe === "boolean" ? m.show_swipe : undefined;
+  const swipeType = typeof m.swipe_type === "string" && SWIPE_TYPES.includes(m.swipe_type as (typeof SWIPE_TYPES)[number]) ? (m.swipe_type as (typeof SWIPE_TYPES)[number]) : undefined;
+  const swipePosition = typeof m.swipe_position === "string" && SWIPE_POSITIONS.includes(m.swipe_position as (typeof SWIPE_POSITIONS)[number]) ? (m.swipe_position as (typeof SWIPE_POSITIONS)[number]) : undefined;
+  const hasSwipeOverrides = showSwipe !== undefined || swipeType != null || swipePosition != null;
+  if (!counter && !watermark && !madeWith && !hasSwipeOverrides) return undefined;
+  return {
+    ...(counter && { counter }),
+    ...(watermark && { watermark }),
+    ...(madeWith && { madeWith }),
+    ...(showSwipe !== undefined && { showSwipe }),
+    ...(swipeType != null && { swipeType }),
+    ...(swipePosition != null && { swipePosition }),
+  };
 }
 
-function getHighlightStyles(slide: Slide): { headline: "text" | "background" | "outline"; body: "text" | "background" | "outline" } {
+function getHighlightStyles(slide: Slide): { headline: "text" | "background"; body: "text" | "background" } {
   const m = slide.meta as SlideMeta | null;
   const h = m?.headline_highlight_style;
   const b = m?.body_highlight_style;
   return {
-    headline: h === "background" || h === "outline" ? h : "text",
-    body: b === "background" || b === "outline" ? b : "text",
+    headline: h === "background" ? "background" : "text",
+    body: b === "background" ? "background" : "text",
+  };
+}
+
+function getOutlineStrokes(slide: Slide): { headline: number; body: number } {
+  const m = slide.meta as SlideMeta | null;
+  const h = m?.headline_outline_stroke;
+  const b = m?.body_outline_stroke;
+  return {
+    headline: typeof h === "number" && h >= 0 && h <= 8 ? h : 0,
+    body: typeof b === "number" && b >= 0 && b <= 8 ? b : 0,
   };
 }
 
@@ -355,6 +386,7 @@ export function SlideGrid({
   exportFormat = "png",
   isPro = true,
   disabled = false,
+  downloadFilenameSlug,
 }: SlideGridProps) {
   const canEdit = isPro && !disabled;
   const previewDims = getPreviewDimensions(exportSize);
@@ -576,6 +608,8 @@ export function SlideGrid({
                             chromeOverrides={previewChromeOverrides}
                             headlineHighlightStyle={getHighlightStyles(slide).headline}
                             bodyHighlightStyle={getHighlightStyles(slide).body}
+                            headlineOutlineStroke={getOutlineStrokes(slide).headline}
+                            bodyOutlineStroke={getOutlineStrokes(slide).body}
                             headline_highlights={getHighlightSpans(slide).headline_highlights}
                             body_highlights={getHighlightSpans(slide).body_highlights}
                             borderedFrame={hasBackgroundImage}
@@ -663,6 +697,8 @@ export function SlideGrid({
                             chromeOverrides={previewChromeOverrides}
                             headlineHighlightStyle={getHighlightStyles(slide).headline}
                             bodyHighlightStyle={getHighlightStyles(slide).body}
+                            headlineOutlineStroke={getOutlineStrokes(slide).headline}
+                            bodyOutlineStroke={getOutlineStrokes(slide).body}
                             headline_highlights={getHighlightSpans(slide).headline_highlights}
                             body_highlights={getHighlightSpans(slide).body_highlights}
                             borderedFrame={hasBackgroundImage}
@@ -713,7 +749,10 @@ export function SlideGrid({
                         if (downloadingSlideId) return;
                         setDownloadingSlideId(slide.id);
                         const url = `/api/export/slide/${slide.id}?format=${exportFormat}&size=${exportSize ?? "1080x1350"}`;
-                        const filename = `slide-${slide.slide_index}.${exportFormat === "jpeg" ? "jpg" : "png"}`;
+                        const ext = exportFormat === "jpeg" ? "jpg" : "png";
+                        const filename = downloadFilenameSlug
+                          ? `${downloadFilenameSlug}-${String(slide.slide_index).padStart(2, "0")}.${ext}`
+                          : `slide-${slide.slide_index}.${ext}`;
                         try {
                           const res = await fetch(url);
                           if (!res.ok) throw new Error("Download failed");

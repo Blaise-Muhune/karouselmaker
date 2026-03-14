@@ -39,6 +39,7 @@ import {
   fetchImageAsDataUrl,
 } from "@/lib/server/export/fetchImageAsDataUrl";
 import type { BrandKit } from "@/lib/renderer/renderModel";
+import { slugifyForFilename } from "@/lib/utils";
 import JSZip from "jszip";
 
 const BUCKET = "carousel-assets";
@@ -444,6 +445,8 @@ export async function POST(
           zoneOverrides,
           chromeOverrides,
           highlightStyles,
+          merged.outlineStrokes,
+          merged.boldWeights,
           borderedFrame,
           imageDisplayParam,
           dimensions
@@ -575,11 +578,16 @@ export async function POST(
     }
     await updateExport(userId, exportId, { status: "ready", storage_path: paths.slidesDir });
 
+    const zipSlug =
+      slugifyForFilename([project.name, carousel.title].filter(Boolean).join(" - ")) || "carousel";
+    const zipFilename = `${zipSlug}.zip`;
+
     return new NextResponse(new Uint8Array(zipBuffer), {
       status: 200,
       headers: {
         "Content-Type": "application/zip",
-        "Content-Disposition": 'attachment; filename="carousel.zip"',
+        "Content-Disposition": `attachment; filename="${zipFilename}"`,
+        "X-Suggested-Filename": zipFilename,
         "X-Export-Id": exportId,
       },
     });
