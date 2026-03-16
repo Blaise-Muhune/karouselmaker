@@ -219,7 +219,18 @@ export function normalizeSlideMetaForRender(meta: Record<string, unknown> | null
   const showSwipeVal = m.show_swipe;
   const swipeTypeVal = typeof m.swipe_type === "string" && swipeTypes.includes(m.swipe_type as (typeof swipeTypes)[number]) ? (m.swipe_type as (typeof swipeTypes)[number]) : undefined;
   const swipePositionVal = typeof m.swipe_position === "string" && swipePositions.includes(m.swipe_position as (typeof swipePositions)[number]) ? (m.swipe_position as (typeof swipePositions)[number]) : undefined;
-  const hasSwipeOverrides = typeof showSwipeVal === "boolean" || swipeTypeVal != null || swipePositionVal != null;
+  const swipeTextVal = typeof m.swipe_text === "string" && m.swipe_text.trim() !== "" ? m.swipe_text.trim().slice(0, 50) : undefined;
+  const swipeXVal = m.swipe_x != null && Number.isFinite(Number(m.swipe_x)) ? Math.round(Number(m.swipe_x)) : undefined;
+  const swipeYVal = m.swipe_y != null && Number.isFinite(Number(m.swipe_y)) ? Math.round(Number(m.swipe_y)) : undefined;
+  const swipeSizeVal = m.swipe_size != null && Number.isFinite(Number(m.swipe_size)) ? Math.round(Number(m.swipe_size)) : undefined;
+  const hasSwipeOverrides =
+    typeof showSwipeVal === "boolean" ||
+    swipeTypeVal != null ||
+    swipePositionVal != null ||
+    swipeTextVal != null ||
+    swipeXVal != null ||
+    swipeYVal != null ||
+    swipeSizeVal != null;
   const chromeOverrides: ChromeOverrides | undefined =
     (counter && Object.keys(counter).length > 0) || (watermark && Object.keys(watermark).length > 0) || (Object.keys(madeWith).length > 0) || hasSwipeOverrides
       ? {
@@ -229,6 +240,10 @@ export function normalizeSlideMetaForRender(meta: Record<string, unknown> | null
           ...(typeof showSwipeVal === "boolean" && { showSwipe: showSwipeVal }),
           ...(swipeTypeVal != null && { swipeType: swipeTypeVal }),
           ...(swipePositionVal != null && { swipePosition: swipePositionVal }),
+          ...(swipeTextVal != null && { swipeText: swipeTextVal }),
+          ...(swipeXVal != null && { swipeX: swipeXVal }),
+          ...(swipeYVal != null && { swipeY: swipeYVal }),
+          ...(swipeSizeVal != null && { swipeSize: swipeSizeVal }),
         }
       : undefined;
 

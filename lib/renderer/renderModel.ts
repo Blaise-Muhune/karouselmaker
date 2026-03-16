@@ -48,7 +48,14 @@ export type SlideRenderModel = {
     showSwipe: boolean;
     swipeType: "text" | "arrow-left" | "arrow-right" | "arrows" | "hand-left" | "hand-right" | "chevrons" | "dots" | "finger-swipe" | "finger-left" | "finger-right" | "circle-arrows" | "line-dots" | "custom";
     swipeIconUrl?: string;
+    /** When swipeType is "text", label. Default "swipe". */
+    swipeText?: string;
     swipePosition: "bottom_left" | "bottom_center" | "bottom_right" | "top_left" | "top_center" | "top_right" | "center_left" | "center_right";
+    /** Override position (px). When both set, ignore swipePosition preset. */
+    swipeX?: number;
+    swipeY?: number;
+    /** Font/size for swipe hint (px). Default 24. */
+    swipeSize?: number;
     showCounter: boolean;
     counterText: string;
     /** Position/size from template or meta. When set, use these instead of default top-right. */
@@ -164,6 +171,14 @@ export type ChromeOverrides = {
   swipeType?: "text" | "arrow-left" | "arrow-right" | "arrows" | "hand-left" | "hand-right" | "chevrons" | "dots" | "finger-swipe" | "finger-left" | "finger-right" | "circle-arrows" | "line-dots" | "custom";
   /** Override template swipe hint position. */
   swipePosition?: "bottom_left" | "bottom_center" | "bottom_right" | "top_left" | "top_center" | "top_right" | "center_left" | "center_right";
+  /** When swipeType is "text", custom label. Default "swipe". */
+  swipeText?: string;
+  /** Swipe hint X (px from left). With swipeY, overrides position preset. */
+  swipeX?: number;
+  /** Swipe hint Y (px from top). With swipeX, overrides position preset. */
+  swipeY?: number;
+  /** Swipe hint font/size (px). */
+  swipeSize?: number;
 };
 
 /**
@@ -262,7 +277,11 @@ export function buildSlideRenderModel(
       showSwipe: chromeOverrides?.showSwipe ?? templateConfig.chrome.showSwipe,
       swipeType: chromeOverrides?.swipeType ?? templateConfig.chrome.swipeType ?? "text",
       swipeIconUrl: templateConfig.chrome.swipeIconUrl,
+      swipeText: chromeOverrides?.swipeText ?? templateConfig.chrome.swipeText,
       swipePosition: chromeOverrides?.swipePosition ?? templateConfig.chrome.swipePosition ?? "bottom_center",
+      swipeX: chromeOverrides?.swipeX ?? templateConfig.chrome.swipeX,
+      swipeY: chromeOverrides?.swipeY ?? templateConfig.chrome.swipeY,
+      swipeSize: chromeOverrides?.swipeSize ?? templateConfig.chrome.swipeSize,
       showCounter: templateConfig.chrome.showCounter,
       counterText,
       counterTop: chromeOverrides?.counter?.top,

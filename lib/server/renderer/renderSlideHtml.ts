@@ -714,6 +714,7 @@ export function renderSlideHtml(
     ${!noTextOrChrome && model.chrome.showSwipe ? (() => {
       const t = model.chrome.swipeType ?? "text";
       const pos = model.chrome.swipePosition ?? "bottom_center";
+      const useCustomPos = model.chrome.swipeX != null && model.chrome.swipeY != null;
       const posStyles: Record<string, string> = {
         bottom_left: "bottom:20px;left:24px",
         bottom_center: "bottom:20px;left:50%;transform:translateX(-50%)",
@@ -724,7 +725,8 @@ export function renderSlideHtml(
         center_left: "top:50%;left:24px;transform:translateY(-50%)",
         center_right: "top:50%;right:24px;transform:translateY(-50%)",
       };
-      const posStyle = posStyles[pos] ?? posStyles.bottom_center;
+      const posStyle = useCustomPos ? `left:${model.chrome.swipeX}px;top:${model.chrome.swipeY}px` : (posStyles[pos] ?? posStyles.bottom_center);
+      const fontSize = model.chrome.swipeSize ?? 24;
       const c = escapeHtml(textColor);
       const handSvg = (rotate: number) => `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(${rotate}deg);flex-shrink:0"><path d="M18 11V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2"/><path d="M14 10V4a2 2 0 0 0-2-2 2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg>`;
       const chevronsLeftSvg = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m11 17-5-5 5-5"/><path d="m18 17-5-5 5-5"/></svg>`;
@@ -735,8 +737,9 @@ export function renderSlideHtml(
       const circleArrowsSvg = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m9 12-3-3 3-3"/><path d="M12 9H6"/><path d="m15 12 3-3-3-3"/><path d="M12 15h6"/></svg>`;
       const lineDotsSvg = `<svg width="42" height="28" viewBox="0 0 36 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round"><line x1="2" y1="12" x2="34" y2="12"/><circle cx="8" cy="12" r="2" fill="${c}"/><circle cx="18" cy="12" r="2" fill="${c}" opacity="0.5"/><circle cx="28" cy="12" r="2" fill="${c}" opacity="0.2"/></svg>`;
       const customImg = model.chrome.swipeIconUrl ? `<img src="${escapeHtml(model.chrome.swipeIconUrl)}" alt="" style="height:32px;width:auto;max-width:80px;object-fit:contain;opacity:0.9"/>` : "";
+      const swipeLabel = (model.chrome.swipeText ?? "swipe").trim() || "swipe";
       const inner = t === "custom" && model.chrome.swipeIconUrl ? customImg :
-        t === "text" ? `<span style="letter-spacing:6px;font-size:18px">• • •</span>` :
+        t === "text" ? `<span style="letter-spacing:6px;font-size:${fontSize}px">${escapeHtml(swipeLabel)}</span>` :
         t === "arrow-left" ? `←` :
         t === "arrow-right" ? `→` :
         t === "arrows" ? `<span style="font-size:24px">←</span><span style="font-size:24px">→</span>` :
@@ -749,8 +752,8 @@ export function renderSlideHtml(
         t === "finger-right" ? fingerRightSvg :
         t === "circle-arrows" ? circleArrowsSvg :
         t === "line-dots" ? lineDotsSvg :
-        `<span style="letter-spacing:6px;font-size:18px">• • •</span>`;
-      return `<div class="chrome-swipe" style="color:${c};${posStyle};display:flex;align-items:center;justify-content:center;gap:4px">${inner}</div>`;
+        `<span style="letter-spacing:6px;font-size:${fontSize}px">${escapeHtml(swipeLabel)}</span>`;
+      return `<div class="chrome-swipe" style="color:${c};font-size:${fontSize}px;${posStyle};display:flex;align-items:center;justify-content:center;gap:4px">${inner}</div>`;
     })() : ""}
   </div>
   </div>

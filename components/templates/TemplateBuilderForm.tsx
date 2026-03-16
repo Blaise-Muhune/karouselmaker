@@ -1153,6 +1153,69 @@ export function TemplateBuilderForm({
                   </Select>
                   </div>
                 </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <Label className="text-xs">X</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={1080}
+                      placeholder="540"
+                      value={config.chrome.swipeX ?? ""}
+                      onChange={(e) => {
+                        const v = e.target.value === "" ? undefined : Math.min(1080, Math.max(0, parseInt(e.target.value, 10) || 0));
+                        updateConfig((prev) => ({ chrome: { ...prev.chrome, swipeX: v } }));
+                      }}
+                      className="text-sm h-8"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Y</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={1080}
+                      placeholder="1040"
+                      value={config.chrome.swipeY ?? ""}
+                      onChange={(e) => {
+                        const v = e.target.value === "" ? undefined : Math.min(1080, Math.max(0, parseInt(e.target.value, 10) || 0));
+                        updateConfig((prev) => ({ chrome: { ...prev.chrome, swipeY: v } }));
+                      }}
+                      className="text-sm h-8"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Size</Label>
+                    <Input
+                      type="number"
+                      min={8}
+                      max={72}
+                      placeholder="24"
+                      value={config.chrome.swipeSize ?? ""}
+                      onChange={(e) => {
+                        const v = e.target.value === "" ? undefined : Math.min(72, Math.max(8, parseInt(e.target.value, 10) || 24));
+                        updateConfig((prev) => ({ chrome: { ...prev.chrome, swipeSize: v } }));
+                      }}
+                      className="text-sm h-8"
+                    />
+                  </div>
+                  {(config.chrome.swipeType ?? "text") === "text" && (
+                    <div className="space-y-1 col-span-2">
+                      <Label className="text-xs">Text</Label>
+                      <Input
+                        placeholder="swipe"
+                        value={config.chrome.swipeText ?? ""}
+                        onChange={(e) =>
+                          updateConfig((prev) => ({
+                            chrome: { ...prev.chrome, swipeText: e.target.value.trim() || undefined },
+                          }))
+                        }
+                        className="text-sm h-8"
+                        maxLength={50}
+                      />
+                    </div>
+                  )}
+                </div>
                 {(config.chrome.swipeType ?? "text") === "custom" && (
                   <div className="space-y-1">
                     <Label className="text-xs">Icon URL (SVG or PNG)</Label>

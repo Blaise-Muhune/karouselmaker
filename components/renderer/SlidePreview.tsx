@@ -949,6 +949,15 @@ export function SlidePreview({
 
   /** Scale chrome (counter, logo, watermark text) with canvas height so they stay proportional in 4:5 and 9:16. */
   const chromeScale = canvasH / CANVAS_SIZE;
+  /** For non-1:1, visible design region is a horizontal band; map design (0–1080) to viewport (0–1080 x 0–canvasH). */
+  const isViewportTall = canvasH > CANVAS_SIZE;
+  const designVisibleLeft = isViewportTall ? (CANVAS_SIZE - CANVAS_SIZE / scale) / 2 : 0;
+  const visibleDesignWidth = isViewportTall ? CANVAS_SIZE / scale : CANVAS_SIZE;
+  /** Map design (x,y) to viewport (x,y) so chrome stays visible in all formats. */
+  const designToViewport = (dx: number, dy: number) => ({
+    x: isViewportTall ? (dx - designVisibleLeft) * (1080 / visibleDesignWidth) : dx,
+    y: dy * (canvasH / CANVAS_SIZE),
+  });
 
   /** When export is not 1:1, render background image in a full-frame layer (1080 x canvasH) so image uses object-fit: cover and fills the format without square crop. */
   const useFullCanvasBackground =
@@ -2737,22 +2746,32 @@ export function SlidePreview({
       );
       })}
 
-      {/* Chrome: swipe hint (configurable type and position) */}
+        </div>
+      </div>
+
+      {/* Chrome: swipe hint in viewport space so it stays visible in all formats (1:1, 4:5, 9:16) */}
       {model.chrome.showSwipe && (() => {
         const pos = model.chrome.swipePosition ?? "bottom_center";
-        const posStyles: Record<string, Record<string, string | number>> = {
-          bottom_left: { bottom: 20, left: 24 },
-          bottom_center: { bottom: 20, left: "50%", transform: "translateX(-50%)" },
-          bottom_right: { bottom: 20, right: 24 },
+        const useCustomPos = model.chrome.swipeX != null && model.chrome.swipeY != null;
+        const swipeFontSize = (model.chrome.swipeSize ?? 24) * chromeScale;
+        const posStylesViewport: Record<string, Record<string, string | number>> = {
+          bottom_left: { bottom: 20 * chromeScale, left: 24 },
+          bottom_center: { bottom: 20 * chromeScale, left: "50%", transform: "translateX(-50%)" },
+          bottom_right: { bottom: 20 * chromeScale, right: 24 },
           top_left: { top: 24, left: 24 },
           top_center: { top: 24, left: "50%", transform: "translateX(-50%)" },
           top_right: { top: 24, right: 24 },
           center_left: { top: "50%", left: 24, transform: "translateY(-50%)" },
           center_right: { top: "50%", right: 24, transform: "translateY(-50%)" },
         };
+        const vp = useCustomPos ? designToViewport(model.chrome.swipeX!, model.chrome.swipeY!) : null;
+        const clampedX = vp ? Math.max(0, Math.min(1080, vp.x)) : null;
+        const clampedY = vp ? Math.max(0, Math.min(canvasH, vp.y)) : null;
         const baseStyle = {
-          ...posStyles[pos],
-          fontSize: 24,
+          ...(useCustomPos && clampedX != null && clampedY != null
+            ? { left: clampedX, top: clampedY }
+            : posStylesViewport[pos]),
+          fontSize: swipeFontSize,
           fontWeight: 600,
           letterSpacing: "0.1em",
           color: textColor,
@@ -2760,7 +2779,8 @@ export function SlidePreview({
           zIndex: 5,
         } as React.CSSProperties;
         const t = model.chrome.swipeType ?? "text";
-        const iconSize = 28;
+        const swipeLabel = (model.chrome.swipeText ?? "swipe").trim() || "swipe";
+        const iconSize = 28 * chromeScale;
         const iconColor = textColor;
         const FingerLeftSvg = () => (
           <svg width={iconSize} height={iconSize} viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="shrink-0" style={{ transform: "scaleX(-1)" }}>
@@ -2789,17 +2809,17 @@ export function SlidePreview({
         );
         const content =
           t === "custom" && model.chrome.swipeIconUrl ? (
-            <img src={model.chrome.swipeIconUrl} alt="" className="h-8 w-auto max-w-[80px] object-contain shrink-0" style={{ opacity: 0.9 }} />
+            <img src={model.chrome.swipeIconUrl} alt="" className="w-auto max-w-[80px] object-contain shrink-0" style={{ height: 32 * chromeScale, opacity: 0.9 }} />
           ) : t === "text" ? (
-            <span style={{ letterSpacing: 6, fontSize: 18 }}>• • •</span>
+            <span style={{ letterSpacing: 6, fontSize: swipeFontSize }}>{swipeLabel}</span>
           ) : t === "arrow-left" ? (
-            <span style={{ fontSize: 28 }}>←</span>
+            <span style={{ fontSize: 28 * chromeScale }}>←</span>
           ) : t === "arrow-right" ? (
-            <span style={{ fontSize: 28 }}>→</span>
+            <span style={{ fontSize: 28 * chromeScale }}>→</span>
           ) : t === "arrows" ? (
             <>
-              <span style={{ fontSize: 24 }}>←</span>
-              <span style={{ fontSize: 24 }}>→</span>
+              <span style={{ fontSize: 24 * chromeScale }}>←</span>
+              <span style={{ fontSize: 24 * chromeScale }}>→</span>
             </>
           ) : t === "hand-left" ? (
             <Hand size={iconSize} style={{ transform: "rotate(-90deg)", flexShrink: 0 }} strokeWidth={2.5} />
@@ -2807,11 +2827,11 @@ export function SlidePreview({
             <Hand size={iconSize} style={{ transform: "rotate(90deg)", flexShrink: 0 }} strokeWidth={2.5} />
           ) : t === "chevrons" ? (
             <>
-              <ChevronsLeft size={24} strokeWidth={2.5} className="shrink-0" />
-              <ChevronsRight size={24} strokeWidth={2.5} className="shrink-0" />
+              <ChevronsLeft size={24 * chromeScale} strokeWidth={2.5} className="shrink-0" />
+              <ChevronsRight size={24 * chromeScale} strokeWidth={2.5} className="shrink-0" />
             </>
           ) : t === "dots" ? (
-            <span style={{ letterSpacing: 8, fontSize: 20 }}>• • •</span>
+            <span style={{ letterSpacing: 8, fontSize: 20 * chromeScale }}>• • •</span>
           ) : t === "finger-swipe" ? (
             <MoveHorizontal size={iconSize} strokeWidth={2.5} className="shrink-0" />
           ) : t === "finger-left" ? (
@@ -2823,7 +2843,7 @@ export function SlidePreview({
           ) : t === "line-dots" ? (
             <LineDotsSvg />
           ) : (
-            <span style={{ letterSpacing: 6, fontSize: 18 }}>• • •</span>
+            <span style={{ letterSpacing: 6, fontSize: swipeFontSize }}>• • •</span>
           );
         return (
           <div className="absolute flex items-center justify-center gap-1 py-3" style={baseStyle}>
@@ -2831,8 +2851,6 @@ export function SlidePreview({
           </div>
         );
       })()}
-        </div>
-      </div>
 
       {/* Chrome (counter, watermark): draggable and resizable like headline/body when editChrome* provided */}
       {showCounter && (

@@ -744,6 +744,26 @@ export function SlideEditForm({
     if (m?.swipe_type && ["text", "arrow-left", "arrow-right", "arrows", "hand-left", "hand-right", "chevrons", "dots", "finger-swipe", "finger-left", "finger-right", "circle-arrows", "line-dots", "custom"].includes(m.swipe_type)) return m.swipe_type;
     return (initialTemplateForSwipe?.chrome?.swipeType as SwipeType) ?? "text";
   });
+  const [swipeText, setSwipeText] = useState<string>(() => {
+    const m = slide.meta as { swipe_text?: string } | null;
+    if (typeof m?.swipe_text === "string" && m.swipe_text.trim() !== "") return m.swipe_text.trim();
+    return (initialTemplateForSwipe?.chrome as { swipeText?: string } | undefined)?.swipeText?.trim() || "swipe";
+  });
+  const [swipeX, setSwipeX] = useState<number | undefined>(() => {
+    const m = slide.meta as { swipe_x?: number } | null;
+    if (m?.swipe_x != null && Number.isFinite(Number(m.swipe_x))) return Math.round(Number(m.swipe_x));
+    return (initialTemplateForSwipe?.chrome as { swipeX?: number } | undefined)?.swipeX;
+  });
+  const [swipeY, setSwipeY] = useState<number | undefined>(() => {
+    const m = slide.meta as { swipe_y?: number } | null;
+    if (m?.swipe_y != null && Number.isFinite(Number(m.swipe_y))) return Math.round(Number(m.swipe_y));
+    return (initialTemplateForSwipe?.chrome as { swipeY?: number } | undefined)?.swipeY;
+  });
+  const [swipeSize, setSwipeSize] = useState<number | undefined>(() => {
+    const m = slide.meta as { swipe_size?: number } | null;
+    if (m?.swipe_size != null && Number.isFinite(Number(m.swipe_size))) return Math.round(Number(m.swipe_size));
+    return (initialTemplateForSwipe?.chrome as { swipeSize?: number } | undefined)?.swipeSize;
+  });
   const [headlineFontSize, setHeadlineFontSize] = useState<number | undefined>(() => {
     const m = slide.meta as { headline_font_size?: number } | null;
     if (m?.headline_font_size != null) return m.headline_font_size;
@@ -965,6 +985,10 @@ export function SlideEditForm({
       showSwipe: (slide.meta as { show_swipe?: boolean } | null)?.show_swipe ?? initialTemplateForSwipe?.chrome?.showSwipe ?? true,
       swipeType: (slide.meta as { swipe_type?: string } | null)?.swipe_type ?? initialTemplateForSwipe?.chrome?.swipeType ?? "text",
       swipePosition: (slide.meta as { swipe_position?: string } | null)?.swipe_position ?? initialTemplateForSwipe?.chrome?.swipePosition ?? "bottom_center",
+      swipeText: (slide.meta as { swipe_text?: string } | null)?.swipe_text ?? (initialTemplateForSwipe?.chrome as { swipeText?: string } | undefined)?.swipeText ?? "swipe",
+      swipeX: (slide.meta as { swipe_x?: number } | null)?.swipe_x ?? (initialTemplateForSwipe?.chrome as { swipeX?: number } | undefined)?.swipeX,
+      swipeY: (slide.meta as { swipe_y?: number } | null)?.swipe_y ?? (initialTemplateForSwipe?.chrome as { swipeY?: number } | undefined)?.swipeY,
+      swipeSize: (slide.meta as { swipe_size?: number } | null)?.swipe_size ?? (initialTemplateForSwipe?.chrome as { swipeSize?: number } | undefined)?.swipeSize,
     })
   );
   const previewWrapRef = useRef<HTMLDivElement>(null);
@@ -999,6 +1023,10 @@ export function SlideEditForm({
     showSwipe,
     swipeType,
     swipePosition,
+    swipeText,
+    swipeX,
+    swipeY,
+    swipeSize,
   });
   const hasUnsavedChanges = currentSnapshot !== lastSavedRef.current;
 
@@ -1294,6 +1322,10 @@ export function SlideEditForm({
           showSwipe,
           swipeType,
           swipePosition,
+          ...(swipeText.trim() !== "" && { swipeText: swipeText.trim() }),
+          ...(swipeX != null && { swipeX }),
+          ...(swipeY != null && { swipeY }),
+          ...(swipeSize != null && { swipeSize }),
           madeWith: {
             ...previewChromeOverrides.madeWith,
             text: isPro
@@ -1306,6 +1338,10 @@ export function SlideEditForm({
           showSwipe,
           swipeType,
           swipePosition,
+          ...(swipeText.trim() !== "" && { swipeText: swipeText.trim() }),
+          ...(swipeX != null && { swipeX }),
+          ...(swipeY != null && { swipeY }),
+          ...(swipeSize != null && { swipeSize }),
           madeWith: {
             text: isPro
               ? (madeWithText.trim() || initialMadeWithText || "")
@@ -1813,6 +1849,10 @@ export function SlideEditForm({
           show_swipe: showSwipe,
           swipe_type: swipeType,
           swipe_position: swipePosition,
+          ...(swipeText.trim() !== "" && { swipe_text: swipeText.trim() }),
+          ...(swipeX != null && Number.isFinite(swipeX) && { swipe_x: Math.round(swipeX) }),
+          ...(swipeY != null && Number.isFinite(swipeY) && { swipe_y: Math.round(swipeY) }),
+          ...(swipeSize != null && Number.isFinite(swipeSize) && { swipe_size: Math.round(swipeSize) }),
           ...(background.mode === "image" || validUrls.length > 0
             ? (() => {
                 const isPip = imageDisplayPayload?.mode === "pip";
@@ -2079,6 +2119,11 @@ export function SlideEditForm({
       setShowSwipe(newConfig?.chrome?.showSwipe ?? true);
       setSwipeType((newConfig?.chrome?.swipeType as SwipeType) ?? "text");
       setSwipePosition((newConfig?.chrome?.swipePosition as SwipePosition) ?? "bottom_center");
+      const c = newConfig?.chrome as { swipeText?: string; swipeX?: number; swipeY?: number; swipeSize?: number } | undefined;
+      setSwipeText(typeof c?.swipeText === "string" && c.swipeText.trim() !== "" ? c.swipeText.trim() : "swipe");
+      setSwipeX(c?.swipeX);
+      setSwipeY(c?.swipeY);
+      setSwipeSize(c?.swipeSize);
     }
   };
 
@@ -2326,6 +2371,10 @@ export function SlideEditForm({
         show_swipe: showSwipe,
         swipe_type: swipeType,
         swipe_position: swipePosition,
+        ...(swipeText.trim() !== "" && { swipe_text: swipeText.trim() }),
+        ...(swipeX != null && Number.isFinite(swipeX) && { swipe_x: Math.round(swipeX) }),
+        ...(swipeY != null && Number.isFinite(swipeY) && { swipe_y: Math.round(swipeY) }),
+        ...(swipeSize != null && Number.isFinite(swipeSize) && { swipe_size: Math.round(swipeSize) }),
         ...(headlineFontSize != null && { headline_font_size: headlineFontSize }),
         ...(bodyFontSize != null && { body_font_size: bodyFontSize }),
         ...(headlineFontFamily != null && headlineFontFamily.trim() !== "" && { headline_font_family: headlineFontFamily.trim() }),
@@ -2349,7 +2398,18 @@ export function SlideEditForm({
     return {
       ...templateConfig,
       overlays: { ...templateConfig.overlays, gradient: gradientOverlay },
-      chrome: { ...templateConfig.chrome, showCounter, showSwipe, swipeType, swipePosition, watermark: { ...templateConfig.chrome.watermark, enabled: showWatermark } },
+      chrome: {
+        ...templateConfig.chrome,
+        showCounter,
+        showSwipe,
+        swipeType,
+        swipePosition,
+        ...(swipeText.trim() !== "" && { swipeText: swipeText.trim() }),
+        ...(swipeX != null && { swipeX }),
+        ...(swipeY != null && { swipeY }),
+        ...(swipeSize != null && { swipeSize }),
+        watermark: { ...templateConfig.chrome.watermark, enabled: showWatermark },
+      },
       defaults,
     };
   };
@@ -4003,6 +4063,26 @@ export function SlideEditForm({
                                 </SelectContent>
                               </Select>
                             </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3 mt-2">
+                            <div>
+                              <Label className="text-xs">X</Label>
+                              <StepperWithLongPress value={swipeX ?? 540} min={0} max={1080} step={8} onChange={(v) => setSwipeX(v)} label="X" className="w-full max-w-[80px]" />
+                            </div>
+                            <div>
+                              <Label className="text-xs">Y</Label>
+                              <StepperWithLongPress value={swipeY ?? 1040} min={0} max={1080} step={8} onChange={(v) => setSwipeY(v)} label="Y" className="w-full max-w-[80px]" />
+                            </div>
+                            <div>
+                              <Label className="text-xs">Size</Label>
+                              <StepperWithLongPress value={swipeSize ?? 24} min={8} max={72} step={1} onChange={(v) => setSwipeSize(v)} label="Size" className="w-full max-w-[80px]" />
+                            </div>
+                            {swipeType === "text" && (
+                              <div className="col-span-2">
+                                <Label className="text-xs">Text</Label>
+                                <Input value={swipeText} onChange={(e) => setSwipeText(e.target.value)} placeholder="swipe" className="h-8 text-xs mt-0.5" maxLength={50} />
+                              </div>
+                            )}
                           </div>
                         </div>
                       )}

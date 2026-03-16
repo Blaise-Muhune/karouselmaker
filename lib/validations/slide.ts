@@ -192,6 +192,14 @@ export const slideMetaSchema = z.object({
   swipe_type: z.enum(["text", "arrow-left", "arrow-right", "arrows", "hand-left", "hand-right", "chevrons", "dots", "finger-swipe", "finger-left", "finger-right", "circle-arrows", "line-dots", "custom"]).optional(),
   /** Override template: swipe hint position (bottom_center, top_left, etc.). */
   swipe_position: z.enum(["bottom_left", "bottom_center", "bottom_right", "top_left", "top_center", "top_right", "center_left", "center_right"]).optional(),
+  /** When swipe_type is "text", custom label. Default "swipe". */
+  swipe_text: z.string().max(50).optional(),
+  /** Swipe hint X (px from left). With swipe_y, overrides position preset. */
+  swipe_x: z.number().int().min(0).max(1080).optional(),
+  /** Swipe hint Y (px from top). With swipe_x, overrides position preset. */
+  swipe_y: z.number().int().min(0).max(1080).optional(),
+  /** Swipe hint font/size (px). 8–72. */
+  swipe_size: z.number().int().min(8).max(72).optional(),
   /** Override headline font size (px). 8–200. */
   headline_font_size: z.number().int().min(8).max(200).optional(),
   /** Override body font size (px). 8–200. */

@@ -101,10 +101,18 @@ const chromeSchema = z.object({
   showSwipe: z.boolean(),
   /** Swipe hint style. Default "text". */
   swipeType: swipeTypeEnum.optional(),
+  /** When swipeType is "text", this label. Default "swipe". */
+  swipeText: z.string().max(50).optional(),
   /** Custom SVG or PNG URL. Used when swipeType is "custom". */
   swipeIconUrl: z.string().url().optional(),
   /** Swipe hint position. Default "bottom_center". */
   swipePosition: swipePositionEnum.optional(),
+  /** Override position: X (px from left). When set with swipeY, ignores swipePosition preset. */
+  swipeX: z.number().int().min(0).max(1080).optional(),
+  /** Override position: Y (px from top). When set with swipeX, ignores swipePosition preset. */
+  swipeY: z.number().int().min(0).max(1080).optional(),
+  /** Swipe hint font/size (px). Default 24. */
+  swipeSize: z.number().int().min(8).max(72).optional(),
   showCounter: z.boolean(),
   counterStyle: z.string(),
   watermark: watermarkSchema,

@@ -1,0 +1,15 @@
+# Allow AI and search crawlers so the app can be discovered and cited.
+# GPTBot (OpenAI): allow for indexing and training unless you opt out
+User-agent: GPTBot
+Allow: /
+
+# OAI-SearchBot: used for ChatGPT search / real-time answers
+User-agent: OAI-SearchBot
+Allow: /
+
+# Standard crawlers
+User-agent: *
+Allow: /
+
+# Sitemap (add when you have one)
+# Sitemap: https://karouselmaker.com/sitemap.xml

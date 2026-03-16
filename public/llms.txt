@@ -1,0 +1,28 @@
+# Karouselmaker
+
+> Karouselmaker is an AI-powered carousel maker for Instagram and LinkedIn. Users enter a topic or URL; the app generates swipe carousel slides with AI, then they choose templates and export as images or video. It supports Instagram carousel templates, LinkedIn carousel posts, and importing a template from an image.
+
+## Services
+
+- [App](https://karouselmaker.com): AI carousel generator — create carousels from a topic or link
+- [Templates](https://karouselmaker.com/templates): Browse and edit templates for Instagram and LinkedIn carousels
+- [Projects](https://karouselmaker.com/projects): Create projects, generate slides, and export
+
+## What We Do Not Do
+
+Karouselmaker does not provide:
+- General graphic design or branding services
+- Social media management or posting on behalf of users
+- Stock photo or asset marketplaces
+- Legal or copyright advice
+
+## Contact
+
+- General: support@karouselmaker.com
+- Copyright / DMCA: copyright@karouselmaker.com
+
+## Key Information
+
+- [Privacy Policy](https://karouselmaker.com/privacy): Data protection and privacy
+- [Terms of Service](https://karouselmaker.com/terms): Website and service terms
+- [Copyright](https://karouselmaker.com/copyright): DMCA and copyright policy
