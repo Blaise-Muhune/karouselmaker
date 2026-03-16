@@ -7,6 +7,7 @@ import { getTemplate, createTemplate, createSystemTemplate, countUserTemplates }
 import type { Json } from "@/lib/server/db/types";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
+import { normalizeNoImageTemplateDefaults } from "@/lib/server/renderer/normalizeTemplateConfig";
 
 export async function createTemplateAction(
   payload: { name: string; category: string; config?: unknown; baseTemplateId?: string; asSystemTemplate?: boolean }
@@ -44,11 +45,11 @@ export async function createTemplateAction(
     if (!base) return { ok: false, error: "Base template not found." };
     const parsed = templateConfigSchema.safeParse(base.config);
     if (!parsed.success) return { ok: false, error: "Invalid base template config." };
-    config = parsed.data;
+    config = normalizeNoImageTemplateDefaults(parsed.data);
   } else if (payload.config) {
     const parsed = templateConfigSchema.safeParse(payload.config);
     if (!parsed.success) return { ok: false, error: "Invalid template config." };
-    config = parsed.data;
+    config = normalizeNoImageTemplateDefaults(parsed.data);
   } else {
     return { ok: false, error: "Template config or base template is required." };
   }

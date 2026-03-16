@@ -41,7 +41,7 @@ import { createTemplateAction } from "@/app/actions/templates/createTemplate";
 import { updateTemplateAction } from "@/app/actions/templates/updateTemplate";
 import { getTemplateConfigAction } from "@/app/actions/templates/getTemplateConfig";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
-import { slugifyForFilename } from "@/lib/utils";
+import { cn, slugifyForFilename } from "@/lib/utils";
 import { isSupabaseSignedUrl } from "@/lib/server/storage/signedUrlUtils";
 import { getTemplatePreviewBackgroundOverride } from "@/lib/renderer/getTemplatePreviewBackground";
 import type { BrandKit } from "@/lib/renderer/renderModel";
@@ -931,10 +931,13 @@ export function SlideEditForm({
   const [updatingTemplate, setUpdatingTemplate] = useState(false);
   const [updateTemplateOpen, setUpdateTemplateOpen] = useState(false);
   const [updateTemplateName, setUpdateTemplateName] = useState("");
+  const [updateMakeAvailableForAll, setUpdateMakeAvailableForAll] = useState(false);
   const [driveImporting, setDriveImporting] = useState(false);
   const [driveError, setDriveError] = useState<string | null>(null);
   const [driveSuccess, setDriveSuccess] = useState<string | null>(null);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
+  const [templateDesignFilter, setTemplateDesignFilter] = useState<"withImage" | "noImage">("withImage");
+  const [clearPictureDialogTemplateId, setClearPictureDialogTemplateId] = useState<string | null>(null);
   /** When user selects a template from the modal, we store its config here so the preview updates immediately (avoids relying on list lookup). */
   const [overrideTemplateConfig, setOverrideTemplateConfig] = useState<TemplateConfig | null>(null);
   /** Newly created templates this session so the Choose template modal shows them with saved config before refresh. */
@@ -1377,6 +1380,17 @@ export function SlideEditForm({
     })),
     ...baseModalOptions.filter((t) => !recentlyCreatedTemplates.some((r) => r.id === t.id)),
   ];
+  const templateOptionsFilteredForModal = useMemo(() => {
+    if (templateDesignFilter === "noImage") {
+      return templateOptionsForModal.filter((t) => t.parsedConfig?.backgroundRules?.allowImage === false);
+    }
+    return templateOptionsForModal.filter((t) => t.parsedConfig?.backgroundRules?.allowImage !== false);
+  }, [templateOptionsForModal, templateDesignFilter]);
+  const firstTemplate = templates[0];
+  const defaultTemplateInFilteredList =
+    templateOptionsFilteredForModal.length > 0 && firstTemplate
+      ? templateOptionsFilteredForModal.find((t) => t.id === firstTemplate.id)
+      : undefined;
   useEffect(() => {
     setOverrideTemplateConfig(null);
   }, [slide.id]);
@@ -2072,7 +2086,7 @@ export function SlideEditForm({
 
   const handleTemplateChange = async (
     newTemplateId: string | null,
-    options?: { reloadAfter?: boolean }
+    options?: { reloadAfter?: boolean; clearBackground?: boolean; allowBlend?: boolean }
   ) => {
     setTemplateId(newTemplateId);
     setHeadlineFontSize(undefined);
@@ -2080,7 +2094,12 @@ export function SlideEditForm({
     setHeadlineZoneOverride(undefined);
     setBodyZoneOverride(undefined);
     setApplyingTemplate(true);
-    await setSlideTemplate(slide.id, newTemplateId /* no revalidate: avoid remount that clears overrideTemplateConfig and shows stale list config */);
+    await setSlideTemplate(
+      slide.id,
+      newTemplateId,
+      options?.reloadAfter ? editorPath : undefined,
+      options?.clearBackground || options?.allowBlend ? { clearBackground: options.clearBackground, allowBlend: options.allowBlend } : undefined
+    );
     if (!options?.reloadAfter) setApplyingTemplate(false);
     // Apply new template's overlay, background, and image_display to local state so preview updates without refresh (when not reloading)
     if (newTemplateId && !options?.reloadAfter) {
@@ -2362,6 +2381,7 @@ export function SlideEditForm({
       background.overlay?.tintColor != null && /^#([0-9A-Fa-f]{3}){1,2}$/.test(background.overlay.tintColor)
         ? background.overlay.tintColor
         : effectiveBgColor;
+    const bgColorHex = /^#([0-9A-Fa-f]{3}){1,2}$/.test(effectiveBgColor) ? effectiveBgColor : "#0a0a0a";
     const defaults = {
       background: Object.keys(backgroundPayload).length > 0 && !isBackgroundImage ? backgroundPayload : undefined,
       meta: {
@@ -2390,13 +2410,17 @@ export function SlideEditForm({
         overlay_tint_opacity: Math.min(1, Math.max(0, effectiveTintOpacity)),
         overlay_tint_color: /^#([0-9A-Fa-f]{3}){1,2}$/.test(effectiveTintColor) ? effectiveTintColor : effectiveBgColor,
         image_overlay_blend_enabled: effectiveTintOpacity > 0,
-        background_color: /^#([0-9A-Fa-f]{3}){1,2}$/.test(effectiveBgColor) ? effectiveBgColor : "#0a0a0a",
+        background_color: bgColorHex,
         ...(normalizeHighlightSpansToWords(headline, headlineHighlights).length > 0 ? { headline_highlights: normalizeHighlightSpansToWords(headline, headlineHighlights) } : {}),
         ...(normalizeHighlightSpansToWords(body, bodyHighlights).length > 0 ? { body_highlights: normalizeHighlightSpansToWords(body, bodyHighlights) } : {}),
       },
     };
+    const backgroundRules = isBackgroundImage
+      ? (templateConfig.backgroundRules ?? { allowImage: true, defaultStyle: "darken" })
+      : { allowImage: false as const, defaultStyle: "none" as const };
     return {
       ...templateConfig,
+      backgroundRules,
       overlays: { ...templateConfig.overlays, gradient: gradientOverlay },
       chrome: {
         ...templateConfig.chrome,
@@ -2466,7 +2490,7 @@ export function SlideEditForm({
     const config = buildTemplateConfigFromSlide();
     if (!config) return;
     setUpdatingTemplate(true);
-    const result = await updateTemplateAction(templateId, { name, config });
+    const result = await updateTemplateAction(templateId, { name, config, makeAvailableForAll: updateMakeAvailableForAll });
     setUpdatingTemplate(false);
     if (result.ok) {
       setUpdatedTemplateOverrides((prev) => ({ ...prev, [templateId]: { name, parsedConfig: config } }));
@@ -2480,6 +2504,7 @@ export function SlideEditForm({
 
   const openUpdateTemplateDialog = () => {
     setUpdateTemplateName(currentTemplate?.name ?? "");
+    setUpdateMakeAvailableForAll(false);
     setUpdateTemplateOpen(true);
   };
 
@@ -3061,6 +3086,7 @@ export function SlideEditForm({
                 headlineFontSizeSpans={headlineFontSizeSpans.length > 0 ? headlineFontSizeSpans : undefined}
                 bodyFontSizeSpans={bodyFontSizeSpans.length > 0 ? bodyFontSizeSpans : undefined}
                 borderedFrame={!!(previewBackgroundImageUrl || previewBackgroundImageUrls?.length)}
+                allowBackgroundImageOverride={(slide.meta as { allow_background_image_override?: boolean } | null)?.allow_background_image_override === true}
                 imageDisplay={isImageMode ? effectiveImageDisplay : undefined}
                 exportSize={exportSize}
                 onHeadlineChange={setHeadline}
@@ -3402,7 +3428,7 @@ export function SlideEditForm({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={updateTemplateOpen} onOpenChange={(open) => { setUpdateTemplateOpen(open); if (!open) setUpdateTemplateName(""); }}>
+      <Dialog open={updateTemplateOpen} onOpenChange={(open) => { setUpdateTemplateOpen(open); if (!open) { setUpdateTemplateName(""); setUpdateMakeAvailableForAll(false); } }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Update template</DialogTitle>
@@ -3420,6 +3446,20 @@ export function SlideEditForm({
               className="rounded-lg"
               onKeyDown={(e) => e.key === "Enter" && handleUpdateTemplate()}
             />
+            {isAdmin && currentTemplate?.user_id != null && (
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="update-make-available-for-all"
+                  checked={updateMakeAvailableForAll}
+                  onChange={(e) => setUpdateMakeAvailableForAll(e.target.checked)}
+                  className="rounded border-input"
+                />
+                <Label htmlFor="update-make-available-for-all" className="font-normal cursor-pointer text-muted-foreground">
+                  Available for all users
+                </Label>
+              </div>
+            )}
           </div>
           <DialogFooter showCloseButton={false}>
             <Button variant="outline" onClick={() => setUpdateTemplateOpen(false)} disabled={updatingTemplate}>
@@ -3494,6 +3534,35 @@ export function SlideEditForm({
               />
             )}
           </DialogHeader>
+          <div className="flex items-center gap-2 shrink-0 py-1">
+            <span className="text-xs text-muted-foreground whitespace-nowrap">Design:</span>
+            <div className="flex rounded-md border border-border bg-muted/30 p-0.5">
+              <button
+                type="button"
+                onClick={() => setTemplateDesignFilter("withImage")}
+                className={cn(
+                  "rounded px-2.5 py-1 text-xs font-medium transition-colors",
+                  templateDesignFilter === "withImage"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                With image
+              </button>
+              <button
+                type="button"
+                onClick={() => setTemplateDesignFilter("noImage")}
+                className={cn(
+                  "rounded px-2.5 py-1 text-xs font-medium transition-colors",
+                  templateDesignFilter === "noImage"
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                Without image
+              </button>
+            </div>
+          </div>
           <div className="relative flex-1 min-h-0 min-w-0 flex flex-col">
             {applyingTemplate && (
               <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-lg bg-background/95 backdrop-blur-sm">
@@ -3504,11 +3573,11 @@ export function SlideEditForm({
             )}
             <div className="overflow-y-auto overflow-x-hidden flex-1 min-h-0 min-w-0 w-full pr-1">
             <TemplateSelectCards
-              templates={templateOptionsForModal}
-              defaultTemplateId={templates[0]?.id ?? null}
-              defaultTemplateConfig={templates[0]?.parsedConfig ?? null}
-              defaultTemplateCategory={templates[0]?.category ?? undefined}
-              value={templateId === templates[0]?.id ? null : templateId}
+              templates={templateOptionsFilteredForModal}
+              defaultTemplateId={defaultTemplateInFilteredList ? firstTemplate?.id ?? null : null}
+              defaultTemplateConfig={defaultTemplateInFilteredList ? firstTemplate?.parsedConfig ?? null : null}
+              defaultTemplateCategory={firstTemplate?.category ?? undefined}
+              value={templateId === firstTemplate?.id ? null : templateId}
               isAdmin={isAdmin}
               isPro={isPro}
               onTemplateDeleted={() => {
@@ -3528,6 +3597,12 @@ export function SlideEditForm({
                     background.mode === "image" ||
                     !!background.asset_id ||
                     validImageUrls.some((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim()));
+                  const templateNoImage = config?.backgroundRules?.allowImage === false;
+                  if (templateNoImage && hasImage) {
+                    setApplyingTemplate(false);
+                    setClearPictureDialogTemplateId(resolvedId);
+                    return;
+                  }
                   if (config) {
                     const templateBg = getTemplatePreviewBackgroundOverride(config);
                     const grad = config.overlays?.gradient;
@@ -3605,6 +3680,53 @@ export function SlideEditForm({
             />
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={clearPictureDialogTemplateId !== null}
+        onOpenChange={(open) => !open && setClearPictureDialogTemplateId(null)}
+      >
+        <DialogContent showCloseButton className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Clear picture</DialogTitle>
+          </DialogHeader>
+          <p className="text-muted-foreground text-sm">
+            This template is designed without a background image. Clear the current picture to use it as intended, or keep your image and blend it with the template.
+          </p>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={async () => {
+                const id = clearPictureDialogTemplateId;
+                if (!id) return;
+                setClearPictureDialogTemplateId(null);
+                setApplyingTemplate(true);
+                await handleTemplateChange(id, { reloadAfter: true, clearBackground: true });
+                lastSavedRef.current = JSON.stringify({ headline, body, templateId: id, showCounter, showWatermark, showMadeWith });
+                router.refresh();
+                allowUnloadRef.current = true;
+                window.location.reload();
+              }}
+            >
+              Clear picture
+            </Button>
+            <Button
+              onClick={async () => {
+                const id = clearPictureDialogTemplateId;
+                if (!id) return;
+                setClearPictureDialogTemplateId(null);
+                setApplyingTemplate(true);
+                await handleTemplateChange(id, { reloadAfter: true, allowBlend: true });
+                lastSavedRef.current = JSON.stringify({ headline, body, templateId: id, showCounter, showWatermark, showMadeWith });
+                router.refresh();
+                allowUnloadRef.current = true;
+                window.location.reload();
+              }}
+            >
+              Go ahead and blend
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -3724,6 +3846,7 @@ export function SlideEditForm({
                         headlineFontSizeSpans={headlineFontSizeSpans.length > 0 ? headlineFontSizeSpans : undefined}
                         bodyFontSizeSpans={bodyFontSizeSpans.length > 0 ? bodyFontSizeSpans : undefined}
                         borderedFrame={!!(previewBackgroundImageUrl || previewBackgroundImageUrls?.length)}
+                        allowBackgroundImageOverride={(slide.meta as { allow_background_image_override?: boolean } | null)?.allow_background_image_override === true}
                         imageDisplay={isImageMode ? effectiveImageDisplay : undefined}
                         exportSize={exportSize}
                         positionAndSizeOnly

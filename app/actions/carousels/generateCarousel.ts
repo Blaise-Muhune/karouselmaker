@@ -96,6 +96,17 @@ function looksLikeNewsOrTimeSensitive(inputValue: string, inputType: string): bo
   return false;
 }
 
+/** Ensure list items in headline/body each have a newline (e.g. "1. A 2. B" -> "1. A\n2. B"). */
+function ensureListNewlines(text: string): string {
+  if (!text?.trim()) return text;
+  let s = text
+    // Numbered list: "1. A 2. B" or "1) A 2) B" -> newline before each item after the first
+    .replace(/([^\n]) (\d+)([.)]\s)/g, "$1\n$2$3")
+    // Bullet list: "• A • B" -> newline before each bullet after the first
+    .replace(/([^\n]) (\s*[•]\s+)/g, "$1\n$2");
+  return s;
+}
+
 /** Remove URLs, markdown links, and parenthetical domain refs (e.g. (marvel.com)) from slide text so web-search generations stay link-free. */
 function stripLinksFromText(text: string): string {
   if (!text?.trim()) return text;
@@ -509,8 +520,10 @@ export async function generateCarousel(formData: FormData): Promise<
   const isFollowCta = carouselFor !== "linkedin" && (defaultTemplate && "isFollowCta" in defaultTemplate ? defaultTemplate.isFollowCta : false);
 
   const slideRows = validated.slides.map((s) => {
-    const fullHeadline = s.slide_index === 1 ? stripLinksFromText(validated.title) : stripLinksFromText(s.headline);
-    const fullBody = s.body ? stripLinksFromText(s.body) : "";
+    const rawHeadline = s.slide_index === 1 ? stripLinksFromText(validated.title) : stripLinksFromText(s.headline);
+    const rawBody = s.body ? stripLinksFromText(s.body) : "";
+    const fullHeadline = ensureListNewlines(rawHeadline);
+    const fullBody = ensureListNewlines(rawBody);
     type VariantEntry = { headline: string; body: string; headline_highlight_words?: string[]; body_highlight_words?: string[] };
     const shortenVariants: VariantEntry[] = [{
       headline: fullHeadline,
@@ -522,8 +535,8 @@ export async function generateCarousel(formData: FormData): Promise<
     if (alternates?.length) {
       for (const a of alternates) {
         shortenVariants.push({
-          headline: stripLinksFromText(a.headline),
-          body: a.body ? stripLinksFromText(a.body) : "",
+          headline: ensureListNewlines(stripLinksFromText(a.headline)),
+          body: a.body ? ensureListNewlines(stripLinksFromText(a.body)) : "",
           ...(a.headline_highlight_words?.length && { headline_highlight_words: a.headline_highlight_words }),
           ...(a.body_highlight_words?.length && { body_highlight_words: a.body_highlight_words }),
         });

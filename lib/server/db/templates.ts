@@ -144,10 +144,10 @@ export async function updateTemplate(
   return { ok: true };
 }
 
-/** Update any template by id (e.g. system template). Admin only; uses service role to bypass RLS. */
+/** Update any template by id (e.g. system template). Admin only; uses service role to bypass RLS. Can set user_id to null to promote a user template to system (available for all). */
 export async function updateTemplateAsAdmin(
   templateId: string,
-  payload: { name?: string; category?: string; aspect_ratio?: string; config?: unknown }
+  payload: { name?: string; category?: string; aspect_ratio?: string; config?: unknown; user_id?: string | null }
 ): Promise<{ ok: boolean; error?: string }> {
   const supabase = createAdminClient();
   const { error } = await supabase

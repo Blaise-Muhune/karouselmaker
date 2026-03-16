@@ -204,6 +204,86 @@ export function stripHighlightMarkers(text: string): string {
     .replace(/\{\{\/\}\}/g, "");
 }
 
+/** Font-size span for a range of plain-text indices (used for per-selection font size). */
+export type FontSizeSpan = { start: number; end: number; fontSize: number };
+
+/**
+ * Return segments (start, end, fontSize) for a line's plain range [linePlainStart, linePlainEnd).
+ * Spans are in full-text plain indices; output is in line-local plain indices (0 to lineLen).
+ * Gaps are filled with defaultFontSize.
+ */
+export function getFontSizeSegmentsForRange(
+  linePlainStart: number,
+  linePlainEnd: number,
+  spans: FontSizeSpan[],
+  defaultFontSize: number
+): { start: number; end: number; fontSize: number }[] {
+  const lineLen = linePlainEnd - linePlainStart;
+  if (lineLen <= 0) return [];
+  const out: { start: number; end: number; fontSize: number }[] = [];
+  let lastEnd = 0;
+  const sorted = [...spans].filter((s) => s.end > linePlainStart && s.start < linePlainEnd).sort((a, b) => a.start - b.start);
+  for (const s of sorted) {
+    const segStart = Math.max(0, s.start - linePlainStart);
+    const segEnd = Math.min(lineLen, s.end - linePlainStart);
+    if (segStart > lastEnd) {
+      out.push({ start: lastEnd, end: segStart, fontSize: defaultFontSize });
+    }
+    out.push({ start: segStart, end: segEnd, fontSize: s.fontSize });
+    lastEnd = segEnd;
+  }
+  if (lastEnd < lineLen) {
+    out.push({ start: lastEnd, end: lineLen, fontSize: defaultFontSize });
+  }
+  return out.length ? out : [{ start: 0, end: lineLen, fontSize: defaultFontSize }];
+}
+
+/**
+ * Return the substring of `line` (which may contain {{#hex}}...{{/}}) that corresponds to
+ * plain-text indices [plainStart, plainEnd). Used to slice a line by font-size segments.
+ */
+export function getLineSubstringByPlainRange(line: string, plainStart: number, plainEnd: number): string {
+  if (plainStart >= plainEnd) return "";
+  let plainIndex = 0;
+  let result = "";
+  let i = 0;
+  const openRe = /\{\{(?:#[\da-fA-F]{6}|[a-z]+)\}\}/g;
+  const closeRe = /\{\{\/\}\}/g;
+  while (i < line.length) {
+    const openMatch = line.slice(i).match(/^\{\{(?:#[\da-fA-F]{6}|[a-z]+)\}\}/);
+    if (openMatch) {
+      i += openMatch[0].length;
+      const afterOpen = line.slice(i);
+      const closeMatch = afterOpen.match(/\{\{\/\}\}/);
+      const contentEnd = closeMatch ? afterOpen.indexOf(closeMatch[0]) : afterOpen.length;
+      const content = afterOpen.slice(0, contentEnd);
+      const contentPlainLen = stripHighlightMarkers(content).length;
+      const segStart = plainIndex;
+      const segEnd = plainIndex + contentPlainLen;
+      const overlapStart = Math.max(segStart, plainStart);
+      const overlapEnd = Math.min(segEnd, plainEnd);
+      if (overlapStart < overlapEnd) {
+        const localStart = overlapStart - segStart;
+        const localEnd = overlapEnd - segStart;
+        result += getLineSubstringByPlainRange(content, localStart, localEnd);
+      }
+      plainIndex += contentPlainLen;
+      i += contentEnd + (closeMatch ? closeMatch[0].length : 0);
+      continue;
+    }
+    if (line.slice(i).startsWith("{{/}}")) {
+      i += 5;
+      continue;
+    }
+    if (plainIndex >= plainStart && plainIndex < plainEnd) {
+      result += line[i];
+    }
+    plainIndex++;
+    i++;
+  }
+  return result;
+}
+
 export function injectHighlightMarkers(text: string, spans: HighlightSpan[]): string {
   if (!spans.length) return text;
   const len = text.length;

@@ -252,6 +252,8 @@ export const slideMetaSchema = z.object({
   headline_font_size_spans: z.array(z.object({ start: z.number().int().min(0), end: z.number().int().min(0), fontSize: z.number().int().min(8).max(200) })).optional(),
   /** Body font-size spans. */
   body_font_size_spans: z.array(z.object({ start: z.number().int().min(0), end: z.number().int().min(0), fontSize: z.number().int().min(8).max(200) })).optional(),
+  /** When true, show background image even if template has allowImage false (user chose "blend" for no-image template). */
+  allow_background_image_override: z.boolean().optional(),
 });
 
 export const updateSlideInputSchema = z.object({

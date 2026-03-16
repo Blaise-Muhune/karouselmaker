@@ -35,11 +35,19 @@ function overlayFromTemplateGradient(grad: { enabled?: boolean; color?: string; 
   };
 }
 
+export type SetSlideTemplateOptions = {
+  /** When true and template has allowImage false, clear the slide's background image and use solid/gradient only. */
+  clearBackground?: boolean;
+  /** When true and template has allowImage false, keep the slide's image and show it with template overlay (blend). Sets meta.allow_background_image_override. */
+  allowBlend?: boolean;
+};
+
 /** Set template on a single slide. Clears font-size overrides so the template's text zone font sizes apply. */
 export async function setSlideTemplate(
   slideId: string,
   templateId: string | null,
-  revalidatePathname?: string | string[]
+  revalidatePathname?: string | string[],
+  options?: SetSlideTemplateOptions
 ): Promise<SetSlideTemplateResult> {
   const { user } = await getUser();
   if (!user) return { ok: false, error: "Unauthorized" };
@@ -121,24 +129,46 @@ export async function setSlideTemplate(
     const templateBgStyle = defaultsBg && (defaultsBg.style === "solid" || defaultsBg.style === "pattern") ? defaultsBg.style : undefined;
     const templateBgPattern = defaultsBg && typeof defaultsBg.pattern === "string" ? defaultsBg.pattern : undefined;
 
+    const templateAllowsImage = parsed.data?.backgroundRules?.allowImage !== false;
+    const clearBackground = options?.clearBackground === true;
+    const allowBlend = options?.allowBlend === true;
+    const noImageTemplateApplyClear = !templateAllowsImage && !allowBlend;
+
     if (existingBg && typeof existingBg === "object") {
-      patch.background = {
-        ...existingBg,
-        ...(templateBgColor != null && { color: templateBgColor }),
-        ...(templateBgStyle != null && { style: templateBgStyle }),
-        ...(templateBgPattern != null && { pattern: templateBgPattern }),
-        ...(hasOverlayOrTint && { overlay: mergedOverlay }),
-        ...(hasImageDisplay && { image_display: resolvedImageDisplay }),
-      } as Json;
+      if (noImageTemplateApplyClear || clearBackground) {
+        // No-image template: clear slide background to solid/gradient only (no photo).
+        patch.background = {
+          style: templateBgStyle ?? "solid",
+          color: templateBgColor ?? "#0a0a0a",
+          ...(templateBgPattern != null && { pattern: templateBgPattern }),
+          overlay: mergedOverlay,
+        } as Json;
+      } else {
+        patch.background = {
+          ...existingBg,
+          ...(templateBgColor != null && { color: templateBgColor }),
+          ...(templateBgStyle != null && { style: templateBgStyle }),
+          ...(templateBgPattern != null && { pattern: templateBgPattern }),
+          ...(hasOverlayOrTint && { overlay: mergedOverlay }),
+          ...(hasImageDisplay && { image_display: resolvedImageDisplay }),
+        } as Json;
+      }
     }
 
     if (defaultsMeta != null && typeof defaultsMeta === "object" && Object.keys(defaultsMeta).length > 0) {
-      // Apply template defaults (zone position, font size, overlay_tint_*, etc.) so the slide matches the saved template.
       const defaultsWithoutHighlights = { ...defaultsMeta };
       delete defaultsWithoutHighlights.headline_highlights;
       delete defaultsWithoutHighlights.body_highlights;
-      const merged = { ...clearPreviousTemplateOverrides(existingMeta), ...defaultsWithoutHighlights };
+      const merged = { ...clearPreviousTemplateOverrides(existingMeta), ...defaultsWithoutHighlights } as Record<string, unknown>;
+      if (allowBlend && !templateAllowsImage) {
+        merged.allow_background_image_override = true;
+      }
+      if (noImageTemplateApplyClear || clearBackground) {
+        delete merged.allow_background_image_override;
+      }
       patch.meta = merged as Json;
+    } else if (allowBlend && !templateAllowsImage) {
+      patch.meta = { ...(patch.meta as Record<string, unknown>), allow_background_image_override: true } as Json;
     }
     await updateSlide(user.id, slideId, patch);
   }

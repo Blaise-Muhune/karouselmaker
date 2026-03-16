@@ -387,7 +387,10 @@ IMAGE DISPLAY (defaults.meta.image_display — shape, frame, position, PIP):
 - pipSize (0.25–1), pipRotation (-180–180), pipBorderRadius (0–72), pipX, pipY (0–100), imagePositionX, imagePositionY (0–100).
 - fit: "cover"|"contain". layout (multi-image): "auto"|"side-by-side"|"stacked"|"grid"|"overlay-circles". gap (0–48). dividerStyle?, dividerColor?, dividerWidth?. overlayCircleSize?, overlayCircleBorderWidth?, overlayCircleBorderColor?, overlayCircleX?, overlayCircleY?.
 
-Output valid JSON with every key from the list above that you can infer from the image. Omit only keys that do not apply. Keep all numbers in range. All colors hex.`;
+TEMPLATE NAME (optional but recommended):
+- name: a short suggested name for this template, 2–6 words, describing the design (e.g. "Green split LinkedIn", "Dark gradient with PIP", "Minimal white center"). The user will see this as the default name and can edit it before saving. Omit if the image is too generic.
+
+Output valid JSON with every key from the list above that you can infer from the image. Include "name" when you can describe the template in a few words. Omit only keys that do not apply. Keep all numbers in range. All colors hex.`;
 
 export type ImportTemplateFromImageResult =
   | { ok: true; config: TemplateConfig; suggestedName: string }
@@ -484,8 +487,9 @@ export async function importTemplateFromImageAction(
     }
 
     config = ensureTextZoneColors(config);
-    const suggestedName = "Imported from image";
-    console.log("[import-template] Success. Overlays.gradient:", config.overlays?.gradient?.enabled, config.overlays?.gradient?.direction);
+    const rawName = typeof obj?.name === "string" ? String(obj.name).trim() : "";
+    const suggestedName = rawName.length > 0 ? rawName.slice(0, 80) : "Imported from image";
+    console.log("[import-template] Success. Overlays.gradient:", config.overlays?.gradient?.enabled, config.overlays?.gradient?.direction, "suggestedName:", suggestedName);
     return { ok: true, config, suggestedName };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

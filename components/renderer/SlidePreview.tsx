@@ -6,7 +6,7 @@ import { getTextScaleForDimensions, normalizeTextZoneOverrides, type BrandKit, t
 import { getRoundedPolygonClipPath } from "@/lib/renderer/shapeClipPath";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { getContrastingTextColor, hexToRgba } from "@/lib/editor/colorUtils";
-import { parseInlineFormatting, HIGHLIGHT_COLORS, type HighlightSpan, type InlineSegment } from "@/lib/editor/inlineFormat";
+import { parseInlineFormatting, HIGHLIGHT_COLORS, stripHighlightMarkers, getFontSizeSegmentsForRange, getLineSubstringByPlainRange, type HighlightSpan, type InlineSegment } from "@/lib/editor/inlineFormat";
 import { Hand, ChevronsLeft, ChevronsRight, MoveHorizontal, GripHorizontal, Minus, Plus, ChevronDownIcon, SparklesIcon, Loader2Icon } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
@@ -209,6 +209,8 @@ export type SlidePreviewProps = {
   bodyBoldWeight?: number;
   /** When true, wrap background image in a bordered frame (nice separation for multi-image carousels). */
   borderedFrame?: boolean;
+  /** When true, show background image even if template has allowImage false (user chose "blend" for no-image template). */
+  allowBackgroundImageOverride?: boolean;
   /** Image display options: position, fit, frame, layout, gap, frameShape, dividerStyle, pip. */
   imageDisplay?: {
     position?: "center" | "top" | "bottom" | "left" | "right" | "top-left" | "top-right" | "bottom-left" | "bottom-right";
@@ -258,8 +260,8 @@ export type SlidePreviewProps = {
   /** When set, body is editable inline in the preview (editor only). */
   onBodyChange?: (value: string) => void;
   /** When set, font-size +/- applies to this selection only; otherwise applies to whole zone. */
-  headlineFontSizeSpans?: { start: number; end: number; fontSize: number }[];
-  bodyFontSizeSpans?: { start: number; end: number; fontSize: number }[];
+  headlineFontSizeSpans?: { start: number; end: number; fontSize: number }[] | undefined;
+  bodyFontSizeSpans?: { start: number; end: number; fontSize: number }[] | undefined;
   /** Which zone has focus (editor sets from focus/blur). Enables floating toolbar and drag. */
   focusedZone?: "headline" | "body" | null;
   onHeadlineFocus?: () => void;
@@ -484,10 +486,13 @@ export function SlidePreview({
   headlineBoldWeight = 700,
   bodyBoldWeight = 700,
   borderedFrame = false,
+  allowBackgroundImageOverride,
   imageDisplay,
   exportSize,
   headline_highlights,
   body_highlights,
+  headlineFontSizeSpans,
+  bodyFontSizeSpans,
   className = "",
   onHeadlineChange,
   onBodyChange,
@@ -918,7 +923,7 @@ export function SlidePreview({
       ? backgroundOverride.gradientOn
       : model.background.useGradient;
 
-  const allowImage = templateConfig.backgroundRules?.allowImage ?? true;
+  const allowImage = allowBackgroundImageOverride === true || (templateConfig.backgroundRules?.allowImage ?? true);
   const rawBgImageUrl = backgroundImageUrl ?? model.background.backgroundImageUrl;
   const rawMultiImages = (backgroundImageUrls?.length ?? 0) >= 2 ? backgroundImageUrls : null;
   const bgImageUrl = allowImage ? rawBgImageUrl : undefined;
@@ -1796,6 +1801,19 @@ export function SlidePreview({
           padding: "0 1px",
           display: "inline" as const,
         };
+        const zoneFontSizeSpans = block.zone.id === "headline" ? headlineFontSizeSpans : block.zone.id === "body" ? bodyFontSizeSpans : undefined;
+        const useFontSizeSpans = !!zoneFontSizeSpans?.length;
+        const linePlainStarts: number[] = useFontSizeSpans
+          ? (() => {
+              const starts: number[] = [];
+              let acc = 0;
+              for (const ln of block.lines) {
+                starts.push(acc);
+                acc += stripHighlightMarkers(ln).length;
+              }
+              return starts;
+            })()
+          : [];
         const readOnlyBlockContent = block.lines.map((line, i) => {
           const segments = parseInlineFormatting(line);
           /** Render content that may contain **bold** inside a color span (so bold shows when both highlight and bold apply). */
@@ -1883,19 +1901,36 @@ export function SlidePreview({
             );
           };
           const items: ReactNode[] = [];
-          for (let j = 0; j < segments.length; j++) {
-            const seg = segments[j]!;
-            const isShort = seg.text.length <= 2;
-            if (isShort && j + 1 < segments.length) {
+          if (useFontSizeSpans && zoneFontSizeSpans) {
+            const linePlainStart = linePlainStarts[i] ?? 0;
+            const linePlainEnd = linePlainStart + stripHighlightMarkers(line).length;
+            const fontSizeSegs = getFontSizeSegmentsForRange(linePlainStart, linePlainEnd, zoneFontSizeSpans, baseFontSize);
+            for (let si = 0; si < fontSizeSegs.length; si++) {
+              const fs = fontSizeSegs[si]!;
+              const subLine = getLineSubstringByPlainRange(line, fs.start, fs.end);
+              const subSegments = parseInlineFormatting(subLine);
+              const scaledFontSize = Math.round(fs.fontSize * textScale);
               items.push(
-                <span key={j} style={{ whiteSpace: "nowrap" }}>
-                  {renderSeg(seg, j)}
-                  {renderSeg(segments[j + 1]!, j + 1)}
+                <span key={si} style={{ fontSize: scaledFontSize, display: "inline" }}>
+                  {subSegments.map((sub, j) => renderSeg(sub, si * 1000 + j))}
                 </span>
               );
-              j++;
-            } else {
-              items.push(renderSeg(seg, j));
+            }
+          } else {
+            for (let j = 0; j < segments.length; j++) {
+              const seg = segments[j]!;
+              const isShort = seg.text.length <= 2;
+              if (isShort && j + 1 < segments.length) {
+                items.push(
+                  <span key={j} style={{ whiteSpace: "nowrap" }}>
+                    {renderSeg(seg, j)}
+                    {renderSeg(segments[j + 1]!, j + 1)}
+                  </span>
+                );
+                j++;
+              } else {
+                items.push(renderSeg(seg, j));
+              }
             }
           }
           return (
@@ -1927,7 +1962,7 @@ export function SlidePreview({
         } : undefined;
         const readOnlyBlockEl = (
           <div
-            className={`absolute flex flex-col justify-center shrink-0 ${zoneRotation !== 0 ? "" : "overflow-hidden"}`}
+            className="absolute flex flex-col justify-center shrink-0 overflow-visible"
             style={{
               ...readOnlyBlockStyles,
               left: block.zone.x,
@@ -2009,7 +2044,7 @@ export function SlidePreview({
           const zoneBoxContent = positionAndSizeOnly ? (
             <>
               <div
-                className="absolute inset-0 flex min-w-0 flex-col justify-center box-border overflow-hidden cursor-pointer"
+                className="absolute inset-0 flex min-w-0 flex-col justify-center box-border overflow-visible cursor-pointer"
                 style={{
                   zIndex: 0,
                   ...readOnlyBlockStyles,
@@ -2032,7 +2067,7 @@ export function SlidePreview({
           ) : (
             <>
                 <div
-                  className="absolute inset-0 flex min-w-0 flex-col justify-center box-border overflow-hidden"
+                  className="absolute inset-0 flex min-w-0 flex-col justify-center box-border overflow-visible"
                   style={{ zIndex: 0, padding: 0, margin: 0 }}
                 >
                   <textarea
@@ -2092,16 +2127,14 @@ export function SlidePreview({
           ) : null;
           const headlineZoneBoxEl = (
             <div
-              className={`rounded-sm transition-shadow ${isFocused ? "ring-2 ring-primary/80 shadow-lg" : ""}`}
+              className={`rounded-sm transition-shadow overflow-visible ${isFocused ? "ring-2 ring-primary/80 shadow-lg" : ""}`}
               style={{
                 position: "absolute",
                 left: zoneRotation !== 0 ? 0 : block.zone.x + offX,
                 top: zoneRotation !== 0 ? DRAG_HANDLE_H : block.zone.y + offY,
                 ...zoneBoxStyle,
-                ...(zoneRotation !== 0 && {
-                  overflow: "visible",
-                  backfaceVisibility: "hidden",
-                }),
+                overflow: "visible",
+                ...(zoneRotation !== 0 && { backfaceVisibility: "hidden" }),
               }}
             >
               {zoneBoxContent}
@@ -2432,7 +2465,7 @@ export function SlidePreview({
             <>
               {positionAndSizeOnly ? (
                 <div
-                  className="absolute inset-0 flex min-w-0 flex-col justify-center box-border overflow-hidden cursor-pointer"
+                  className="absolute inset-0 flex min-w-0 flex-col justify-center box-border overflow-visible cursor-pointer"
                   style={{
                     zIndex: 0,
                     ...readOnlyBlockStyles,
@@ -2451,7 +2484,7 @@ export function SlidePreview({
                   {readOnlyBlockContent}
                 </div>
               ) : (
-                <div className="absolute inset-0 flex min-w-0 flex-col justify-center box-border overflow-hidden" style={{ zIndex: 0, padding: 0, margin: 0 }}>
+                <div className="absolute inset-0 flex min-w-0 flex-col justify-center box-border overflow-visible" style={{ zIndex: 0, padding: 0, margin: 0 }}>
                   <textarea
                     ref={bodyTextareaRef}
                     value={slide.body ?? ""}
@@ -2488,16 +2521,14 @@ export function SlidePreview({
           );
           const bodyZoneBoxEl = (
             <div
-              className={`rounded-sm transition-shadow ${isFocused ? "ring-2 ring-primary/80 shadow-lg" : ""}`}
+              className={`rounded-sm transition-shadow overflow-visible ${isFocused ? "ring-2 ring-primary/80 shadow-lg" : ""}`}
               style={{
                 position: "absolute",
                 left: zoneRotation !== 0 ? 0 : block.zone.x + offX,
                 top: zoneRotation !== 0 ? BODY_DRAG_HANDLE_H : block.zone.y + offY,
                 ...bodyZoneBoxStyle,
-                ...(zoneRotation !== 0 && {
-                  overflow: "visible",
-                  backfaceVisibility: "hidden",
-                }),
+                overflow: "visible",
+                ...(zoneRotation !== 0 && { backfaceVisibility: "hidden" }),
               }}
             >
               {bodyZoneBoxContent}

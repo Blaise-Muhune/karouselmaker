@@ -447,6 +447,8 @@ export async function POST(
           highlightStyles,
           merged.outlineStrokes,
           merged.boldWeights,
+          (slide.meta as { headline_font_size_spans?: { start: number; end: number; fontSize: number }[] })?.headline_font_size_spans,
+          (slide.meta as { body_font_size_spans?: { start: number; end: number; fontSize: number }[] })?.body_font_size_spans,
           borderedFrame,
           imageDisplayParam,
           dimensions

@@ -247,9 +247,9 @@ export function TemplateSelectCards({
                 templateConfig={t.parsedConfig}
                 brandKit={brandKit}
                 totalSlides={8}
-                backgroundImageUrl={getPreviewImage(idx + 1)}
+                backgroundImageUrl={t.parsedConfig.backgroundRules?.allowImage === false ? undefined : getPreviewImage(idx + 1)}
                 backgroundOverride={
-                  !getPreviewImage(idx + 1)
+                  t.parsedConfig.backgroundRules?.allowImage === false || !getPreviewImage(idx + 1)
                     ? getTemplatePreviewBackgroundOverride(t.parsedConfig)
                     : t.category === "linkedin"
                       ? getLinkedInPreviewOverlayOverride(t.parsedConfig)
@@ -338,9 +338,9 @@ export function TemplateSelectCards({
                 templateConfig={defaultTemplateConfig}
                 brandKit={brandKit}
                 totalSlides={8}
-                backgroundImageUrl={previewImageUrl}
+                backgroundImageUrl={defaultTemplateConfig.backgroundRules?.allowImage === false ? undefined : previewImageUrl}
                 backgroundOverride={
-                  !previewImageUrl
+                  defaultTemplateConfig.backgroundRules?.allowImage === false || !previewImageUrl
                     ? getTemplatePreviewBackgroundOverride(defaultTemplateConfig)
                     : isDefaultLinkedIn
                       ? getLinkedInPreviewOverlayOverride(defaultTemplateConfig)

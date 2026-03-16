@@ -1,7 +1,7 @@
 import { buildSlideRenderModel, getTextScaleForDimensions, type BrandKit, type SlideData, type TextZoneOverrides, type ChromeOverrides } from "@/lib/renderer/renderModel";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { getContrastingTextColor, hexToRgba } from "@/lib/editor/colorUtils";
-import { parseInlineFormatting, BOLD_FONT_WEIGHT } from "@/lib/editor/inlineFormat";
+import { parseInlineFormatting, BOLD_FONT_WEIGHT, stripHighlightMarkers, getFontSizeSegmentsForRange, getLineSubstringByPlainRange } from "@/lib/editor/inlineFormat";
 import { getRoundedPolygonClipPath } from "@/lib/renderer/shapeClipPath";
 
 /** Hook slide second image: circle with thick border (matches SlidePreview). */
@@ -219,6 +219,10 @@ export function renderSlideHtml(
   outlineStrokes?: { headline?: number; body?: number },
   /** Font weight for **bold** segments. Default 700. */
   boldWeights?: { headline?: number; body?: number },
+  /** Per-selection font sizes for headline (plain-text indices). When set, each line is split into segments by these spans. */
+  headlineFontSizeSpans?: { start: number; end: number; fontSize: number }[],
+  /** Per-selection font sizes for body (plain-text indices). */
+  bodyFontSizeSpans?: { start: number; end: number; fontSize: number }[],
   /** When true, wrap background image in a bordered frame. */
   borderedFrame?: boolean,
   /** Image display options: position, fit, frame, layout, gap, frameShape, dividerStyle, pip. */
@@ -412,7 +416,35 @@ export function renderSlideHtml(
           const zoneAlign = block.zone.align ?? "left";
           const rotation = (block.zone as { rotation?: number }).rotation ?? 0;
           const transformCss = rotation !== 0 ? `transform:rotate(${rotation}deg) translateZ(0);transform-origin:50% 50%;` : "";
-          return `<div class="text-block" style="left:${block.zone.x}px;top:${block.zone.y}px;width:${block.zone.w}px;height:${block.zone.h}px;font-size:${fontSize}px;font-weight:${block.zone.fontWeight};line-height:${lineHeight};text-align:${zoneAlign};color:${escapeHtml(zoneColor)};font-family:${fontStack};z-index:5;${transformCss}">${block.lines.map((line) => `<span>${lineToHtml(line, zoneHighlightStyle, zoneColor, zoneOutlineStrokePx, zoneBoldWeight)}</span>`).join("")}</div>`;
+          const zoneFontSizeSpans = block.zone.id === "headline" ? headlineFontSizeSpans : block.zone.id === "body" ? bodyFontSizeSpans : undefined;
+          const useFontSizeSpans = !!zoneFontSizeSpans?.length;
+          const linePlainStarts: number[] = [];
+          if (useFontSizeSpans) {
+            let acc = 0;
+            for (const ln of block.lines) {
+              linePlainStarts.push(acc);
+              acc += stripHighlightMarkers(ln).length;
+            }
+          }
+          const linesHtml = block.lines
+            .map((line, i) => {
+              if (useFontSizeSpans && zoneFontSizeSpans) {
+                const linePlainStart = linePlainStarts[i] ?? 0;
+                const linePlainEnd = linePlainStart + stripHighlightMarkers(line).length;
+                const segs = getFontSizeSegmentsForRange(linePlainStart, linePlainEnd, zoneFontSizeSpans, block.zone.fontSize);
+                return segs
+                  .map((fs) => {
+                    const subLine = getLineSubstringByPlainRange(line, fs.start, fs.end);
+                    const segFontSize = Math.round(fs.fontSize * effectiveTextScale);
+                    return `<span style="font-size:${segFontSize}px">${lineToHtml(subLine, zoneHighlightStyle, zoneColor, zoneOutlineStrokePx, zoneBoldWeight)}</span>`;
+                  })
+                  .join("");
+              }
+              return lineToHtml(line, zoneHighlightStyle, zoneColor, zoneOutlineStrokePx, zoneBoldWeight);
+            })
+            .map((lineHtml) => `<span>${lineHtml}</span>`)
+            .join("");
+          return `<div class="text-block" style="left:${block.zone.x}px;top:${block.zone.y}px;width:${block.zone.w}px;height:${block.zone.h}px;font-size:${fontSize}px;font-weight:${block.zone.fontWeight};line-height:${lineHeight};text-align:${zoneAlign};color:${escapeHtml(zoneColor)};font-family:${fontStack};z-index:5;${transformCss}">${linesHtml}</div>`;
         })
         .join("");
 
