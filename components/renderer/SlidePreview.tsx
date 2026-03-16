@@ -257,6 +257,9 @@ export type SlidePreviewProps = {
   onHeadlineChange?: (value: string) => void;
   /** When set, body is editable inline in the preview (editor only). */
   onBodyChange?: (value: string) => void;
+  /** When set, font-size +/- applies to this selection only; otherwise applies to whole zone. */
+  headlineFontSizeSpans?: { start: number; end: number; fontSize: number }[];
+  bodyFontSizeSpans?: { start: number; end: number; fontSize: number }[];
   /** Which zone has focus (editor sets from focus/blur). Enables floating toolbar and drag. */
   focusedZone?: "headline" | "body" | null;
   onHeadlineFocus?: () => void;
@@ -273,7 +276,8 @@ export type SlidePreviewProps = {
     fontWeight: number;
     width: number;
     height: number;
-    onFontSizeChange: (v: number) => void;
+    /** newValue = new font size; selection = when set, apply to that range only, else apply to whole zone. */
+    onFontSizeChange: (newValue: number, selection?: { start: number; end: number } | null) => void;
     onFontWeightChange: (v: number) => void;
     onWidthChange: (v: number) => void;
     onHeightChange: (v: number) => void;
@@ -301,7 +305,8 @@ export type SlidePreviewProps = {
     fontWeight: number;
     width: number;
     height: number;
-    onFontSizeChange: (v: number) => void;
+    /** newValue = new font size; selection = when set, apply to that range only, else apply to whole zone. */
+    onFontSizeChange: (newValue: number, selection?: { start: number; end: number } | null) => void;
     onFontWeightChange: (v: number) => void;
     onWidthChange: (v: number) => void;
     onHeightChange: (v: number) => void;
@@ -2151,7 +2156,11 @@ export function SlidePreview({
                     <span className="text-xs font-medium text-white/80 uppercase tracking-wide w-8">Size</span>
                     <button
                       type="button"
-                      onClick={() => editToolbarHeadline.onFontSizeChange(Math.max(12, editToolbarHeadline.fontSize - 2))}
+                      onClick={() => {
+                        const el = headlineTextareaRef.current;
+                        const sel = el && el.selectionStart !== el.selectionEnd ? { start: el.selectionStart, end: el.selectionEnd } : null;
+                        editToolbarHeadline.onFontSizeChange(Math.max(12, editToolbarHeadline.fontSize - 2), sel);
+                      }}
                       className="rounded-md border border-white/30 bg-white/20 p-2 text-white hover:bg-white/30"
                       aria-label="Decrease size"
                     >
@@ -2160,7 +2169,11 @@ export function SlidePreview({
                     <span className="min-w-9 text-center text-sm font-medium text-white tabular-nums">{editToolbarHeadline.fontSize}</span>
                     <button
                       type="button"
-                      onClick={() => editToolbarHeadline.onFontSizeChange(Math.min(120, editToolbarHeadline.fontSize + 2))}
+                      onClick={() => {
+                        const el = headlineTextareaRef.current;
+                        const sel = el && el.selectionStart !== el.selectionEnd ? { start: el.selectionStart, end: el.selectionEnd } : null;
+                        editToolbarHeadline.onFontSizeChange(Math.min(120, editToolbarHeadline.fontSize + 2), sel);
+                      }}
                       className="rounded-md border border-white/30 bg-white/20 p-2 text-white hover:bg-white/30"
                       aria-label="Increase size"
                     >
@@ -2539,7 +2552,11 @@ export function SlidePreview({
                     <span className="text-xs font-medium text-white/80 uppercase tracking-wide w-8">Size</span>
                     <button
                       type="button"
-                      onClick={() => editToolbarBody.onFontSizeChange(Math.max(12, editToolbarBody.fontSize - 2))}
+                      onClick={() => {
+                        const el = bodyTextareaRef.current;
+                        const sel = el && el.selectionStart !== el.selectionEnd ? { start: el.selectionStart, end: el.selectionEnd } : null;
+                        editToolbarBody.onFontSizeChange(Math.max(12, editToolbarBody.fontSize - 2), sel);
+                      }}
                       className="rounded-md border border-white/30 bg-white/20 p-2 text-white hover:bg-white/30"
                       aria-label="Decrease size"
                     >
@@ -2548,7 +2565,11 @@ export function SlidePreview({
                     <span className="min-w-9 text-center text-sm font-medium text-white tabular-nums">{editToolbarBody.fontSize}</span>
                     <button
                       type="button"
-                      onClick={() => editToolbarBody.onFontSizeChange(Math.min(96, editToolbarBody.fontSize + 2))}
+                      onClick={() => {
+                        const el = bodyTextareaRef.current;
+                        const sel = el && el.selectionStart !== el.selectionEnd ? { start: el.selectionStart, end: el.selectionEnd } : null;
+                        editToolbarBody.onFontSizeChange(Math.min(96, editToolbarBody.fontSize + 2), sel);
+                      }}
                       className="rounded-md border border-white/30 bg-white/20 p-2 text-white hover:bg-white/30"
                       aria-label="Increase size"
                     >

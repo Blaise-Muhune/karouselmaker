@@ -830,6 +830,34 @@ export function SlideEditForm({
     const m = slide.meta as { body_highlights?: HighlightSpan[] } | null;
     return Array.isArray(m?.body_highlights) ? m.body_highlights : [];
   });
+  type FontSizeSpan = { start: number; end: number; fontSize: number };
+  const [headlineFontSizeSpans, setHeadlineFontSizeSpans] = useState<FontSizeSpan[]>(() => {
+    const m = slide.meta as { headline_font_size_spans?: FontSizeSpan[] } | null;
+    return Array.isArray(m?.headline_font_size_spans) ? m.headline_font_size_spans : [];
+  });
+  const [bodyFontSizeSpans, setBodyFontSizeSpans] = useState<FontSizeSpan[]>(() => {
+    const m = slide.meta as { body_font_size_spans?: FontSizeSpan[] } | null;
+    return Array.isArray(m?.body_font_size_spans) ? m.body_font_size_spans : [];
+  });
+  /** Set a font-size span for a range; removes overlapping spans and merges adjacent same-size. */
+  const setFontSizeSpanForRange = useCallback(
+    (spans: FontSizeSpan[], textLen: number, start: number, end: number, fontSize: number): FontSizeSpan[] => {
+      const s = Math.max(0, Math.min(start, textLen));
+      const e = Math.max(s, Math.min(end, textLen));
+      if (s >= e) return spans;
+      const filtered = spans.filter((sp) => sp.end <= s || sp.start >= e);
+      const next = [...filtered, { start: s, end: e, fontSize: Math.max(8, Math.min(200, Math.round(fontSize))) }].sort((a, b) => a.start - b.start);
+      const merged: FontSizeSpan[] = [];
+      for (const sp of next) {
+        const last = merged[merged.length - 1];
+        if (last && last.end === sp.start && last.fontSize === sp.fontSize) {
+          merged[merged.length - 1] = { ...last, end: sp.end };
+        } else merged.push(sp);
+      }
+      return merged;
+    },
+    []
+  );
   /** Color used for Auto and for "Apply to all highlights". Default: project logo color if valid hex, else yellow. */
   const defaultHighlightColor =
     (typeof brandKit.primary_color === "string" &&
@@ -1164,6 +1192,28 @@ export function SlideEditForm({
       setBodyHighlights(clamped);
     }
   }, [body, bodyHighlights]);
+
+  // Clamp font-size spans to current text length so indices stay valid.
+  useEffect(() => {
+    if (headlineFontSizeSpans.length === 0) return;
+    const len = headline.length;
+    const clamped = headlineFontSizeSpans
+      .map((sp) => ({ start: Math.max(0, Math.min(sp.start, len)), end: Math.max(0, Math.min(sp.end, len)), fontSize: sp.fontSize }))
+      .filter((sp) => sp.end > sp.start);
+    if (clamped.length !== headlineFontSizeSpans.length || clamped.some((c, i) => c.start !== headlineFontSizeSpans[i]?.start || c.end !== headlineFontSizeSpans[i]?.end)) {
+      setHeadlineFontSizeSpans(clamped);
+    }
+  }, [headline, headlineFontSizeSpans]);
+  useEffect(() => {
+    if (bodyFontSizeSpans.length === 0) return;
+    const len = (body ?? "").length;
+    const clamped = bodyFontSizeSpans
+      .map((sp) => ({ start: Math.max(0, Math.min(sp.start, len)), end: Math.max(0, Math.min(sp.end, len)), fontSize: sp.fontSize }))
+      .filter((sp) => sp.end > sp.start);
+    if (clamped.length !== bodyFontSizeSpans.length || clamped.some((c, i) => c.start !== bodyFontSizeSpans[i]?.start || c.end !== bodyFontSizeSpans[i]?.end)) {
+      setBodyFontSizeSpans(clamped);
+    }
+  }, [body, bodyFontSizeSpans]);
 
   useEffect(() => {
     return () => {
@@ -1799,6 +1849,8 @@ export function SlideEditForm({
             const norm = normalizeHighlightSpansToWords(body, bodyHighlights);
             return norm.length > 0 ? { body_highlights: norm } : {};
           })(),
+          ...(headlineFontSizeSpans.length > 0 ? { headline_font_size_spans: headlineFontSizeSpans } : {}),
+          ...(bodyFontSizeSpans.length > 0 ? { body_font_size_spans: bodyFontSizeSpans } : {}),
         },
       },
       editorPath
@@ -2946,6 +2998,8 @@ export function SlideEditForm({
                 bodyBoldWeight={bodyBoldWeight}
                 headline_highlights={headlineHighlights.length > 0 ? headlineHighlights : undefined}
                 body_highlights={bodyHighlights.length > 0 ? bodyHighlights : undefined}
+                headlineFontSizeSpans={headlineFontSizeSpans.length > 0 ? headlineFontSizeSpans : undefined}
+                bodyFontSizeSpans={bodyFontSizeSpans.length > 0 ? bodyFontSizeSpans : undefined}
                 borderedFrame={!!(previewBackgroundImageUrl || previewBackgroundImageUrls?.length)}
                 imageDisplay={isImageMode ? effectiveImageDisplay : undefined}
                 exportSize={exportSize}
@@ -3009,12 +3063,18 @@ export function SlideEditForm({
                         fontWeight: headlineZoneOverride?.fontWeight ?? headlineZoneFromTemplate?.fontWeight ?? 600,
                         width: headlineZoneOverride?.w ?? headlineZoneFromTemplate?.w ?? 920,
                         height: headlineZoneOverride?.h ?? headlineZoneFromTemplate?.h ?? 340,
-                        onFontSizeChange: (v) => setHeadlineZoneOverride((prev) => {
-                          const base = headlineZoneFromTemplate;
-                          const h = prev?.h ?? base?.h ?? 340;
-                          const lh = prev?.lineHeight ?? base?.lineHeight ?? 1.2;
-                          return { ...headlineZoneFromTemplate, ...prev, fontSize: v, maxLines: computeMaxLinesForZone(h, v, lh) };
-                        }),
+                        onFontSizeChange: (v, selection) => {
+                          if (selection && selection.start < selection.end) {
+                            setHeadlineFontSizeSpans((prev) => setFontSizeSpanForRange(prev, headline.length, selection.start, selection.end, v));
+                          } else {
+                            setHeadlineZoneOverride((prev) => {
+                              const base = headlineZoneFromTemplate;
+                              const h = prev?.h ?? base?.h ?? 340;
+                              const lh = prev?.lineHeight ?? base?.lineHeight ?? 1.2;
+                              return { ...headlineZoneFromTemplate, ...prev, fontSize: v, maxLines: computeMaxLinesForZone(h, v, lh) };
+                            });
+                          }
+                        },
                         onFontWeightChange: (v) => setHeadlineZoneOverride((prev) => ({ ...headlineZoneFromTemplate, ...prev, fontWeight: v })),
                         onWidthChange: (v) => setHeadlineZoneOverride((prev) => ({ ...headlineZoneFromTemplate, ...prev, w: Math.min(1080, Math.max(200, v)) })),
                         onHeightChange: (v) => {
@@ -3050,12 +3110,18 @@ export function SlideEditForm({
                         fontWeight: bodyZoneOverride?.fontWeight ?? bodyZoneFromTemplate?.fontWeight ?? 500,
                         width: bodyZoneOverride?.w ?? bodyZoneFromTemplate?.w ?? 920,
                         height: bodyZoneOverride?.h ?? bodyZoneFromTemplate?.h ?? 220,
-                        onFontSizeChange: (v) => setBodyZoneOverride((prev) => {
-                          const base = bodyZoneFromTemplate;
-                          const h = prev?.h ?? base?.h ?? 220;
-                          const lh = prev?.lineHeight ?? base?.lineHeight ?? 1.3;
-                          return { ...bodyZoneFromTemplate, ...prev, fontSize: v, maxLines: computeMaxLinesForZone(h, v, lh) };
-                        }),
+                        onFontSizeChange: (v, selection) => {
+                          if (selection && selection.start < selection.end) {
+                            setBodyFontSizeSpans((prev) => setFontSizeSpanForRange(prev, (body ?? "").length, selection.start, selection.end, v));
+                          } else {
+                            setBodyZoneOverride((prev) => {
+                              const base = bodyZoneFromTemplate;
+                              const h = prev?.h ?? base?.h ?? 220;
+                              const lh = prev?.lineHeight ?? base?.lineHeight ?? 1.3;
+                              return { ...bodyZoneFromTemplate, ...prev, fontSize: v, maxLines: computeMaxLinesForZone(h, v, lh) };
+                            });
+                          }
+                        },
                         onFontWeightChange: (v) => setBodyZoneOverride((prev) => ({ ...bodyZoneFromTemplate, ...prev, fontWeight: v })),
                         onWidthChange: (v) => setBodyZoneOverride((prev) => ({ ...bodyZoneFromTemplate, ...prev, w: Math.min(1080, Math.max(200, v)) })),
                         onHeightChange: (v) => {
@@ -3595,6 +3661,8 @@ export function SlideEditForm({
                         bodyBoldWeight={bodyBoldWeight}
                         headline_highlights={headlineHighlights.length > 0 ? headlineHighlights : undefined}
                         body_highlights={bodyHighlights.length > 0 ? bodyHighlights : undefined}
+                        headlineFontSizeSpans={headlineFontSizeSpans.length > 0 ? headlineFontSizeSpans : undefined}
+                        bodyFontSizeSpans={bodyFontSizeSpans.length > 0 ? bodyFontSizeSpans : undefined}
                         borderedFrame={!!(previewBackgroundImageUrl || previewBackgroundImageUrls?.length)}
                         imageDisplay={isImageMode ? effectiveImageDisplay : undefined}
                         exportSize={exportSize}
@@ -3658,12 +3726,18 @@ export function SlideEditForm({
                                 fontWeight: headlineZoneOverride?.fontWeight ?? headlineZoneFromTemplate?.fontWeight ?? 600,
                                 width: headlineZoneOverride?.w ?? headlineZoneFromTemplate?.w ?? 920,
                                 height: headlineZoneOverride?.h ?? headlineZoneFromTemplate?.h ?? 340,
-                                onFontSizeChange: (v) => setHeadlineZoneOverride((prev) => {
-                                  const base = headlineZoneFromTemplate;
-                                  const h = prev?.h ?? base?.h ?? 340;
-                                  const lh = prev?.lineHeight ?? base?.lineHeight ?? 1.2;
-                                  return { ...headlineZoneFromTemplate, ...prev, fontSize: v, maxLines: computeMaxLinesForZone(h, v, lh) };
-                                }),
+                                onFontSizeChange: (v, selection) => {
+                                  if (selection && selection.start < selection.end) {
+                                    setHeadlineFontSizeSpans((prev) => setFontSizeSpanForRange(prev, headline.length, selection.start, selection.end, v));
+                                  } else {
+                                    setHeadlineZoneOverride((prev) => {
+                                      const base = headlineZoneFromTemplate;
+                                      const h = prev?.h ?? base?.h ?? 340;
+                                      const lh = prev?.lineHeight ?? base?.lineHeight ?? 1.2;
+                                      return { ...headlineZoneFromTemplate, ...prev, fontSize: v, maxLines: computeMaxLinesForZone(h, v, lh) };
+                                    });
+                                  }
+                                },
                                 onFontWeightChange: (v) => setHeadlineZoneOverride((prev) => ({ ...headlineZoneFromTemplate, ...prev, fontWeight: v })),
                                 onWidthChange: (v) => setHeadlineZoneOverride((prev) => ({ ...headlineZoneFromTemplate, ...prev, w: Math.min(1080, Math.max(200, v)) })),
                                 onHeightChange: (v) => {
@@ -3699,12 +3773,18 @@ export function SlideEditForm({
                                 fontWeight: bodyZoneOverride?.fontWeight ?? bodyZoneFromTemplate?.fontWeight ?? 500,
                                 width: bodyZoneOverride?.w ?? bodyZoneFromTemplate?.w ?? 920,
                                 height: bodyZoneOverride?.h ?? bodyZoneFromTemplate?.h ?? 220,
-                                onFontSizeChange: (v) => setBodyZoneOverride((prev) => {
-                                  const base = bodyZoneFromTemplate;
-                                  const h = prev?.h ?? base?.h ?? 220;
-                                  const lh = prev?.lineHeight ?? base?.lineHeight ?? 1.3;
-                                  return { ...bodyZoneFromTemplate, ...prev, fontSize: v, maxLines: computeMaxLinesForZone(h, v, lh) };
-                                }),
+                                onFontSizeChange: (v, selection) => {
+                                  if (selection && selection.start < selection.end) {
+                                    setBodyFontSizeSpans((prev) => setFontSizeSpanForRange(prev, (body ?? "").length, selection.start, selection.end, v));
+                                  } else {
+                                    setBodyZoneOverride((prev) => {
+                                      const base = bodyZoneFromTemplate;
+                                      const h = prev?.h ?? base?.h ?? 220;
+                                      const lh = prev?.lineHeight ?? base?.lineHeight ?? 1.3;
+                                      return { ...bodyZoneFromTemplate, ...prev, fontSize: v, maxLines: computeMaxLinesForZone(h, v, lh) };
+                                    });
+                                  }
+                                },
                                 onFontWeightChange: (v) => setBodyZoneOverride((prev) => ({ ...bodyZoneFromTemplate, ...prev, fontWeight: v })),
                                 onWidthChange: (v) => setBodyZoneOverride((prev) => ({ ...bodyZoneFromTemplate, ...prev, w: Math.min(1080, Math.max(200, v)) })),
                                 onHeightChange: (v) => {

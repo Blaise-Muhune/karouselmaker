@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useIsStandalonePWA } from "@/lib/hooks/useIsStandalonePWA";
@@ -17,6 +17,8 @@ import {
   createVideoFromImages,
   createVideoFromLayeredSlides,
   preloadFFmpeg,
+  getMediaDuration,
+  extractAudioForSoundEffect,
   type CaptionPosition,
   type LayeredSlideInput,
 } from "@/lib/video/createVideoFromImages";
@@ -54,8 +56,24 @@ export type SoundEffectPreset = "riser" | "whoosh" | "impact";
 export type SoundEffectItem = {
   id: string;
   name: string;
-  preset: SoundEffectPreset;
+  preset?: SoundEffectPreset;
+  /** User-uploaded: storage path and duration (saved to DB, ≤7s). */
+  storage_path?: string;
+  duration_sec?: number;
+  role?: "intro" | "transition";
 };
+
+/** Row from GET /api/sound-effects (user-uploaded, saved to DB). */
+export type UserSoundEffectRow = {
+  id: string;
+  name: string;
+  storage_path: string;
+  duration_sec: number;
+  role: "intro" | "transition";
+  created_at: string;
+};
+
+const MAX_SFX_DURATION_SEC = 7;
 
 const DEFAULT_SOUND_EFFECTS: SoundEffectItem[] = [
   { id: "se-riser", name: "Riser", preset: "riser" },
@@ -179,13 +197,30 @@ export function EditorExportSection({
   const [captionPosition, setCaptionPosition] = useState<CaptionPosition>("safe_lower");
   const [withCaption, setWithCaption] = useState(false);
   const [withSoundEffects, setWithSoundEffects] = useState(true);
-  const [soundEffectList, setSoundEffectList] = useState<SoundEffectItem[]>(() => [...DEFAULT_SOUND_EFFECTS]);
+  const [customSoundEffects, setCustomSoundEffects] = useState<UserSoundEffectRow[]>([]);
+  const [soundEffectList, setSoundEffectList] = useState<SoundEffectItem[]>([]);
+  const allSoundEffects = useMemo<SoundEffectItem[]>(
+    () => [
+      ...DEFAULT_SOUND_EFFECTS,
+      ...customSoundEffects.map((c) => ({
+        id: c.id,
+        name: c.name,
+        storage_path: c.storage_path,
+        duration_sec: c.duration_sec,
+        role: c.role,
+      })),
+      ...soundEffectList,
+    ],
+    [customSoundEffects, soundEffectList]
+  );
   const [introSoundId, setIntroSoundId] = useState<string | null>(() => DEFAULT_SOUND_EFFECTS[0]!.id);
   const [transitionSoundId, setTransitionSoundId] = useState<string>(() => DEFAULT_SOUND_EFFECTS[1]!.id);
   const [addSfxOpen, setAddSfxOpen] = useState(false);
   const [addSfxName, setAddSfxName] = useState("");
   const [addSfxPreset, setAddSfxPreset] = useState<SoundEffectPreset>("whoosh");
   const [editingSfxId, setEditingSfxId] = useState<string | null>(null);
+  const [sfxUploading, setSfxUploading] = useState(false);
+  const [sfxUploadError, setSfxUploadError] = useState<string | null>(null);
   const [zipDownloading, setZipDownloading] = useState(false);
   const [withVoiceover, setWithVoiceover] = useState(true);
   const [selectedVoiceId, setSelectedVoiceId] = useState(ADAM_VOICE_ID);
@@ -220,13 +255,25 @@ export function EditorExportSection({
     if (!withVoiceover) setWithCaption(false);
   }, [withVoiceover]);
 
+  // Load user-uploaded sound effects (saved to DB, ≤7s audio or extracted from video)
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/sound-effects")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data: UserSoundEffectRow[]) => {
+        if (!cancelled) setCustomSoundEffects(Array.isArray(data) ? data : []);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   // Changing format or voice/caption/sound-effect settings invalidates the generated video; user must regenerate
   useEffect(() => {
     if (generatedVideoUrl) {
       setGeneratedVideoUrl(null);
       setGeneratedVideoBlob(null);
     }
-  }, [videoSize, withVoiceover, withCaption, withSoundEffects, introSoundId, transitionSoundId, soundEffectList, captionPosition, selectedVoiceId, voiceSpeed]);
+  }, [videoSize, withVoiceover, withCaption, withSoundEffects, introSoundId, transitionSoundId, allSoundEffects, captionPosition, selectedVoiceId, voiceSpeed]);
 
   /** Clean up stored export files when user navigates away or after delay. */
   const cleanupExportStorageRef = useRef<{ exportId: string; timeoutId: ReturnType<typeof setTimeout> } | null>(null);
@@ -395,6 +442,34 @@ export function EditorExportSection({
           if (withCaption) captionCues = ttsData.captionCues;
         }
       }
+      const introEff = allSoundEffects.find((e) => e.id === introSoundId);
+      const transitionEff = allSoundEffects.find((e) => e.id === transitionSoundId);
+      const useCustomIntro = !!(introEff?.storage_path);
+      const useCustomTransition = !!(transitionEff?.storage_path);
+      let customIntroBuffer: ArrayBuffer | undefined;
+      let customTransitionBuffer: ArrayBuffer | undefined;
+      let customIntroExt: "wav" | "mp3" = "wav";
+      let customTransitionExt: "wav" | "mp3" = "wav";
+      if (withVoiceover && withSoundEffects && (useCustomIntro || useCustomTransition)) {
+        if (useCustomIntro && introEff?.id) {
+          const urlRes = await fetch(`/api/sound-effects/${introEff.id}/url`);
+          if (urlRes.ok) {
+            const { url } = (await urlRes.json()) as { url: string };
+            const ab = await (await fetch(url)).arrayBuffer();
+            customIntroBuffer = ab;
+            customIntroExt = introEff.storage_path?.endsWith(".mp3") ? "mp3" : "wav";
+          }
+        }
+        if (useCustomTransition && transitionEff?.id) {
+          const urlRes = await fetch(`/api/sound-effects/${transitionEff.id}/url`);
+          if (urlRes.ok) {
+            const { url } = (await urlRes.json()) as { url: string };
+            const ab = await (await fetch(url)).arrayBuffer();
+            customTransitionBuffer = ab;
+            customTransitionExt = transitionEff.storage_path?.endsWith(".mp3") ? "mp3" : "wav";
+          }
+        }
+      }
       const blob = videoData?.every((s) => s.backgroundUrls?.length)
         ? await createVideoFromLayeredSlides(
             videoData,
@@ -407,14 +482,10 @@ export function EditorExportSection({
                   slideDurationsSec,
                   voiceSpeed,
                   soundEffects: withSoundEffects,
-                  soundEffectIntroRiser: (() => {
-                    const eff = soundEffectList.find((e) => e.id === introSoundId);
-                    return !!eff && eff.preset === "riser";
-                  })(),
-                  soundEffectTransition: (() => {
-                    const eff = soundEffectList.find((e) => e.id === transitionSoundId);
-                    return (eff?.preset === "impact" ? "impact" : "whoosh") as "whoosh" | "impact";
-                  })(),
+                  soundEffectIntroRiser: useCustomIntro || !!(introEff && introEff.preset === "riser"),
+                  soundEffectTransition: (transitionEff?.preset === "impact" ? "impact" : "whoosh") as "whoosh" | "impact",
+                  ...(customIntroBuffer && { customIntroAudioBuffer: customIntroBuffer, customIntroAudioExt: customIntroExt }),
+                  ...(customTransitionBuffer && { customTransitionAudioBuffer: customTransitionBuffer, customTransitionAudioExt: customTransitionExt }),
                   ...(withCaption && captionCues
                     ? { captionCues, captionPosition }
                     : {}),
@@ -693,6 +764,53 @@ export function EditorExportSection({
                                 </DialogHeader>
                                 <div className="grid gap-3 py-2">
                                   <div className="grid gap-1.5">
+                                    <Label className="text-sm">Upload audio or video (max {MAX_SFX_DURATION_SEC}s)</Label>
+                                    <input
+                                      type="file"
+                                      accept="audio/*,video/*"
+                                      className="file:mr-2 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-sm file:text-primary-foreground"
+                                      disabled={sfxUploading}
+                                      onChange={async (e) => {
+                                        const file = e.target.files?.[0];
+                                        e.target.value = "";
+                                        if (!file) return;
+                                        setSfxUploadError(null);
+                                        setSfxUploading(true);
+                                        try {
+                                          const duration = await getMediaDuration(file);
+                                          if (duration > MAX_SFX_DURATION_SEC) {
+                                            setSfxUploadError(`Max duration is ${MAX_SFX_DURATION_SEC} seconds. This file is ${duration.toFixed(1)}s.`);
+                                            return;
+                                          }
+                                          const { buffer, durationSec, ext } = await extractAudioForSoundEffect(file, setVideoDownloadStep);
+                                          const form = new FormData();
+                                          form.set("file", new Blob([buffer], { type: ext === "mp3" ? "audio/mpeg" : "audio/wav" }), ext === "mp3" ? "sound.mp3" : "sound.wav");
+                                          form.set("name", file.name.replace(/\.[^.]*$/, "") || "My sound");
+                                          form.set("role", addSfxPreset === "riser" ? "intro" : "transition"); // used when uploading so effect appears in correct dropdown
+                                          form.set("duration_sec", String(durationSec));
+                                          const res = await fetch("/api/sound-effects", { method: "POST", body: form });
+                                          if (!res.ok) {
+                                            const err = await res.json().catch(() => ({}));
+                                            throw new Error(err.error ?? "Upload failed");
+                                          }
+                                          const row = (await res.json()) as UserSoundEffectRow;
+                                          setCustomSoundEffects((prev) => [row, ...prev]);
+                                          setAddSfxOpen(false);
+                                        } catch (err) {
+                                          setSfxUploadError(err instanceof Error ? err.message : "Upload failed");
+                                        } finally {
+                                          setSfxUploading(false);
+                                        }
+                                      }}
+                                    />
+                                    {sfxUploading && <p className="text-xs text-muted-foreground flex items-center gap-1"><Loader2Icon className="size-3 animate-spin" /> Uploading…</p>}
+                                    {sfxUploadError && <p className="text-xs text-destructive">{sfxUploadError}</p>}
+                                  </div>
+                                  <div className="relative">
+                                    <div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div>
+                                    <div className="relative flex justify-center text-xs uppercase text-muted-foreground"><span className="bg-background px-2">Or add preset</span></div>
+                                  </div>
+                                  <div className="grid gap-1.5">
                                     <Label htmlFor="add-sfx-name" className="text-sm">Name</Label>
                                     <Input
                                       id="add-sfx-name"
@@ -716,7 +834,7 @@ export function EditorExportSection({
                                   </div>
                                 </div>
                                 <DialogFooter showCloseButton={false}>
-                                  <Button type="button" variant="outline" onClick={() => setAddSfxOpen(false)}>
+                                  <Button type="button" variant="outline" onClick={() => { setAddSfxOpen(false); setSfxUploadError(null); }}>
                                     Cancel
                                   </Button>
                                   <Button
@@ -729,22 +847,23 @@ export function EditorExportSection({
                                       ]);
                                       setAddSfxName("");
                                       setAddSfxPreset("whoosh");
+                                      setSfxUploadError(null);
                                       setAddSfxOpen(false);
                                     }}
                                   >
-                                    Add
+                                    Add preset
                                   </Button>
                                 </DialogFooter>
                               </DialogContent>
                             </Dialog>
                           </div>
                           <ul className="flex flex-col gap-1.5 max-h-32 overflow-y-auto rounded-md border bg-muted/30 p-2">
-                            {soundEffectList.map((sfx) => (
+                            {allSoundEffects.map((sfx) => (
                               <li key={sfx.id} className="flex items-center gap-2 text-sm">
-                                {editingSfxId === sfx.id ? (
+                                {editingSfxId === sfx.id && !sfx.storage_path ? (
                                   <Input
                                     className="h-7 flex-1 text-sm"
-                                    value={soundEffectList.find((e) => e.id === sfx.id)?.name ?? ""}
+                                    value={soundEffectList.find((e) => e.id === sfx.id)?.name ?? sfx.name}
                                     onChange={(e) =>
                                       setSoundEffectList((prev) =>
                                         prev.map((x) => (x.id === sfx.id ? { ...x, name: e.target.value } : x))
@@ -760,24 +879,28 @@ export function EditorExportSection({
                                   <button
                                     type="button"
                                     className="flex-1 min-w-0 text-left truncate rounded px-1.5 py-0.5 hover:bg-muted"
-                                    onClick={() => setEditingSfxId(sfx.id)}
-                                    title="Click to rename"
+                                    onClick={() => !sfx.storage_path && setEditingSfxId(sfx.id)}
+                                    title={sfx.storage_path ? "Uploaded sound" : "Click to rename"}
                                   >
                                     {sfx.name}
                                   </button>
                                 )}
-                                <span className="shrink-0 text-xs text-muted-foreground capitalize">{sfx.preset}</span>
+                                <span className="shrink-0 text-xs text-muted-foreground capitalize">{sfx.preset ?? (sfx.role === "intro" ? "intro" : "transition")}</span>
                                 <Button
                                   type="button"
                                   variant="ghost"
                                   size="icon"
                                   className="size-6 shrink-0"
-                                  disabled={soundEffectList.length <= 1 || videoDownloading}
+                                  disabled={allSoundEffects.length <= 1 || videoDownloading}
                                   onClick={() => {
-                                    const nextList = soundEffectList.filter((e) => e.id !== sfx.id);
-                                    setSoundEffectList(nextList);
-                                    if (introSoundId === sfx.id) setIntroSoundId(nextList.find((e) => e.preset === "riser")?.id ?? null);
-                                    if (transitionSoundId === sfx.id) setTransitionSoundId(nextList.find((e) => e.preset === "whoosh" || e.preset === "impact")?.id ?? "se-whoosh");
+                                    if (customSoundEffects.some((c) => c.id === sfx.id)) {
+                                      setCustomSoundEffects((prev) => prev.filter((e) => e.id !== sfx.id));
+                                    } else {
+                                      setSoundEffectList((prev) => prev.filter((e) => e.id !== sfx.id));
+                                    }
+                                    const next = allSoundEffects.filter((e) => e.id !== sfx.id);
+                                    if (introSoundId === sfx.id) setIntroSoundId(next.find((e) => e.preset === "riser" || e.role === "intro")?.id ?? null);
+                                    if (transitionSoundId === sfx.id) setTransitionSoundId(next.find((e) => e.preset === "whoosh" || e.preset === "impact" || e.role === "transition")?.id ?? "se-whoosh");
                                   }}
                                   title="Remove"
                                 >
@@ -800,7 +923,7 @@ export function EditorExportSection({
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="none">None</SelectItem>
-                              {soundEffectList.filter((e) => e.preset === "riser").map((e) => (
+                              {allSoundEffects.filter((e) => e.preset === "riser" || e.role === "intro").map((e) => (
                                 <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>
                               ))}
                             </SelectContent>
@@ -818,7 +941,7 @@ export function EditorExportSection({
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              {soundEffectList.filter((e) => e.preset === "whoosh" || e.preset === "impact").map((e) => (
+                              {allSoundEffects.filter((e) => e.preset === "whoosh" || e.preset === "impact" || e.role === "transition").map((e) => (
                                 <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>
                               ))}
                             </SelectContent>

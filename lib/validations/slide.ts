@@ -240,6 +240,10 @@ export const slideMetaSchema = z.object({
   headline_highlights: z.array(z.object({ start: z.number().int().min(0), end: z.number().int().min(0), color: z.string() })).optional(),
   /** Body highlight spans. */
   body_highlights: z.array(z.object({ start: z.number().int().min(0), end: z.number().int().min(0), color: z.string() })).optional(),
+  /** Headline font-size spans (plain text indices). Apply only to selected range when user changes size on selection. */
+  headline_font_size_spans: z.array(z.object({ start: z.number().int().min(0), end: z.number().int().min(0), fontSize: z.number().int().min(8).max(200) })).optional(),
+  /** Body font-size spans. */
+  body_font_size_spans: z.array(z.object({ start: z.number().int().min(0), end: z.number().int().min(0), fontSize: z.number().int().min(8).max(200) })).optional(),
 });
 
 export const updateSlideInputSchema = z.object({

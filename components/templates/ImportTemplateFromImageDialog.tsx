@@ -323,6 +323,8 @@ export function ImportTemplateFromImageDialog({
           const imageDisplay = getImageDisplayFromConfig(importedConfig);
           const isPip = imageDisplay?.mode === "pip";
           const isMultiImageLayout = imageDisplay?.layout && ["side-by-side", "stacked", "grid"].includes(imageDisplay.layout);
+          /** When template has no background image (e.g. text-on-solid from import), preview uses only the template background color to match "Your image". */
+          const templateHasNoImage = importedConfig.backgroundRules?.allowImage === false;
           const singleUrl = IMPORT_PREVIEW_UNSPLASH_URLS[0];
           const multiUrls = IMPORT_PREVIEW_UNSPLASH_URLS.slice(0, 3);
           return (
@@ -359,9 +361,9 @@ export function ImportTemplateFromImageDialog({
                         templateConfig={importedConfig}
                         brandKit={{ primary_color: "#0a0a0a" }}
                         totalSlides={8}
-                        backgroundImageUrl={!isMultiImageLayout ? singleUrl : undefined}
-                        backgroundImageUrls={isMultiImageLayout ? multiUrls : undefined}
-                        backgroundOverride={getTemplatePreviewOverlayOverride(importedConfig) ?? getTemplatePreviewBackgroundOverride(importedConfig)}
+                        backgroundImageUrl={templateHasNoImage ? undefined : (!isMultiImageLayout ? singleUrl : undefined)}
+                        backgroundImageUrls={templateHasNoImage ? undefined : (isMultiImageLayout ? multiUrls : undefined)}
+                        backgroundOverride={templateHasNoImage ? getTemplatePreviewBackgroundOverride(importedConfig) : (getTemplatePreviewOverlayOverride(importedConfig) ?? getTemplatePreviewBackgroundOverride(importedConfig))}
                         showCounterOverride={importedConfig.chrome?.showCounter ?? true}
                         showWatermarkOverride={importedConfig.chrome?.watermark?.enabled ?? false}
                         imageDisplay={imageDisplay}

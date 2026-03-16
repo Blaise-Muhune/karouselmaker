@@ -286,9 +286,16 @@ function normalizeToValidConfig(parsed: unknown): TemplateConfig {
   }
   const overlaysFromMerged = merged.overlays && typeof merged.overlays === "object" ? merged.overlays : fullDefault.overlays;
   const defaultsFromMerged = merged.defaults != null ? merged.defaults : fullDefault.defaults;
-  const chromeFromMerged = merged.chrome && typeof merged.chrome === "object" ? merged.chrome : fullDefault.chrome;
   const safeAreaFromMerged = merged.safeArea && typeof merged.safeArea === "object" ? merged.safeArea : fullDefault.safeArea;
-  const backgroundRulesFromMerged = merged.backgroundRules && typeof merged.backgroundRules === "object" ? merged.backgroundRules : fullDefault.backgroundRules;
+  // Ensure chrome and backgroundRules are always full objects (schema requires them; AI sometimes omits or returns undefined).
+  const chromeFromMerged =
+    merged.chrome && typeof merged.chrome === "object" && merged.chrome !== null
+      ? { ...fullDefault.chrome, ...(merged.chrome as Record<string, unknown>) }
+      : fullDefault.chrome;
+  const backgroundRulesFromMerged =
+    merged.backgroundRules && typeof merged.backgroundRules === "object" && merged.backgroundRules !== null
+      ? { ...fullDefault.backgroundRules, ...(merged.backgroundRules as Record<string, unknown>) }
+      : fullDefault.backgroundRules;
   try {
     return templateConfigSchema.parse({
       ...fullDefault,
@@ -368,7 +375,7 @@ BACKGROUND TAB (overlays, defaults.background, backgroundRules, defaults.meta ba
 - overlays.vignette: enabled, strength (0–1).
 - defaults.background: style ("solid"|"gradient"), color (hex). Optional: pattern?, decoration?, decorationColor?.
 - defaults.meta: background_color (hex), image_overlay_blend_enabled?, overlay_tint_opacity (0–1), overlay_tint_color (hex).
-- backgroundRules: allowImage (boolean), defaultStyle ("darken"|"blur"|"none").
+- backgroundRules: allowImage (boolean), defaultStyle ("darken"|"blur"|"none"). Set allowImage to FALSE when the slide has no photo/image—e.g. text on a solid color (white, cream, dark blue, etc.) or gradient only. Then defaults.background.color and defaults.meta.background_color MUST match that solid/gradient background (e.g. "#ffffff" for white, "#0a0a0a" for dark) so the template preview matches the source.
 
 CHROME / LAYOUT (counter, swipe, watermark, made with):
 - chrome: showSwipe, swipeType ("text"|"arrow-left"|"arrow-right"|"arrows"|"hand-left"|"hand-right"|"chevrons"|"dots"|"finger-swipe"|"finger-left"|"finger-right"|"circle-arrows"|"line-dots"|"custom"), swipePosition ("bottom_left"|"bottom_center"|"bottom_right"|"top_left"|"top_center"|"top_right"|"center_left"|"center_right"), showCounter, counterStyle (e.g. "1/8"), watermark: { enabled, position ("top_left"|"top_right"|"bottom_left"|"bottom_right"|"custom"), logoX?, logoY?, fontSize?, maxWidth?, maxHeight? }.

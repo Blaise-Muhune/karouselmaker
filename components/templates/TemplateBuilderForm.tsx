@@ -69,6 +69,9 @@ const MOCK_LOGO_URL =
     '<svg xmlns="http://www.w3.org/2000/svg" width="80" height="40" viewBox="0 0 80 40"><rect width="80" height="40" rx="4" fill="rgba(255,255,255,0.9)"/><text x="40" y="26" font-family="system-ui,sans-serif" font-size="14" font-weight="600" fill="#0a0a0a" text-anchor="middle">LOGO</text></svg>'
   );
 
+/** Default Unsplash image for "show sample image" in template preview (view only). */
+const TEMPLATE_PREVIEW_UNSPLASH_URL = "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1080&q=80";
+
 type BaseOption = { template: Template; config: TemplateConfig };
 
 type TemplateBuilderFormProps = {
@@ -108,6 +111,8 @@ export function TemplateBuilderForm({
   const [previewSlideIndex, setPreviewSlideIndex] = useState(1);
   const [previewTotalSlides] = useState(10);
   const [previewExpanded, setPreviewExpanded] = useState(false);
+  /** When true, show a default Unsplash image in the preview (for viewing how the template renders with an image). */
+  const [previewUseUnsplash, setPreviewUseUnsplash] = useState(false);
   type TemplateTab = "text" | "layout" | "background" | "more";
   const [templateTab, setTemplateTab] = useState<TemplateTab>("layout");
 
@@ -203,9 +208,9 @@ export function TemplateBuilderForm({
 
   const templatePreviewContent = (
     <div className="flex flex-col rounded-xl border border-border/50 bg-muted/5 overflow-hidden">
-      {/* Top bar: Live preview + Slide + Size + Expand (match slide edit) */}
+      {/* Top bar: Live preview + Slide + Size + Sample image toggle + Expand (match slide edit) */}
       <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 border-b border-border/40 bg-card/30">
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="flex items-center gap-2 min-w-0 flex-wrap">
           <h2 className="text-sm font-semibold text-foreground shrink-0">Live preview</h2>
           <Select
             value={String(previewSlideIndex)}
@@ -232,6 +237,15 @@ export function TemplateBuilderForm({
               <SelectItem value="1080x1920">{PREVIEW_SIZE_LABELS["1080x1920"]}</SelectItem>
             </SelectContent>
           </Select>
+          <label className="flex items-center gap-1.5 cursor-pointer text-xs text-muted-foreground hover:text-foreground shrink-0">
+            <input
+              type="checkbox"
+              checked={previewUseUnsplash}
+              onChange={(e) => setPreviewUseUnsplash(e.target.checked)}
+              className="rounded border-input"
+            />
+            <span>Sample image</span>
+          </label>
         </div>
         <Button
           type="button"
@@ -284,9 +298,13 @@ export function TemplateBuilderForm({
                       logo_url: config.chrome.watermark.enabled ? MOCK_LOGO_URL : undefined,
                     }}
                     totalSlides={previewTotalSlides}
-                    backgroundImageUrl={previewImageUrl.trim() || undefined}
+                    backgroundImageUrl={
+                      previewUseUnsplash ? TEMPLATE_PREVIEW_UNSPLASH_URL : (previewImageUrl.trim() || undefined)
+                    }
                     backgroundOverride={{ color: previewBackgroundColor }}
                     showMadeWithOverride={showMadeWith}
+                    onHeadlineChange={setPreviewHeadline}
+                    onBodyChange={setPreviewBody}
                     {...(chromeOverridesForPreview && { chromeOverrides: chromeOverridesForPreview })}
                   />
                 </div>
@@ -360,9 +378,13 @@ export function TemplateBuilderForm({
                         logo_url: config.chrome.watermark.enabled ? MOCK_LOGO_URL : undefined,
                       }}
                       totalSlides={previewTotalSlides}
-                      backgroundImageUrl={previewImageUrl.trim() || undefined}
+                      backgroundImageUrl={
+                        previewUseUnsplash ? TEMPLATE_PREVIEW_UNSPLASH_URL : (previewImageUrl.trim() || undefined)
+                      }
                       backgroundOverride={{ color: previewBackgroundColor }}
                       showMadeWithOverride={showMadeWith}
+                      onHeadlineChange={setPreviewHeadline}
+                      onBodyChange={setPreviewBody}
                       {...(chromeOverridesForPreview && { chromeOverrides: chromeOverridesForPreview })}
                     />
                   </div>
@@ -575,31 +597,31 @@ export function TemplateBuilderForm({
               </SelectContent>
             </Select>
         </div>
+
+        <div className="rounded-lg border border-border/50 bg-muted/5 p-3">
+          <h3 className="text-xs font-semibold text-foreground mb-2">Safe area</h3>
+          <p className="text-muted-foreground text-[11px] mb-2">Padding (px) from each edge.</p>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            {(["top", "right", "bottom", "left"] as const).map((side) => (
+              <div key={side} className="space-y-1.5">
+                <Label className="text-xs capitalize">{side}</Label>
+                <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background w-full max-w-[100px]">
+                  <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-r-none" onClick={() => updateConfig((prev) => ({ safeArea: { ...prev.safeArea, [side]: Math.max(0, config.safeArea[side] - 4) } }))} aria-label={`Decrease ${side}`}>
+                    <MinusIcon className="size-3" />
+                  </Button>
+                  <span className="min-w-8 flex-1 text-center text-xs tabular-nums">{config.safeArea[side]}</span>
+                  <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-l-none" onClick={() => updateConfig((prev) => ({ safeArea: { ...prev.safeArea, [side]: Math.min(200, config.safeArea[side] + 4) } }))} aria-label={`Increase ${side}`}>
+                    <PlusIcon className="size-3" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
           </section>
             )}
             {templateTab === "text" && (
           <section className="space-y-4" aria-label="Text">
-        <div className="rounded-lg border border-border/50 bg-muted/5 p-3">
-          <h3 className="text-xs font-semibold text-foreground mb-2">Safe area</h3>
-            <p className="text-muted-foreground text-[11px] mb-2">Padding (px) from each edge.</p>
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-              {(["top", "right", "bottom", "left"] as const).map((side) => (
-                <div key={side} className="space-y-1.5">
-                  <Label className="text-xs capitalize">{side}</Label>
-                  <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background w-full max-w-[100px]">
-                    <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-r-none" onClick={() => updateConfig((prev) => ({ safeArea: { ...prev.safeArea, [side]: Math.max(0, config.safeArea[side] - 4) } }))} aria-label={`Decrease ${side}`}>
-                      <MinusIcon className="size-3" />
-                    </Button>
-                    <span className="min-w-8 flex-1 text-center text-xs tabular-nums">{config.safeArea[side]}</span>
-                    <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-l-none" onClick={() => updateConfig((prev) => ({ safeArea: { ...prev.safeArea, [side]: Math.min(200, config.safeArea[side] + 4) } }))} aria-label={`Increase ${side}`}>
-                      <PlusIcon className="size-3" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-        </div>
-
         {headlineZone && (
           <div className="rounded-lg border border-border/50 bg-muted/5 p-3">
             <h3 className="text-xs font-semibold text-foreground mb-2">Headline zone</h3>
@@ -682,13 +704,15 @@ export function TemplateBuilderForm({
                 </div>
                 <div className="space-y-1 mt-4">
                   <Label className="text-xs">Align</Label>
-                  <Select value={headlineZone.align} onValueChange={(v) => updateTextZone("headline", { align: v as "left" | "center" })}>
+                  <Select value={headlineZone.align} onValueChange={(v) => updateTextZone("headline", { align: v as "left" | "center" | "right" | "justify" })}>
                     <SelectTrigger className="h-8 text-xs">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="left">Left</SelectItem>
                       <SelectItem value="center">Center</SelectItem>
+                      <SelectItem value="right">Right</SelectItem>
+                      <SelectItem value="justify">Justify</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -796,13 +820,15 @@ export function TemplateBuilderForm({
                 </div>
                 <div className="space-y-1 mt-4">
                   <Label className="text-xs">Align</Label>
-                  <Select value={bodyZone.align} onValueChange={(v) => updateTextZone("body", { align: v as "left" | "center" })}>
+                  <Select value={bodyZone.align} onValueChange={(v) => updateTextZone("body", { align: v as "left" | "center" | "right" | "justify" })}>
                     <SelectTrigger className="h-8 text-xs">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="left">Left</SelectItem>
                       <SelectItem value="center">Center</SelectItem>
+                      <SelectItem value="right">Right</SelectItem>
+                      <SelectItem value="justify">Justify</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -865,6 +891,22 @@ export function TemplateBuilderForm({
                   <SelectItem value="none">None</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Default background color</Label>
+              <p className="text-muted-foreground text-[11px] mb-1">Used when no image is set (hex).</p>
+              <ColorPicker
+                value={config.defaults?.meta?.background_color ?? ""}
+                onChange={(v) =>
+                  updateConfig((prev) => ({
+                    defaults: {
+                      ...prev.defaults,
+                      meta: { ...prev.defaults?.meta, background_color: v.trim() || undefined },
+                    },
+                  }))
+                }
+                placeholder="#0a0a0a"
+              />
             </div>
           </div>
         </div>
@@ -1468,20 +1510,16 @@ export function TemplateBuilderForm({
             )}
           </div>
         </div>
-
-        <div className="border-t border-border/40 pt-4">
-          <h3 className="text-xs font-semibold text-foreground mb-2">Actions</h3>
-          <div className="flex gap-2">
+          </section>
+            )}
+          </div>
+          <div className="border-t border-border/40 px-4 py-4 flex gap-2">
             <Button type="submit" disabled={loading} loading={loading}>
               {loading ? "Saving…" : mode === "create" ? "Create template" : "Save changes"}
             </Button>
             <Button variant="outline" type="button" asChild>
               <Link href="/templates">Cancel</Link>
             </Button>
-          </div>
-        </div>
-          </section>
-            )}
           </div>
         </div>
       </section>
