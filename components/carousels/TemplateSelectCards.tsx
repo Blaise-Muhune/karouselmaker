@@ -11,6 +11,9 @@ import { cn } from "@/lib/utils";
 const INSET = 3; // px buffer so watermark/body text at bottom isn't clipped
 const TEMPLATE_PAGE_SIZE = 12;
 
+/** Shown on image-allowing templates when the slide has no image so the modal still shows how the template looks with a photo. */
+const FALLBACK_SAMPLE_IMAGE_URL = "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1080&q=80";
+
 /** Preview dimensions by breakpoint: [default, md, lg] */
 const PREVIEW_SIZES = [
   { w: 136, h: 170 },
@@ -102,6 +105,9 @@ export function TemplateSelectCards({
   const hasPreviewImages = previewImageUrls && previewImageUrls.length > 0;
   const getPreviewImage = (index: number) =>
     hasPreviewImages ? previewImageUrls![index % previewImageUrls!.length] : undefined;
+  /** For image-allowing templates, use slide image or fallback sample so the card always shows a photo. */
+  const getPreviewImageOrFallback = (index: number, templateAllowsImage: boolean) =>
+    getPreviewImage(index) ?? (templateAllowsImage ? FALLBACK_SAMPLE_IMAGE_URL : undefined);
   const previewImageUrl = getPreviewImage(0);
   const isDefaultLinkedIn =
     defaultTemplateCategory === "linkedin" ||
@@ -160,19 +166,24 @@ export function TemplateSelectCards({
     return { zoneOverrides, fontOverrides };
   };
 
-  /** Image display only when template is PIP, so modal shows PIP for those and normal full-bleed for the rest. */
+  /** Build imageDisplay from template defaults so PIP and full templates render exactly as designed. */
   const getImageDisplayFromConfig = (config: TemplateConfig): ComponentProps<typeof SlidePreview>["imageDisplay"] => {
-    const raw = config.defaults?.meta && typeof config.defaults.meta === "object" && "image_display" in config.defaults.meta
-      ? (config.defaults.meta as { image_display?: unknown }).image_display
-      : undefined;
+    const raw =
+      config.defaults?.meta &&
+      typeof config.defaults.meta === "object" &&
+      "image_display" in config.defaults.meta
+        ? (config.defaults.meta as { image_display?: unknown }).image_display
+        : undefined;
     if (raw == null || typeof raw !== "object" || Array.isArray(raw)) return undefined;
     const d = raw as Record<string, unknown>;
-    if (d.mode !== "pip") return undefined;
     const pipPos = d.pipPosition;
-    const validPipPos = pipPos === "top_left" || pipPos === "top_right" || pipPos === "bottom_left" || pipPos === "bottom_right" ? pipPos : undefined;
+    const validPipPos =
+      pipPos === "top_left" || pipPos === "top_right" || pipPos === "bottom_left" || pipPos === "bottom_right"
+        ? pipPos
+        : undefined;
     return {
       ...d,
-      pipPosition: validPipPos,
+      pipPosition: d.mode === "pip" ? (validPipPos ?? "bottom_right") : undefined,
     } as ComponentProps<typeof SlidePreview>["imageDisplay"];
   };
   const sampleSlide = {
@@ -247,9 +258,14 @@ export function TemplateSelectCards({
                 templateConfig={t.parsedConfig}
                 brandKit={brandKit}
                 totalSlides={8}
-                backgroundImageUrl={t.parsedConfig.backgroundRules?.allowImage === false ? undefined : getPreviewImage(idx + 1)}
+                backgroundImageUrl={
+                  t.parsedConfig.backgroundRules?.allowImage === false
+                    ? undefined
+                    : getPreviewImageOrFallback(idx + 1, true)
+                }
                 backgroundOverride={
-                  t.parsedConfig.backgroundRules?.allowImage === false || !getPreviewImage(idx + 1)
+                  t.parsedConfig.backgroundRules?.allowImage === false ||
+                  !getPreviewImageOrFallback(idx + 1, true)
                     ? getTemplatePreviewBackgroundOverride(t.parsedConfig)
                     : t.category === "linkedin"
                       ? getLinkedInPreviewOverlayOverride(t.parsedConfig)
@@ -338,9 +354,13 @@ export function TemplateSelectCards({
                 templateConfig={defaultTemplateConfig}
                 brandKit={brandKit}
                 totalSlides={8}
-                backgroundImageUrl={defaultTemplateConfig.backgroundRules?.allowImage === false ? undefined : previewImageUrl}
+                backgroundImageUrl={
+                  defaultTemplateConfig.backgroundRules?.allowImage === false
+                    ? undefined
+                    : (previewImageUrl ?? FALLBACK_SAMPLE_IMAGE_URL)
+                }
                 backgroundOverride={
-                  defaultTemplateConfig.backgroundRules?.allowImage === false || !previewImageUrl
+                  defaultTemplateConfig.backgroundRules?.allowImage === false
                     ? getTemplatePreviewBackgroundOverride(defaultTemplateConfig)
                     : isDefaultLinkedIn
                       ? getLinkedInPreviewOverlayOverride(defaultTemplateConfig)

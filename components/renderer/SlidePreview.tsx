@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState, Fragment, type ReactNode, type CSSProperties } from "react";
 import { applyTemplate } from "@/lib/renderer/applyTemplate";
-import { getTextScaleForDimensions, normalizeTextZoneOverrides, type BrandKit, type SlideData, type TextZoneOverrides, type ChromeOverrides } from "@/lib/renderer/renderModel";
+import { getTextScaleForDimensions, getSwipeRightXForFormat, normalizeTextZoneOverrides, type BrandKit, type SlideData, type TextZoneOverrides, type ChromeOverrides } from "@/lib/renderer/renderModel";
 import { getRoundedPolygonClipPath } from "@/lib/renderer/shapeClipPath";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { getContrastingTextColor, hexToRgba } from "@/lib/editor/colorUtils";
 import { parseInlineFormatting, HIGHLIGHT_COLORS, stripHighlightMarkers, getFontSizeSegmentsForRange, getLineSubstringByPlainRange, type HighlightSpan, type InlineSegment } from "@/lib/editor/inlineFormat";
-import { Hand, ChevronsLeft, ChevronsRight, MoveHorizontal, GripHorizontal, Minus, Plus, ChevronDownIcon, SparklesIcon, Loader2Icon } from "lucide-react";
+import { Hand, ChevronsLeft, ChevronsRight, MoveHorizontal, Minus, Plus, ChevronDownIcon, SparklesIcon, Loader2Icon } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { FontPickerModal } from "@/components/FontPickerModal";
 
 /** Base design size (slide content is laid out in 1080x1080, then scaled to cover export dimensions). */
 const CANVAS_SIZE = 1080;
@@ -62,40 +63,106 @@ function getPatternBackgroundStyleObject(
 const PATTERN_VALUES = ["dots", "ovals", "lines", "circles"] as const;
 type PatternType = (typeof PATTERN_VALUES)[number];
 
-/** Fonts that render well on LinkedIn and Instagram (preview + export). */
-export const PREVIEW_FONTS = [
-  { id: "system", label: "System" },
-  { id: "Inter", label: "Inter" },
-  { id: "Georgia", label: "Georgia" },
-  { id: "Roboto", label: "Roboto" },
-  { id: "Montserrat", label: "Montserrat" },
-  { id: "Open Sans", label: "Open Sans" },
-  { id: "Lato", label: "Lato" },
-  { id: "Oswald", label: "Oswald" },
-  { id: "Poppins", label: "Poppins" },
-  { id: "Playfair Display", label: "Playfair Display" },
-  { id: "Merriweather", label: "Merriweather" },
-  { id: "Source Sans 3", label: "Source Sans 3" },
-  { id: "Bebas Neue", label: "Bebas Neue" },
-  { id: "DM Sans", label: "DM Sans" },
-] as const;
+export { PREVIEW_FONTS } from "@/lib/constants/previewFonts";
+
+/** Sanitize SVG string for safe inline use: strip scripts and event handlers, then force fill/stroke to currentColor so parent color applies. */
+function sanitizeSvgForInline(svg: string): string {
+  let out = svg
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
+    .replace(/\s on\w+="[^"]*"/gi, "")
+    .replace(/\s on\w+='[^']*'/gi, "");
+  out = out.replace(/\bfill="[^"]*"/gi, 'fill="currentColor"').replace(/\bstroke="[^"]*"/gi, 'stroke="currentColor"');
+  return out;
+}
+
+/** Custom swipe icon from URL: fetches SVG and renders inline so swipe color applies; falls back to <img> (with optional color filter) for PNG or on error. */
+function SwipeCustomIcon({
+  url,
+  color,
+  heightPx,
+}: {
+  url: string;
+  color: string;
+  heightPx: number;
+}) {
+  const [svgMarkup, setSvgMarkup] = useState<string | null>(null);
+  const isSvgUrl = /\.svg(\?|$)/i.test(url) || url.toLowerCase().includes("svg");
+
+  useEffect(() => {
+    if (!url) return;
+    if (!isSvgUrl) return;
+    let cancelled = false;
+    fetch(url, { mode: "cors" })
+      .then((r) => {
+        if (cancelled || !r.ok) return null;
+        const ct = r.headers.get("content-type") ?? "";
+        if (!ct.includes("svg") && !ct.includes("xml")) return null;
+        return r.text();
+      })
+      .then((text) => {
+        if (cancelled || !text || !text.trim().startsWith("<")) return;
+        const trimmed = text.trim();
+        if (!/^<svg\b/i.test(trimmed)) return;
+        setSvgMarkup(sanitizeSvgForInline(trimmed));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [url, isSvgUrl]);
+
+  if (svgMarkup) {
+    return (
+      <span
+        className="shrink-0 inline-flex items-center justify-center [&>svg]:max-h-full [&>svg]:w-auto [&>svg]:h-full"
+        style={{ color, height: heightPx, maxWidth: 80 }}
+        dangerouslySetInnerHTML={{ __html: svgMarkup }}
+      />
+    );
+  }
+
+  return (
+    <img
+      src={url}
+      alt=""
+      className="w-auto max-w-[80px] object-contain shrink-0"
+      style={{ height: heightPx, opacity: 0.9 }}
+    />
+  );
+}
 
 function zoneFontFamily(zone: { fontFamily?: string }): string {
   const f = zone.fontFamily;
   if (f === "Georgia") return "Georgia, serif";
+  if (f === "Times New Roman") return "\"Times New Roman\", Times, serif";
   if (f === "Inter") return "Inter, system-ui, sans-serif";
   if (f === "system" || f === "sans-serif") return "system-ui, -apple-system, sans-serif";
   if (f === "Roboto") return "Roboto, system-ui, sans-serif";
   if (f === "Montserrat") return "Montserrat, system-ui, sans-serif";
   if (f === "Open Sans") return "\"Open Sans\", system-ui, sans-serif";
   if (f === "Lato") return "Lato, system-ui, sans-serif";
-  if (f === "Oswald") return "Oswald, system-ui, sans-serif";
   if (f === "Poppins") return "Poppins, system-ui, sans-serif";
+  if (f === "Work Sans") return "\"Work Sans\", system-ui, sans-serif";
   if (f === "Playfair Display") return "\"Playfair Display\", Georgia, serif";
   if (f === "Merriweather") return "Merriweather, Georgia, serif";
+  if (f === "Libre Baskerville") return "\"Libre Baskerville\", Georgia, serif";
   if (f === "Source Sans 3") return "\"Source Sans 3\", system-ui, sans-serif";
-  if (f === "Bebas Neue") return "\"Bebas Neue\", system-ui, sans-serif";
-  if (f === "DM Sans") return "\"DM Sans\", system-ui, sans-serif";
+  if (f === "Chonburi") return "\"Chonburi\", Georgia, serif";
+  if (f === "Breaking March") return "\"Breaking March\", Georgia, serif";
+  if (f === "Orange Squash Pro") return "\"Orange Squash Pro\", Georgia, serif";
+  if (f === "Bringbold Nineties") return "\"Bringbold Nineties\", Georgia, serif";
+  if (f === "Bouselle") return "\"Bouselle\", Georgia, serif";
+  if (f === "Instrument Serif") return "\"Instrument Serif\", Georgia, serif";
+  if (f === "Bodoni Moda") return "\"Bodoni Moda\", Georgia, serif";
+  if (f === "Prata") return "\"Prata\", Georgia, serif";
+  if (f === "Arapey") return "\"Arapey\", Georgia, serif";
+  if (f === "Fraunces") return "\"Fraunces\", Georgia, serif";
+  if (f === "Abril Fatface") return "\"Abril Fatface\", Georgia, serif";
+  if (f === "Limelight") return "\"Limelight\", system-ui, sans-serif";
+  if (f === "Syne") return "\"Syne\", system-ui, sans-serif";
+  if (f === "Outfit") return "\"Outfit\", system-ui, sans-serif";
+  if (f === "Urbanist") return "\"Urbanist\", system-ui, sans-serif";
+  if (f === "Sora") return "\"Sora\", system-ui, sans-serif";
   if (f?.trim()) return `${f}, system-ui, sans-serif`;
   return "system-ui, -apple-system, sans-serif";
 }
@@ -345,6 +412,19 @@ export type SlidePreviewProps = {
     onLogoYChange: (v: number) => void;
     onFontSizeChange: (v: number) => void;
   };
+  /** When set, swipe hint is draggable in preview. */
+  editChromeSwipe?: {
+    swipeX: number;
+    swipeY: number;
+    onSwipePositionChange: (x: number, y: number) => void;
+  };
+  /** When set, "Made with" (Watermark) attribution is draggable in preview. */
+  editChromeMadeWith?: {
+    madeWithX: number;
+    madeWithY: number;
+    onMadeWithXChange: (v: number) => void;
+    onMadeWithYChange: (v: number) => void;
+  };
   /** Scale from design (1080) to screen; used to convert pointer deltas when dragging. */
   editScale?: number;
   /** When true (edit slide page), only show move/resize container for text zones; no inline editing, toolbar, highlight, or rewrite in preview. */
@@ -507,6 +587,8 @@ export function SlidePreview({
   editToolbarBody,
   editChromeCounter,
   editChromeWatermark,
+  editChromeSwipe,
+  editChromeMadeWith,
   editScale = 1,
   positionAndSizeOnly = false,
   onBackgroundImagePositionChange,
@@ -536,15 +618,29 @@ export function SlidePreview({
   const headlineMoreOpenRef = useRef(false);
   const bodyMoreOpenRef = useRef(false);
   /** Which chrome element is focused for editing in preview: counter or watermark. */
-  const [focusedChrome, setFocusedChrome] = useState<"counter" | "watermark" | null>(null);
+  const [focusedChrome, setFocusedChrome] = useState<"counter" | "watermark" | "swipe" | "madeWith" | null>(null);
+  const [headlineFontModalOpen, setHeadlineFontModalOpen] = useState(false);
+  const [bodyFontModalOpen, setBodyFontModalOpen] = useState(false);
   const counterChromeRef = useRef<HTMLDivElement>(null);
   const watermarkChromeRef = useRef<HTMLDivElement>(null);
-  /** Drag offset for counter/watermark (design-space delta). */
+  const swipeChromeRef = useRef<HTMLDivElement>(null);
+  const madeWithChromeRef = useRef<HTMLDivElement>(null);
+  /** Drag offset for counter/watermark/swipe/madeWith (design-space delta). */
   const [chromeDragOffset, setChromeDragOffset] = useState<{ dx: number; dy: number } | null>(null);
-  const [chromeDragType, setChromeDragType] = useState<"counter" | "watermark" | null>(null);
+  const [chromeDragType, setChromeDragType] = useState<"counter" | "watermark" | "swipe" | "madeWith" | null>(null);
   /** Watermark drag base (in state so we can use it during render without reading ref). */
   const [chromeWatermarkDragBase, setChromeWatermarkDragBase] = useState<{ baseX: number; baseY: number } | null>(null);
-  const chromeDragStartRef = useRef<{ type: "counter"; baseTop: number; baseRight: number } | { type: "watermark"; baseX: number; baseY: number } | null>(null);
+  /** Swipe drag base (in state so we can apply offset during drag). */
+  const [chromeSwipeDragBase, setChromeSwipeDragBase] = useState<{ baseX: number; baseY: number } | null>(null);
+  /** Made with drag base (in state so we can apply offset during drag). */
+  const [chromeMadeWithDragBase, setChromeMadeWithDragBase] = useState<{ baseX: number; baseY: number } | null>(null);
+  const chromeDragStartRef = useRef<
+    | { type: "counter"; baseTop: number; baseRight: number }
+    | { type: "watermark"; baseX: number; baseY: number }
+    | { type: "swipe"; baseX: number; baseY: number }
+    | { type: "madeWith"; baseX: number; baseY: number }
+    | null
+  >(null);
   const chromeDragOffsetRef = useRef(chromeDragOffset);
   /** Background image drag: start client coords and start focal point (%). */
   const bgImageDragRef = useRef<{ startClientX: number; startClientY: number; startX: number; startY: number } | null>(null);
@@ -654,7 +750,18 @@ export function SlidePreview({
   useEffect(() => {
     const handleMouseDown = (e: MouseEvent) => {
       const t = e.target as Node;
-      if (focusedChrome && counterChromeRef.current && !counterChromeRef.current.contains(t) && watermarkChromeRef.current && !watermarkChromeRef.current.contains(t)) setFocusedChrome(null);
+      if (
+        focusedChrome &&
+        counterChromeRef.current &&
+        !counterChromeRef.current.contains(t) &&
+        watermarkChromeRef.current &&
+        !watermarkChromeRef.current.contains(t) &&
+        swipeChromeRef.current &&
+        !swipeChromeRef.current.contains(t) &&
+        madeWithChromeRef.current &&
+        !madeWithChromeRef.current.contains(t)
+      )
+        setFocusedChrome(null);
     };
     document.addEventListener("mousedown", handleMouseDown);
     return () => document.removeEventListener("mousedown", handleMouseDown);
@@ -796,12 +903,23 @@ export function SlidePreview({
       const y = Math.round(Math.max(0, Math.min(canvasH, start.baseY + off.dy)));
       editChromeWatermark.onLogoXChange(x);
       editChromeWatermark.onLogoYChange(y);
+    } else if (start.type === "swipe" && editChromeSwipe) {
+      const x = Math.round(Math.max(0, Math.min(1080, start.baseX + off.dx)));
+      const y = Math.round(Math.max(0, Math.min(canvasH, start.baseY + off.dy)));
+      editChromeSwipe.onSwipePositionChange(x, y);
+    } else if (start.type === "madeWith" && editChromeMadeWith) {
+      const x = Math.round(Math.max(0, Math.min(1080, start.baseX + off.dx)));
+      const y = Math.round(Math.max(0, Math.min(canvasH, start.baseY + off.dy)));
+      editChromeMadeWith.onMadeWithXChange(x);
+      editChromeMadeWith.onMadeWithYChange(y);
     }
     chromeDragStartRef.current = null;
     setChromeDragOffset(null);
     setChromeDragType(null);
     setChromeWatermarkDragBase(null);
-  }, [canvasH, editChromeCounter, editChromeWatermark]);
+    setChromeSwipeDragBase(null);
+    setChromeMadeWithDragBase(null);
+  }, [canvasH, editChromeCounter, editChromeWatermark, editChromeSwipe, editChromeMadeWith]);
 
   const handleChromeResizeMove = useCallback(
     (e: PointerEvent) => {
@@ -1028,6 +1146,7 @@ export function SlidePreview({
   }, [chromeVisible, isEditablePreview]);
 
   return (
+    <>
     <div
       ref={previewRootRef}
       className={`relative overflow-hidden shrink-0 ${canvasH > CANVAS_SIZE && !useFullCanvasBackground ? "" : "bg-black"} ${className}`}
@@ -2031,7 +2150,6 @@ export function SlidePreview({
               ))}
             </>
           ) : null;
-          const DRAG_HANDLE_H = 28;
           const zoneBoxStyle = {
             width: block.zone.w,
             minWidth: block.zone.w,
@@ -2052,10 +2170,7 @@ export function SlidePreview({
                   height: "100%",
                 }}
                 onClick={() => onHeadlineFocus?.()}
-                onPointerDown={(e) => {
-                  e.stopPropagation();
-                  onHeadlineFocus?.();
-                }}
+                onPointerDown={() => onHeadlineFocus?.()}
                 role="button"
                 tabIndex={-1}
                 aria-label="Headline — drag to move, corners to resize"
@@ -2103,39 +2218,30 @@ export function SlidePreview({
                 {resizeHandles}
               </>
           );
-          const headlineDragHandleEl = canDrag ? (
-            <div
-              role="button"
-              tabIndex={-1}
-              onPointerDown={(e) => {
-                e.preventDefault();
-                e.currentTarget.setPointerCapture(e.pointerId);
-                dragZoneRef.current = { zone: "headline", baseX: block.zone.x, baseY: block.zone.y };
-                setDragOffset({ zone: "headline", x: 0, y: 0 });
-              }}
-              className="absolute left-0 right-0 flex items-center justify-center border-b-2 border-primary/50 bg-primary/20 cursor-move rounded-t-sm hover:bg-primary/30 z-[1]"
-              style={{
-                left: zoneRotation !== 0 ? 0 : block.zone.x + offX,
-                top: zoneRotation !== 0 ? 0 : block.zone.y + offY - DRAG_HANDLE_H,
-                width: block.zone.w,
-                height: DRAG_HANDLE_H,
-              }}
-              aria-label="Drag to move headline"
-            >
-              <GripHorizontal className="size-4 text-white" style={zoneRotation !== 0 ? { transform: `rotate(${-zoneRotation}deg)` } : undefined} />
-            </div>
-          ) : null;
           const headlineZoneBoxEl = (
             <div
-              className={`rounded-sm transition-shadow overflow-visible ${isFocused ? "ring-2 ring-primary/80 shadow-lg" : ""}`}
+              className={`rounded-sm transition-shadow overflow-visible ${canDrag ? "cursor-move " : ""}${isFocused ? "ring-2 ring-primary/80 shadow-lg" : ""}`}
               style={{
                 position: "absolute",
                 left: zoneRotation !== 0 ? 0 : block.zone.x + offX,
-                top: zoneRotation !== 0 ? DRAG_HANDLE_H : block.zone.y + offY,
+                top: zoneRotation !== 0 ? 0 : block.zone.y + offY,
                 ...zoneBoxStyle,
                 overflow: "visible",
                 ...(zoneRotation !== 0 && { backfaceVisibility: "hidden" }),
               }}
+              onPointerDown={
+                canDrag
+                  ? (e) => {
+                      if ((e.target as HTMLElement)?.tagName === "TEXTAREA") return;
+                      e.preventDefault();
+                      (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+                      dragZoneRef.current = { zone: "headline", baseX: block.zone.x, baseY: block.zone.y };
+                      setDragOffset({ zone: "headline", x: 0, y: 0 });
+                    }
+                  : undefined
+              }
+              role={canDrag ? "button" : undefined}
+              aria-label={canDrag ? "Drag to move headline" : undefined}
             >
               {zoneBoxContent}
             </div>
@@ -2149,40 +2255,34 @@ export function SlidePreview({
                     className="absolute"
                     style={{
                       left: block.zone.x + offX,
-                      top: block.zone.y + offY - DRAG_HANDLE_H,
+                      top: block.zone.y + offY,
                       width: block.zone.w,
-                      height: DRAG_HANDLE_H + block.zone.h,
+                      height: block.zone.h,
                       transform: `rotate(${zoneRotation}deg) translateZ(0)`,
-                      transformOrigin: "50% 100%",
+                      transformOrigin: "50% 50%",
                       overflow: "visible",
                       backfaceVisibility: "hidden",
                     }}
                   >
-                    {headlineDragHandleEl}
                     {headlineZoneBoxEl}
                   </div>
+                ) : zoneRotation !== 0 ? (
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: block.zone.x + offX,
+                      top: block.zone.y + offY,
+                      ...zoneBoxStyle,
+                      transform: `rotate(${zoneRotation}deg) translateZ(0)`,
+                      transformOrigin: "50% 50%",
+                      overflow: "visible",
+                      backfaceVisibility: "hidden",
+                    }}
+                  >
+                    {zoneBoxContent}
+                  </div>
                 ) : (
-                  <>
-                    {headlineDragHandleEl}
-                    {zoneRotation !== 0 ? (
-                      <div
-                        style={{
-                          position: "absolute",
-                          left: block.zone.x + offX,
-                          top: block.zone.y + offY,
-                          ...zoneBoxStyle,
-                          transform: `rotate(${zoneRotation}deg) translateZ(0)`,
-                          transformOrigin: "50% 50%",
-                          overflow: "visible",
-                          backfaceVisibility: "hidden",
-                        }}
-                      >
-                        {zoneBoxContent}
-                      </div>
-                    ) : (
-                      headlineZoneBoxEl
-                    )}
-                  </>
+                  headlineZoneBoxEl
                 )}
                 {showToolbar && editToolbarHeadline && (
                 <div
@@ -2295,20 +2395,13 @@ export function SlidePreview({
                       <DropdownMenuContent align="start" className="min-w-[152px] p-1.5" onCloseAutoFocus={(e) => e.preventDefault()}>
                         {editToolbarHeadline.onFontFamilyChange && (
                           <div className="space-y-1">
-                            <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground px-0.5">Font</div>
-                            <div className="flex flex-wrap gap-1">
-                              {PREVIEW_FONTS.map(({ id, label }) => (
-                                <button
-                                  key={id}
-                                  type="button"
-                                  className={`rounded border px-1.5 py-0.5 text-[10px] font-medium transition-colors ${(editToolbarHeadline.fontFamily ?? "system") === id ? "border-primary bg-primary/20 text-primary-foreground" : "border-border bg-muted/50 hover:bg-muted"}`}
-                                  style={id !== "system" ? { fontFamily: zoneFontFamily({ fontFamily: id }) } : undefined}
-                                  onClick={() => editToolbarHeadline.onFontFamilyChange?.(id)}
-                                >
-                                  {label}
-                                </button>
-                              ))}
-                            </div>
+                            <button
+                              type="button"
+                              className="w-full rounded border border-border bg-muted/50 px-2 py-1.5 text-left text-[11px] font-medium hover:bg-muted"
+                              onClick={() => setHeadlineFontModalOpen(true)}
+                            >
+                              Font…
+                            </button>
                           </div>
                         )}
                         {editToolbarHeadline.onFontFamilyChange && (editToolbarHeadline.highlight || editToolbarHeadline.onTextColorChange) && <div className="my-0.5 h-px bg-border" />}
@@ -2429,7 +2522,6 @@ export function SlidePreview({
               ))}
             </>
           ) : null;
-          const BODY_DRAG_HANDLE_H = 28;
           const bodyZoneBoxStyle = {
             width: block.zone.w,
             minWidth: block.zone.w,
@@ -2439,28 +2531,6 @@ export function SlidePreview({
             padding: 0,
             margin: 0,
           };
-          const bodyDragHandleEl = canDrag ? (
-            <div
-              role="button"
-              tabIndex={-1}
-              onPointerDown={(e) => {
-                e.preventDefault();
-                e.currentTarget.setPointerCapture(e.pointerId);
-                dragZoneRef.current = { zone: "body", baseX: block.zone.x, baseY: block.zone.y };
-                setDragOffset({ zone: "body", x: 0, y: 0 });
-              }}
-              className="absolute flex items-center justify-center border-b-2 border-primary/50 bg-primary/20 cursor-move rounded-t-sm hover:bg-primary/30 z-[1]"
-              style={{
-                left: zoneRotation !== 0 ? 0 : block.zone.x + offX,
-                top: zoneRotation !== 0 ? 0 : block.zone.y + offY - BODY_DRAG_HANDLE_H,
-                width: block.zone.w,
-                height: BODY_DRAG_HANDLE_H,
-              }}
-              aria-label="Drag to move body"
-            >
-              <GripHorizontal className="size-4 text-white" style={zoneRotation !== 0 ? { transform: `rotate(${-zoneRotation}deg)` } : undefined} />
-            </div>
-          ) : null;
           const bodyZoneBoxContent = (
             <>
               {positionAndSizeOnly ? (
@@ -2473,10 +2543,7 @@ export function SlidePreview({
                     height: "100%",
                   }}
                   onClick={() => onBodyFocus?.()}
-                  onPointerDown={(e) => {
-                    e.stopPropagation();
-                    onBodyFocus?.();
-                  }}
+                  onPointerDown={() => onBodyFocus?.()}
                   role="button"
                   tabIndex={-1}
                   aria-label="Body — drag to move, corners to resize"
@@ -2521,15 +2588,28 @@ export function SlidePreview({
           );
           const bodyZoneBoxEl = (
             <div
-              className={`rounded-sm transition-shadow overflow-visible ${isFocused ? "ring-2 ring-primary/80 shadow-lg" : ""}`}
+              className={`rounded-sm transition-shadow overflow-visible ${canDrag ? "cursor-move " : ""}${isFocused ? "ring-2 ring-primary/80 shadow-lg" : ""}`}
               style={{
                 position: "absolute",
                 left: zoneRotation !== 0 ? 0 : block.zone.x + offX,
-                top: zoneRotation !== 0 ? BODY_DRAG_HANDLE_H : block.zone.y + offY,
+                top: zoneRotation !== 0 ? 0 : block.zone.y + offY,
                 ...bodyZoneBoxStyle,
                 overflow: "visible",
                 ...(zoneRotation !== 0 && { backfaceVisibility: "hidden" }),
               }}
+              onPointerDown={
+                canDrag
+                  ? (e) => {
+                      if ((e.target as HTMLElement)?.tagName === "TEXTAREA") return;
+                      e.preventDefault();
+                      (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+                      dragZoneRef.current = { zone: "body", baseX: block.zone.x, baseY: block.zone.y };
+                      setDragOffset({ zone: "body", x: 0, y: 0 });
+                    }
+                  : undefined
+              }
+              role={canDrag ? "button" : undefined}
+              aria-label={canDrag ? "Drag to move body" : undefined}
             >
               {bodyZoneBoxContent}
             </div>
@@ -2543,40 +2623,34 @@ export function SlidePreview({
                     className="absolute"
                     style={{
                       left: block.zone.x + offX,
-                      top: block.zone.y + offY - BODY_DRAG_HANDLE_H,
+                      top: block.zone.y + offY,
                       width: block.zone.w,
-                      height: BODY_DRAG_HANDLE_H + block.zone.h,
+                      height: block.zone.h,
                       transform: `rotate(${zoneRotation}deg) translateZ(0)`,
-                      transformOrigin: "50% 100%",
+                      transformOrigin: "50% 50%",
                       overflow: "visible",
                       backfaceVisibility: "hidden",
                     }}
                   >
-                    {bodyDragHandleEl}
                     {bodyZoneBoxEl}
                   </div>
+                ) : zoneRotation !== 0 ? (
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: block.zone.x + offX,
+                      top: block.zone.y + offY,
+                      ...bodyZoneBoxStyle,
+                      transform: `rotate(${zoneRotation}deg) translateZ(0)`,
+                      transformOrigin: "50% 50%",
+                      overflow: "visible",
+                      backfaceVisibility: "hidden",
+                    }}
+                  >
+                    {bodyZoneBoxContent}
+                  </div>
                 ) : (
-                  <>
-                    {bodyDragHandleEl}
-                    {zoneRotation !== 0 && !canDrag ? (
-                      <div
-                        style={{
-                          position: "absolute",
-                          left: block.zone.x + offX,
-                          top: block.zone.y + offY,
-                          ...bodyZoneBoxStyle,
-                          transform: `rotate(${zoneRotation}deg) translateZ(0)`,
-                          transformOrigin: "50% 50%",
-                          overflow: "visible",
-                          backfaceVisibility: "hidden",
-                        }}
-                      >
-                        {bodyZoneBoxContent}
-                      </div>
-                    ) : (
-                      bodyZoneBoxEl
-                    )}
-                  </>
+                  bodyZoneBoxEl
                 )}
                 {showToolbar && editToolbarBody && (
                 <div
@@ -2689,20 +2763,13 @@ export function SlidePreview({
                       <DropdownMenuContent align="start" className="min-w-[152px] p-1.5" onCloseAutoFocus={(e) => e.preventDefault()}>
                         {editToolbarBody.onFontFamilyChange && (
                           <div className="space-y-1">
-                            <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground px-0.5">Font</div>
-                            <div className="flex flex-wrap gap-1">
-                              {PREVIEW_FONTS.map(({ id, label }) => (
-                                <button
-                                  key={id}
-                                  type="button"
-                                  className={`rounded border px-1.5 py-0.5 text-[10px] font-medium transition-colors ${(editToolbarBody.fontFamily ?? "system") === id ? "border-primary bg-primary/20 text-primary-foreground" : "border-border bg-muted/50 hover:bg-muted"}`}
-                                  style={id !== "system" ? { fontFamily: zoneFontFamily({ fontFamily: id }) } : undefined}
-                                  onClick={() => editToolbarBody.onFontFamilyChange?.(id)}
-                                >
-                                  {label}
-                                </button>
-                              ))}
-                            </div>
+                            <button
+                              type="button"
+                              className="w-full rounded border border-border bg-muted/50 px-2 py-1.5 text-left text-[11px] font-medium hover:bg-muted"
+                              onClick={() => setBodyFontModalOpen(true)}
+                            >
+                              Font…
+                            </button>
                           </div>
                         )}
                         {editToolbarBody.onFontFamilyChange && (editToolbarBody.highlight || editToolbarBody.onTextColorChange) && <div className="my-1 h-px bg-border" />}
@@ -2783,36 +2850,76 @@ export function SlidePreview({
       {/* Chrome: swipe hint in viewport space so it stays visible in all formats (1:1, 4:5, 9:16) */}
       {model.chrome.showSwipe && (() => {
         const pos = model.chrome.swipePosition ?? "bottom_center";
-        const useCustomPos = model.chrome.swipeX != null && model.chrome.swipeY != null;
+        const isRightPreset = pos === "bottom_right" || pos === "top_right" || pos === "center_right";
+        const useCustomPos =
+          (pos === "custom" || (model.chrome.swipeX != null && model.chrome.swipeY != null)) && !isRightPreset;
         const swipeFontSize = (model.chrome.swipeSize ?? 24) * chromeScale;
+        /** Use same size for icons so the Size control affects all swipe types. */
+        const iconSize = swipeFontSize;
+        /** Right-side x per format (1:1=992, 4:5=904, 9:16=768) so swipe stays visible in all aspect ratios. */
+        const swipeRightX = getSwipeRightXForFormat(canvasH);
+        /** Bottom presets: 100px from bottom in 1080 design (Y=980) so swipe stays visible. */
+        const bottomOffset = 100 * chromeScale;
         const posStylesViewport: Record<string, Record<string, string | number>> = {
-          bottom_left: { bottom: 20 * chromeScale, left: 24 },
-          bottom_center: { bottom: 20 * chromeScale, left: "50%", transform: "translateX(-50%)" },
-          bottom_right: { bottom: 20 * chromeScale, right: 24 },
+          bottom_left: { bottom: bottomOffset, left: 24 },
+          bottom_center: { bottom: bottomOffset, left: "50%", transform: "translateX(-50%)" },
+          bottom_right: { bottom: bottomOffset, left: swipeRightX },
           top_left: { top: 24, left: 24 },
           top_center: { top: 24, left: "50%", transform: "translateX(-50%)" },
-          top_right: { top: 24, right: 24 },
+          top_right: { top: 24, left: swipeRightX },
           center_left: { top: "50%", left: 24, transform: "translateY(-50%)" },
-          center_right: { top: "50%", right: 24, transform: "translateY(-50%)" },
+          center_right: { top: "50%", left: swipeRightX, transform: "translateY(-50%)" },
         };
-        const vp = useCustomPos ? designToViewport(model.chrome.swipeX!, model.chrome.swipeY!) : null;
-        const clampedX = vp ? Math.max(0, Math.min(1080, vp.x)) : null;
-        const clampedY = vp ? Math.max(0, Math.min(canvasH, vp.y)) : null;
-        const baseStyle = {
-          ...(useCustomPos && clampedX != null && clampedY != null
-            ? { left: clampedX, top: clampedY }
-            : posStylesViewport[pos]),
-          fontSize: swipeFontSize,
-          fontWeight: 600,
-          letterSpacing: "0.1em",
-          color: textColor,
-          opacity: 0.9,
-          zIndex: 5,
-        } as React.CSSProperties;
+        /** Overlay coords for preset positions (0–1080 x 0–canvasH, same as posStylesViewport). Used as drag base when switching to custom. */
+        const getSwipePresetDesignCoords = (p: string, h: number) => {
+          const rightX = swipeRightX; // already in 0–1080 overlay space
+          const leftX = 24;
+          const centerX = 540;
+          const topY = 24;
+          const bottomY = h - 100 * chromeScale; // match preset bottom: 100*chromeScale
+          const centerY = h / 2;
+          switch (p) {
+            case "bottom_left":
+              return { x: leftX, y: bottomY };
+            case "bottom_center":
+              return { x: centerX, y: bottomY };
+            case "bottom_right":
+              return { x: rightX, y: bottomY };
+            case "top_left":
+              return { x: leftX, y: topY };
+            case "top_center":
+              return { x: centerX, y: topY };
+            case "top_right":
+              return { x: rightX, y: topY };
+            case "center_left":
+              return { x: leftX, y: centerY };
+            case "center_right":
+              return { x: rightX, y: centerY };
+            default:
+              return { x: centerX, y: bottomY };
+          }
+        };
+        const isDraggingSwipe = chromeDragType === "swipe" && chromeSwipeDragBase;
+        const off = chromeDragType === "swipe" && chromeDragOffset ? chromeDragOffset : null;
+        // Swipe overlay uses raw 0–1080 x 0–canvasH coords (same as presets), not designToViewport, so no jump when starting drag
+        const customX = useCustomPos ? model.chrome.swipeX! : null;
+        const customY = useCustomPos ? model.chrome.swipeY! : null;
+        const clampedX = customX != null ? Math.max(0, Math.min(1080, customX)) : null;
+        const clampedY = customY != null ? Math.max(0, Math.min(canvasH, customY)) : null;
+        const swipeColor = model.chrome.swipeColor ?? textColor;
+        const positionStyle =
+          isDraggingSwipe && off
+            ? (() => {
+                const x = Math.max(0, Math.min(1080, chromeSwipeDragBase!.baseX + off.dx));
+                const y = Math.max(0, Math.min(canvasH, chromeSwipeDragBase!.baseY + off.dy));
+                return { left: x, top: y };
+              })()
+            : useCustomPos && clampedX != null && clampedY != null
+              ? { left: clampedX, top: clampedY }
+              : posStylesViewport[pos];
         const t = model.chrome.swipeType ?? "text";
         const swipeLabel = (model.chrome.swipeText ?? "swipe").trim() || "swipe";
-        const iconSize = 28 * chromeScale;
-        const iconColor = textColor;
+        const iconColor = swipeColor;
         const FingerLeftSvg = () => (
           <svg width={iconSize} height={iconSize} viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="shrink-0" style={{ transform: "scaleX(-1)" }}>
             <path d="M5 12h14M5 12l4-4M5 12l4 4" />
@@ -2840,17 +2947,21 @@ export function SlidePreview({
         );
         const content =
           t === "custom" && model.chrome.swipeIconUrl ? (
-            <img src={model.chrome.swipeIconUrl} alt="" className="w-auto max-w-[80px] object-contain shrink-0" style={{ height: 32 * chromeScale, opacity: 0.9 }} />
+            <SwipeCustomIcon
+              url={model.chrome.swipeIconUrl}
+              color={iconColor}
+              heightPx={iconSize * (32 / 24)}
+            />
           ) : t === "text" ? (
             <span style={{ letterSpacing: 6, fontSize: swipeFontSize }}>{swipeLabel}</span>
           ) : t === "arrow-left" ? (
-            <span style={{ fontSize: 28 * chromeScale }}>←</span>
+            <span style={{ fontSize: iconSize }}>←</span>
           ) : t === "arrow-right" ? (
-            <span style={{ fontSize: 28 * chromeScale }}>→</span>
+            <span style={{ fontSize: iconSize }}>→</span>
           ) : t === "arrows" ? (
             <>
-              <span style={{ fontSize: 24 * chromeScale }}>←</span>
-              <span style={{ fontSize: 24 * chromeScale }}>→</span>
+              <span style={{ fontSize: iconSize }}>←</span>
+              <span style={{ fontSize: iconSize }}>→</span>
             </>
           ) : t === "hand-left" ? (
             <Hand size={iconSize} style={{ transform: "rotate(-90deg)", flexShrink: 0 }} strokeWidth={2.5} />
@@ -2858,11 +2969,11 @@ export function SlidePreview({
             <Hand size={iconSize} style={{ transform: "rotate(90deg)", flexShrink: 0 }} strokeWidth={2.5} />
           ) : t === "chevrons" ? (
             <>
-              <ChevronsLeft size={24 * chromeScale} strokeWidth={2.5} className="shrink-0" />
-              <ChevronsRight size={24 * chromeScale} strokeWidth={2.5} className="shrink-0" />
+              <ChevronsLeft size={iconSize} strokeWidth={2.5} className="shrink-0" />
+              <ChevronsRight size={iconSize} strokeWidth={2.5} className="shrink-0" />
             </>
           ) : t === "dots" ? (
-            <span style={{ letterSpacing: 8, fontSize: 20 * chromeScale }}>• • •</span>
+            <span style={{ letterSpacing: 8, fontSize: iconSize }}>• • •</span>
           ) : t === "finger-swipe" ? (
             <MoveHorizontal size={iconSize} strokeWidth={2.5} className="shrink-0" />
           ) : t === "finger-left" ? (
@@ -2876,9 +2987,71 @@ export function SlidePreview({
           ) : (
             <span style={{ letterSpacing: 6, fontSize: swipeFontSize }}>• • •</span>
           );
-        return (
-          <div className="absolute flex items-center justify-center gap-1 py-3" style={baseStyle}>
+        const swipeContent = (
+          <div
+            className={`flex items-center justify-center gap-1 py-3 ${editChromeSwipe ? "cursor-pointer ring-offset-2 ring-offset-transparent" : ""} ${focusedChrome === "swipe" ? "ring-2 ring-primary" : ""}`}
+            style={{ fontSize: swipeFontSize, fontWeight: 600, letterSpacing: "0.1em", color: swipeColor, opacity: 0.9 }}
+            onClick={() => editChromeSwipe && setFocusedChrome((c) => (c === "swipe" ? null : "swipe"))}
+            role={editChromeSwipe ? "button" : undefined}
+            aria-label={editChromeSwipe ? "Edit swipe position (drag bar to move)" : undefined}
+          >
             {content}
+          </div>
+        );
+        if (!editChromeSwipe) {
+          return (
+            <div className="absolute z-5" style={{ ...positionStyle, zIndex: 5 }}>
+              {swipeContent}
+            </div>
+          );
+        }
+        return (
+          <div
+            ref={swipeChromeRef}
+            className="absolute flex flex-col items-center justify-center z-5"
+            style={{ ...positionStyle, zIndex: 5 }}
+          >
+            <div
+              className={`flex items-center justify-center gap-1 py-3 ${editChromeSwipe ? "cursor-move ring-offset-2 ring-offset-transparent" : ""} ${focusedChrome === "swipe" ? "ring-2 ring-primary" : ""}`}
+              style={{ fontSize: swipeFontSize, fontWeight: 600, letterSpacing: "0.1em", color: swipeColor, opacity: 0.9 }}
+              onClick={() => editChromeSwipe && setFocusedChrome((c) => (c === "swipe" ? null : "swipe"))}
+              onPointerDown={
+                editChromeSwipe
+                  ? (e) => {
+                      e.preventDefault();
+                      (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+                      let baseX: number, baseY: number;
+                      if (useCustomPos && model.chrome.swipeX != null && model.chrome.swipeY != null) {
+                        baseX = model.chrome.swipeX;
+                        baseY = model.chrome.swipeY;
+                      } else {
+                        const rootRect = previewRootRef.current?.getBoundingClientRect();
+                        const elRect = swipeChromeRef.current?.getBoundingClientRect();
+                        if (rootRect && elRect && rootRect.width > 0 && rootRect.height > 0) {
+                          baseX = ((elRect.left - rootRect.left) / rootRect.width) * 1080;
+                          baseY = ((elRect.top - rootRect.top) / rootRect.height) * canvasH;
+                          editChromeSwipe.onSwipePositionChange(
+                            Math.round(Math.max(0, Math.min(1080, baseX))),
+                            Math.round(Math.max(0, Math.min(canvasH, baseY)))
+                          );
+                        } else {
+                          const preset = getSwipePresetDesignCoords(pos, canvasH);
+                          baseX = preset.x;
+                          baseY = preset.y;
+                        }
+                      }
+                      chromeDragStartRef.current = { type: "swipe", baseX, baseY };
+                      setChromeSwipeDragBase({ baseX, baseY });
+                      setChromeDragType("swipe");
+                      setChromeDragOffset({ dx: 0, dy: 0 });
+                    }
+                  : undefined
+              }
+              role={editChromeSwipe ? "button" : undefined}
+              aria-label={editChromeSwipe ? "Drag to move swipe hint" : undefined}
+            >
+              {content}
+            </div>
           </div>
         );
       })()}
@@ -2893,38 +3066,31 @@ export function SlidePreview({
             right: (model.chrome.counterRight ?? 24) - (chromeDragType === "counter" && chromeDragOffset ? chromeDragOffset.dx : 0),
           }}
         >
-          {editChromeCounter && focusedChrome === "counter" && (
-            <div
-              role="button"
-              tabIndex={-1}
-              onPointerDown={(e) => {
-                e.preventDefault();
-                e.currentTarget.setPointerCapture(e.pointerId);
-                chromeDragStartRef.current = { type: "counter", baseTop: editChromeCounter.top, baseRight: editChromeCounter.right };
-                setChromeDragType("counter");
-                setChromeDragOffset({ dx: 0, dy: 0 });
-              }}
-              className="flex items-center justify-center border-b-2 border-primary/50 bg-primary/20 cursor-move rounded-t-sm hover:bg-primary/30 mb-0.5"
-              style={{ height: 22, width: "100%", minWidth: 48 }}
-              aria-label="Drag to move slide number"
-            >
-              <GripHorizontal className="size-3.5 text-white" />
-            </div>
-          )}
           <div
-            className={`relative rounded-full ${editChromeCounter ? "cursor-pointer ring-offset-2 ring-offset-transparent" : ""} ${focusedChrome === "counter" ? "ring-2 ring-primary" : ""}`}
+            className={`relative rounded-full ${editChromeCounter ? "cursor-move ring-offset-2 ring-offset-transparent" : ""} ${focusedChrome === "counter" ? "ring-2 ring-primary" : ""}`}
             style={{
               padding: `${6 * chromeScale}px ${12 * chromeScale}px`,
               fontSize: (model.chrome.counterFontSize ?? 20) * chromeScale,
               fontWeight: 500,
               letterSpacing: "0.02em",
-              color: textColor,
+              color: model.chrome.counterColor ?? textColor,
               opacity: 0.85,
               backgroundColor: "rgba(255,255,255,0.08)",
             }}
             onClick={() => editChromeCounter && setFocusedChrome((c) => (c === "counter" ? null : "counter"))}
+            onPointerDown={
+              editChromeCounter
+                ? (e) => {
+                    e.preventDefault();
+                    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+                    chromeDragStartRef.current = { type: "counter", baseTop: editChromeCounter.top, baseRight: editChromeCounter.right };
+                    setChromeDragType("counter");
+                    setChromeDragOffset({ dx: 0, dy: 0 });
+                  }
+                : undefined
+            }
             role={editChromeCounter ? "button" : undefined}
-            aria-label={editChromeCounter ? "Edit slide number (drag bar to move, corner to resize)" : undefined}
+            aria-label={editChromeCounter ? "Edit slide number (drag to move, corner to resize)" : undefined}
           >
             {model.chrome.counterText}
             {editChromeCounter && focusedChrome === "counter" && (
@@ -2959,15 +3125,16 @@ export function SlidePreview({
           const off = chromeDragType === "watermark" && chromeDragOffset ? chromeDragOffset : null;
           const useCustomPos = model.chrome.watermark.position === "custom" || (model.chrome.watermark.logoX != null && model.chrome.watermark.logoY != null);
           const pos = model.chrome.watermark.position;
+          /** Logo position in root coords (0–1080 x 0–canvasH), same for all formats. During drag we use left/top only. */
           const left = isDraggingWatermark && wBase
-            ? wBase.baseX + (off?.dx ?? 0)
+            ? Math.max(0, Math.min(1080, wBase.baseX + (off?.dx ?? 0)))
             : useCustomPos
-              ? (model.chrome.watermark.logoX ?? 24) + (off?.dx ?? 0)
+              ? Math.max(0, Math.min(1080, (model.chrome.watermark.logoX ?? 24) + (off?.dx ?? 0)))
               : pos === "top_left" || pos === "bottom_left" ? 24 : undefined;
           const top = isDraggingWatermark && wBase
-            ? (wBase.baseY + (off?.dy ?? 0)) * chromeScale
+            ? Math.max(0, Math.min(canvasH, wBase.baseY + (off?.dy ?? 0)))
             : useCustomPos
-              ? (model.chrome.watermark.logoY ?? 24) * chromeScale + (off?.dy ?? 0) * chromeScale
+              ? Math.max(0, Math.min(canvasH, (model.chrome.watermark.logoY ?? 24) + (off?.dy ?? 0)))
               : pos === "top_left" || pos === "top_right" ? 24 * chromeScale : undefined;
           const right = !isDraggingWatermark && (pos === "top_right" || pos === "bottom_right") ? 24 : undefined;
           const bottom = !isDraggingWatermark && (pos === "bottom_right" || pos === "bottom_left") ? 80 * chromeScale : undefined;
@@ -2977,47 +3144,49 @@ export function SlidePreview({
               className="absolute z-10 flex flex-col items-start"
               style={{ left, top, right, bottom }}
             >
-              {editChromeWatermark && focusedChrome === "watermark" && (
-                <div
-                  role="button"
-                  tabIndex={-1}
-                  onPointerDown={(e) => {
-                    e.preventDefault();
-                    e.currentTarget.setPointerCapture(e.pointerId);
-                    let baseX: number, baseY: number;
-                    if (model.chrome.watermark.position === "custom" || (model.chrome.watermark.logoX != null && model.chrome.watermark.logoY != null)) {
-                      baseX = model.chrome.watermark.logoX ?? editChromeWatermark.logoX ?? 24;
-                      baseY = model.chrome.watermark.logoY ?? editChromeWatermark.logoY ?? 24;
-                    } else {
-                      const p = model.chrome.watermark.position ?? "bottom_right";
-                      baseX = p === "top_left" || p === "bottom_left" ? 24 : 1080 - 24;
-                      baseY = p === "top_left" || p === "top_right" ? 24 : canvasH - 80;
-                      editChromeWatermark.onLogoXChange(baseX);
-                      editChromeWatermark.onLogoYChange(baseY);
-                    }
-                    chromeDragStartRef.current = { type: "watermark", baseX, baseY };
-                    setChromeWatermarkDragBase({ baseX, baseY });
-                    setChromeDragType("watermark");
-                    setChromeDragOffset({ dx: 0, dy: 0 });
-                  }}
-                  className="flex items-center justify-center border-b-2 border-primary/50 bg-primary/20 cursor-move rounded-t-sm hover:bg-primary/30 mb-0.5"
-                  style={{ height: 22, width: "100%", minWidth: 48 }}
-                  aria-label="Drag to move logo"
-                >
-                  <GripHorizontal className="size-3.5 text-white" />
-                </div>
-              )}
               <div
-                className={`relative ${editChromeWatermark ? "cursor-pointer ring-offset-2 ring-offset-transparent" : ""} ${focusedChrome === "watermark" ? "ring-2 ring-primary" : ""}`}
+                className={`relative ${editChromeWatermark ? "cursor-move ring-offset-2 ring-offset-transparent" : ""} ${focusedChrome === "watermark" ? "ring-2 ring-primary" : ""}`}
                 style={{
-                  color: textColor,
+                  color: model.chrome.watermark.color ?? textColor,
                   opacity: 0.7,
                   fontSize: (model.chrome.watermark.fontSize ?? 20) * chromeScale,
                   fontWeight: 500,
                 }}
                 onClick={() => editChromeWatermark && setFocusedChrome((c) => (c === "watermark" ? null : "watermark"))}
+                onPointerDown={
+                  editChromeWatermark
+                    ? (e) => {
+                        e.preventDefault();
+                        (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+                        let baseX: number, baseY: number;
+                        if (model.chrome.watermark.position === "custom" || (model.chrome.watermark.logoX != null && model.chrome.watermark.logoY != null)) {
+                          baseX = model.chrome.watermark.logoX ?? editChromeWatermark.logoX ?? 24;
+                          baseY = model.chrome.watermark.logoY ?? editChromeWatermark.logoY ?? 24;
+                        } else {
+                          const rootRect = previewRootRef.current?.getBoundingClientRect();
+                          const elRect = watermarkChromeRef.current?.getBoundingClientRect();
+                          if (rootRect && elRect && rootRect.width > 0 && rootRect.height > 0) {
+                            baseX = ((elRect.left - rootRect.left) / rootRect.width) * 1080;
+                            baseY = ((elRect.top - rootRect.top) / rootRect.height) * canvasH;
+                            editChromeWatermark.onLogoXChange(Math.round(Math.max(0, Math.min(1080, baseX))));
+                            editChromeWatermark.onLogoYChange(Math.round(Math.max(0, Math.min(canvasH, baseY))));
+                          } else {
+                            const p = model.chrome.watermark.position ?? "bottom_right";
+                            baseX = p === "top_left" || p === "bottom_left" ? 24 : 1080 - 24 - 120;
+                            baseY = p === "top_left" || p === "top_right" ? 24 : canvasH - 80 * chromeScale;
+                            editChromeWatermark.onLogoXChange(Math.round(baseX));
+                            editChromeWatermark.onLogoYChange(Math.round(baseY));
+                          }
+                        }
+                        chromeDragStartRef.current = { type: "watermark", baseX, baseY };
+                        setChromeWatermarkDragBase({ baseX, baseY });
+                        setChromeDragType("watermark");
+                        setChromeDragOffset({ dx: 0, dy: 0 });
+                      }
+                    : undefined
+                }
                 role={editChromeWatermark ? "button" : undefined}
-                aria-label={editChromeWatermark ? "Edit logo (drag bar to move, corner to resize)" : undefined}
+                aria-label={editChromeWatermark ? "Edit logo (drag to move, corner to resize)" : undefined}
               >
                 {model.chrome.watermark.logoUrl ? (
                   <img
@@ -3060,30 +3229,80 @@ export function SlidePreview({
         })()
       )}
 
-      {showMadeWithOverride !== false && (
-        <div
-          className="absolute"
-          style={{
-            ...(model.chrome.madeWithY != null
-              ? { top: model.chrome.madeWithY * chromeScale }
-              : { bottom: (model.chrome.madeWithBottom ?? 16) * chromeScale }),
-            ...(model.chrome.madeWithX != null
-              ? { left: model.chrome.madeWithX * chromeScale, transform: "translateX(-50%)" }
-              : { left: "50%", transform: "translateX(-50%)" }),
-            maxWidth: 1032 * chromeScale,
-            fontSize: (model.chrome.madeWithFontSize ?? 30) * chromeScale,
-            fontWeight: 500,
-            letterSpacing: "0.02em",
-            color: textColor,
-            opacity: 0.65,
-            zIndex: 10,
-            textShadow: "0 1px 2px rgba(0,0,0,0.3)",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {model.chrome.madeWithText ?? "Made with KarouselMaker.com"}
-        </div>
-      )}
+      {showMadeWithOverride !== false && (() => {
+        const isDraggingMadeWith = chromeDragType === "madeWith" && chromeMadeWithDragBase;
+        const off = chromeDragType === "madeWith" && chromeDragOffset ? chromeDragOffset : null;
+        const hasXY = model.chrome.madeWithX != null && model.chrome.madeWithY != null;
+        /** Made with position in root coords (0–1080 x 0–canvasH), same for all formats. */
+        const posStyle = isDraggingMadeWith && off && chromeMadeWithDragBase
+          ? {
+              left: Math.max(0, Math.min(1080, chromeMadeWithDragBase.baseX + off.dx)),
+              top: Math.max(0, Math.min(canvasH, chromeMadeWithDragBase.baseY + off.dy)),
+              transform: "translate(-50%, 0)",
+            }
+          : hasXY
+            ? { left: model.chrome.madeWithX!, top: model.chrome.madeWithY!, transform: "translateX(-50%)" }
+            : {
+                ...(model.chrome.madeWithY != null ? { top: model.chrome.madeWithY } : { bottom: (model.chrome.madeWithBottom ?? 16) * chromeScale }),
+                ...(model.chrome.madeWithX != null ? { left: model.chrome.madeWithX, transform: "translateX(-50%)" } : { left: "50%", transform: "translateX(-50%)" }),
+              };
+        return (
+          <div
+            ref={editChromeMadeWith ? madeWithChromeRef : undefined}
+            className={`absolute ${editChromeMadeWith ? "cursor-move ring-offset-2 ring-offset-transparent" : ""} ${focusedChrome === "madeWith" ? "ring-2 ring-primary" : ""}`}
+            style={{
+              ...posStyle,
+              maxWidth: 1032 * chromeScale,
+              fontSize: (model.chrome.madeWithFontSize ?? 30) * chromeScale,
+              fontWeight: 500,
+              letterSpacing: "0.02em",
+              color: (model.chrome as { madeWithColor?: string }).madeWithColor ?? textColor,
+              opacity: 0.65,
+              zIndex: 10,
+              textShadow: "0 1px 2px rgba(0,0,0,0.3)",
+              whiteSpace: "nowrap",
+            }}
+            onClick={() => editChromeMadeWith && setFocusedChrome((c) => (c === "madeWith" ? null : "madeWith"))}
+            onPointerDown={
+              editChromeMadeWith
+                ? (e) => {
+                    e.preventDefault();
+                    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+                    const baseX = model.chrome.madeWithX ?? editChromeMadeWith.madeWithX ?? 540;
+                    const baseY = model.chrome.madeWithY ?? editChromeMadeWith.madeWithY ?? canvasH - (model.chrome.madeWithBottom ?? 16) * chromeScale;
+                    chromeDragStartRef.current = { type: "madeWith", baseX, baseY };
+                    setChromeMadeWithDragBase({ baseX, baseY });
+                    setChromeDragType("madeWith");
+                    setChromeDragOffset({ dx: 0, dy: 0 });
+                  }
+                : undefined
+            }
+            role={editChromeMadeWith ? "button" : undefined}
+            aria-label={editChromeMadeWith ? "Drag to move Watermark (Made with)" : undefined}
+          >
+            {model.chrome.madeWithText ?? "Follow us"}
+          </div>
+        );
+      })()}
     </div>
+    {editToolbarHeadline?.onFontFamilyChange && (
+      <FontPickerModal
+        open={headlineFontModalOpen}
+        onOpenChange={setHeadlineFontModalOpen}
+        value={editToolbarHeadline.fontFamily ?? "system"}
+        onSelect={(id) => editToolbarHeadline.onFontFamilyChange?.(id)}
+        title="Headline font"
+      />
+    )}
+    {editToolbarBody?.onFontFamilyChange && (
+      <FontPickerModal
+        open={bodyFontModalOpen}
+        onOpenChange={setBodyFontModalOpen}
+        value={editToolbarBody.fontFamily ?? "system"}
+        onSelect={(id) => editToolbarBody.onFontFamilyChange?.(id)}
+        title="Body font"
+      />
+    )}
+    </>
   );
 }

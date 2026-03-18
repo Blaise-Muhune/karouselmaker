@@ -191,6 +191,10 @@ export function normalizeSlideMetaForRender(meta: Record<string, unknown> | null
           ...(counterRaw.fontSize != null && { fontSize: Math.round(Number(counterRaw.fontSize)) }),
         }
       : undefined;
+  const watermarkColorVal =
+    watermarkRaw && typeof watermarkRaw === "object" && typeof watermarkRaw.color === "string" && /^#([0-9A-Fa-f]{3}){1,2}$/.test(watermarkRaw.color)
+      ? watermarkRaw.color
+      : undefined;
   const watermark =
     watermarkRaw && typeof watermarkRaw === "object" && Object.keys(watermarkRaw).length > 0
       ? {
@@ -200,7 +204,14 @@ export function normalizeSlideMetaForRender(meta: Record<string, unknown> | null
           ...(watermarkRaw.fontSize != null && { fontSize: Math.round(Number(watermarkRaw.fontSize)) }),
           ...(watermarkRaw.maxWidth != null && { maxWidth: Math.round(Number(watermarkRaw.maxWidth)) }),
           ...(watermarkRaw.maxHeight != null && { maxHeight: Math.round(Number(watermarkRaw.maxHeight)) }),
+          ...(watermarkColorVal && { color: watermarkColorVal }),
         }
+      : watermarkColorVal
+        ? { color: watermarkColorVal }
+        : undefined;
+  const madeWithColorVal =
+    madeWithRaw && typeof madeWithRaw === "object" && typeof madeWithRaw.color === "string" && /^#([0-9A-Fa-f]{3}){1,2}$/.test(madeWithRaw.color)
+      ? madeWithRaw.color
       : undefined;
   const madeWith =
     madeWithRaw && typeof madeWithRaw === "object" && Object.keys(madeWithRaw).length > 0
@@ -209,12 +220,15 @@ export function normalizeSlideMetaForRender(meta: Record<string, unknown> | null
           ...(madeWithRaw.x != null && { x: Math.round(Number(madeWithRaw.x)) }),
           ...(madeWithRaw.y != null && { y: Math.round(Number(madeWithRaw.y)) }),
           ...(madeWithRaw.y == null && { bottom: madeWithRaw.bottom != null ? Math.round(Number(madeWithRaw.bottom)) : 16 }),
+          ...(madeWithColorVal && { color: madeWithColorVal }),
         }
-      : {};
+      : madeWithColorVal
+        ? { color: madeWithColorVal }
+        : {};
   if (Object.keys(madeWith).length === 0) (madeWith as { bottom?: number }).bottom = 16;
   const madeWithTextRaw = typeof m.made_with_text === "string" && m.made_with_text.trim() !== "" ? m.made_with_text.trim() : undefined;
   if (madeWithTextRaw) (madeWith as { text?: string }).text = madeWithTextRaw;
-  const swipePositions = ["bottom_left", "bottom_center", "bottom_right", "top_left", "top_center", "top_right", "center_left", "center_right"] as const;
+  const swipePositions = ["bottom_left", "bottom_center", "bottom_right", "top_left", "top_center", "top_right", "center_left", "center_right", "custom"] as const;
   const swipeTypes = ["text", "arrow-left", "arrow-right", "arrows", "hand-left", "hand-right", "chevrons", "dots", "finger-swipe", "finger-left", "finger-right", "circle-arrows", "line-dots", "custom"] as const;
   const showSwipeVal = m.show_swipe;
   const swipeTypeVal = typeof m.swipe_type === "string" && swipeTypes.includes(m.swipe_type as (typeof swipeTypes)[number]) ? (m.swipe_type as (typeof swipeTypes)[number]) : undefined;
@@ -223,6 +237,10 @@ export function normalizeSlideMetaForRender(meta: Record<string, unknown> | null
   const swipeXVal = m.swipe_x != null && Number.isFinite(Number(m.swipe_x)) ? Math.round(Number(m.swipe_x)) : undefined;
   const swipeYVal = m.swipe_y != null && Number.isFinite(Number(m.swipe_y)) ? Math.round(Number(m.swipe_y)) : undefined;
   const swipeSizeVal = m.swipe_size != null && Number.isFinite(Number(m.swipe_size)) ? Math.round(Number(m.swipe_size)) : undefined;
+  const swipeColorVal =
+    typeof m.swipe_color === "string" && /^#([0-9A-Fa-f]{3}){1,2}$/.test(m.swipe_color) ? m.swipe_color : undefined;
+  const counterColorVal =
+    typeof m.counter_color === "string" && /^#([0-9A-Fa-f]{3}){1,2}$/.test(m.counter_color) ? m.counter_color : undefined;
   const hasSwipeOverrides =
     typeof showSwipeVal === "boolean" ||
     swipeTypeVal != null ||
@@ -231,8 +249,13 @@ export function normalizeSlideMetaForRender(meta: Record<string, unknown> | null
     swipeXVal != null ||
     swipeYVal != null ||
     swipeSizeVal != null;
+  const hasChromeColorOverrides = !!swipeColorVal || !!counterColorVal || !!watermarkColorVal || !!madeWithColorVal;
   const chromeOverrides: ChromeOverrides | undefined =
-    (counter && Object.keys(counter).length > 0) || (watermark && Object.keys(watermark).length > 0) || (Object.keys(madeWith).length > 0) || hasSwipeOverrides
+    (counter && Object.keys(counter).length > 0) ||
+    (watermark && Object.keys(watermark).length > 0) ||
+    (Object.keys(madeWith).length > 0) ||
+    hasSwipeOverrides ||
+    hasChromeColorOverrides
       ? {
           ...(counter && Object.keys(counter).length > 0 && { counter }),
           ...(watermark && Object.keys(watermark).length > 0 && { watermark }),
@@ -244,6 +267,8 @@ export function normalizeSlideMetaForRender(meta: Record<string, unknown> | null
           ...(swipeXVal != null && { swipeX: swipeXVal }),
           ...(swipeYVal != null && { swipeY: swipeYVal }),
           ...(swipeSizeVal != null && { swipeSize: swipeSizeVal }),
+          ...(swipeColorVal && { swipeColor: swipeColorVal }),
+          ...(counterColorVal && { counterColor: counterColorVal }),
         }
       : undefined;
 

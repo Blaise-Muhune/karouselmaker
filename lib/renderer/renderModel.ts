@@ -50,14 +50,18 @@ export type SlideRenderModel = {
     swipeIconUrl?: string;
     /** When swipeType is "text", label. Default "swipe". */
     swipeText?: string;
-    swipePosition: "bottom_left" | "bottom_center" | "bottom_right" | "top_left" | "top_center" | "top_right" | "center_left" | "center_right";
+    swipePosition: "bottom_left" | "bottom_center" | "bottom_right" | "top_left" | "top_center" | "top_right" | "center_left" | "center_right" | "custom";
     /** Override position (px). When both set, ignore swipePosition preset. */
     swipeX?: number;
     swipeY?: number;
     /** Font/size for swipe hint (px). Default 24. */
     swipeSize?: number;
+    /** Swipe hint color (hex). When unset, uses contrasting text color. */
+    swipeColor?: string;
     showCounter: boolean;
     counterText: string;
+    /** Slide number color (hex). When unset, uses contrasting text color. */
+    counterColor?: string;
     /** Position/size from template or meta. When set, use these instead of default top-right. */
     counterTop?: number;
     counterRight?: number;
@@ -72,6 +76,8 @@ export type SlideRenderModel = {
       fontSize?: number;
       maxWidth?: number;
       maxHeight?: number;
+      /** Text/icon color (hex). When unset, uses contrasting text color. */
+      color?: string;
     };
     /** "Made with" line: optional position/size from template or meta. */
     madeWithFontSize?: number;
@@ -81,12 +87,30 @@ export type SlideRenderModel = {
     madeWithY?: number;
     /** Distance from bottom (px). Used when madeWithY is undefined. Default 16. */
     madeWithBottom?: number;
-    /** Custom text for "Made with" attribution. When undefined, use "Made with KarouselMaker.com". */
+    /** Custom text for "Made with" attribution. When undefined, use "Follow us". */
     madeWithText?: string;
+    /** "Made with" line color (hex). When unset, uses contrasting text color. */
+    madeWithColor?: string;
   };
 };
 
 const DEFAULT_BG = "#0a0a0a";
+
+/** Right-side swipe hint left position (px) per format so it stays visible in preview and export. 1:1 = 992, 4:5 = 904, 9:16 = 768. */
+export function getSwipeRightXForFormat(
+  exportSizeOrHeight: "1080x1080" | "1080x1350" | "1080x1920" | number | undefined
+): number {
+  if (exportSizeOrHeight === undefined) return 992;
+  const h =
+    typeof exportSizeOrHeight === "number"
+      ? exportSizeOrHeight
+      : exportSizeOrHeight === "1080x1920"
+        ? 1920
+        : exportSizeOrHeight === "1080x1350"
+          ? 1350
+          : 1080;
+  return h <= 1080 ? 992 : h <= 1350 ? 904 : 768;
+}
 
 function getTemplateDefaultBackgroundColor(templateConfig: TemplateConfig): string | undefined {
   const meta = templateConfig.defaults?.meta;
@@ -163,14 +187,16 @@ export type ChromeOverrides = {
     fontSize?: number;
     maxWidth?: number;
     maxHeight?: number;
+    /** Logo/watermark text color (hex). */
+    color?: string;
   };
-  madeWith?: { fontSize?: number; x?: number; y?: number; bottom?: number; text?: string };
+  madeWith?: { fontSize?: number; x?: number; y?: number; bottom?: number; text?: string; /** "Made with" line color (hex). */ color?: string };
   /** Override template showSwipe (visibility of swipe hint). */
   showSwipe?: boolean;
   /** Override template swipe hint style. */
   swipeType?: "text" | "arrow-left" | "arrow-right" | "arrows" | "hand-left" | "hand-right" | "chevrons" | "dots" | "finger-swipe" | "finger-left" | "finger-right" | "circle-arrows" | "line-dots" | "custom";
   /** Override template swipe hint position. */
-  swipePosition?: "bottom_left" | "bottom_center" | "bottom_right" | "top_left" | "top_center" | "top_right" | "center_left" | "center_right";
+  swipePosition?: "bottom_left" | "bottom_center" | "bottom_right" | "top_left" | "top_center" | "top_right" | "center_left" | "center_right" | "custom";
   /** When swipeType is "text", custom label. Default "swipe". */
   swipeText?: string;
   /** Swipe hint X (px from left). With swipeY, overrides position preset. */
@@ -179,6 +205,10 @@ export type ChromeOverrides = {
   swipeY?: number;
   /** Swipe hint font/size (px). */
   swipeSize?: number;
+  /** Swipe hint color (hex). */
+  swipeColor?: string;
+  /** Slide number color (hex). */
+  counterColor?: string;
 };
 
 /**
@@ -245,6 +275,11 @@ export function buildSlideRenderModel(
     .replace("1", String(slideIndex))
     .replace("8", String(totalSlides));
 
+  /** Headline zone color used as default for chrome (counter, logo, swipe) when not set. */
+  const headlineZone = textBlocks.find((b) => b.zone.id === "headline")?.zone;
+  const headlineColor =
+    headlineZone?.color?.trim() && /^#([0-9A-Fa-f]{3}){1,2}$/.test(headlineZone.color) ? headlineZone.color : undefined;
+
   const wm = templateConfig.chrome.watermark;
   const wmOverrides = chromeOverrides?.watermark;
   const watermark = {
@@ -257,6 +292,7 @@ export function buildSlideRenderModel(
     fontSize: wmOverrides?.fontSize ?? (wm as { fontSize?: number }).fontSize,
     maxWidth: wmOverrides?.maxWidth ?? (wm as { maxWidth?: number }).maxWidth,
     maxHeight: wmOverrides?.maxHeight ?? (wm as { maxHeight?: number }).maxHeight,
+    color: wmOverrides?.color ?? (wm as { color?: string }).color ?? headlineColor,
   };
 
   return {
@@ -282,7 +318,9 @@ export function buildSlideRenderModel(
       swipeX: chromeOverrides?.swipeX ?? templateConfig.chrome.swipeX,
       swipeY: chromeOverrides?.swipeY ?? templateConfig.chrome.swipeY,
       swipeSize: chromeOverrides?.swipeSize ?? templateConfig.chrome.swipeSize,
+      swipeColor: chromeOverrides?.swipeColor ?? templateConfig.chrome.swipeColor ?? headlineColor,
       showCounter: templateConfig.chrome.showCounter,
+      counterColor: chromeOverrides?.counterColor ?? templateConfig.chrome.counterColor ?? headlineColor,
       counterText,
       counterTop: chromeOverrides?.counter?.top,
       counterRight: chromeOverrides?.counter?.right,
@@ -293,6 +331,13 @@ export function buildSlideRenderModel(
       madeWithY: chromeOverrides?.madeWith?.y,
       madeWithBottom: chromeOverrides?.madeWith?.bottom,
       madeWithText: chromeOverrides?.madeWith?.text,
+      madeWithColor: (() => {
+        const over = chromeOverrides?.madeWith?.color;
+        if (over && /^#([0-9A-Fa-f]{3}){1,2}$/.test(over)) return over;
+        const mwo = templateConfig.defaults?.meta && typeof templateConfig.defaults.meta === "object" ? (templateConfig.defaults.meta as { made_with_zone_override?: { color?: string } }).made_with_zone_override : undefined;
+        const c = mwo?.color;
+        return c && /^#([0-9A-Fa-f]{3}){1,2}$/.test(c) ? c : undefined;
+      })(),
     },
   };
 }

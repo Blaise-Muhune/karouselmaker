@@ -24,7 +24,8 @@ import { getTemplatePreviewBackgroundOverride } from "@/lib/renderer/getTemplate
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import type { Slide, Template } from "@/lib/server/db/types";
 import { useRouter } from "next/navigation";
-import { ChevronLeftIcon, ChevronRightIcon, DownloadIcon, GripVerticalIcon, Images, LayoutTemplateIcon, Loader2Icon, PencilIcon, PlusIcon, Shuffle, Trash2Icon } from "lucide-react";
+import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, DownloadIcon, GripVerticalIcon, Images, LayoutTemplateIcon, Loader2Icon, PencilIcon, PlusIcon, Shuffle, SquareIcon, Trash2Icon } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 const PREVIEW_SCALE = 0.25;
 
@@ -235,7 +236,18 @@ type SlideMeta = {
   show_swipe?: boolean;
   swipe_type?: string;
   swipe_position?: string;
+  headline_bold_weight?: number;
+  body_bold_weight?: number;
 };
+
+function getBoldWeights(slide: Slide): { headlineBoldWeight?: number; bodyBoldWeight?: number } {
+  const m = slide.meta as SlideMeta | null;
+  if (m == null) return {};
+  const h = m.headline_bold_weight != null && m.headline_bold_weight >= 100 && m.headline_bold_weight <= 900 ? m.headline_bold_weight : undefined;
+  const b = m.body_bold_weight != null && m.body_bold_weight >= 100 && m.body_bold_weight <= 900 ? m.body_bold_weight : undefined;
+  if (h == null && b == null) return {};
+  return { ...(h != null && { headlineBoldWeight: h }), ...(b != null && { bodyBoldWeight: b }) };
+}
 
 function getZoneOverrides(slide: Slide): { headline?: Record<string, unknown>; body?: Record<string, unknown> } | undefined {
   const m = slide.meta as SlideMeta | null;
@@ -286,6 +298,33 @@ function getChromeOverrides(slide: Slide): import("@/lib/renderer/renderModel").
     ...(swipeType != null && { swipeType }),
     ...(swipePosition != null && { swipePosition }),
   };
+}
+
+/** Build chrome overrides so grid preview matches edit page and export: template chrome (swipe, etc.) + template defaults.meta + slide meta overrides. */
+function getEffectiveChromeOverridesForPreview(
+  slide: Slide,
+  templateConfig: TemplateConfig | null,
+  templateDefaultsChrome: import("@/lib/renderer/renderModel").ChromeOverrides | undefined
+): import("@/lib/renderer/renderModel").ChromeOverrides | undefined {
+  const tc = templateConfig?.chrome;
+  const baseFromTemplate =
+    tc != null
+      ? {
+          showSwipe: tc.showSwipe ?? true,
+          swipeType: tc.swipeType ?? ("text" as const),
+          swipePosition: (tc.swipePosition ?? "bottom_center") as "bottom_center" | "bottom_left" | "bottom_right" | "top_left" | "top_center" | "top_right" | "center_left" | "center_right" | "custom",
+          ...(tc.swipeSize != null && { swipeSize: tc.swipeSize }),
+          ...(tc.swipeColor && { swipeColor: tc.swipeColor }),
+          ...(tc.swipeText != null && tc.swipeText.trim() !== "" && { swipeText: tc.swipeText.trim() }),
+        }
+      : { showSwipe: true as const, swipeType: "text" as const, swipePosition: "bottom_center" as const };
+  const fromDefaults = templateDefaultsChrome ?? {};
+  const fromSlide = getChromeOverrides(slide) ?? {};
+  return {
+    ...baseFromTemplate,
+    ...fromDefaults,
+    ...fromSlide,
+  } as import("@/lib/renderer/renderModel").ChromeOverrides;
 }
 
 function getHighlightStyles(slide: Slide): { headline: "text" | "background"; body: "text" | "background" } {
@@ -403,6 +442,9 @@ export function SlideGrid({
   const editorPath = `/p/${projectId}/c/${carouselId}`;
   const [fetchedTemplateConfigs, setFetchedTemplateConfigs] = useState<Record<string, TemplateConfig>>({});
   const [templateModalSlideId, setTemplateModalSlideId] = useState<string | null>(null);
+  const [selectedSlideIds, setSelectedSlideIds] = useState<Set<string>>(new Set());
+  const [bulkApplyTemplateIds, setBulkApplyTemplateIds] = useState<string[] | null>(null);
+  const [bulkActionPending, setBulkActionPending] = useState(false);
 
   const templateOptions: TemplateOption[] = templates.map((t) => ({
     id: t.id,
@@ -504,8 +546,89 @@ export function SlideGrid({
     });
   };
 
+  const toggleSlideSelection = (slideId: string) => {
+    setSelectedSlideIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(slideId)) next.delete(slideId);
+      else next.add(slideId);
+      return next;
+    });
+  };
+
+  const selectAllSlides = () => {
+    setSelectedSlideIds(new Set(slidesOrder.map((s) => s.id)));
+  };
+
+  const clearSelection = () => {
+    setSelectedSlideIds(new Set());
+    setBulkApplyTemplateIds(null);
+  };
+
+  const selectionCount = selectedSlideIds.size;
+  const isBulkTemplateOpen = bulkApplyTemplateIds != null && bulkApplyTemplateIds.length > 0;
+  const isTemplateDialogOpen = templateModalSlideId != null || isBulkTemplateOpen;
+
   return (
     <>
+      {canEdit && (
+        <div className="mb-3 flex flex-wrap items-center gap-3 pt-3 pb-2">
+          {selectionCount > 0 ? (
+            <>
+              <span className="text-sm text-muted-foreground">
+                <strong className="text-foreground">{selectionCount}</strong> selected
+              </span>
+              <Button variant="ghost" size="sm" onClick={clearSelection} disabled={bulkActionPending}>
+                Clear
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setBulkApplyTemplateIds(Array.from(selectedSlideIds))}
+                disabled={bulkActionPending || templates.length === 0}
+              >
+                <LayoutTemplateIcon className="size-4 mr-1.5" />
+                Apply template
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                onClick={() => {
+                  if (!confirm(`Delete ${selectionCount} frame${selectionCount !== 1 ? "s" : ""}? This cannot be undone.`)) return;
+                  setBulkActionPending(true);
+                  startTransition(async () => {
+                    const ids = Array.from(selectedSlideIds);
+                    for (const id of ids) {
+                      await deleteSlideAction(id, editorPath);
+                    }
+                    setSelectedSlideIds(new Set());
+                    setBulkActionPending(false);
+                    router.refresh();
+                  });
+                }}
+                disabled={bulkActionPending || slidesOrder.length <= selectionCount}
+                title={slidesOrder.length <= selectionCount ? "Keep at least one frame" : undefined}
+              >
+                {bulkActionPending ? (
+                  <Loader2Icon className="size-4 mr-1.5 animate-spin" />
+                ) : (
+                  <Trash2Icon className="size-4 mr-1.5" />
+                )}
+                Delete selected
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="outline" size="sm" onClick={selectAllSlides}>
+                Select all
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                Tick the box on each slide to select, then Apply template or Delete selected.
+              </span>
+            </>
+          )}
+        </div>
+      )}
       <ul className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {slidesOrder.map((slide, index) => {
           const templateConfigFromList = getTemplateConfig(slide, templates);
@@ -528,7 +651,11 @@ export function SlideGrid({
               body_font_size: Math.round(Number(baseBody) * 0.85),
             };
           }
-          const previewChromeOverrides = getChromeOverrides(slide) ?? templateDefaults.chromeOverrides;
+          const previewChromeOverrides = getEffectiveChromeOverridesForPreview(
+            slide,
+            effectiveTemplateConfig,
+            templateDefaults.chromeOverrides
+          );
           const currentTemplateId = slide.template_id ?? templates[0]?.id;
           const fromSlide = getBackgroundOverride(slide, effectiveTemplateConfig);
           const hasBackgroundImage =
@@ -548,12 +675,12 @@ export function SlideGrid({
               onDragLeave={canEdit ? handleDragLeave : undefined}
               onDrop={canEdit ? (e) => handleDrop(e, slide.id) : undefined}
               onDragEnd={canEdit ? handleDragEnd : undefined}
-              className={`flex flex-col gap-2 transition-opacity ${isDragging ? "opacity-50" : ""} ${isDragOver ? "ring-2 ring-primary rounded-lg" : ""}`}
+              className={`flex flex-col gap-2 transition-opacity ${isDragging ? "opacity-50" : ""} ${isDragOver ? "ring-2 ring-primary rounded-lg" : ""} ${canEdit ? "pl-0 pt-0" : ""}`}
             >
-              <div className="flex items-start gap-1">
+              <div className={cn("flex items-start", canEdit ? "gap-2" : "")}>
                 {canEdit && (
                   <div
-                    className="cursor-grab active:cursor-grabbing mt-2 p-1 rounded text-muted-foreground hover:text-foreground touch-none shrink-0"
+                    className="cursor-grab active:cursor-grabbing mt-2 p-1.5 rounded text-muted-foreground hover:text-foreground touch-none shrink-0"
                     draggable
                     onDragStart={(e) => {
                       e.stopPropagation();
@@ -567,12 +694,38 @@ export function SlideGrid({
                 <div className="flex-1 min-w-0 flex flex-col gap-2">
                   {canEdit ? (
                     <div className="relative" style={{ width: previewDims.w, height: previewDims.h }}>
+                      {canEdit && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            toggleSlideSelection(slide.id);
+                          }}
+                          className={cn(
+                            "absolute left-2 top-2 z-20 flex h-8 w-8 items-center justify-center rounded-md border-2 shadow-sm transition-colors",
+                            selectedSlideIds.has(slide.id)
+                              ? "border-primary bg-primary text-primary-foreground"
+                              : "border-white/90 bg-black/40 text-white hover:bg-black/60 hover:border-white"
+                          )}
+                          aria-label={selectedSlideIds.has(slide.id) ? "Deselect this slide" : "Select this slide"}
+                          title={selectedSlideIds.has(slide.id) ? "Deselect" : "Select"}
+                        >
+                          {selectedSlideIds.has(slide.id) ? (
+                            <CheckIcon className="size-5" />
+                          ) : (
+                            <SquareIcon className="size-5" />
+                          )}
+                        </button>
+                      )}
                       <Link
                         href={`/p/${projectId}/c/${carouselId}/s/${slide.id}`}
-                        className="relative overflow-hidden rounded-lg border border-border bg-muted/30 text-left transition-colors hover:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/50 block"
+                        className="relative rounded-lg border border-border bg-muted/30 text-left transition-colors hover:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/50 block z-0"
                         style={{
                           width: previewDims.w,
                           height: previewDims.h,
+                          overflow: "visible",
+                          clipPath: "inset(0 round 8px)",
                         }}
                       >
                         {effectiveTemplateConfig ? (
@@ -615,6 +768,7 @@ export function SlideGrid({
                             borderedFrame={hasBackgroundImage}
                             imageDisplay={imageDisplayForSlide}
                             exportSize={exportSize}
+                            {...getBoldWeights(slide)}
                           />
                         </div>
                       ) : (
@@ -658,10 +812,12 @@ export function SlideGrid({
                   ) : (
                     <Link
                       href={`/p/${projectId}/c/${carouselId}/s/${slide.id}`}
-                      className="relative overflow-hidden rounded-lg border border-border bg-muted/30 text-left block transition-colors hover:border-primary/30 focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      className="relative rounded-lg border border-border bg-muted/30 text-left block transition-colors hover:border-primary/30 focus:outline-none focus:ring-2 focus:ring-primary/50"
                       style={{
                         width: previewDims.w,
                         height: previewDims.h,
+                        overflow: "visible",
+                        clipPath: "inset(0 round 8px)",
                       }}
                     >
                       {effectiveTemplateConfig ? (
@@ -704,6 +860,7 @@ export function SlideGrid({
                             borderedFrame={hasBackgroundImage}
                             imageDisplay={imageDisplayForSlide}
                             exportSize={exportSize}
+                            {...getBoldWeights(slide)}
                           />
                         </div>
                       ) : (
@@ -871,15 +1028,82 @@ export function SlideGrid({
         ) : null}
       </ul>
 
-      <Dialog open={templateModalSlideId != null} onOpenChange={(open) => !open && setTemplateModalSlideId(null)}>
+      <Dialog
+        open={isTemplateDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setTemplateModalSlideId(null);
+            setBulkApplyTemplateIds(null);
+          }
+        }}
+      >
         <DialogContent className="flex flex-col max-w-[calc(100%-2rem)] max-h-[85vh] sm:max-w-2xl md:max-w-[92vw] md:max-h-[92vh] md:w-[92vw] md:h-[92vh] lg:max-w-[94vw] lg:max-h-[94vh] lg:w-[94vw] lg:h-[94vh]">
           <DialogHeader>
-            <DialogTitle>Choose template</DialogTitle>
+            <DialogTitle>
+              {isBulkTemplateOpen ? `Apply template to ${bulkApplyTemplateIds!.length} slides` : "Choose template"}
+            </DialogTitle>
           </DialogHeader>
           <p className="text-muted-foreground text-sm -mt-2">
-            Pick a layout for this slide.
+            {isBulkTemplateOpen ? "Pick a layout to apply to all selected slides." : "Pick a layout for this slide."}
           </p>
-          {templateModalSlideId != null && (() => {
+          {isBulkTemplateOpen && (() => {
+            const ids = bulkApplyTemplateIds!;
+            const firstSlide = slidesOrder.find((s) => s.id === ids[0]);
+            const previewImageUrlsForBulk =
+              firstSlide && (slideBackgroundImageUrls[firstSlide.id] != null)
+                ? typeof slideBackgroundImageUrls[firstSlide.id] === "string"
+                  ? [slideBackgroundImageUrls[firstSlide.id] as string]
+                  : (slideBackgroundImageUrls[firstSlide.id] as string[])
+                : undefined;
+            return (
+              <div className="overflow-y-auto overflow-x-hidden flex-1 min-h-0 min-w-0 w-full pr-1 -mb-2">
+                <TemplateSelectCards
+                  templates={templateOptions}
+                  defaultTemplateId={templates[0]?.id ?? null}
+                  defaultTemplateConfig={templates[0]?.parsedConfig ?? null}
+                  defaultTemplateCategory={templates[0]?.category ?? undefined}
+                  value={null}
+                  previewImageUrls={previewImageUrlsForBulk}
+                  onChange={async (id) => {
+                    const templateId = id === null ? templates[0]?.id ?? null : id;
+                    if (!templateId) return;
+                    setBulkActionPending(true);
+                    startTransition(async () => {
+                      const selectedTemplate = templates.find((t) => t.id === templateId);
+                      const templateOverlay = overlayFromTemplateGradient(selectedTemplate?.parsedConfig?.overlays?.gradient);
+                      for (const slideId of ids) {
+                        await setSlideTemplate(slideId, templateId, editorPath);
+                      }
+                      setBulkApplyTemplateIds(null);
+                      setSelectedSlideIds(new Set());
+                      setBulkActionPending(false);
+                      router.refresh();
+                      if (templateOverlay) {
+                        setSlidesOrder((prev) =>
+                          prev.map((s) =>
+                            ids.includes(s.id)
+                              ? {
+                                  ...s,
+                                  template_id: templateId,
+                                  background: {
+                                    ...(typeof s.background === "object" && s.background ? s.background : {}),
+                                    overlay: { ...((s.background as Record<string, unknown>)?.overlay as Record<string, unknown> | undefined), ...templateOverlay },
+                                  } as Slide["background"],
+                                }
+                              : s
+                            )
+                        );
+                      }
+                    });
+                  }}
+                  primaryColor={brandKit.primary_color ?? undefined}
+                  showCategoryTabs
+                  paginateInternally
+                />
+              </div>
+            );
+          })()}
+          {templateModalSlideId != null && !isBulkTemplateOpen && (() => {
             const slideForModal = slidesOrder.find((s) => s.id === templateModalSlideId);
             const currentTemplateIdForModal = slideForModal?.template_id ?? templates[0]?.id ?? null;
             if (!slideForModal) return null;

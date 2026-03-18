@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { SlidePreview, PREVIEW_FONTS, type SlideBackgroundOverride } from "@/components/renderer/SlidePreview";
+import { FontPickerModal, getFontStack } from "@/components/FontPickerModal";
 import { HighlightModal } from "@/components/editor/HighlightModal";
 import { AssetPickerModal } from "@/components/assets/AssetPickerModal";
 import { GoogleDriveFilePicker } from "@/components/drive/GoogleDriveFilePicker";
@@ -44,8 +45,7 @@ import { getContrastingTextColor } from "@/lib/editor/colorUtils";
 import { cn, slugifyForFilename } from "@/lib/utils";
 import { isSupabaseSignedUrl } from "@/lib/server/storage/signedUrlUtils";
 import { getTemplatePreviewBackgroundOverride } from "@/lib/renderer/getTemplatePreviewBackground";
-import type { BrandKit } from "@/lib/renderer/renderModel";
-import type { ChromeOverrides } from "@/lib/renderer/renderModel";
+import { getSwipeRightXForFormat, type BrandKit, type ChromeOverrides } from "@/lib/renderer/renderModel";
 import type { TemplateConfig, TextZone } from "@/lib/server/renderer/templateSchema";
 import type { Slide, Template } from "@/lib/server/db/types";
 import {
@@ -82,155 +82,23 @@ import {
 } from "lucide-react";
 import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { ColorPicker } from "@/components/ui/color-picker";
+import { StepperWithLongPress } from "@/components/ui/stepper-with-long-press";
 import { HIGHLIGHT_COLORS, expandSelectionToWordBoundaries, normalizeHighlightSpansToWords, clampHighlightSpansToText, getAutoHighlightSpans, getHighlightSpansFromWords, ensureHighlightCoverage, shiftHighlightSpansForBoldInsert, shiftHighlightSpansForBoldRemove, type HighlightSpan } from "@/lib/editor/inlineFormat";
-
-/** Font stack for each PREVIEW_FONTS id (so options can be rendered in their font). */
-function getFontStack(id: string): string {
-  if (id === "Georgia") return "Georgia, serif";
-  if (id === "Inter") return "Inter, system-ui, sans-serif";
-  if (id === "system" || id === "sans-serif") return "system-ui, -apple-system, sans-serif";
-  if (id === "Roboto") return "Roboto, system-ui, sans-serif";
-  if (id === "Montserrat") return "Montserrat, system-ui, sans-serif";
-  if (id === "Open Sans") return '"Open Sans", system-ui, sans-serif';
-  if (id === "Lato") return "Lato, system-ui, sans-serif";
-  if (id === "Oswald") return "Oswald, system-ui, sans-serif";
-  if (id === "Poppins") return "Poppins, system-ui, sans-serif";
-  if (id === "Playfair Display") return '"Playfair Display", Georgia, serif';
-  if (id === "Merriweather") return "Merriweather, Georgia, serif";
-  if (id === "Source Sans 3") return '"Source Sans 3", system-ui, sans-serif';
-  if (id === "Bebas Neue") return '"Bebas Neue", system-ui, sans-serif';
-  if (id === "DM Sans") return '"DM Sans", system-ui, sans-serif';
-  if (id?.trim()) return `${id}, system-ui, sans-serif`;
-  return "system-ui, -apple-system, sans-serif";
-}
 
 /** Rainbow gradient for custom highlight color picker (circle, same size as preset swatches). */
 const HIGHLIGHT_RAINBOW = "conic-gradient(from 0deg, #ef4444, #f97316, #eab308, #84cc16, #22c55e, #06b6d4, #3b82f6, #8b5cf6, #ec4899, #ef4444)";
 
-/** +/- stepper with long-press: hold to repeat, interval speeds up over time. */
-function StepperWithLongPress({
-  value,
-  min,
-  max,
-  step,
-  onChange,
-  formatDisplay = (n) => String(n),
-  label,
-  className = "",
-  valueClassName = "min-w-8",
-  disabled = false,
-}: {
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  onChange: (next: number) => void;
-  formatDisplay?: (n: number) => string;
-  label: string;
-  className?: string;
-  valueClassName?: string;
-  disabled?: boolean;
-}) {
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const directionRef = useRef<1 | -1 | null>(null);
-  const valueRef = useRef(value);
-  valueRef.current = value;
-
-  const clearTimers = useCallback(() => {
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
-    }
-    directionRef.current = null;
-  }, []);
-
-  const apply = useCallback(
-    (dir: 1 | -1) => {
-      const current = valueRef.current;
-      const next = Math.min(max, Math.max(min, current + dir * step));
-      valueRef.current = next;
-      onChange(next);
-    },
-    [min, max, step, onChange]
-  );
-
-  const startRepeat = useCallback(
-    (dir: 1 | -1) => {
-      directionRef.current = dir;
-      const startTime = Date.now();
-      const run = () => {
-        if (directionRef.current !== dir) return;
-        apply(dir);
-        const elapsed = Date.now() - startTime;
-        const delay = elapsed < 400 ? 80 : elapsed < 1000 ? 50 : elapsed < 2000 ? 35 : 20;
-        timeoutRef.current = setTimeout(run, delay);
-      };
-      timeoutRef.current = setTimeout(run, 400);
-    },
-    [apply]
-  );
-
-  const handlePointerDown = useCallback(
-    (dir: 1 | -1) => (e: React.PointerEvent) => {
-      e.preventDefault();
-      (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
-      apply(dir);
-      startRepeat(dir);
-    },
-    [apply, startRepeat]
-  );
-
-  const handlePointerUpOrLeave = useCallback(() => {
-    clearTimers();
-  }, [clearTimers]);
-
-  useEffect(() => {
-    const handlePointerUp = () => clearTimers();
-    window.addEventListener("pointerup", handlePointerUp);
-    window.addEventListener("pointercancel", handlePointerUp);
-    return () => {
-      window.removeEventListener("pointerup", handlePointerUp);
-      window.removeEventListener("pointercancel", handlePointerUp);
-      clearTimers();
-    };
-  }, [clearTimers]);
-
-  return (
-    <div className={`flex items-center gap-0.5 rounded-md border border-input/80 bg-background ${className} ${disabled ? "opacity-50 pointer-events-none" : ""}`}>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        className="h-7 w-7 shrink-0 rounded-r-none"
-        onPointerDown={handlePointerDown(-1)}
-        onPointerUp={handlePointerUpOrLeave}
-        onPointerLeave={handlePointerUpOrLeave}
-        onPointerCancel={handlePointerUpOrLeave}
-        aria-label={`Decrease ${label}`}
-        disabled={disabled}
-      >
-        <MinusIcon className="size-3" />
-      </Button>
-      <span className={`flex-1 text-center text-xs tabular-nums ${valueClassName}`} aria-hidden>
-        {formatDisplay(value)}
-      </span>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        className="h-7 w-7 shrink-0 rounded-l-none"
-        onPointerDown={handlePointerDown(1)}
-        onPointerUp={handlePointerUpOrLeave}
-        onPointerLeave={handlePointerUpOrLeave}
-        onPointerCancel={handlePointerUpOrLeave}
-        aria-label={`Increase ${label}`}
-        disabled={disabled}
-      >
-        <PlusIcon className="size-3" />
-      </Button>
-    </div>
-  );
-}
+/** Design-space coordinates for swipe position presets (1080px width; Y for 1:1). Bottom Y=980 keeps swipe visible (100px from bottom). Right-side x = 992 for 1:1. */
+const SWIPE_POSITION_PRESETS: Record<string, { x: number; y: number }> = {
+  bottom_left: { x: 24, y: 980 },
+  bottom_center: { x: 540, y: 980 },
+  bottom_right: { x: 992, y: 980 },
+  top_left: { x: 24, y: 24 },
+  top_center: { x: 540, y: 24 },
+  top_right: { x: 992, y: 24 },
+  center_left: { x: 24, y: 540 },
+  center_right: { x: 992, y: 540 },
+};
 
 export type ImageDisplayState = {
   position?: "center" | "top" | "bottom" | "left" | "right" | "top-left" | "top-right" | "bottom-left" | "bottom-right";
@@ -408,7 +276,7 @@ type SlideEditFormProps = {
   initialImageSources?: ("brave" | "unsplash" | "google" | "pixabay" | "pexels")[] | null;
   /** Hook only: resolved URL for second image (circle). */
   initialSecondaryBackgroundImageUrl?: string | null;
-  /** Default suffix after "Made with KarouselMaker.com " for Pro (e.g. "follow @username"). Used when slide has no made_with_text. */
+  /** Default attribution text when slide has no made_with_text (e.g. "Follow us" or "follow @username"). */
   initialMadeWithText?: string;
   /** Initial editor tab (from URL ?tab=). Preserved when using Prev/Next. */
   initialEditorTab?: "text" | "layout" | "background" | "more";
@@ -732,12 +600,14 @@ export function SlideEditForm({
     if (m != null && typeof m.show_swipe === "boolean") return m.show_swipe;
     return initialTemplateForSwipe?.chrome?.showSwipe ?? true;
   });
-  type SwipePosition = "bottom_left" | "bottom_center" | "bottom_right" | "top_left" | "top_center" | "top_right" | "center_left" | "center_right";
+  type SwipePosition = "bottom_left" | "bottom_center" | "bottom_right" | "top_left" | "top_center" | "top_right" | "center_left" | "center_right" | "custom";
   type SwipeType = "text" | "arrow-left" | "arrow-right" | "arrows" | "hand-left" | "hand-right" | "chevrons" | "dots" | "finger-swipe" | "finger-left" | "finger-right" | "circle-arrows" | "line-dots" | "custom";
   const [swipePosition, setSwipePosition] = useState<SwipePosition>(() => {
-    const m = slide.meta as { swipe_position?: SwipePosition } | null;
-    if (m?.swipe_position && ["bottom_left", "bottom_center", "bottom_right", "top_left", "top_center", "top_right", "center_left", "center_right"].includes(m.swipe_position)) return m.swipe_position;
-    return (initialTemplateForSwipe?.chrome?.swipePosition as SwipePosition) ?? "bottom_center";
+    const m = slide.meta as { swipe_position?: SwipePosition; swipe_x?: number; swipe_y?: number } | null;
+    if (m?.swipe_position && ["bottom_left", "bottom_center", "bottom_right", "top_left", "top_center", "top_right", "center_left", "center_right", "custom"].includes(m.swipe_position)) return m.swipe_position;
+    const templatePos = initialTemplateForSwipe?.chrome?.swipePosition as SwipePosition | undefined;
+    if (templatePos === "custom" || (m?.swipe_x != null && m?.swipe_y != null)) return "custom";
+    return templatePos ?? "bottom_center";
   });
   const [swipeType, setSwipeType] = useState<SwipeType>(() => {
     const m = slide.meta as { swipe_type?: SwipeType } | null;
@@ -763,6 +633,22 @@ export function SlideEditForm({
     const m = slide.meta as { swipe_size?: number } | null;
     if (m?.swipe_size != null && Number.isFinite(Number(m.swipe_size))) return Math.round(Number(m.swipe_size));
     return (initialTemplateForSwipe?.chrome as { swipeSize?: number } | undefined)?.swipeSize;
+  });
+  const [swipeColorOverride, setSwipeColorOverride] = useState<string | undefined>(() => {
+    const m = slide.meta as { swipe_color?: string } | null;
+    if (typeof m?.swipe_color === "string" && /^#([0-9A-Fa-f]{3}){1,2}$/.test(m.swipe_color)) return m.swipe_color;
+    return (initialTemplateForSwipe?.chrome as { swipeColor?: string } | undefined)?.swipeColor;
+  });
+  const [counterColorOverride, setCounterColorOverride] = useState<string | undefined>(() => {
+    const m = slide.meta as { counter_color?: string } | null;
+    if (typeof m?.counter_color === "string" && /^#([0-9A-Fa-f]{3}){1,2}$/.test(m.counter_color)) return m.counter_color;
+    return (initialTemplateForSwipe?.chrome as { counterColor?: string } | undefined)?.counterColor;
+  });
+  const [watermarkColorOverride, setWatermarkColorOverride] = useState<string | undefined>(() => {
+    const m = slide.meta as { watermark_zone_override?: { color?: string } } | null;
+    const c = m?.watermark_zone_override?.color;
+    if (typeof c === "string" && /^#([0-9A-Fa-f]{3}){1,2}$/.test(c)) return c;
+    return (initialTemplateForChrome?.chrome?.watermark as { color?: string } | undefined)?.color;
   });
   const [headlineFontSize, setHeadlineFontSize] = useState<number | undefined>(() => {
     const m = slide.meta as { headline_font_size?: number } | null;
@@ -820,7 +706,7 @@ export function SlideEditForm({
   });
   type CounterZoneOverride = { top?: number; right?: number; fontSize?: number };
   type WatermarkZoneOverride = { position?: "top_left" | "top_right" | "bottom_left" | "bottom_right" | "custom"; logoX?: number; logoY?: number; fontSize?: number; maxWidth?: number; maxHeight?: number };
-  type MadeWithZoneOverride = { fontSize?: number; x?: number; y?: number };
+  type MadeWithZoneOverride = { fontSize?: number; x?: number; y?: number; color?: string };
   const [counterZoneOverride, setCounterZoneOverride] = useState<CounterZoneOverride | undefined>(() => {
     const m = slide.meta as { counter_zone_override?: CounterZoneOverride } | null;
     return m?.counter_zone_override && Object.keys(m.counter_zone_override).length > 0 ? m.counter_zone_override : undefined;
@@ -835,7 +721,8 @@ export function SlideEditForm({
     if (!raw || typeof raw !== "object" || Object.keys(raw).length === 0) return undefined;
     const x = raw.x != null ? Math.min(Number(raw.x), 968) : undefined;
     const y = raw.y != null ? Math.min(Number(raw.y), 1032) : undefined;
-    return { ...(raw.fontSize != null && { fontSize: Number(raw.fontSize) }), ...(x != null && { x }), ...(y != null && { y }) };
+    const color = typeof raw.color === "string" && /^#([0-9A-Fa-f]{3}){1,2}$/.test(raw.color) ? raw.color : undefined;
+    return { ...(raw.fontSize != null && { fontSize: Number(raw.fontSize) }), ...(x != null && { x }), ...(y != null && { y }), ...(color && { color }) };
   });
   const [madeWithText, setMadeWithText] = useState<string>(() => {
     const m = slide.meta as { made_with_text?: string } | null;
@@ -866,7 +753,7 @@ export function SlideEditForm({
       const e = Math.max(s, Math.min(end, textLen));
       if (s >= e) return spans;
       const filtered = spans.filter((sp) => sp.end <= s || sp.start >= e);
-      const next = [...filtered, { start: s, end: e, fontSize: Math.max(8, Math.min(200, Math.round(fontSize))) }].sort((a, b) => a.start - b.start);
+      const next = [...filtered, { start: s, end: e, fontSize: Math.max(8, Math.min(280, Math.round(fontSize))) }].sort((a, b) => a.start - b.start);
       const merged: FontSizeSpan[] = [];
       for (const sp of next) {
         const last = merged[merged.length - 1];
@@ -889,6 +776,8 @@ export function SlideEditForm({
   const [headlineLayoutModalOpen, setHeadlineLayoutModalOpen] = useState(false);
   const [expandedColorOverlay, setExpandedColorOverlay] = useState(true);
   const [bodyLayoutModalOpen, setBodyLayoutModalOpen] = useState(false);
+  const [headlineFontModalOpen, setHeadlineFontModalOpen] = useState(false);
+  const [bodyFontModalOpen, setBodyFontModalOpen] = useState(false);
   const [chromeLayoutOpen, setChromeLayoutOpen] = useState(false);
   const [headlineHighlightOpen, setHeadlineHighlightOpen] = useState(false);
   const [bodyHighlightOpen, setBodyHighlightOpen] = useState(false);
@@ -917,6 +806,7 @@ export function SlideEditForm({
   const [applyingMadeWith, setApplyingMadeWith] = useState(false);
   const [applyingAutoHighlights, setApplyingAutoHighlights] = useState(false);
   const [applyingHighlightStyle, setApplyingHighlightStyle] = useState(false);
+  const [applyingChromeSection, setApplyingChromeSection] = useState<null | "show" | "counter" | "logo" | "swipe" | "watermark">(null);
   const [lastHeadlineHighlightAction, setLastHeadlineHighlightAction] = useState<"auto" | "manual">("manual");
   const [lastBodyHighlightAction, setLastBodyHighlightAction] = useState<"auto" | "manual">("manual");
   /** Ranges of "**word**" in current text from Auto bold (for toggle-off). Refs so second click always sees them. */
@@ -938,6 +828,8 @@ export function SlideEditForm({
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [templateDesignFilter, setTemplateDesignFilter] = useState<"withImage" | "noImage">("withImage");
   const [clearPictureDialogTemplateId, setClearPictureDialogTemplateId] = useState<string | null>(null);
+  /** When user selects an image-allowing template but the slide has no image, show confirm modal before applying. */
+  const [confirmApplyImageTemplateNoImageId, setConfirmApplyImageTemplateNoImageId] = useState<string | null>(null);
   /** When user selects a template from the modal, we store its config here so the preview updates immediately (avoids relying on list lookup). */
   const [overrideTemplateConfig, setOverrideTemplateConfig] = useState<TemplateConfig | null>(null);
   /** Newly created templates this session so the Choose template modal shows them with saved config before refresh. */
@@ -1299,6 +1191,11 @@ export function SlideEditForm({
   const pipFontScale = 0.85;
   const baseHeadline = headlineFontSize ?? templateDefaultsOverrides.fontOverrides?.headline_font_size ?? pipDefaultHeadlineSize;
   const baseBody = bodyFontSize ?? templateDefaultsOverrides.fontOverrides?.body_font_size ?? pipDefaultBodySize;
+  /** Headline color used as default for chrome (counter, logo, swipe) when override is unset. */
+  const effectiveHeadlineColor =
+    (headlineZoneOverride?.color ?? effectiveHeadlineZoneBase?.color ?? headlineZoneFromTemplate?.color)?.trim();
+  const headlineColorForChrome =
+    effectiveHeadlineColor && /^#([0-9A-Fa-f]{3}){1,2}$/.test(effectiveHeadlineColor) ? effectiveHeadlineColor : undefined;
   const previewFontOverrides =
     singleImageWithPip
       ? { headline_font_size: Math.round(baseHeadline * pipFontScale), body_font_size: Math.round(baseBody * pipFontScale) }
@@ -1329,11 +1226,16 @@ export function SlideEditForm({
           ...(swipeX != null && { swipeX }),
           ...(swipeY != null && { swipeY }),
           ...(swipeSize != null && { swipeSize }),
+          ...((swipeColorOverride ?? headlineColorForChrome) && { swipeColor: swipeColorOverride ?? headlineColorForChrome }),
+          ...((counterColorOverride ?? headlineColorForChrome) && { counterColor: counterColorOverride ?? headlineColorForChrome }),
+          ...((watermarkColorOverride ?? headlineColorForChrome) && {
+            watermark: { ...previewChromeOverrides.watermark, color: watermarkColorOverride ?? headlineColorForChrome },
+          }),
           madeWith: {
             ...previewChromeOverrides.madeWith,
             text: isPro
-              ? (madeWithText.trim() || initialMadeWithText || "")
-              : "Made with KarouselMaker.com",
+              ? (madeWithText.trim() || initialMadeWithText || "Follow us")
+              : "Follow us",
             ...((!madeWithZoneOverride || (madeWithZoneOverride.x == null && madeWithZoneOverride.y == null)) && { bottom: 16 }),
           },
         }
@@ -1345,13 +1247,72 @@ export function SlideEditForm({
           ...(swipeX != null && { swipeX }),
           ...(swipeY != null && { swipeY }),
           ...(swipeSize != null && { swipeSize }),
+          ...((swipeColorOverride ?? headlineColorForChrome) && { swipeColor: swipeColorOverride ?? headlineColorForChrome }),
+          ...((counterColorOverride ?? headlineColorForChrome) && { counterColor: counterColorOverride ?? headlineColorForChrome }),
+          ...((watermarkColorOverride ?? headlineColorForChrome) && { watermark: { color: watermarkColorOverride ?? headlineColorForChrome } }),
           madeWith: {
             text: isPro
-              ? (madeWithText.trim() || initialMadeWithText || "")
-              : "Made with KarouselMaker.com",
+              ? (madeWithText.trim() || initialMadeWithText || "Follow us")
+              : "Follow us",
             bottom: 16,
           },
         };
+  const canvasHForChrome = exportSize === "1080x1920" ? 1920 : exportSize === "1080x1350" ? 1350 : 1080;
+  const editChromeCounterProp =
+    showCounter && templateConfig
+      ? {
+          top: counterZoneOverride?.top ?? 24,
+          right: counterZoneOverride?.right ?? 24,
+          fontSize: counterZoneOverride?.fontSize ?? 20,
+          onTopChange: (v: number) => setCounterZoneOverride((o) => ({ ...(o ?? {}), top: v })),
+          onRightChange: (v: number) => setCounterZoneOverride((o) => ({ ...(o ?? {}), right: v })),
+          onFontSizeChange: (v: number) => setCounterZoneOverride((o) => ({ ...(o ?? {}), fontSize: v })),
+        }
+      : undefined;
+  const editChromeWatermarkProp =
+    showWatermark && templateConfig && (brandKit.watermark_text || brandKit.logo_url)
+      ? {
+          logoX: watermarkZoneOverride?.logoX ?? templateConfig?.chrome?.watermark?.logoX ?? 24,
+          logoY: watermarkZoneOverride?.logoY ?? templateConfig?.chrome?.watermark?.logoY ?? 24,
+          fontSize: watermarkZoneOverride?.fontSize ?? 20,
+          onLogoXChange: (v: number) =>
+            setWatermarkZoneOverride((o) => ({ ...(o ?? {}), logoX: v, position: "custom" })),
+          onLogoYChange: (v: number) =>
+            setWatermarkZoneOverride((o) => ({ ...(o ?? {}), logoY: v, position: "custom" })),
+          onFontSizeChange: (v: number) => setWatermarkZoneOverride((o) => ({ ...(o ?? {}), fontSize: v })),
+        }
+      : undefined;
+  const effectiveSwipeY =
+    swipeY ??
+    (swipePosition?.startsWith("bottom")
+      ? canvasHForChrome - 100
+      : swipePosition?.startsWith("top")
+        ? 24
+        : canvasHForChrome / 2);
+  const effectiveSwipeX = swipeX ?? SWIPE_POSITION_PRESETS[swipePosition]?.x ?? 540;
+  const editChromeSwipeProp =
+    showSwipe && templateConfig
+      ? {
+          swipeX: effectiveSwipeX,
+          swipeY: effectiveSwipeY,
+          onSwipePositionChange: (x: number, y: number) => {
+            setSwipeX(x);
+            setSwipeY(y);
+            setSwipePosition("custom");
+          },
+        }
+      : undefined;
+  const effectiveMadeWithX = madeWithZoneOverride?.x ?? 540;
+  const effectiveMadeWithY = madeWithZoneOverride?.y ?? canvasHForChrome - 64;
+  const editChromeMadeWithProp =
+    showMadeWith && templateConfig
+      ? {
+          madeWithX: effectiveMadeWithX,
+          madeWithY: effectiveMadeWithY,
+          onMadeWithXChange: (v: number) => setMadeWithZoneOverride((o) => ({ ...(o ?? {}), x: v })),
+          onMadeWithYChange: (v: number) => setMadeWithZoneOverride((o) => ({ ...(o ?? {}), y: v })),
+        }
+      : undefined;
   const restTemplates = templates.slice(1);
   const sortedTemplatesForModal = [...restTemplates].sort((a, b) => {
     const aLinkedIn = (a.category ?? "").toLowerCase() === "linkedin";
@@ -1867,6 +1828,8 @@ export function SlideEditForm({
           ...(swipeX != null && Number.isFinite(swipeX) && { swipe_x: Math.round(swipeX) }),
           ...(swipeY != null && Number.isFinite(swipeY) && { swipe_y: Math.round(swipeY) }),
           ...(swipeSize != null && Number.isFinite(swipeSize) && { swipe_size: Math.round(swipeSize) }),
+          ...(swipeColorOverride && /^#([0-9A-Fa-f]{3}){1,2}$/.test(swipeColorOverride) && { swipe_color: swipeColorOverride }),
+          ...(counterColorOverride && /^#([0-9A-Fa-f]{3}){1,2}$/.test(counterColorOverride) && { counter_color: counterColorOverride }),
           ...(background.mode === "image" || validUrls.length > 0
             ? (() => {
                 const isPip = imageDisplayPayload?.mode === "pip";
@@ -1882,10 +1845,22 @@ export function SlideEditForm({
           ...(headlineZoneOverride && Object.keys(headlineZoneOverride).length > 0 && { headline_zone_override: headlineZoneOverride }),
           ...(bodyZoneOverride && Object.keys(bodyZoneOverride).length > 0 && { body_zone_override: bodyZoneOverride }),
           ...(counterZoneOverride && Object.keys(counterZoneOverride).length > 0 && { counter_zone_override: counterZoneOverride }),
-          ...(watermarkZoneOverride && Object.keys(watermarkZoneOverride).length > 0 && { watermark_zone_override: watermarkZoneOverride }),
+          ...((watermarkZoneOverride && Object.keys(watermarkZoneOverride).length > 0) || (watermarkColorOverride && /^#([0-9A-Fa-f]{3}){1,2}$/.test(watermarkColorOverride))
+            ? {
+                watermark_zone_override: {
+                  ...(watermarkZoneOverride && typeof watermarkZoneOverride === "object" ? watermarkZoneOverride : {}),
+                  ...(watermarkColorOverride && /^#([0-9A-Fa-f]{3}){1,2}$/.test(watermarkColorOverride) && { color: watermarkColorOverride }),
+                },
+              }
+            : {}),
           ...(madeWithZoneOverride && (() => {
             const o = madeWithZoneOverride;
-            const filtered = { ...(o.fontSize != null && { fontSize: o.fontSize }), ...(o.x != null && { x: o.x }), ...(o.y != null && { y: o.y }) };
+            const filtered = {
+              ...(o.fontSize != null && { fontSize: o.fontSize }),
+              ...(o.x != null && { x: o.x }),
+              ...(o.y != null && { y: o.y }),
+              ...(o.color != null && /^#([0-9A-Fa-f]{3}){1,2}$/.test(o.color) && { color: o.color }),
+            };
             return Object.keys(filtered).length > 0 ? { made_with_zone_override: filtered } : {};
           })()),
           ...(madeWithText.trim() !== "" && { made_with_text: madeWithText.trim() }),
@@ -2137,12 +2112,17 @@ export function SlideEditForm({
       if (newMeta?.show_made_with != null && typeof newMeta.show_made_with === "boolean") setShowMadeWith(newMeta.show_made_with);
       setShowSwipe(newConfig?.chrome?.showSwipe ?? true);
       setSwipeType((newConfig?.chrome?.swipeType as SwipeType) ?? "text");
-      setSwipePosition((newConfig?.chrome?.swipePosition as SwipePosition) ?? "bottom_center");
-      const c = newConfig?.chrome as { swipeText?: string; swipeX?: number; swipeY?: number; swipeSize?: number } | undefined;
+      const newPos = (newConfig?.chrome?.swipePosition as SwipePosition) ?? "bottom_center";
+      setSwipePosition(newPos);
+      const c = newConfig?.chrome as { swipeText?: string; swipeX?: number; swipeY?: number; swipeSize?: number; swipeColor?: string; counterColor?: string } | undefined;
+      const wm = newConfig?.chrome?.watermark as { color?: string } | undefined;
       setSwipeText(typeof c?.swipeText === "string" && c.swipeText.trim() !== "" ? c.swipeText.trim() : "swipe");
       setSwipeX(c?.swipeX);
       setSwipeY(c?.swipeY);
       setSwipeSize(c?.swipeSize);
+      setSwipeColorOverride(c?.swipeColor);
+      setCounterColorOverride(c?.counterColor);
+      setWatermarkColorOverride(wm?.color);
     }
   };
 
@@ -2259,6 +2239,83 @@ export function SlideEditForm({
     if (result.ok) router.refresh();
   };
 
+  const handleApplyShowOnSlideToAll = async () => {
+    setApplyingChromeSection("show");
+    const result = await applyToAllSlides(
+      slide.carousel_id,
+      {
+        meta: {
+          show_counter: showCounter,
+          show_watermark: showWatermark,
+          show_made_with: showMadeWith,
+          show_swipe: showSwipe,
+        },
+      },
+      editorPath,
+      applyScope
+    );
+    setApplyingChromeSection(null);
+    if (result.ok) router.refresh();
+  };
+
+  const handleApplySlideNumberToAll = async () => {
+    setApplyingChromeSection("counter");
+    const meta: Record<string, unknown> = {};
+    if (counterZoneOverride && Object.keys(counterZoneOverride).length > 0) meta.counter_zone_override = counterZoneOverride;
+    if (counterColorOverride && /^#([0-9A-Fa-f]{3}){1,2}$/.test(counterColorOverride)) meta.counter_color = counterColorOverride;
+    const result = await applyToAllSlides(slide.carousel_id, { meta }, editorPath, applyScope);
+    setApplyingChromeSection(null);
+    if (result.ok) router.refresh();
+  };
+
+  const handleApplyLogoToAll = async () => {
+    setApplyingChromeSection("logo");
+    const meta: Record<string, unknown> = {};
+    const wm: Record<string, unknown> = { ...(watermarkZoneOverride && typeof watermarkZoneOverride === "object" ? watermarkZoneOverride : {}) };
+    if (watermarkColorOverride && /^#([0-9A-Fa-f]{3}){1,2}$/.test(watermarkColorOverride)) wm.color = watermarkColorOverride;
+    if (Object.keys(wm).length > 0) meta.watermark_zone_override = wm;
+    const result = await applyToAllSlides(slide.carousel_id, { meta }, editorPath, applyScope);
+    setApplyingChromeSection(null);
+    if (result.ok) router.refresh();
+  };
+
+  const handleApplySwipeToAll = async () => {
+    setApplyingChromeSection("swipe");
+    const meta: Record<string, unknown> = {
+      show_swipe: showSwipe,
+      swipe_type: swipeType,
+      swipe_position: swipePosition,
+      ...(swipeText.trim() !== "" && { swipe_text: swipeText.trim() }),
+      ...(swipeX != null && Number.isFinite(swipeX) && { swipe_x: Math.round(swipeX) }),
+      ...(swipeY != null && Number.isFinite(swipeY) && { swipe_y: Math.round(swipeY) }),
+      ...(swipeSize != null && Number.isFinite(swipeSize) && { swipe_size: Math.round(swipeSize) }),
+      ...(swipeColorOverride && /^#([0-9A-Fa-f]{3}){1,2}$/.test(swipeColorOverride) && { swipe_color: swipeColorOverride }),
+    };
+    const result = await applyToAllSlides(slide.carousel_id, { meta }, editorPath, applyScope);
+    setApplyingChromeSection(null);
+    if (result.ok) router.refresh();
+  };
+
+  const handleApplyWatermarkToAll = async () => {
+    setApplyingChromeSection("watermark");
+    const meta: Record<string, unknown> = {
+      show_made_with: showMadeWith,
+      ...(madeWithText.trim() !== "" && { made_with_text: madeWithText.trim() }),
+    };
+    if (madeWithZoneOverride && (madeWithZoneOverride.fontSize != null || madeWithZoneOverride.x != null || madeWithZoneOverride.y != null || (madeWithZoneOverride.color != null && /^#([0-9A-Fa-f]{3}){1,2}$/.test(madeWithZoneOverride.color)))) {
+      const filtered = {
+        ...(madeWithZoneOverride.fontSize != null && { fontSize: madeWithZoneOverride.fontSize }),
+        ...(madeWithZoneOverride.x != null && { x: madeWithZoneOverride.x }),
+        ...(madeWithZoneOverride.y != null && { y: madeWithZoneOverride.y }),
+        ...(madeWithZoneOverride.color != null && /^#([0-9A-Fa-f]{3}){1,2}$/.test(madeWithZoneOverride.color) && { color: madeWithZoneOverride.color }),
+      };
+      if (Object.keys(filtered).length > 0) meta.made_with_zone_override = filtered;
+    }
+    const result = await applyToAllSlides(slide.carousel_id, { meta }, editorPath, { includeFirstSlide: true, includeLastSlide: true });
+    setApplyingChromeSection(null);
+    if (result.ok) router.refresh();
+  };
+
   const handleApplyAutoHighlightsToAll = async (field: "headline" | "body") => {
     setApplyingAutoHighlights(true);
     const colorForField = field === "headline" ? headlineHighlightColor : bodyHighlightColor;
@@ -2366,7 +2423,9 @@ export function SlideEditForm({
     const hasHeadlineZone = headlineZoneOverride != null && Object.keys(headlineZoneOverride).length > 0;
     const hasBodyZone = bodyZoneOverride != null && Object.keys(bodyZoneOverride).length > 0;
     const hasCounterZone = counterZoneOverride != null && Object.keys(counterZoneOverride).length > 0;
-    const hasWatermarkZone = watermarkZoneOverride != null && Object.keys(watermarkZoneOverride).length > 0;
+    const hasWatermarkZone =
+      (watermarkZoneOverride != null && Object.keys(watermarkZoneOverride).length > 0) ||
+      (watermarkColorOverride != null && /^#([0-9A-Fa-f]{3}){1,2}$/.test(watermarkColorOverride));
     const hasMadeWithZone = madeWithZoneOverride != null && Object.keys(madeWithZoneOverride).length > 0;
     const headlineFontFamily = headlineZoneOverride?.fontFamily ?? headlineZoneFromTemplate?.fontFamily;
     const bodyFontFamily = bodyZoneOverride?.fontFamily ?? bodyZoneFromTemplate?.fontFamily;
@@ -2395,6 +2454,8 @@ export function SlideEditForm({
         ...(swipeX != null && Number.isFinite(swipeX) && { swipe_x: Math.round(swipeX) }),
         ...(swipeY != null && Number.isFinite(swipeY) && { swipe_y: Math.round(swipeY) }),
         ...(swipeSize != null && Number.isFinite(swipeSize) && { swipe_size: Math.round(swipeSize) }),
+        ...(swipeColorOverride && /^#([0-9A-Fa-f]{3}){1,2}$/.test(swipeColorOverride) && { swipe_color: swipeColorOverride }),
+        ...(counterColorOverride && /^#([0-9A-Fa-f]{3}){1,2}$/.test(counterColorOverride) && { counter_color: counterColorOverride }),
         ...(headlineFontSize != null && { headline_font_size: headlineFontSize }),
         ...(bodyFontSize != null && { body_font_size: bodyFontSize }),
         ...(headlineFontFamily != null && headlineFontFamily.trim() !== "" && { headline_font_family: headlineFontFamily.trim() }),
@@ -2402,7 +2463,12 @@ export function SlideEditForm({
         ...(hasHeadlineZone && { headline_zone_override: { ...headlineZoneOverride } }),
         ...(hasBodyZone && { body_zone_override: { ...bodyZoneOverride } }),
         ...(hasCounterZone && { counter_zone_override: { ...counterZoneOverride } }),
-        ...(hasWatermarkZone && { watermark_zone_override: { ...watermarkZoneOverride } }),
+        ...(hasWatermarkZone && {
+          watermark_zone_override: {
+            ...watermarkZoneOverride,
+            ...(watermarkColorOverride && /^#([0-9A-Fa-f]{3}){1,2}$/.test(watermarkColorOverride) && { color: watermarkColorOverride }),
+          },
+        }),
         ...(hasMadeWithZone && { made_with_zone_override: { ...madeWithZoneOverride } }),
         headline_highlight_style: headlineHighlightStyle,
         body_highlight_style: bodyHighlightStyle,
@@ -2432,7 +2498,13 @@ export function SlideEditForm({
         ...(swipeX != null && { swipeX }),
         ...(swipeY != null && { swipeY }),
         ...(swipeSize != null && { swipeSize }),
-        watermark: { ...templateConfig.chrome.watermark, enabled: showWatermark },
+        ...(swipeColorOverride && /^#([0-9A-Fa-f]{3}){1,2}$/.test(swipeColorOverride) && { swipeColor: swipeColorOverride }),
+        ...(counterColorOverride && /^#([0-9A-Fa-f]{3}){1,2}$/.test(counterColorOverride) && { counterColor: counterColorOverride }),
+        watermark: {
+          ...templateConfig.chrome.watermark,
+          enabled: showWatermark,
+          ...(watermarkColorOverride && /^#([0-9A-Fa-f]{3}){1,2}$/.test(watermarkColorOverride) && { color: watermarkColorOverride }),
+        },
       },
       defaults,
     };
@@ -3031,12 +3103,14 @@ export function SlideEditForm({
         <div className="flex flex-1 min-w-0 justify-center items-center">
           <div
             ref={previewWrapRef}
-            className="w-full max-w-full rounded-lg border border-border bg-background/50 shadow-sm overflow-hidden relative"
+            className="w-full max-w-full rounded-lg border border-border bg-background/50 shadow-sm relative"
             role="img"
             aria-label="Frame preview"
             style={{
               maxWidth: getPreviewDimensions(exportSize).w,
               aspectRatio: `${1080}/${exportSize === "1080x1080" ? 1080 : exportSize === "1080x1350" ? 1350 : 1920}`,
+              overflow: "visible",
+              clipPath: "inset(0 round 8px)",
               backgroundColor: isImageMode && background.overlay?.gradient !== false
                 ? (background.overlay?.color ?? "#000000")
                 : (background.color ?? brandKit.primary_color ?? "#0a0a0a"),
@@ -3235,8 +3309,10 @@ export function SlideEditForm({
                       }
                     : undefined
                 }
-                editChromeCounter={undefined}
-                editChromeWatermark={undefined}
+                editChromeCounter={editChromeCounterProp}
+                editChromeWatermark={editChromeWatermarkProp}
+                editChromeSwipe={editChromeSwipeProp}
+                editChromeMadeWith={editChromeMadeWithProp}
                 editScale={
                   previewWrapWidth != null && previewWrapWidth > 0
                     ? previewWrapWidth / 1080
@@ -3486,6 +3562,8 @@ export function SlideEditForm({
               <ImportTemplateButton
                 isPro={isPro}
                 atLimit={false}
+                isAdmin={isAdmin}
+                watermarkText={brandKit.watermark_text}
                 variant="outline"
                 size="sm"
                 className="shrink-0 gap-1.5"
@@ -3601,6 +3679,12 @@ export function SlideEditForm({
                   if (templateNoImage && hasImage) {
                     setApplyingTemplate(false);
                     setClearPictureDialogTemplateId(resolvedId);
+                    return;
+                  }
+                  const templateAllowsImage = config?.backgroundRules?.allowImage !== false;
+                  if (templateAllowsImage && !hasImage) {
+                    setApplyingTemplate(false);
+                    setConfirmApplyImageTemplateNoImageId(resolvedId);
                     return;
                   }
                   if (config) {
@@ -3730,6 +3814,100 @@ export function SlideEditForm({
         </DialogContent>
       </Dialog>
 
+      <Dialog
+        open={confirmApplyImageTemplateNoImageId !== null}
+        onOpenChange={(open) => !open && setConfirmApplyImageTemplateNoImageId(null)}
+      >
+        <DialogContent showCloseButton className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>This slide has no image</DialogTitle>
+          </DialogHeader>
+          <p className="text-muted-foreground text-sm">
+            This template works with a background image. Apply it anyway? You can add an image later from the Background section.
+          </p>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setConfirmApplyImageTemplateNoImageId(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={async () => {
+                const resolvedId = confirmApplyImageTemplateNoImageId;
+                if (!resolvedId) return;
+                setConfirmApplyImageTemplateNoImageId(null);
+                setApplyingTemplate(true);
+                await new Promise((r) => setTimeout(r, 0));
+                const config = await getTemplateConfigAction(resolvedId);
+                if (config) setOverrideTemplateConfig(config);
+                else setOverrideTemplateConfig(null);
+                if (config) {
+                  const templateBg = getTemplatePreviewBackgroundOverride(config);
+                  const grad = config.overlays?.gradient;
+                  const defaultBgColor =
+                    config.defaults?.background && typeof config.defaults.background === "object" && "color" in config.defaults.background
+                      ? (config.defaults.background as { color?: string }).color
+                      : undefined;
+                  const newColor =
+                    (grad?.color && /^#[0-9A-f]{3,6}$/i.test(grad.color) ? grad.color : defaultBgColor) ?? templateBg.color ?? "#0a0a0a";
+                  setBackground((prev) => ({
+                    ...prev,
+                    style: templateBg.style ?? "solid",
+                    pattern: templateBg.pattern ?? prev.pattern,
+                    color: newColor,
+                    overlay: {
+                      ...prev.overlay,
+                      gradient: prev.overlay?.gradient ?? (grad?.enabled ?? true),
+                      darken: prev.overlay?.darken ?? (grad?.strength ?? 0.5),
+                      color: newColor,
+                      textColor: getContrastingTextColor(newColor),
+                      direction: prev.overlay?.direction ?? (grad?.direction ?? "bottom"),
+                      extent: prev.overlay?.extent ?? (grad?.extent ?? 50),
+                      solidSize: prev.overlay?.solidSize ?? (grad?.solidSize ?? 25),
+                    },
+                  }));
+                  const metaImageDisplay = config.defaults?.meta && typeof config.defaults.meta === "object" && "image_display" in config.defaults.meta
+                    ? (config.defaults.meta as { image_display?: unknown }).image_display
+                    : undefined;
+                  if (metaImageDisplay != null && typeof metaImageDisplay === "object" && !Array.isArray(metaImageDisplay)) {
+                    const d = { ...metaImageDisplay } as ImageDisplayState;
+                    const ds = d.dividerStyle as string | undefined;
+                    if (ds === "dotted") d.dividerStyle = "dashed";
+                    else if (ds === "double" || ds === "triple") d.dividerStyle = "scalloped";
+                    setImageDisplay(d);
+                  } else {
+                    setImageDisplay({});
+                  }
+                }
+                setTemplateId(resolvedId);
+                setHeadlineFontSize(undefined);
+                setBodyFontSize(undefined);
+                setHeadlineZoneOverride(undefined);
+                setBodyZoneOverride(undefined);
+                setCounterZoneOverride(undefined);
+                setWatermarkZoneOverride(undefined);
+                setMadeWithZoneOverride(undefined);
+                await handleTemplateChange(resolvedId, { reloadAfter: true });
+                lastSavedRef.current = JSON.stringify({
+                  headline,
+                  body,
+                  templateId: resolvedId,
+                  showCounter,
+                  showWatermark,
+                  showMadeWith,
+                });
+                router.refresh();
+                allowUnloadRef.current = true;
+                window.location.reload();
+              }}
+            >
+              Confirm
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={infoSection !== null} onOpenChange={(open) => !open && setInfoSection(null)}>
         <DialogContent showCloseButton className="max-w-sm">
           <DialogHeader>
@@ -3794,25 +3972,26 @@ export function SlideEditForm({
                 const dims = getPreviewDimensions(exportSize, maxSize);
                 return (
                   <div
-                    className="overflow-hidden rounded-lg shrink-0 shadow-lg"
+                    className="rounded-lg shrink-0 shadow-lg relative"
                     style={{
                       width: dims.w,
                       height: dims.h,
+                      overflow: "visible",
+                      clipPath: "inset(0 round 8px)",
                       backgroundColor: isImageMode && background.overlay?.gradient !== false
                         ? (background.overlay?.color ?? "#000000")
                         : (background.color ?? brandKit.primary_color ?? "#0a0a0a"),
                     }}
                   >
                     <div
-                      className="origin-top-left"
+                      className="absolute origin-top-left"
                       style={{
-                        transform: `scale(${dims.scale})`,
-                        transformOrigin: "top left",
-                        position: "relative",
-                        left: dims.offsetX,
-                        top: dims.offsetY,
+                        left: 0,
+                        top: 0,
                         width: dims.contentW,
                         height: dims.contentH,
+                        transform: `scale(${dims.scale})`,
+                        transformOrigin: "top left",
                       }}
                     >
                       <SlidePreview
@@ -3995,8 +4174,10 @@ export function SlideEditForm({
                               }
                             : undefined
                         }
-                        editChromeCounter={undefined}
-                        editChromeWatermark={undefined}
+                        editChromeCounter={editChromeCounterProp}
+                        editChromeWatermark={editChromeWatermarkProp}
+                        editChromeSwipe={editChromeSwipeProp}
+                        editChromeMadeWith={editChromeMadeWithProp}
                         editScale={dims.scale}
                       />
                     </div>
@@ -4059,9 +4240,17 @@ export function SlideEditForm({
             <div className="rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-xs font-semibold text-foreground">Show on slide</h3>
-                <button type="button" onClick={() => setInfoSection("layout")} className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Layout help" title="Help">
-                  <InfoIcon className="size-3.5" />
-                </button>
+                <div className="flex items-center gap-1.5">
+                  {totalSlides > 1 && isPro && (
+                    <Button type="button" variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground hover:text-foreground" onClick={handleApplyShowOnSlideToAll} disabled={!!applyingChromeSection} title="Apply Slide number / Logo / Watermark / Swipe visibility to all slides">
+                      {applyingChromeSection === "show" ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
+                      Apply to all
+                    </Button>
+                  )}
+                  <button type="button" onClick={() => setInfoSection("layout")} className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Layout help" title="Help">
+                    <InfoIcon className="size-3.5" />
+                  </button>
+                </div>
               </div>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <label className="flex cursor-pointer items-center gap-1.5 text-xs">
@@ -4096,7 +4285,7 @@ export function SlideEditForm({
                   </Button>
                   {chromeLayoutOpen && (
                     <div className="rounded-lg border border-border/40 bg-muted/5 p-3 space-y-4 mt-2">
-                      <div className={showCounter ? "" : "opacity-50 pointer-events-none"}>
+                        <div className={showCounter ? "" : "opacity-50 pointer-events-none"}>
                         <p className="text-[11px] font-medium text-foreground mb-2">Slide number</p>
                         <div className="grid grid-cols-3 gap-3">
                           {(["top", "right", "fontSize"] as const).map((key) => {
@@ -4119,10 +4308,34 @@ export function SlideEditForm({
                             );
                           })}
                         </div>
+                        <div className="mt-2">
+                          <Label className="text-xs">Color</Label>
+                          <ColorPicker
+                            value={counterColorOverride ?? ""}
+                            onChange={(v) => setCounterColorOverride(v.trim() || undefined)}
+                            placeholder="Headline color"
+                            className="mt-0.5"
+                          />
+                        </div>
+                        {totalSlides > 1 && isPro && (
+                          <Button type="button" variant="ghost" size="sm" className="mt-2 h-7 text-xs text-muted-foreground hover:text-foreground" onClick={handleApplySlideNumberToAll} disabled={!!applyingChromeSection} title="Apply Slide number position & style to all slides">
+                            {applyingChromeSection === "counter" ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
+                            Apply to all
+                          </Button>
+                        )}
                       </div>
                       {(brandKit.watermark_text || brandKit.logo_url) && (
                         <div className={showWatermark ? "" : "opacity-50 pointer-events-none"}>
                           <p className="text-[11px] font-medium text-foreground mb-2">Logo</p>
+                          <div className="mb-2">
+                            <Label className="text-xs">Color</Label>
+                            <ColorPicker
+                              value={watermarkColorOverride ?? ""}
+                              onChange={(v) => setWatermarkColorOverride(v.trim() || undefined)}
+                              placeholder="Headline color"
+                              className="mt-0.5"
+                            />
+                          </div>
                           <div className="space-y-2">
                             <div className="grid grid-cols-2 gap-2">
                               <div>
@@ -4139,6 +4352,12 @@ export function SlideEditForm({
                               <StepperWithLongPress value={watermarkZoneOverride?.fontSize ?? 20} min={8} max={72} step={1} onChange={(v) => setWatermarkZoneOverride((o) => ({ ...o, fontSize: v }))} label="Font size" className="w-full max-w-[80px]" disabled={!showWatermark} />
                             </div>
                           </div>
+                          {totalSlides > 1 && isPro && (
+                            <Button type="button" variant="ghost" size="sm" className="mt-2 h-7 text-xs text-muted-foreground hover:text-foreground" onClick={handleApplyLogoToAll} disabled={!!applyingChromeSection} title="Apply Logo position & style to all slides">
+                              {applyingChromeSection === "logo" ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
+                              Apply to all
+                            </Button>
+                          )}
                         </div>
                       )}
                       {showSwipe && (
@@ -4147,7 +4366,36 @@ export function SlideEditForm({
                           <div className="grid grid-cols-2 gap-3">
                             <div>
                               <Label className="text-xs">Position</Label>
-                              <Select value={swipePosition} onValueChange={(v) => setSwipePosition(v as SwipePosition)}>
+                              <Select
+                                value={swipePosition}
+                                onValueChange={(v) => {
+                                  const pos = v as SwipePosition;
+                                  if (pos === "custom") {
+                                    setSwipePosition("custom");
+                                    // Keep the actual preview position: use current effective X/Y so switching to custom doesn't change the visual
+                                    const isRightPreset = swipePosition === "bottom_right" || swipePosition === "top_right" || swipePosition === "center_right";
+                                    const effectiveX =
+                                      swipePosition === "custom"
+                                        ? (swipeX ?? 540)
+                                        : isRightPreset
+                                          ? getSwipeRightXForFormat(exportSize)
+                                          : (SWIPE_POSITION_PRESETS[swipePosition]?.x ?? 540);
+                                    const effectiveY =
+                                      swipePosition === "custom"
+                                        ? (swipeY ?? 980)
+                                        : (SWIPE_POSITION_PRESETS[swipePosition]?.y ?? 980);
+                                    setSwipeX(effectiveX);
+                                    setSwipeY(effectiveY);
+                                  } else {
+                                    const preset = pos ? SWIPE_POSITION_PRESETS[pos] : undefined;
+                                    if (preset) {
+                                      setSwipePosition(pos);
+                                      setSwipeX(preset.x);
+                                      setSwipeY(preset.y);
+                                    }
+                                  }
+                                }}
+                              >
                                 <SelectTrigger className="h-8 text-xs mt-0.5">
                                   <SelectValue />
                                 </SelectTrigger>
@@ -4160,6 +4408,7 @@ export function SlideEditForm({
                                   <SelectItem value="top_right">Top right</SelectItem>
                                   <SelectItem value="center_left">Center left</SelectItem>
                                   <SelectItem value="center_right">Center right</SelectItem>
+                                  <SelectItem value="custom">Custom (X/Y)</SelectItem>
                                 </SelectContent>
                               </Select>
                             </div>
@@ -4183,18 +4432,56 @@ export function SlideEditForm({
                                   <SelectItem value="dots">Dots</SelectItem>
                                   <SelectItem value="circle-arrows">Circle arrows</SelectItem>
                                   <SelectItem value="line-dots">Line dots</SelectItem>
+                                  <SelectItem value="custom">Custom (SVG/PNG URL)</SelectItem>
                                 </SelectContent>
                               </Select>
                             </div>
                           </div>
+                          <div className="mb-2">
+                            <Label className="text-xs">Color</Label>
+                            <ColorPicker
+                              value={swipeColorOverride ?? ""}
+                              onChange={(v) => setSwipeColorOverride(v.trim() || undefined)}
+                              placeholder="Headline color"
+                              className="mt-0.5"
+                            />
+                          </div>
                           <div className="grid grid-cols-2 gap-3 mt-2">
                             <div>
                               <Label className="text-xs">X</Label>
-                              <StepperWithLongPress value={swipeX ?? 540} min={0} max={1080} step={8} onChange={(v) => setSwipeX(v)} label="X" className="w-full max-w-[80px]" />
+                              <StepperWithLongPress
+                                value={(() => {
+                                  const isRightPreset =
+                                    swipePosition === "bottom_right" || swipePosition === "top_right" || swipePosition === "center_right";
+                                  if (swipePosition === "custom") return swipeX ?? 540;
+                                  if (isRightPreset) return getSwipeRightXForFormat(exportSize);
+                                  return SWIPE_POSITION_PRESETS[swipePosition]?.x ?? 540;
+                                })()}
+                                min={0}
+                                max={1080}
+                                step={8}
+                                onChange={(v) => {
+                                  setSwipeX(v);
+                                  setSwipePosition("custom");
+                                }}
+                                label="X"
+                                className="w-full max-w-[80px]"
+                              />
                             </div>
                             <div>
                               <Label className="text-xs">Y</Label>
-                              <StepperWithLongPress value={swipeY ?? 1040} min={0} max={1080} step={8} onChange={(v) => setSwipeY(v)} label="Y" className="w-full max-w-[80px]" />
+                              <StepperWithLongPress
+                                value={swipeY ?? SWIPE_POSITION_PRESETS[swipePosition]?.y ?? 980}
+                                min={0}
+                                max={1080}
+                                step={8}
+                                onChange={(v) => {
+                                  setSwipeY(v);
+                                  setSwipePosition("custom");
+                                }}
+                                label="Y"
+                                className="w-full max-w-[80px]"
+                              />
                             </div>
                             <div>
                               <Label className="text-xs">Size</Label>
@@ -4207,6 +4494,12 @@ export function SlideEditForm({
                               </div>
                             )}
                           </div>
+                          {totalSlides > 1 && isPro && (
+                            <Button type="button" variant="ghost" size="sm" className="mt-2 h-7 text-xs text-muted-foreground hover:text-foreground" onClick={handleApplySwipeToAll} disabled={!!applyingChromeSection} title="Apply Swipe position & style to all slides">
+                              {applyingChromeSection === "swipe" ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
+                              Apply to all
+                            </Button>
+                          )}
                         </div>
                       )}
                       <div className={showMadeWith ? "" : "opacity-50 pointer-events-none"}>
@@ -4227,7 +4520,7 @@ export function SlideEditForm({
                               <p className="text-[10px] text-muted-foreground mt-0.5">e.g. follow @username</p>
                             </div>
                           ) : (
-                            <p className="text-[11px] text-muted-foreground">Made with KarouselMaker.com</p>
+                            <p className="text-[11px] text-muted-foreground">Follow us</p>
                           )}
                           <div className="grid grid-cols-2 gap-3">
                             <div>
@@ -4243,6 +4536,21 @@ export function SlideEditForm({
                               <StepperWithLongPress value={madeWithZoneOverride?.y ?? 1016} min={0} max={1032} step={4} onChange={(v) => setMadeWithZoneOverride((o) => ({ ...(o ?? {}), y: v }))} label="Y" className="w-full max-w-[80px]" disabled={!showMadeWith} />
                             </div>
                           </div>
+                          <div className={cn("mt-2", !showMadeWith && "opacity-50 pointer-events-none")}>
+                            <Label className="text-xs">Color</Label>
+                            <ColorPicker
+                              value={madeWithZoneOverride?.color ?? ""}
+                              onChange={(v) => setMadeWithZoneOverride((o) => ({ ...(o ?? {}), color: v.trim() || undefined }))}
+                              placeholder="Headline color"
+                              className="mt-0.5"
+                            />
+                          </div>
+                          {totalSlides > 1 && isPro && (
+                            <Button type="button" variant="ghost" size="sm" className="mt-2 h-7 text-xs text-muted-foreground hover:text-foreground" onClick={handleApplyWatermarkToAll} disabled={!!applyingChromeSection} title="Apply Watermark (Made with) position & text to all slides">
+                              {applyingChromeSection === "watermark" ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
+                              Apply to all
+                            </Button>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -4343,21 +4651,24 @@ export function SlideEditForm({
                       swatchOnly
                     />
                   </div>
-                  <Select
-                    value={headlineZoneOverride?.fontFamily ?? headlineZoneFromTemplate?.fontFamily ?? "system"}
-                    onValueChange={(v) => setHeadlineZoneOverride((o) => ({ ...headlineZoneFromTemplate, ...o, fontFamily: v || undefined }))}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 w-[110px] text-xs justify-start font-normal"
+                    onClick={() => setHeadlineFontModalOpen(true)}
                   >
-                    <SelectTrigger className="h-7 w-[110px] text-xs">
-                      <SelectValue placeholder="Font" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {PREVIEW_FONTS.map(({ id, label }) => (
-                        <SelectItem key={id} value={id}>
-                          <span style={id !== "system" ? { fontFamily: getFontStack(id) } : undefined}>{label}</span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    <span style={(headlineZoneOverride?.fontFamily ?? headlineZoneFromTemplate?.fontFamily ?? "system") !== "system" ? { fontFamily: getFontStack(headlineZoneOverride?.fontFamily ?? headlineZoneFromTemplate?.fontFamily ?? "system") } : undefined}>
+                      {PREVIEW_FONTS.find((f) => f.id === (headlineZoneOverride?.fontFamily ?? headlineZoneFromTemplate?.fontFamily ?? "system"))?.label ?? "System"}
+                    </span>
+                  </Button>
+                  <FontPickerModal
+                    open={headlineFontModalOpen}
+                    onOpenChange={setHeadlineFontModalOpen}
+                    value={headlineZoneOverride?.fontFamily ?? headlineZoneFromTemplate?.fontFamily ?? "system"}
+                    onSelect={(v) => setHeadlineZoneOverride((o) => ({ ...headlineZoneFromTemplate, ...o, fontFamily: v || undefined }))}
+                    title="Headline font"
+                  />
                 </div>
               )}
               <Textarea
@@ -4683,21 +4994,24 @@ export function SlideEditForm({
                       swatchOnly
                     />
                   </div>
-                  <Select
-                    value={bodyZoneOverride?.fontFamily ?? bodyZoneFromTemplate?.fontFamily ?? "system"}
-                    onValueChange={(v) => setBodyZoneOverride((o) => ({ ...bodyZoneFromTemplate, ...o, fontFamily: v || undefined }))}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 w-[110px] text-xs justify-start font-normal"
+                    onClick={() => setBodyFontModalOpen(true)}
                   >
-                    <SelectTrigger className="h-7 w-[110px] text-xs">
-                      <SelectValue placeholder="Font" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {PREVIEW_FONTS.map(({ id, label }) => (
-                        <SelectItem key={id} value={id}>
-                          <span style={id !== "system" ? { fontFamily: getFontStack(id) } : undefined}>{label}</span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    <span style={(bodyZoneOverride?.fontFamily ?? bodyZoneFromTemplate?.fontFamily ?? "system") !== "system" ? { fontFamily: getFontStack(bodyZoneOverride?.fontFamily ?? bodyZoneFromTemplate?.fontFamily ?? "system") } : undefined}>
+                      {PREVIEW_FONTS.find((f) => f.id === (bodyZoneOverride?.fontFamily ?? bodyZoneFromTemplate?.fontFamily ?? "system"))?.label ?? "System"}
+                    </span>
+                  </Button>
+                  <FontPickerModal
+                    open={bodyFontModalOpen}
+                    onOpenChange={setBodyFontModalOpen}
+                    value={bodyZoneOverride?.fontFamily ?? bodyZoneFromTemplate?.fontFamily ?? "system"}
+                    onSelect={(v) => setBodyZoneOverride((o) => ({ ...bodyZoneFromTemplate, ...o, fontFamily: v || undefined }))}
+                    title="Body font"
+                  />
                 </div>
               )}
               <Textarea

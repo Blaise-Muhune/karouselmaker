@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo, type ComponentProps } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { ColorPicker } from "@/components/ui/color-picker";
+import { StepperWithLongPress } from "@/components/ui/stepper-with-long-press";
 import {
   Dialog,
   DialogContent,
@@ -22,12 +23,27 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { SlidePreview, PREVIEW_FONTS } from "@/components/renderer/SlidePreview";
+import { FontPickerModal } from "@/components/FontPickerModal";
 import { createTemplateAction } from "@/app/actions/templates/createTemplate";
 import { updateTemplateAction } from "@/app/actions/templates/updateTemplate";
 import { DEFAULT_TEMPLATE_CONFIG, LAYOUT_PRESETS } from "@/lib/templateDefaults";
+import { getTemplatePreviewBackgroundOverride } from "@/lib/renderer/getTemplatePreviewBackground";
+import { getSwipeRightXForFormat } from "@/lib/renderer/renderModel";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import type { Template } from "@/lib/server/db/types";
-import { ArrowLeftIcon, LayoutTemplateIcon, Maximize2Icon, MinusIcon, MoreHorizontal, PaletteIcon, PlusIcon, Type } from "lucide-react";
+import { ArrowLeftIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, LayoutTemplateIcon, Loader2Icon, Maximize2Icon, MinusIcon, MoreHorizontal, PaletteIcon, PlusIcon, Type } from "lucide-react";
+
+/** Design-space coordinates for swipe position presets (1080px width; Y for 1:1). Right-side x = 992 for 1:1, same for other formats (viewport width stays 1080). */
+const SWIPE_POSITION_PRESETS: Record<string, { x: number; y: number }> = {
+  bottom_left: { x: 24, y: 980 },
+  bottom_center: { x: 540, y: 980 },
+  bottom_right: { x: 992, y: 980 },
+  top_left: { x: 24, y: 24 },
+  top_center: { x: 540, y: 24 },
+  top_right: { x: 992, y: 24 },
+  center_left: { x: 24, y: 540 },
+  center_right: { x: 992, y: 540 },
+};
 
 const CATEGORIES = ["hook", "point", "context", "cta", "generic"] as const;
 const DEFAULT_BRAND_KIT = { primary_color: "#0a0a0a" };
@@ -40,7 +56,10 @@ const PREVIEW_SIZE_LABELS: Record<PreviewSize, string> = {
 };
 const PREVIEW_MAX = 240;
 const PREVIEW_MAX_LARGE = 560;
-function getPreviewDimensions(size: PreviewSize, maxSize = PREVIEW_MAX): { w: number; h: number; scale: number; offsetX: number; offsetY: number } {
+function getPreviewDimensions(
+  size: PreviewSize,
+  maxSize = PREVIEW_MAX
+): { w: number; h: number; scale: number; offsetX: number; offsetY: number; exportW: number; exportH: number } {
   const exportW = 1080;
   const exportH = size === "1080x1080" ? 1080 : size === "1080x1350" ? 1350 : 1920;
   const aspect = exportW / exportH;
@@ -53,13 +72,15 @@ function getPreviewDimensions(size: PreviewSize, maxSize = PREVIEW_MAX): { w: nu
     h = maxSize;
     w = Math.round(maxSize * aspect);
   }
-  const scale = Math.max(w / 1080, h / 1080);
+  const scale = Math.min(w / exportW, h / exportH);
   return {
     w,
     h,
     scale,
-    offsetX: (w - 1080 * scale) / 2,
-    offsetY: (h - 1080 * scale) / 2,
+    offsetX: (w - exportW * scale) / 2,
+    offsetY: (h - exportH * scale) / 2,
+    exportW,
+    exportH,
   };
 }
 /** Mock logo for template preview (simple SVG placeholder). */
@@ -71,6 +92,27 @@ const MOCK_LOGO_URL =
 
 /** Default Unsplash image for "show sample image" in template preview (view only). */
 const TEMPLATE_PREVIEW_UNSPLASH_URL = "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1080&q=80";
+
+/** Build imageDisplay from template defaults for SlidePreview (PIP, full, position, frame, etc.). */
+function getImageDisplayFromConfig(config: TemplateConfig): ComponentProps<typeof SlidePreview>["imageDisplay"] {
+  const raw =
+    config.defaults?.meta &&
+    typeof config.defaults.meta === "object" &&
+    "image_display" in config.defaults.meta
+      ? (config.defaults.meta as { image_display?: unknown }).image_display
+      : undefined;
+  if (raw == null || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const d = raw as Record<string, unknown>;
+  const pipPos = d.pipPosition;
+  const validPipPos =
+    pipPos === "top_left" || pipPos === "top_right" || pipPos === "bottom_left" || pipPos === "bottom_right"
+      ? pipPos
+      : undefined;
+  return {
+    ...d,
+    pipPosition: d.mode === "pip" ? (validPipPos ?? "bottom_right") : undefined,
+  } as ComponentProps<typeof SlidePreview>["imageDisplay"];
+}
 
 type BaseOption = { template: Template; config: TemplateConfig };
 
@@ -102,19 +144,23 @@ export function TemplateBuilderForm({
     () => initialConfig ?? DEFAULT_TEMPLATE_CONFIG
   );
   const [loading, setLoading] = useState(false);
+  const [savedFeedback, setSavedFeedback] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewHeadline, setPreviewHeadline] = useState("Your headline text");
   const [previewBody, setPreviewBody] = useState("Body text goes here for preview.");
-  const [previewImageUrl, setPreviewImageUrl] = useState("");
+  const [previewImageUrls, setPreviewImageUrls] = useState<string[]>([""]);
   const [previewBackgroundColor, setPreviewBackgroundColor] = useState("#0a0a0a");
-  const [previewSize, setPreviewSize] = useState<PreviewSize>("1080x1080");
+  const [previewSize, setPreviewSize] = useState<PreviewSize>("1080x1350");
   const [previewSlideIndex, setPreviewSlideIndex] = useState(1);
   const [previewTotalSlides] = useState(10);
+  const [headlineFontModalOpen, setHeadlineFontModalOpen] = useState(false);
+  const [bodyFontModalOpen, setBodyFontModalOpen] = useState(false);
   const [previewExpanded, setPreviewExpanded] = useState(false);
   /** When true, show a default Unsplash image in the preview (for viewing how the template renders with an image). */
   const [previewUseUnsplash, setPreviewUseUnsplash] = useState(false);
   type TemplateTab = "text" | "layout" | "background" | "more";
   const [templateTab, setTemplateTab] = useState<TemplateTab>("layout");
+  const [chromeLayoutOpen, setChromeLayoutOpen] = useState(false);
 
   const updateConfig = useCallback((updates: Partial<TemplateConfig> | ((prev: TemplateConfig) => Partial<TemplateConfig>)) => {
     setConfig((prev) => {
@@ -124,7 +170,12 @@ export function TemplateBuilderForm({
   }, []);
 
   const setLayout = useCallback((layout: TemplateConfig["layout"]) => {
-    setConfig((prev) => ({ ...prev, ...LAYOUT_PRESETS[layout] }));
+    const preset = LAYOUT_PRESETS[layout];
+    setConfig((prev) => ({
+      ...prev,
+      layout: preset.layout,
+      textZones: preset.textZones,
+    }));
   }, []);
 
   const updateTextZone = useCallback((zoneId: string, updates: Partial<TemplateConfig["textZones"][0]>) => {
@@ -144,6 +195,24 @@ export function TemplateBuilderForm({
         meta: { ...(prev.defaults?.meta && typeof prev.defaults.meta === "object" ? prev.defaults.meta : {}), ...updates },
       },
     }));
+  }, []);
+
+  /** Merge updates into defaults.meta.image_display (template default for how background image is shown: PIP, full, frame, etc.). */
+  const updateImageDisplay = useCallback((updates: Record<string, unknown>) => {
+    setConfig((prev) => {
+      const meta = prev.defaults?.meta && typeof prev.defaults.meta === "object" ? (prev.defaults.meta as Record<string, unknown>) : {};
+      const current =
+        meta.image_display && typeof meta.image_display === "object" && !Array.isArray(meta.image_display)
+          ? (meta.image_display as Record<string, unknown>)
+          : {};
+      return {
+        ...prev,
+        defaults: {
+          ...prev.defaults,
+          meta: { ...meta, image_display: { ...current, ...updates } },
+        },
+      };
+    });
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -171,6 +240,8 @@ export function TemplateBuilderForm({
       });
       setLoading(false);
       if (result.ok) {
+        setSavedFeedback(true);
+        setTimeout(() => setSavedFeedback(false), 1500);
         router.refresh();
       } else {
         setError(result.error ?? "Failed to update template");
@@ -185,7 +256,7 @@ export function TemplateBuilderForm({
   const defaultsMeta = config.defaults?.meta && typeof config.defaults.meta === "object" ? config.defaults.meta : {};
   const counterZone = defaultsMeta.counter_zone_override && typeof defaultsMeta.counter_zone_override === "object" ? defaultsMeta.counter_zone_override as { top?: number; right?: number; fontSize?: number } : undefined;
   const watermarkZone = defaultsMeta.watermark_zone_override && typeof defaultsMeta.watermark_zone_override === "object" ? defaultsMeta.watermark_zone_override as Record<string, unknown> : undefined;
-  const madeWithZone = defaultsMeta.made_with_zone_override && typeof defaultsMeta.made_with_zone_override === "object" ? defaultsMeta.made_with_zone_override as { fontSize?: number; x?: number; y?: number; bottom?: number } : undefined;
+  const madeWithZone = defaultsMeta.made_with_zone_override && typeof defaultsMeta.made_with_zone_override === "object" ? defaultsMeta.made_with_zone_override as { fontSize?: number; x?: number; y?: number; bottom?: number; color?: string } : undefined;
   const showMadeWith = typeof defaultsMeta.show_made_with === "boolean" ? defaultsMeta.show_made_with : true;
   const chromeOverridesForPreview =
     (counterZone && Object.keys(counterZone).length > 0) ||
@@ -205,6 +276,34 @@ export function TemplateBuilderForm({
           }),
         }
       : undefined;
+
+  /** Header (headline) color used as default for swipe/counter/watermark when not set. */
+  const headerColor =
+    headlineZone?.color?.trim() && /^#([0-9A-Fa-f]{3}){1,2}$/.test(headlineZone.color) ? headlineZone.color : undefined;
+  const effectiveChromeOverridesForPreview = useMemo(() => {
+    const base = chromeOverridesForPreview ?? {};
+    const swipeColorVal = config.chrome.swipeColor?.trim() || headerColor;
+    const counterColorVal = config.chrome.counterColor?.trim() || headerColor;
+    const watermarkColorVal = config.chrome.watermark.enabled
+      ? (config.chrome.watermark.color?.trim() || headerColor)
+      : undefined;
+    return {
+      ...base,
+      ...(swipeColorVal && { swipeColor: swipeColorVal }),
+      ...(counterColorVal && { counterColor: counterColorVal }),
+      watermark:
+        config.chrome.watermark.enabled
+          ? { ...(base.watermark && typeof base.watermark === "object" ? base.watermark : {}), ...(watermarkColorVal && { color: watermarkColorVal }) }
+          : base.watermark,
+    };
+  }, [
+    chromeOverridesForPreview,
+    headerColor,
+    config.chrome.swipeColor,
+    config.chrome.counterColor,
+    config.chrome.watermark.enabled,
+    config.chrome.watermark.color,
+  ]);
 
   const templatePreviewContent = (
     <div className="flex flex-col rounded-xl border border-border/50 bg-muted/5 overflow-hidden">
@@ -247,17 +346,30 @@ export function TemplateBuilderForm({
             <span>Sample image</span>
           </label>
         </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
-          onClick={() => setPreviewExpanded(true)}
-          title="Expand preview (Esc to close)"
-          aria-label="Expand preview"
-        >
-          <Maximize2Icon className="size-4" />
-        </Button>
+        <div className="flex items-center gap-1 shrink-0">
+          <Button
+            type="submit"
+            variant="default"
+            size="sm"
+            className="h-8 gap-1.5 px-3 text-xs font-medium"
+            disabled={loading}
+            title={mode === "create" ? "Create template" : "Save template"}
+          >
+            {loading ? <Loader2Icon className="size-3.5 animate-spin" /> : savedFeedback ? <CheckIcon className="size-3.5" /> : null}
+            {loading ? "Saving…" : savedFeedback ? "Saved" : mode === "create" ? "Create" : "Save"}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+            onClick={() => setPreviewExpanded(true)}
+            title="Expand preview (Esc to close)"
+            aria-label="Expand preview"
+          >
+            <Maximize2Icon className="size-4" />
+          </Button>
+        </div>
       </div>
       <p className="text-muted-foreground text-[11px] px-3 pt-1.5 pb-2">Preview and export size (applies to template).</p>
       {/* Canvas (centered like slide edit) */}
@@ -267,21 +379,20 @@ export function TemplateBuilderForm({
             const dims = getPreviewDimensions(previewSize, PREVIEW_MAX);
             return (
               <div
-                className="overflow-hidden rounded-xl shadow-sm shrink-0 border border-border/40 max-w-full"
-                style={{ width: dims.w, height: dims.h }}
+                className="rounded-xl shadow-sm shrink-0 border border-border/40 max-w-full relative"
+                style={{ width: dims.w, height: dims.h, overflow: "visible", clipPath: "inset(0 round 12px)" }}
                 role="img"
                 aria-label="Template preview"
               >
                 <div
-                  className="origin-top-left"
+                  className="absolute origin-top-left"
                   style={{
+                    left: 0,
+                    top: 0,
+                    width: dims.exportW,
+                    height: dims.exportH,
                     transform: `scale(${dims.scale})`,
                     transformOrigin: "top left",
-                    position: "relative",
-                    left: dims.offsetX,
-                    top: dims.offsetY,
-                    width: 1080,
-                    height: 1080,
                   }}
                 >
                   <SlidePreview
@@ -298,14 +409,31 @@ export function TemplateBuilderForm({
                       logo_url: config.chrome.watermark.enabled ? MOCK_LOGO_URL : undefined,
                     }}
                     totalSlides={previewTotalSlides}
+                    exportSize={previewSize}
                     backgroundImageUrl={
-                      previewUseUnsplash ? TEMPLATE_PREVIEW_UNSPLASH_URL : (previewImageUrl.trim() || undefined)
+                      (() => {
+                        const urls = previewImageUrls.map((u) => u.trim()).filter(Boolean);
+                        if (urls.length === 0 && previewUseUnsplash) return TEMPLATE_PREVIEW_UNSPLASH_URL;
+                        if (urls.length === 1) return urls[0];
+                        return undefined;
+                      })()
                     }
-                    backgroundOverride={{ color: previewBackgroundColor }}
+                    backgroundImageUrls={
+                      (() => {
+                        const urls = previewImageUrls.map((u) => u.trim()).filter(Boolean);
+                        return urls.length >= 2 ? urls : undefined;
+                      })()
+                    }
+                    backgroundOverride={
+                      config.backgroundRules?.allowImage === false
+                        ? getTemplatePreviewBackgroundOverride(config)
+                        : { color: previewBackgroundColor }
+                    }
                     showMadeWithOverride={showMadeWith}
+                    imageDisplay={getImageDisplayFromConfig(config)}
                     onHeadlineChange={setPreviewHeadline}
                     onBodyChange={setPreviewBody}
-                    {...(chromeOverridesForPreview && { chromeOverrides: chromeOverridesForPreview })}
+                    {...(effectiveChromeOverridesForPreview && Object.keys(effectiveChromeOverridesForPreview).length > 0 && { chromeOverrides: effectiveChromeOverridesForPreview })}
                   />
                 </div>
               </div>
@@ -349,19 +477,18 @@ export function TemplateBuilderForm({
               const dims = getPreviewDimensions(previewSize, PREVIEW_MAX_LARGE);
               return (
                 <div
-                  className="overflow-hidden rounded-lg shrink-0 shadow-lg"
-                  style={{ width: dims.w, height: dims.h }}
+                  className="rounded-lg shrink-0 shadow-lg relative"
+                  style={{ width: dims.w, height: dims.h, overflow: "visible", clipPath: "inset(0 round 8px)" }}
                 >
                   <div
-                    className="origin-top-left"
+                    className="absolute origin-top-left"
                     style={{
+                      left: 0,
+                      top: 0,
+                      width: dims.exportW,
+                      height: dims.exportH,
                       transform: `scale(${dims.scale})`,
                       transformOrigin: "top left",
-                      position: "relative",
-                      left: dims.offsetX,
-                      top: dims.offsetY,
-                      width: 1080,
-                      height: 1080,
                     }}
                   >
                     <SlidePreview
@@ -378,14 +505,31 @@ export function TemplateBuilderForm({
                         logo_url: config.chrome.watermark.enabled ? MOCK_LOGO_URL : undefined,
                       }}
                       totalSlides={previewTotalSlides}
+                      exportSize={previewSize}
                       backgroundImageUrl={
-                        previewUseUnsplash ? TEMPLATE_PREVIEW_UNSPLASH_URL : (previewImageUrl.trim() || undefined)
+                        (() => {
+                          const urls = previewImageUrls.map((u) => u.trim()).filter(Boolean);
+                          if (urls.length === 0 && previewUseUnsplash) return TEMPLATE_PREVIEW_UNSPLASH_URL;
+                          if (urls.length === 1) return urls[0];
+                          return undefined;
+                        })()
                       }
-                      backgroundOverride={{ color: previewBackgroundColor }}
+                      backgroundImageUrls={
+                        (() => {
+                          const urls = previewImageUrls.map((u) => u.trim()).filter(Boolean);
+                          return urls.length >= 2 ? urls : undefined;
+                        })()
+                      }
+                      backgroundOverride={
+                        config.backgroundRules?.allowImage === false
+                          ? getTemplatePreviewBackgroundOverride(config)
+                          : { color: previewBackgroundColor }
+                      }
                       showMadeWithOverride={showMadeWith}
+                      imageDisplay={getImageDisplayFromConfig(config)}
                       onHeadlineChange={setPreviewHeadline}
                       onBodyChange={setPreviewBody}
-                      {...(chromeOverridesForPreview && { chromeOverrides: chromeOverridesForPreview })}
+                      {...(effectiveChromeOverridesForPreview && Object.keys(effectiveChromeOverridesForPreview).length > 0 && { chromeOverrides: effectiveChromeOverridesForPreview })}
                     />
                   </div>
                 </div>
@@ -495,15 +639,54 @@ export function TemplateBuilderForm({
                         />
                       </div>
                     )}
-                    <div className="space-y-1">
-                      <Label className="text-xs">Background image URL</Label>
-                      <Input
-                        type="url"
-                        value={previewImageUrl}
-                        onChange={(e) => setPreviewImageUrl(e.target.value)}
-                        placeholder="https://example.com/image.jpg"
-                        className="text-sm"
-                      />
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <Label className="text-xs">Background image URL(s)</Label>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs shrink-0"
+                          onClick={() => setPreviewImageUrls((prev) => [...prev, ""])}
+                        >
+                          <PlusIcon className="size-3 mr-1" />
+                          Add URL
+                        </Button>
+                      </div>
+                      <p className="text-muted-foreground text-[11px]">One URL = single image. Two or more = multi-image layout (side-by-side, grid, etc.).</p>
+                      <div className="space-y-2">
+                        {previewImageUrls.map((url, i) => (
+                          <div key={i} className="flex gap-2 items-center">
+                            <Input
+                              type="url"
+                              value={url}
+                              onChange={(e) =>
+                                setPreviewImageUrls((prev) => {
+                                  const next = [...prev];
+                                  next[i] = e.target.value;
+                                  return next;
+                                })
+                              }
+                              placeholder={i === 0 ? "https://example.com/image.jpg" : `Image ${i + 1}`}
+                              className="text-sm flex-1 min-w-0"
+                            />
+                            {previewImageUrls.length > 1 ? (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive"
+                                onClick={() =>
+                                  setPreviewImageUrls((prev) => prev.filter((_, j) => j !== i))
+                                }
+                                aria-label="Remove URL"
+                              >
+                                <MinusIcon className="size-4" />
+                              </Button>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs">Background color</Label>
@@ -605,15 +788,15 @@ export function TemplateBuilderForm({
             {(["top", "right", "bottom", "left"] as const).map((side) => (
               <div key={side} className="space-y-1.5">
                 <Label className="text-xs capitalize">{side}</Label>
-                <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background w-full max-w-[100px]">
-                  <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-r-none" onClick={() => updateConfig((prev) => ({ safeArea: { ...prev.safeArea, [side]: Math.max(0, config.safeArea[side] - 4) } }))} aria-label={`Decrease ${side}`}>
-                    <MinusIcon className="size-3" />
-                  </Button>
-                  <span className="min-w-8 flex-1 text-center text-xs tabular-nums">{config.safeArea[side]}</span>
-                  <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-l-none" onClick={() => updateConfig((prev) => ({ safeArea: { ...prev.safeArea, [side]: Math.min(200, config.safeArea[side] + 4) } }))} aria-label={`Increase ${side}`}>
-                    <PlusIcon className="size-3" />
-                  </Button>
-                </div>
+                <StepperWithLongPress
+                  value={config.safeArea[side]}
+                  min={0}
+                  max={200}
+                  step={4}
+                  onChange={(next) => updateConfig((prev) => ({ safeArea: { ...prev.safeArea, [side]: next } }))}
+                  label={side}
+                  className="w-full max-w-[100px]"
+                />
               </div>
             ))}
           </div>
@@ -631,20 +814,19 @@ export function TemplateBuilderForm({
                 <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
                   {(["x", "y", "w", "h"] as const).map((key) => {
                     const min = key === "w" || key === "h" ? 1 : 0;
-                    const step = 8;
                     const label = key === "x" ? "X" : key === "y" ? "Y" : key === "w" ? "Width" : "Height";
                     return (
                       <div key={key} className="space-y-1.5">
                         <Label className="text-xs">{label}</Label>
-                        <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background w-full max-w-[140px]">
-                          <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-r-none" onClick={() => updateTextZone("headline", { [key]: Math.max(min, headlineZone[key] - step) })} aria-label={`Decrease ${key}`}>
-                            <MinusIcon className="size-3" />
-                          </Button>
-                          <span className="min-w-8 flex-1 text-center text-xs tabular-nums">{headlineZone[key]}</span>
-                          <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-l-none" onClick={() => updateTextZone("headline", { [key]: Math.min(1080, headlineZone[key] + step) })} aria-label={`Increase ${key}`}>
-                            <PlusIcon className="size-3" />
-                          </Button>
-                        </div>
+                        <StepperWithLongPress
+                          value={headlineZone[key]}
+                          min={min}
+                          max={1080}
+                          step={8}
+                          onChange={(next) => updateTextZone("headline", { [key]: next })}
+                          label={label}
+                          className="w-full max-w-[140px]"
+                        />
                       </div>
                     );
                   })}
@@ -655,51 +837,28 @@ export function TemplateBuilderForm({
                 <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
                   <div className="space-y-1.5">
                     <Label className="text-xs">Font size</Label>
-                    <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background w-full max-w-[100px]">
-                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-r-none" onClick={() => updateTextZone("headline", { fontSize: Math.max(8, headlineZone.fontSize - 2) })} aria-label="Decrease font size">
-                        <MinusIcon className="size-3" />
-                      </Button>
-                      <span className="min-w-8 flex-1 text-center text-xs tabular-nums">{headlineZone.fontSize}</span>
-                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-l-none" onClick={() => updateTextZone("headline", { fontSize: Math.min(120, headlineZone.fontSize + 2) })} aria-label="Increase font size">
-                        <PlusIcon className="size-3" />
-                      </Button>
-                    </div>
+                    <StepperWithLongPress value={headlineZone.fontSize} min={8} max={280} step={2} onChange={(next) => updateTextZone("headline", { fontSize: next })} label="Font size" className="w-full max-w-[100px]" />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Font weight</Label>
-                    <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background w-full max-w-[100px]">
-                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-r-none" onClick={() => updateTextZone("headline", { fontWeight: Math.max(100, headlineZone.fontWeight - 100) })} aria-label="Decrease font weight">
-                        <MinusIcon className="size-3" />
-                      </Button>
-                      <span className="min-w-8 flex-1 text-center text-xs tabular-nums">{headlineZone.fontWeight}</span>
-                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-l-none" onClick={() => updateTextZone("headline", { fontWeight: Math.min(900, headlineZone.fontWeight + 100) })} aria-label="Increase font weight">
-                        <PlusIcon className="size-3" />
-                      </Button>
-                    </div>
+                    <StepperWithLongPress value={headlineZone.fontWeight} min={100} max={900} step={100} onChange={(next) => updateTextZone("headline", { fontWeight: next })} label="Font weight" className="w-full max-w-[100px]" />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Line height</Label>
-                    <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background w-full max-w-[100px]">
-                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-r-none" onClick={() => updateTextZone("headline", { lineHeight: Math.max(0.5, Math.round((headlineZone.lineHeight - 0.05) * 100) / 100) })} aria-label="Decrease line height">
-                        <MinusIcon className="size-3" />
-                      </Button>
-                      <span className="min-w-8 flex-1 text-center text-xs tabular-nums">{headlineZone.lineHeight.toFixed(1)}</span>
-                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-l-none" onClick={() => updateTextZone("headline", { lineHeight: Math.min(3, Math.round((headlineZone.lineHeight + 0.05) * 100) / 100) })} aria-label="Increase line height">
-                        <PlusIcon className="size-3" />
-                      </Button>
-                    </div>
+                    <StepperWithLongPress
+                      value={Math.round(headlineZone.lineHeight * 100)}
+                      min={50}
+                      max={300}
+                      step={5}
+                      onChange={(next) => updateTextZone("headline", { lineHeight: next / 100 })}
+                      formatDisplay={(n) => (n / 100).toFixed(1)}
+                      label="Line height"
+                      className="w-full max-w-[100px]"
+                    />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Max lines</Label>
-                    <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background w-full max-w-[100px]">
-                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-r-none" onClick={() => updateTextZone("headline", { maxLines: Math.max(1, headlineZone.maxLines - 1) })} aria-label="Decrease max lines">
-                        <MinusIcon className="size-3" />
-                      </Button>
-                      <span className="min-w-6 flex-1 text-center text-xs tabular-nums">{headlineZone.maxLines}</span>
-                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-l-none" onClick={() => updateTextZone("headline", { maxLines: Math.min(20, headlineZone.maxLines + 1) })} aria-label="Increase max lines">
-                        <PlusIcon className="size-3" />
-                      </Button>
-                    </div>
+                    <StepperWithLongPress value={headlineZone.maxLines} min={1} max={20} step={1} onChange={(next) => updateTextZone("headline", { maxLines: next })} label="Max lines" className="w-full max-w-[100px]" valueClassName="min-w-6" />
                   </div>
                 </div>
                 <div className="space-y-1 mt-4">
@@ -718,16 +877,16 @@ export function TemplateBuilderForm({
                 </div>
                 <div className="space-y-1 mt-4">
                   <Label className="text-xs">Font (LinkedIn/Instagram)</Label>
-                  <Select value={headlineZone.fontFamily ?? "system"} onValueChange={(v) => updateTextZone("headline", { fontFamily: v || undefined })}>
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue placeholder="Font" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {PREVIEW_FONTS.map(({ id, label }) => (
-                        <SelectItem key={id} value={id}>{label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Button type="button" variant="outline" size="sm" className="h-8 w-full justify-start text-xs font-normal" onClick={() => setHeadlineFontModalOpen(true)}>
+                    {PREVIEW_FONTS.find((f) => f.id === (headlineZone.fontFamily ?? "system"))?.label ?? "System"}
+                  </Button>
+                  <FontPickerModal
+                    open={headlineFontModalOpen}
+                    onOpenChange={setHeadlineFontModalOpen}
+                    value={headlineZone.fontFamily ?? "system"}
+                    onSelect={(v) => updateTextZone("headline", { fontFamily: v || undefined })}
+                    title="Headline font"
+                  />
                 </div>
                 <div className="mt-4">
                   <Label className="text-xs block mb-1.5">Text color</Label>
@@ -747,20 +906,19 @@ export function TemplateBuilderForm({
                 <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
                   {(["x", "y", "w", "h"] as const).map((key) => {
                     const min = key === "w" || key === "h" ? 1 : 0;
-                    const step = 8;
                     const label = key === "x" ? "X" : key === "y" ? "Y" : key === "w" ? "Width" : "Height";
                     return (
                       <div key={key} className="space-y-1.5">
                         <Label className="text-xs">{label}</Label>
-                        <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background w-full max-w-[140px]">
-                          <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-r-none" onClick={() => updateTextZone("body", { [key]: Math.max(min, bodyZone[key] - step) })} aria-label={`Decrease ${key}`}>
-                            <MinusIcon className="size-3" />
-                          </Button>
-                          <span className="min-w-8 flex-1 text-center text-xs tabular-nums">{bodyZone[key]}</span>
-                          <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-l-none" onClick={() => updateTextZone("body", { [key]: Math.min(1080, bodyZone[key] + step) })} aria-label={`Increase ${key}`}>
-                            <PlusIcon className="size-3" />
-                          </Button>
-                        </div>
+                        <StepperWithLongPress
+                          value={bodyZone[key]}
+                          min={min}
+                          max={1080}
+                          step={8}
+                          onChange={(next) => updateTextZone("body", { [key]: next })}
+                          label={label}
+                          className="w-full max-w-[140px]"
+                        />
                       </div>
                     );
                   })}
@@ -771,51 +929,28 @@ export function TemplateBuilderForm({
                 <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
                   <div className="space-y-1.5">
                     <Label className="text-xs">Font size</Label>
-                    <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background w-full max-w-[100px]">
-                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-r-none" onClick={() => updateTextZone("body", { fontSize: Math.max(8, bodyZone.fontSize - 2) })} aria-label="Decrease font size">
-                        <MinusIcon className="size-3" />
-                      </Button>
-                      <span className="min-w-8 flex-1 text-center text-xs tabular-nums">{bodyZone.fontSize}</span>
-                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-l-none" onClick={() => updateTextZone("body", { fontSize: Math.min(120, bodyZone.fontSize + 2) })} aria-label="Increase font size">
-                        <PlusIcon className="size-3" />
-                      </Button>
-                    </div>
+                    <StepperWithLongPress value={bodyZone.fontSize} min={8} max={280} step={2} onChange={(next) => updateTextZone("body", { fontSize: next })} label="Font size" className="w-full max-w-[100px]" />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Font weight</Label>
-                    <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background w-full max-w-[100px]">
-                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-r-none" onClick={() => updateTextZone("body", { fontWeight: Math.max(100, bodyZone.fontWeight - 100) })} aria-label="Decrease font weight">
-                        <MinusIcon className="size-3" />
-                      </Button>
-                      <span className="min-w-8 flex-1 text-center text-xs tabular-nums">{bodyZone.fontWeight}</span>
-                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-l-none" onClick={() => updateTextZone("body", { fontWeight: Math.min(900, bodyZone.fontWeight + 100) })} aria-label="Increase font weight">
-                        <PlusIcon className="size-3" />
-                      </Button>
-                    </div>
+                    <StepperWithLongPress value={bodyZone.fontWeight} min={100} max={900} step={100} onChange={(next) => updateTextZone("body", { fontWeight: next })} label="Font weight" className="w-full max-w-[100px]" />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Line height</Label>
-                    <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background w-full max-w-[100px]">
-                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-r-none" onClick={() => updateTextZone("body", { lineHeight: Math.max(0.5, Math.round((bodyZone.lineHeight - 0.05) * 100) / 100) })} aria-label="Decrease line height">
-                        <MinusIcon className="size-3" />
-                      </Button>
-                      <span className="min-w-8 flex-1 text-center text-xs tabular-nums">{bodyZone.lineHeight.toFixed(1)}</span>
-                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-l-none" onClick={() => updateTextZone("body", { lineHeight: Math.min(3, Math.round((bodyZone.lineHeight + 0.05) * 100) / 100) })} aria-label="Increase line height">
-                        <PlusIcon className="size-3" />
-                      </Button>
-                    </div>
+                    <StepperWithLongPress
+                      value={Math.round(bodyZone.lineHeight * 100)}
+                      min={50}
+                      max={300}
+                      step={5}
+                      onChange={(next) => updateTextZone("body", { lineHeight: next / 100 })}
+                      formatDisplay={(n) => (n / 100).toFixed(1)}
+                      label="Line height"
+                      className="w-full max-w-[100px]"
+                    />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Max lines</Label>
-                    <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background w-full max-w-[100px]">
-                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-r-none" onClick={() => updateTextZone("body", { maxLines: Math.max(1, bodyZone.maxLines - 1) })} aria-label="Decrease max lines">
-                        <MinusIcon className="size-3" />
-                      </Button>
-                      <span className="min-w-6 flex-1 text-center text-xs tabular-nums">{bodyZone.maxLines}</span>
-                      <Button type="button" variant="ghost" size="icon-sm" className="h-7 w-7 shrink-0 rounded-l-none" onClick={() => updateTextZone("body", { maxLines: Math.min(20, bodyZone.maxLines + 1) })} aria-label="Increase max lines">
-                        <PlusIcon className="size-3" />
-                      </Button>
-                    </div>
+                    <StepperWithLongPress value={bodyZone.maxLines} min={1} max={20} step={1} onChange={(next) => updateTextZone("body", { maxLines: next })} label="Max lines" className="w-full max-w-[100px]" valueClassName="min-w-6" />
                   </div>
                 </div>
                 <div className="space-y-1 mt-4">
@@ -834,16 +969,16 @@ export function TemplateBuilderForm({
                 </div>
                 <div className="space-y-1 mt-4">
                   <Label className="text-xs">Font (LinkedIn/Instagram)</Label>
-                  <Select value={bodyZone.fontFamily ?? "system"} onValueChange={(v) => updateTextZone("body", { fontFamily: v || undefined })}>
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue placeholder="Font" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {PREVIEW_FONTS.map(({ id, label }) => (
-                        <SelectItem key={id} value={id}>{label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Button type="button" variant="outline" size="sm" className="h-8 w-full justify-start text-xs font-normal" onClick={() => setBodyFontModalOpen(true)}>
+                    {PREVIEW_FONTS.find((f) => f.id === (bodyZone.fontFamily ?? "system"))?.label ?? "System"}
+                  </Button>
+                  <FontPickerModal
+                    open={bodyFontModalOpen}
+                    onOpenChange={setBodyFontModalOpen}
+                    value={bodyZone.fontFamily ?? "system"}
+                    onSelect={(v) => updateTextZone("body", { fontFamily: v || undefined })}
+                    title="Body font"
+                  />
                 </div>
                 <div className="mt-4">
                   <Label className="text-xs block mb-1.5">Text color</Label>
@@ -910,6 +1045,212 @@ export function TemplateBuilderForm({
             </div>
           </div>
         </div>
+
+        {config.backgroundRules.allowImage && (
+          <div className="rounded-lg border border-border/50 bg-muted/5 p-3">
+            <h3 className="text-xs font-semibold text-foreground mb-2">Image display</h3>
+            <p className="text-muted-foreground text-[11px] mb-3">Default for slides using a background image. Same as slide editor.</p>
+            {(() => {
+              const raw = (defaultsMeta as Record<string, unknown> | undefined)?.image_display;
+              const d = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+              const imageMode = (d.mode as "full" | "pip" | undefined) ?? "full";
+              return (
+                <div className="space-y-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Image style</Label>
+                    <Select
+                      value={imageMode}
+                      onValueChange={(v: "full" | "pip") => {
+                        updateImageDisplay({
+                          mode: v,
+                          ...(v === "pip" && d.pipPosition == null ? { pipPosition: "bottom_right", pipSize: 0.4 } : {}),
+                        });
+                      }}
+                    >
+                      <SelectTrigger className="h-9 rounded-md border-input/80 bg-background text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="full">Full slide</SelectItem>
+                        <SelectItem value="pip">Picture-in-picture (image in corner)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-muted-foreground text-[11px]">PiP keeps text clear by placing the image in a corner.</p>
+                  </div>
+                  {imageMode === "pip" && (
+                    <div className="grid gap-3 sm:grid-cols-2 pt-1">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">PiP position</Label>
+                        <Select
+                          value={(d.pipPosition as string) ?? "bottom_right"}
+                          onValueChange={(v: "top_left" | "top_right" | "bottom_left" | "bottom_right") =>
+                            updateImageDisplay({ pipPosition: v })
+                          }
+                        >
+                          <SelectTrigger className="h-9 rounded-md border-input/80 bg-background text-sm">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="top_left">Top left</SelectItem>
+                            <SelectItem value="top_right">Top right</SelectItem>
+                            <SelectItem value="bottom_left">Bottom left</SelectItem>
+                            <SelectItem value="bottom_right">Bottom right</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">PiP size</Label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="range"
+                            min={25}
+                            max={100}
+                            value={Math.round((Number(d.pipSize) || 0.4) * 100)}
+                            onChange={(e) =>
+                              updateImageDisplay({ pipSize: Number(e.target.value) / 100 })
+                            }
+                            className="h-2 flex-1 cursor-pointer appearance-none rounded-full bg-muted accent-primary"
+                          />
+                          <span className="text-muted-foreground min-w-8 text-xs tabular-nums">
+                            {Math.round((Number(d.pipSize) || 0.4) * 100)}%
+                          </span>
+                        </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">PiP rotation</Label>
+                        <StepperWithLongPress
+                          value={Number(d.pipRotation) ?? 0}
+                          min={-180}
+                          max={180}
+                          step={15}
+                          onChange={(v) => updateImageDisplay({ pipRotation: v })}
+                          formatDisplay={(v) => `${v}°`}
+                          label="PiP rotation"
+                          className="w-full max-w-[140px]"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">PiP corner radius (px)</Label>
+                        <StepperWithLongPress
+                          value={Number(d.pipBorderRadius) ?? 24}
+                          min={0}
+                          max={72}
+                          step={4}
+                          onChange={(v) => updateImageDisplay({ pipBorderRadius: v })}
+                          formatDisplay={(v) => `${v}px`}
+                          label="Corner radius"
+                          className="w-full max-w-[140px]"
+                        />
+                      </div>
+                    </div>
+                  )}
+                  <div className="grid gap-3 sm:grid-cols-2 pt-1 border-t border-border/50">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Image position (full)</Label>
+                      <Select
+                        value={(d.position as string) ?? "top"}
+                        onValueChange={(v: string) => updateImageDisplay({ position: v })}
+                      >
+                        <SelectTrigger className="h-9 rounded-md border-input/80 bg-background text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="center">Center</SelectItem>
+                          <SelectItem value="top">Top</SelectItem>
+                          <SelectItem value="bottom">Bottom</SelectItem>
+                          <SelectItem value="left">Left</SelectItem>
+                          <SelectItem value="right">Right</SelectItem>
+                          <SelectItem value="top-left">Top left</SelectItem>
+                          <SelectItem value="top-right">Top right</SelectItem>
+                          <SelectItem value="bottom-left">Bottom left</SelectItem>
+                          <SelectItem value="bottom-right">Bottom right</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Fit</Label>
+                      <Select
+                        value={(d.fit as string) ?? "cover"}
+                        onValueChange={(v: "cover" | "contain") => updateImageDisplay({ fit: v })}
+                      >
+                        <SelectTrigger className="h-9 rounded-md border-input/80 bg-background text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="cover">Cover (fill)</SelectItem>
+                          <SelectItem value="contain">Contain (fit)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  {(imageMode === "pip" || (d.frame as string)) && (
+                    <div className="grid gap-3 sm:grid-cols-2 pt-1 border-t border-border/50">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Frame</Label>
+                        <Select
+                          value={(d.frame as string) ?? "none"}
+                          onValueChange={(v: string) => updateImageDisplay({ frame: v })}
+                        >
+                          <SelectTrigger className="h-9 rounded-md border-input/80 bg-background text-sm">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">None</SelectItem>
+                            <SelectItem value="thin">Thin</SelectItem>
+                            <SelectItem value="medium">Medium</SelectItem>
+                            <SelectItem value="thick">Thick</SelectItem>
+                            <SelectItem value="chunky">Chunky</SelectItem>
+                            <SelectItem value="heavy">Heavy</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Shape</Label>
+                        <Select
+                          value={(d.frameShape as string) ?? "squircle"}
+                          onValueChange={(v: string) => updateImageDisplay({ frameShape: v })}
+                        >
+                          <SelectTrigger className="h-9 rounded-md border-input/80 bg-background text-sm">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="squircle">Squircle</SelectItem>
+                            <SelectItem value="circle">Circle</SelectItem>
+                            <SelectItem value="diamond">Diamond</SelectItem>
+                            <SelectItem value="hexagon">Hexagon</SelectItem>
+                            <SelectItem value="pill">Pill</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Frame color</Label>
+                        <ColorPicker
+                          value={typeof d.frameColor === "string" ? d.frameColor : "#ffffff"}
+                          onChange={(v) => updateImageDisplay({ frameColor: v.trim() || "#ffffff" })}
+                          placeholder="#ffffff"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Corner radius (px)</Label>
+                        <StepperWithLongPress
+                          value={Number(d.frameRadius) ?? 24}
+                          min={0}
+                          max={48}
+                          step={4}
+                          onChange={(v) => updateImageDisplay({ frameRadius: v })}
+                          formatDisplay={(v) => `${v}px`}
+                          label="Corner radius"
+                          className="w-full max-w-[140px]"
+                          disabled={(d.frameShape as string) === "circle" || (d.frameShape as string) === "pill"}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+        )}
 
         <div className={config.backgroundRules.defaultStyle !== "darken" ? "opacity-70" : undefined}>
           <p className="text-xs font-semibold text-foreground mb-2 mt-4">Overlays</p>
@@ -1057,6 +1398,35 @@ export function TemplateBuilderForm({
                 <span className="text-sm">Enabled</span>
               </label>
             </div>
+            {defaultsMeta.image_overlay_blend_enabled !== false && (
+              <div className="space-y-3 pt-3 border-t border-border/50 mt-3">
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <Label className="text-xs">Tint opacity (0–100%)</Label>
+                    <span className="text-muted-foreground text-xs">
+                      {Math.round((Number((defaultsMeta as Record<string, unknown>).overlay_tint_opacity) ?? 0.75) * 100)}%
+                    </span>
+                  </div>
+                  <Slider
+                    value={[(Number((defaultsMeta as Record<string, unknown>).overlay_tint_opacity) ?? 0.75) * 100]}
+                    onValueChange={([v]) =>
+                      updateDefaultsMeta({ overlay_tint_opacity: (v ?? 75) / 100 })
+                    }
+                    min={0}
+                    max={100}
+                    step={5}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Tint color</Label>
+                  <ColorPicker
+                    value={typeof (defaultsMeta as Record<string, unknown>).overlay_tint_color === "string" ? (defaultsMeta as Record<string, unknown>).overlay_tint_color as string : ""}
+                    onChange={(v) => updateDefaultsMeta({ overlay_tint_color: v.trim() || undefined })}
+                    placeholder="#000000"
+                  />
+                </div>
+              </div>
+            )}
             </>
             )}
           </div>
@@ -1065,22 +1435,190 @@ export function TemplateBuilderForm({
             )}
             {templateTab === "more" && (
           <section className="space-y-4" aria-label="More">
-        <div className="rounded-lg border border-border/50 bg-muted/5 p-3">
-          <h3 className="text-xs font-semibold text-foreground mb-2">Show on frame</h3>
-          <p className="text-muted-foreground text-[11px] mb-3">Same options as the frame editor. These become the template defaults when frames use this template.</p>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <Label>Show swipe hint</Label>
+        <div className="rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3">
+          <h3 className="text-xs font-semibold text-foreground">Show on slide</h3>
+          <p className="text-muted-foreground text-[11px]">Same options as the slide editor. These become the template defaults when slides use this template.</p>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <label className="flex cursor-pointer items-center gap-1.5 text-xs">
+              <input
+                type="checkbox"
+                checked={config.chrome.showCounter}
+                onChange={(e) =>
+                  updateConfig((prev) => ({ chrome: { ...prev.chrome, showCounter: e.target.checked } }))
+                }
+                className="rounded border-input accent-primary"
+              />
+              Slide number
+            </label>
+            <label className="flex cursor-pointer items-center gap-1.5 text-xs">
+              <input
+                type="checkbox"
+                checked={config.chrome.watermark.enabled}
+                onChange={(e) =>
+                  updateConfig((prev) => ({
+                    chrome: { ...prev.chrome, watermark: { ...prev.chrome.watermark, enabled: e.target.checked } },
+                  }))
+                }
+                className="rounded border-input accent-primary"
+              />
+              Logo
+            </label>
+            <label className="flex cursor-pointer items-center gap-1.5 text-xs">
               <input
                 type="checkbox"
                 checked={config.chrome.showSwipe}
                 onChange={(e) =>
                   updateConfig((prev) => ({ chrome: { ...prev.chrome, showSwipe: e.target.checked } }))
                 }
+                className="rounded border-input accent-primary"
               />
-            </div>
-            {config.chrome.showSwipe && (
-              <div className="space-y-4">
+              Swipe
+            </label>
+            <label className="flex cursor-pointer items-center gap-1.5 text-xs">
+              <input
+                type="checkbox"
+                checked={showMadeWith}
+                onChange={(e) => updateDefaultsMeta({ show_made_with: e.target.checked })}
+                className="rounded border-input accent-primary"
+              />
+              Watermark
+            </label>
+          </div>
+          <Button type="button" variant="outline" size="sm" className="h-7 text-xs mt-2" onClick={() => setChromeLayoutOpen((o) => !o)}>
+            {chromeLayoutOpen ? <ChevronUpIcon className="size-3" /> : <ChevronDownIcon className="size-3" />} Layout (position & size)
+          </Button>
+          {chromeLayoutOpen && (
+            <div className="rounded-lg border border-border/40 bg-muted/5 p-3 space-y-4 mt-2">
+              <div className={config.chrome.showCounter ? "" : "opacity-50 pointer-events-none"}>
+                <p className="text-[11px] font-medium text-foreground mb-2">Slide number</p>
+                <div className="grid grid-cols-3 gap-3">
+                  {(["top", "right", "fontSize"] as const).map((key) => {
+                    const label = key === "top" ? "Top (px)" : key === "right" ? "Right (px)" : "Font size";
+                    const val = (counterZone as { top?: number; right?: number; fontSize?: number })?.[key] ?? (key === "fontSize" ? 20 : 24);
+                    const min = key === "fontSize" ? 10 : 0;
+                    const max = key === "fontSize" ? 48 : 1080;
+                    const step = key === "fontSize" ? 1 : 4;
+                    return (
+                      <div key={key} className="space-y-1">
+                        <Label className="text-xs">{label}</Label>
+                        <StepperWithLongPress
+                          value={val}
+                          min={min}
+                          max={max}
+                          step={step}
+                          onChange={(next) =>
+                            updateDefaultsMeta({
+                              counter_zone_override: { ...(counterZone as object), [key]: next },
+                            })
+                          }
+                          label={label}
+                          className="w-full max-w-[100px]"
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-2">
+                  <Label className="text-xs">Color</Label>
+                  <ColorPicker
+                    value={config.chrome.counterColor ?? ""}
+                    onChange={(v) => updateConfig((prev) => ({ chrome: { ...prev.chrome, counterColor: v.trim() || undefined } }))}
+                    placeholder={headerColor ?? "Headline color"}
+                    className="mt-0.5"
+                  />
+                </div>
+              </div>
+              {config.chrome.watermark.enabled && (
+                <div className="space-y-2">
+                  <p className="text-[11px] font-medium text-foreground">Logo</p>
+                  <div className="mb-2">
+                    <Label className="text-xs">Color</Label>
+                    <ColorPicker
+                      value={config.chrome.watermark.color ?? ""}
+                      onChange={(v) =>
+                        updateConfig((prev) => ({
+                          chrome: { ...prev.chrome, watermark: { ...prev.chrome.watermark, color: v.trim() || undefined } },
+                        }))
+                      }
+                      placeholder={headerColor ?? "Headline color"}
+                      className="mt-0.5"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Position preset</Label>
+                    <Select
+                      value={config.chrome.watermark.logoX != null && config.chrome.watermark.logoY != null ? "custom" : config.chrome.watermark.position}
+                      onValueChange={(v) =>
+                        updateConfig((prev) => ({
+                          chrome: {
+                            ...prev.chrome,
+                            watermark: {
+                              ...prev.chrome.watermark,
+                              position: v as "top_left" | "top_right" | "bottom_left" | "bottom_right" | "custom",
+                              logoX: v === "custom" ? (prev.chrome.watermark.logoX ?? 24) : undefined,
+                              logoY: v === "custom" ? (prev.chrome.watermark.logoY ?? 24) : undefined,
+                            },
+                          },
+                        }))
+                      }
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="top_left">Top left</SelectItem>
+                        <SelectItem value="top_right">Top right</SelectItem>
+                        <SelectItem value="bottom_left">Bottom left</SelectItem>
+                        <SelectItem value="bottom_right">Bottom right</SelectItem>
+                        <SelectItem value="custom">Custom (X/Y)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {(config.chrome.watermark.position === "custom" || (config.chrome.watermark.logoX != null && config.chrome.watermark.logoY != null)) && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Logo X</Label>
+                        <StepperWithLongPress
+                          value={config.chrome.watermark.logoX ?? 24}
+                          min={0}
+                          max={1080}
+                          step={8}
+                          onChange={(next) => updateConfig((prev) => ({ chrome: { ...prev.chrome, watermark: { ...prev.chrome.watermark, logoX: next, position: "custom" as const } } }))}
+                          label="Logo X"
+                          className="w-full max-w-[120px]"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Logo Y</Label>
+                        <StepperWithLongPress
+                          value={config.chrome.watermark.logoY ?? 24}
+                          min={0}
+                          max={1080}
+                          step={8}
+                          onChange={(next) => updateConfig((prev) => ({ chrome: { ...prev.chrome, watermark: { ...prev.chrome.watermark, logoY: next, position: "custom" as const } } }))}
+                          label="Logo Y"
+                          className="w-full max-w-[120px]"
+                        />
+                      </div>
+                    </div>
+                  )}
+                  <div className="space-y-1">
+                    <Label className="text-xs">Font size</Label>
+                    <StepperWithLongPress
+                      value={config.chrome.watermark.fontSize ?? 20}
+                      min={8}
+                      max={72}
+                      step={1}
+                      onChange={(next) => updateConfig((prev) => ({ chrome: { ...prev.chrome, watermark: { ...prev.chrome.watermark, fontSize: next } } }))}
+                      label="Font size"
+                      className="w-full max-w-[100px]"
+                    />
+                  </div>
+                </div>
+              )}
+              {config.chrome.showSwipe && (
+                <div className="space-y-2">
+                  <p className="text-[11px] font-medium text-foreground">Swipe</p>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <Label className="text-xs">Swipe type</Label>
@@ -1099,104 +1637,136 @@ export function TemplateBuilderForm({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="text">• • •</SelectItem>
-                        <SelectItem value="dots">• • • (large)</SelectItem>
+                        <SelectItem value="text">Text</SelectItem>
+                        <SelectItem value="dots">Dots</SelectItem>
                         <SelectItem value="line-dots">Line + dots</SelectItem>
-                        <SelectItem value="arrow-left">←</SelectItem>
-                        <SelectItem value="arrow-right">→</SelectItem>
-                        <SelectItem value="arrows">← →</SelectItem>
-                        <SelectItem value="finger-left">← (bold)</SelectItem>
-                        <SelectItem value="finger-right">→ (bold)</SelectItem>
-                        <SelectItem value="chevrons">« »</SelectItem>
-                        <SelectItem value="hand-left">Hand ←</SelectItem>
-                        <SelectItem value="hand-right">Hand →</SelectItem>
-                        <SelectItem value="finger-swipe">↔</SelectItem>
-                        <SelectItem value="circle-arrows">○ arrows</SelectItem>
+                        <SelectItem value="arrow-left">Arrow left</SelectItem>
+                        <SelectItem value="arrow-right">Arrow right</SelectItem>
+                        <SelectItem value="arrows">Arrows</SelectItem>
+                        <SelectItem value="finger-left">Finger left</SelectItem>
+                        <SelectItem value="finger-right">Finger right</SelectItem>
+                        <SelectItem value="chevrons">Chevrons</SelectItem>
+                        <SelectItem value="hand-left">Hand left</SelectItem>
+                        <SelectItem value="hand-right">Hand right</SelectItem>
+                        <SelectItem value="finger-swipe">Finger swipe</SelectItem>
+                        <SelectItem value="circle-arrows">Circle arrows</SelectItem>
                         <SelectItem value="custom">Custom (SVG/PNG URL)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Swipe position</Label>
-                  <Select
-                    value={config.chrome.swipePosition ?? "bottom_center"}
-                    onValueChange={(v) =>
-                      updateConfig((prev) => ({
-                        chrome: {
-                          ...prev.chrome,
-                          swipePosition: v as
-                            | "bottom_left"
-                            | "bottom_center"
-                            | "bottom_right"
-                            | "top_left"
-                            | "top_center"
-                            | "top_right"
-                            | "center_left"
-                            | "center_right",
-                        },
-                      }))
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="bottom_left">Bottom left</SelectItem>
-                      <SelectItem value="bottom_center">Bottom center</SelectItem>
-                      <SelectItem value="bottom_right">Bottom right</SelectItem>
-                      <SelectItem value="top_left">Top left</SelectItem>
-                      <SelectItem value="top_center">Top center</SelectItem>
-                      <SelectItem value="top_right">Top right</SelectItem>
-                      <SelectItem value="center_left">Center left</SelectItem>
-                      <SelectItem value="center_right">Center right</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    <Select
+                      value={config.chrome.swipePosition ?? "bottom_center"}
+                      onValueChange={(v) => {
+                        const pos = v as TemplateConfig["chrome"]["swipePosition"];
+                        if (pos === "custom") {
+                          updateConfig((prev) => ({
+                            chrome: {
+                              ...prev.chrome,
+                              swipePosition: "custom",
+                              swipeX: prev.chrome.swipeX ?? 540,
+                              swipeY: prev.chrome.swipeY ?? 980,
+                            },
+                          }));
+                        } else {
+                          const preset = pos ? SWIPE_POSITION_PRESETS[pos] : undefined;
+                          if (preset) {
+                            updateConfig((prev) => ({
+                              chrome: {
+                                ...prev.chrome,
+                                swipePosition: pos,
+                                swipeX: preset.x,
+                                swipeY: preset.y,
+                              },
+                            }));
+                          }
+                        }
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="bottom_left">Bottom left</SelectItem>
+                        <SelectItem value="bottom_center">Bottom center</SelectItem>
+                        <SelectItem value="bottom_right">Bottom right</SelectItem>
+                        <SelectItem value="top_left">Top left</SelectItem>
+                        <SelectItem value="top_center">Top center</SelectItem>
+                        <SelectItem value="top_right">Top right</SelectItem>
+                        <SelectItem value="center_left">Center left</SelectItem>
+                        <SelectItem value="center_right">Center right</SelectItem>
+                        <SelectItem value="custom">Custom (X/Y)</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <Label className="text-xs">X</Label>
-                    <Input
-                      type="number"
+                    <StepperWithLongPress
+                      value={(() => {
+                        const pos = config.chrome.swipePosition ?? "bottom_center";
+                        const isRightPreset = pos === "bottom_right" || pos === "top_right" || pos === "center_right";
+                        if (pos === "custom") return config.chrome.swipeX ?? 540;
+                        if (isRightPreset) return getSwipeRightXForFormat(previewSize);
+                        return SWIPE_POSITION_PRESETS[pos]?.x ?? 540;
+                      })()}
                       min={0}
                       max={1080}
-                      placeholder="540"
-                      value={config.chrome.swipeX ?? ""}
-                      onChange={(e) => {
-                        const v = e.target.value === "" ? undefined : Math.min(1080, Math.max(0, parseInt(e.target.value, 10) || 0));
-                        updateConfig((prev) => ({ chrome: { ...prev.chrome, swipeX: v } }));
-                      }}
-                      className="text-sm h-8"
+                      step={8}
+                      onChange={(next) =>
+                        updateConfig((prev) => {
+                          const pos = prev.chrome.swipePosition ?? "bottom_center";
+                          return {
+                            chrome: {
+                              ...prev.chrome,
+                              swipePosition: "custom",
+                              swipeX: next,
+                              swipeY: prev.chrome.swipeY ?? SWIPE_POSITION_PRESETS[pos]?.y ?? 980,
+                            },
+                          };
+                        })
+                      }
+                      label="X"
+                      className="w-full max-w-[120px]"
                     />
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Y</Label>
-                    <Input
-                      type="number"
+                    <StepperWithLongPress
+                      value={config.chrome.swipeY ?? (SWIPE_POSITION_PRESETS[config.chrome.swipePosition ?? "bottom_center"]?.y ?? 980)}
                       min={0}
-                      max={1080}
-                      placeholder="1040"
-                      value={config.chrome.swipeY ?? ""}
-                      onChange={(e) => {
-                        const v = e.target.value === "" ? undefined : Math.min(1080, Math.max(0, parseInt(e.target.value, 10) || 0));
-                        updateConfig((prev) => ({ chrome: { ...prev.chrome, swipeY: v } }));
-                      }}
-                      className="text-sm h-8"
+                      max={1920}
+                      step={8}
+                      onChange={(next) =>
+                        updateConfig((prev) => {
+                          const pos = prev.chrome.swipePosition ?? "bottom_center";
+                          const isRightPreset = pos === "bottom_right" || pos === "top_right" || pos === "center_right";
+                          return {
+                            chrome: {
+                              ...prev.chrome,
+                              swipePosition: "custom",
+                              swipeX: prev.chrome.swipeX ?? (isRightPreset ? getSwipeRightXForFormat(previewSize) : SWIPE_POSITION_PRESETS[pos]?.x ?? 540),
+                              swipeY: next,
+                            },
+                          };
+                        })
+                      }
+                      label="Y"
+                      className="w-full max-w-[120px]"
                     />
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Size</Label>
-                    <Input
-                      type="number"
+                    <StepperWithLongPress
+                      value={config.chrome.swipeSize ?? 24}
                       min={8}
                       max={72}
-                      placeholder="24"
-                      value={config.chrome.swipeSize ?? ""}
-                      onChange={(e) => {
-                        const v = e.target.value === "" ? undefined : Math.min(72, Math.max(8, parseInt(e.target.value, 10) || 24));
-                        updateConfig((prev) => ({ chrome: { ...prev.chrome, swipeSize: v } }));
-                      }}
-                      className="text-sm h-8"
+                      step={2}
+                      onChange={(next) => updateConfig((prev) => ({ chrome: { ...prev.chrome, swipeSize: next } }))}
+                      label="Size"
+                      className="w-full max-w-[100px]"
                     />
                   </div>
                   {(config.chrome.swipeType ?? "text") === "text" && (
@@ -1235,217 +1805,19 @@ export function TemplateBuilderForm({
                     </p>
                   </div>
                 )}
+                <div className="space-y-1 col-span-2">
+                  <Label className="text-xs">Color</Label>
+                  <ColorPicker
+                    value={config.chrome.swipeColor ?? ""}
+                    onChange={(v) => updateConfig((prev) => ({ chrome: { ...prev.chrome, swipeColor: v.trim() || undefined } }))}
+                    placeholder={headerColor ?? "Headline color"}
+                  />
+                </div>
               </div>
             )}
-            <div className="flex items-center justify-between">
-              <Label>Slide number</Label>
-              <input
-                type="checkbox"
-                checked={config.chrome.showCounter}
-                onChange={(e) =>
-                  updateConfig((prev) => ({ chrome: { ...prev.chrome, showCounter: e.target.checked } }))
-                }
-              />
-            </div>
-            {config.chrome.showCounter && (
+              {showMadeWith && (
               <div className="rounded border border-border/40 bg-background/50 p-3 space-y-2">
-                <p className="text-[11px] font-medium text-foreground">Frame number position</p>
-                <div className="grid grid-cols-3 gap-2">
-                  {(["top", "right", "fontSize"] as const).map((key) => {
-                    const label = key === "top" ? "Top (px)" : key === "right" ? "Right (px)" : "Font size";
-                    const val = (counterZone as { top?: number; right?: number; fontSize?: number })?.[key] ?? (key === "fontSize" ? 20 : 24);
-                    return (
-                      <div key={key} className="space-y-1">
-                        <Label className="text-xs">{label}</Label>
-                        <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background w-full max-w-[100px]">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon-sm"
-                            className="h-7 w-7 shrink-0 rounded-r-none"
-                            onClick={() =>
-                              updateDefaultsMeta({
-                                counter_zone_override: {
-                                  ...(counterZone as object),
-                                  [key]: Math.max(key === "fontSize" ? 10 : 0, val - (key === "fontSize" ? 1 : 4)),
-                                },
-                              })
-                            }
-                            aria-label={`Decrease ${label}`}
-                          >
-                            <MinusIcon className="size-3" />
-                          </Button>
-                          <span className="min-w-8 flex-1 text-center text-xs tabular-nums">{val}</span>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon-sm"
-                            className="h-7 w-7 shrink-0 rounded-l-none"
-                            onClick={() =>
-                              updateDefaultsMeta({
-                                counter_zone_override: {
-                                  ...(counterZone as object),
-                                  [key]: Math.min(key === "fontSize" ? 48 : 1080, val + (key === "fontSize" ? 1 : 4)),
-                                },
-                              })
-                            }
-                            aria-label={`Increase ${label}`}
-                          >
-                            <PlusIcon className="size-3" />
-                          </Button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-            <div className="flex items-center justify-between">
-              <Label>Watermark</Label>
-              <input
-                type="checkbox"
-                checked={config.chrome.watermark.enabled}
-                onChange={(e) =>
-                  updateConfig((prev) => ({
-                    chrome: {
-                      ...prev.chrome,
-                      watermark: { ...prev.chrome.watermark, enabled: e.target.checked },
-                    },
-                  }))
-                }
-              />
-            </div>
-            {config.chrome.watermark.enabled && (
-              <div className="space-y-4">
-                <div className="space-y-1">
-                  <Label className="text-xs">Position preset</Label>
-                  <Select
-                    value={config.chrome.watermark.logoX != null && config.chrome.watermark.logoY != null ? "custom" : config.chrome.watermark.position}
-                    onValueChange={(v) =>
-                      updateConfig((prev) => ({
-                        chrome: {
-                          ...prev.chrome,
-                          watermark: {
-                            ...prev.chrome.watermark,
-                            position: v as "top_left" | "top_right" | "bottom_left" | "bottom_right" | "custom",
-                            logoX: v === "custom" ? (prev.chrome.watermark.logoX ?? 24) : undefined,
-                            logoY: v === "custom" ? (prev.chrome.watermark.logoY ?? 24) : undefined,
-                          },
-                        },
-                      }))
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="top_left">Top left</SelectItem>
-                      <SelectItem value="top_right">Top right</SelectItem>
-                      <SelectItem value="bottom_left">Bottom left</SelectItem>
-                      <SelectItem value="bottom_right">Bottom right</SelectItem>
-                      <SelectItem value="custom">Custom (X/Y)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                {(config.chrome.watermark.position === "custom" || (config.chrome.watermark.logoX != null && config.chrome.watermark.logoY != null)) && (
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <div className="flex justify-between">
-                        <Label className="text-xs">Logo X</Label>
-                        <span className="text-muted-foreground text-xs">{config.chrome.watermark.logoX ?? 24}px</span>
-                      </div>
-                      <Slider
-                        value={[config.chrome.watermark.logoX ?? 24]}
-                        onValueChange={([v]) =>
-                          updateConfig((prev) => ({
-                            chrome: {
-                              ...prev.chrome,
-                              watermark: { ...prev.chrome.watermark, logoX: v ?? 24, position: "custom" as const },
-                            },
-                          }))
-                        }
-                        min={0}
-                        max={900}
-                        step={8}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex justify-between">
-                        <Label className="text-xs">Logo Y</Label>
-                        <span className="text-muted-foreground text-xs">{config.chrome.watermark.logoY ?? 24}px</span>
-                      </div>
-                      <Slider
-                        value={[config.chrome.watermark.logoY ?? 24]}
-                        onValueChange={([v]) =>
-                          updateConfig((prev) => ({
-                            chrome: {
-                              ...prev.chrome,
-                              watermark: { ...prev.chrome.watermark, logoY: v ?? 24, position: "custom" as const },
-                            },
-                          }))
-                        }
-                        min={0}
-                        max={1000}
-                        step={8}
-                      />
-                    </div>
-                  </div>
-                )}
-                <div className="space-y-1">
-                  <Label className="text-xs">Font size</Label>
-                  <div className="flex items-center gap-0.5 rounded-md border border-input/80 bg-background w-full max-w-[100px]">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      className="h-7 w-7 shrink-0 rounded-r-none"
-                      onClick={() =>
-                        updateConfig((prev) => ({
-                          chrome: {
-                            ...prev.chrome,
-                            watermark: { ...prev.chrome.watermark, fontSize: Math.max(8, (prev.chrome.watermark.fontSize ?? 20) - 1) },
-                          },
-                        }))
-                      }
-                      aria-label="Decrease font size"
-                    >
-                      <MinusIcon className="size-3" />
-                    </Button>
-                    <span className="min-w-8 flex-1 text-center text-xs tabular-nums">{config.chrome.watermark.fontSize ?? 20}</span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      className="h-7 w-7 shrink-0 rounded-l-none"
-                      onClick={() =>
-                        updateConfig((prev) => ({
-                          chrome: {
-                            ...prev.chrome,
-                            watermark: { ...prev.chrome.watermark, fontSize: Math.min(72, (prev.chrome.watermark.fontSize ?? 20) + 1) },
-                          },
-                        }))
-                      }
-                      aria-label="Increase font size"
-                    >
-                      <PlusIcon className="size-3" />
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            )}
-            <div className="flex items-center justify-between">
-              <Label>Made with (attribution)</Label>
-              <input
-                type="checkbox"
-                checked={showMadeWith}
-                onChange={(e) =>
-                  updateDefaultsMeta({ show_made_with: e.target.checked })
-                }
-              />
-            </div>
-            {showMadeWith && (
-              <div className="rounded border border-border/40 bg-background/50 p-3 space-y-2">
-                <p className="text-[11px] font-medium text-foreground">Made with position & size</p>
+                <p className="text-[11px] font-medium text-foreground">Watermark position & size</p>
                 <p className="text-muted-foreground text-[11px]">Leave X/Y empty for default (centered at bottom). Same as frame editor.</p>
                 <div className="grid grid-cols-3 gap-2">
                   <div className="space-y-1">
@@ -1568,21 +1940,31 @@ export function TemplateBuilderForm({
                       </Button>
                     </div>
                   </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Color</Label>
+                    <ColorPicker
+                      value={(madeWithZone as { color?: string } | undefined)?.color ?? ""}
+                      onChange={(v) => {
+                        const hex = v.trim();
+                        const base = (madeWithZone && typeof madeWithZone === "object" ? madeWithZone : {}) as Record<string, unknown>;
+                        if (hex && /^#([0-9A-Fa-f]{3}){1,2}$/.test(hex)) {
+                          updateDefaultsMeta({ made_with_zone_override: { ...base, color: hex } });
+                        } else {
+                          const { color: _, ...rest } = base;
+                          updateDefaultsMeta({ made_with_zone_override: rest });
+                        }
+                      }}
+                      placeholder="Headline color"
+                    />
+                  </div>
                 </div>
               </div>
             )}
-          </div>
+            </div>
+          )}
         </div>
           </section>
             )}
-          </div>
-          <div className="border-t border-border/40 px-4 py-4 flex gap-2">
-            <Button type="submit" disabled={loading} loading={loading}>
-              {loading ? "Saving…" : mode === "create" ? "Create template" : "Save changes"}
-            </Button>
-            <Button variant="outline" type="button" asChild>
-              <Link href="/templates">Cancel</Link>
-            </Button>
           </div>
         </div>
       </section>

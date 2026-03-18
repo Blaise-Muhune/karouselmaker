@@ -142,6 +142,29 @@ export async function getSlideCountsForCarousels(
   return countByCarousel;
 }
 
+/** Returns first slide id per carousel (by slide_index). Used for list preview thumbnails. */
+export async function getFirstSlideIdsForCarousels(
+  userId: string,
+  carouselIds: string[]
+): Promise<Record<string, string>> {
+  if (carouselIds.length === 0) return {};
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("slides")
+    .select("id, carousel_id")
+    .in("carousel_id", carouselIds)
+    .order("carousel_id", { ascending: true })
+    .order("slide_index", { ascending: true });
+
+  if (error) return {};
+  const firstByCarousel: Record<string, string> = {};
+  for (const row of data ?? []) {
+    const cid = (row as { carousel_id: string }).carousel_id;
+    if (!(cid in firstByCarousel)) firstByCarousel[cid] = (row as { id: string }).id;
+  }
+  return firstByCarousel;
+}
+
 /** Delete one slide and re-index remaining slides (1-based, no gaps). */
 export async function deleteSlide(userId: string, slideId: string): Promise<void> {
   const supabase = await createClient();

@@ -1,5 +1,6 @@
 import { getUser } from "@/lib/server/auth/getUser";
 import { getSubscription } from "@/lib/server/subscription";
+import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { getTemplate } from "@/lib/server/db";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { TemplateBuilderForm } from "@/components/templates/TemplateBuilderForm";
@@ -17,15 +18,19 @@ export default async function EditTemplatePage({
 }) {
   const { id } = await params;
   const { user } = await getUser();
+  const userIsAdmin = isAdmin(user.email ?? null);
   const [template, subscription] = await Promise.all([
     getTemplate(user.id, id),
     getSubscription(user.id, user.email),
   ]);
 
   if (!template) notFound();
-  if (template.user_id !== user.id) notFound();
+  const isSystemTemplate = template.user_id == null;
+  const canEdit = template.user_id === user.id || (isSystemTemplate && userIsAdmin);
+  if (!canEdit) notFound();
 
-  if (!subscription.isPro) {
+  const canEditWithoutPro = isSystemTemplate && userIsAdmin;
+  if (!subscription.isPro && !canEditWithoutPro) {
     return (
       <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">
         <div className="mx-auto max-w-xl space-y-6">

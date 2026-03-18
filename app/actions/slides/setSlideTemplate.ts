@@ -42,6 +42,15 @@ export type SetSlideTemplateOptions = {
   allowBlend?: boolean;
 };
 
+/** True when background has an image (single or multi). Used to save before clear and to decide when to restore. */
+function backgroundHasImage(bg: Record<string, unknown> | null | undefined): boolean {
+  if (!bg || typeof bg !== "object") return false;
+  if (bg.mode === "image") return true;
+  if (bg.asset_id != null || bg.storage_path != null || bg.image_url != null) return true;
+  const images = bg.images;
+  return Array.isArray(images) && images.length > 0;
+}
+
 /** Set template on a single slide. Clears font-size overrides so the template's text zone font sizes apply. */
 export async function setSlideTemplate(
   slideId: string,
@@ -134,9 +143,37 @@ export async function setSlideTemplate(
     const allowBlend = options?.allowBlend === true;
     const noImageTemplateApplyClear = !templateAllowsImage && !allowBlend;
 
+    /** When we clear an image for a no-image template, save it here so we can restore it when user later picks an image-allowing template. */
+    let savedBackgroundForRestore: Record<string, unknown> | undefined;
+    /** Set when we restore from previous_background_before_clear so we remove that key from meta. */
+    let didRestoreBackground = false;
+
     if (existingBg && typeof existingBg === "object") {
-      if (noImageTemplateApplyClear || clearBackground) {
-        // No-image template: clear slide background to solid/gradient only (no photo).
+      const hasStoredSnapshot =
+        existingMeta != null &&
+        typeof existingMeta.previous_background_before_clear === "object" &&
+        existingMeta.previous_background_before_clear !== null &&
+        !Array.isArray(existingMeta.previous_background_before_clear);
+
+      if (
+        templateAllowsImage &&
+        hasStoredSnapshot &&
+        !backgroundHasImage(existingBg)
+      ) {
+        // Restore the image the user had before they cleared it for a no-image template.
+        const restored = existingMeta.previous_background_before_clear as Record<string, unknown>;
+        patch.background = {
+          ...restored,
+          ...(templateBgColor != null && { color: templateBgColor }),
+          ...(hasOverlayOrTint && { overlay: mergedOverlay }),
+          ...(hasImageDisplay && { image_display: resolvedImageDisplay }),
+        } as Json;
+        didRestoreBackground = true;
+      } else if (noImageTemplateApplyClear || clearBackground) {
+        // No-image template: clear slide background to solid/gradient only (no photo). Save current image so we can restore later.
+        if (backgroundHasImage(existingBg)) {
+          savedBackgroundForRestore = { ...existingBg } as Record<string, unknown>;
+        }
         patch.background = {
           style: templateBgStyle ?? "solid",
           color: templateBgColor ?? "#0a0a0a",
@@ -166,9 +203,22 @@ export async function setSlideTemplate(
       if (noImageTemplateApplyClear || clearBackground) {
         delete merged.allow_background_image_override;
       }
+      if (savedBackgroundForRestore != null) {
+        merged.previous_background_before_clear = savedBackgroundForRestore;
+      }
+      if (didRestoreBackground) {
+        delete merged.previous_background_before_clear;
+      }
       patch.meta = merged as Json;
     } else if (allowBlend && !templateAllowsImage) {
       patch.meta = { ...(patch.meta as Record<string, unknown>), allow_background_image_override: true } as Json;
+    } else if (savedBackgroundForRestore != null) {
+      patch.meta = { ...(patch.meta as Record<string, unknown>), previous_background_before_clear: savedBackgroundForRestore } as Json;
+    } else if (didRestoreBackground) {
+      const metaRecord = patch.meta as Record<string, unknown>;
+      const next = { ...metaRecord };
+      delete next.previous_background_before_clear;
+      patch.meta = next as Json;
     }
     await updateSlide(user.id, slideId, patch);
   }

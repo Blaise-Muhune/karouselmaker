@@ -1,4 +1,5 @@
-import { buildSlideRenderModel, getTextScaleForDimensions, type BrandKit, type SlideData, type TextZoneOverrides, type ChromeOverrides } from "@/lib/renderer/renderModel";
+import { GOOGLE_FONT_IDS_SET } from "@/lib/constants/googleFonts";
+import { buildSlideRenderModel, getTextScaleForDimensions, getSwipeRightXForFormat, type BrandKit, type SlideData, type TextZoneOverrides, type ChromeOverrides } from "@/lib/renderer/renderModel";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { getContrastingTextColor, hexToRgba } from "@/lib/editor/colorUtils";
 import { parseInlineFormatting, BOLD_FONT_WEIGHT, stripHighlightMarkers, getFontSizeSegmentsForRange, getLineSubstringByPlainRange } from "@/lib/editor/inlineFormat";
@@ -18,6 +19,26 @@ function gradientDirectionToCss(direction: GradientDirection | undefined, templa
   if (direction === "right") return "to right";
   const map: Record<GradientDirection, string> = { top: "to top", bottom: "to bottom", left: "to left", right: "to right" };
   return map[templateDirection] ?? "to bottom";
+}
+
+/** CSS filter to tint a black icon to the given hex color (for custom swipe icon URL when we use <img>). */
+function hexToCssFilter(hex: string): string {
+  const m = hex.match(/^#?([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})$/);
+  if (!m || m[1] == null || m[2] == null || m[3] == null) return "";
+  const r = parseInt(m[1], 16) / 255;
+  const g = parseInt(m[2], 16) / 255;
+  const b = parseInt(m[3], 16) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const d = max - min;
+  let h = 0;
+  if (d !== 0) {
+    if (max === r) h = 60 * (((g - b) / d) % 6);
+    else if (max === g) h = 60 * ((b - r) / d + 2);
+    else h = 60 * ((r - g) / d + 4);
+  }
+  h = (h + 360) % 360;
+  return `brightness(0) saturate(100%) invert(1) sepia(1) saturate(10000%) hue-rotate(${Math.round(h)}deg)`;
 }
 
 /** Decoration drawn on no-image background: distinct shapes that support content without competing. */
@@ -65,12 +86,6 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
-/** Google Fonts that need a stylesheet link (subset of PREVIEW_FONTS). */
-const GOOGLE_FONT_IDS = new Set([
-  "Inter", "Roboto", "Montserrat", "Open Sans", "Lato", "Oswald", "Poppins",
-  "Playfair Display", "Merriweather", "Source Sans 3", "Bebas Neue", "DM Sans",
-]);
-
 /** Safe font-family stack for template fontFamily (system, Inter, Georgia, etc.). */
 function getFontFamilyStack(fontFamily: string | undefined): string {
   if (!fontFamily?.trim()) return "inherit";
@@ -78,17 +93,33 @@ function getFontFamilyStack(fontFamily: string | undefined): string {
   if (f === "system" || f === "sans-serif") return "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif";
   if (f === "Inter") return "\"Inter\", -apple-system, BlinkMacSystemFont, sans-serif";
   if (f === "Georgia" || f === "serif") return "Georgia, \"Times New Roman\", serif";
+  if (f === "Times New Roman") return "\"Times New Roman\", Times, serif";
   if (f === "Roboto") return "\"Roboto\", -apple-system, BlinkMacSystemFont, sans-serif";
   if (f === "Montserrat") return "\"Montserrat\", -apple-system, BlinkMacSystemFont, sans-serif";
   if (f === "Open Sans") return "\"Open Sans\", -apple-system, BlinkMacSystemFont, sans-serif";
   if (f === "Lato") return "\"Lato\", -apple-system, BlinkMacSystemFont, sans-serif";
-  if (f === "Oswald") return "\"Oswald\", -apple-system, BlinkMacSystemFont, sans-serif";
   if (f === "Poppins") return "\"Poppins\", -apple-system, BlinkMacSystemFont, sans-serif";
+  if (f === "Work Sans") return "\"Work Sans\", -apple-system, BlinkMacSystemFont, sans-serif";
   if (f === "Playfair Display") return "\"Playfair Display\", Georgia, serif";
   if (f === "Merriweather") return "\"Merriweather\", Georgia, serif";
+  if (f === "Libre Baskerville") return "\"Libre Baskerville\", Georgia, serif";
   if (f === "Source Sans 3") return "\"Source Sans 3\", -apple-system, BlinkMacSystemFont, sans-serif";
-  if (f === "Bebas Neue") return "\"Bebas Neue\", -apple-system, BlinkMacSystemFont, sans-serif";
-  if (f === "DM Sans") return "\"DM Sans\", -apple-system, BlinkMacSystemFont, sans-serif";
+  if (f === "Chonburi") return "\"Chonburi\", Georgia, serif";
+  if (f === "Breaking March") return "\"Breaking March\", Georgia, serif";
+  if (f === "Orange Squash Pro") return "\"Orange Squash Pro\", Georgia, serif";
+  if (f === "Bringbold Nineties") return "\"Bringbold Nineties\", Georgia, serif";
+  if (f === "Bouselle") return "\"Bouselle\", Georgia, serif";
+  if (f === "Instrument Serif") return "\"Instrument Serif\", Georgia, serif";
+  if (f === "Bodoni Moda") return "\"Bodoni Moda\", Georgia, serif";
+  if (f === "Prata") return "\"Prata\", Georgia, serif";
+  if (f === "Arapey") return "\"Arapey\", Georgia, serif";
+  if (f === "Fraunces") return "\"Fraunces\", Georgia, serif";
+  if (f === "Abril Fatface") return "\"Abril Fatface\", Georgia, serif";
+  if (f === "Limelight") return "\"Limelight\", -apple-system, BlinkMacSystemFont, sans-serif";
+  if (f === "Syne") return "\"Syne\", -apple-system, BlinkMacSystemFont, sans-serif";
+  if (f === "Outfit") return "\"Outfit\", -apple-system, BlinkMacSystemFont, sans-serif";
+  if (f === "Urbanist") return "\"Urbanist\", -apple-system, BlinkMacSystemFont, sans-serif";
+  if (f === "Sora") return "\"Sora\", -apple-system, BlinkMacSystemFont, sans-serif";
   return `\"${escapeHtml(f)}\", -apple-system, BlinkMacSystemFont, sans-serif`;
 }
 
@@ -704,7 +735,7 @@ export function renderSlideHtml(
   const usedFontIds = new Set(
     model.textBlocks
       .map((b) => (b.zone as { fontFamily?: string }).fontFamily?.trim())
-      .filter((f): f is string => !!f && GOOGLE_FONT_IDS.has(f))
+      .filter((f): f is string => !!f && GOOGLE_FONT_IDS_SET.has(f))
   );
   const fontFamilyParam = [...usedFontIds]
     .map((id) => `family=${encodeURIComponent(id).replace(/%20/g, "+")}:wght@400;500;600;700;800`)
@@ -743,42 +774,76 @@ export function renderSlideHtml(
     ${noTextOrChrome ? "" : useFullCanvasBackground ? "" : "<div class=\"slide-gradient\"></div>"}
     ${hookCircleHtml}
     ${textBlocksHtml}
-    ${!noTextOrChrome && model.chrome.showSwipe ? (() => {
+  </div>
+  </div>
+  ${!noTextOrChrome && model.chrome.showSwipe ? (() => {
       const t = model.chrome.swipeType ?? "text";
       const pos = model.chrome.swipePosition ?? "bottom_center";
-      const useCustomPos = model.chrome.swipeX != null && model.chrome.swipeY != null;
+      const isRightPreset = pos === "bottom_right" || pos === "top_right" || pos === "center_right";
+      const useCustomPos = (model.chrome.swipeX != null && model.chrome.swipeY != null) && !isRightPreset;
+      const cs = chromeScale;
+      /** Bottom presets: 100px from bottom in 1080 design (Y=980) so swipe stays visible. */
+      const bottomPx = Math.round(100 * cs);
+      const topPx = Math.round(24 * cs);
+      const edgePx = 24;
+      /** Right-side x per format (1:1=992, 4:5=904, 9:16=768); shared with client. */
+      const swipeRightX = getSwipeRightXForFormat(dimH);
       const posStyles: Record<string, string> = {
-        bottom_left: "bottom:20px;left:24px",
-        bottom_center: "bottom:20px;left:50%;transform:translateX(-50%)",
-        bottom_right: "bottom:20px;right:24px",
-        top_left: "top:24px;left:24px",
-        top_center: "top:24px;left:50%;transform:translateX(-50%)",
-        top_right: "top:24px;right:24px",
-        center_left: "top:50%;left:24px;transform:translateY(-50%)",
-        center_right: "top:50%;right:24px;transform:translateY(-50%)",
+        bottom_left: `bottom:${bottomPx}px;left:${edgePx}px`,
+        bottom_center: `bottom:${bottomPx}px;left:50%;transform:translateX(-50%)`,
+        bottom_right: `bottom:${bottomPx}px;left:${swipeRightX}px`,
+        top_left: `top:${topPx}px;left:${edgePx}px`,
+        top_center: `top:${topPx}px;left:50%;transform:translateX(-50%)`,
+        top_right: `top:${topPx}px;left:${swipeRightX}px`,
+        center_left: `top:50%;left:${edgePx}px;transform:translateY(-50%)`,
+        center_right: `top:50%;left:${swipeRightX}px;transform:translateY(-50%)`,
       };
-      const posStyle = useCustomPos ? `left:${model.chrome.swipeX}px;top:${model.chrome.swipeY}px` : (posStyles[pos] ?? posStyles.bottom_center);
-      const fontSize = model.chrome.swipeSize ?? 24;
-      const c = escapeHtml(textColor);
-      const handSvg = (rotate: number) => `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(${rotate}deg);flex-shrink:0"><path d="M18 11V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2"/><path d="M14 10V4a2 2 0 0 0-2-2 2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg>`;
-      const chevronsLeftSvg = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m11 17-5-5 5-5"/><path d="m18 17-5-5 5-5"/></svg>`;
-      const chevronsRightSvg = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 17 5-5-5-5"/><path d="m13 17 5-5-5-5"/></svg>`;
-      const moveHorizontalSvg = `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m18 8 4 4-4 4"/><path d="M2 12h20"/><path d="m6 8-4 4 4 4"/></svg>`;
-      const fingerLeftSvg = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transform:scaleX(-1)"><path d="M5 12h14M5 12l4-4M5 12l4 4"/></svg>`;
-      const fingerRightSvg = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M19 12l-4-4M19 12l-4 4"/></svg>`;
-      const circleArrowsSvg = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m9 12-3-3 3-3"/><path d="M12 9H6"/><path d="m15 12 3-3-3-3"/><path d="M12 15h6"/></svg>`;
-      const lineDotsSvg = `<svg width="42" height="28" viewBox="0 0 36 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round"><line x1="2" y1="12" x2="34" y2="12"/><circle cx="8" cy="12" r="2" fill="${c}"/><circle cx="18" cy="12" r="2" fill="${c}" opacity="0.5"/><circle cx="28" cy="12" r="2" fill="${c}" opacity="0.2"/></svg>`;
-      const customImg = model.chrome.swipeIconUrl ? `<img src="${escapeHtml(model.chrome.swipeIconUrl)}" alt="" style="height:32px;width:auto;max-width:80px;object-fit:contain;opacity:0.9"/>` : "";
+      const posStyle = useCustomPos ? (() => {
+        const dx = model.chrome.swipeX!;
+        const dy = model.chrome.swipeY!;
+        const isViewportTall = dimH > 1080;
+        const designVisibleLeft = isViewportTall ? (1080 - 1080 / scale) / 2 : 0;
+        const visibleDesignWidth = isViewportTall ? 1080 / scale : 1080;
+        const vx = isViewportTall ? (dx - designVisibleLeft) * (dimW / visibleDesignWidth) : dx;
+        const vy = dy * (dimH / 1080);
+        const vxClamp = Math.max(0, Math.min(dimW, vx));
+        const vyClamp = Math.max(0, Math.min(dimH, vy));
+        return `left:${Math.round(vxClamp)}px;top:${Math.round(vyClamp)}px`;
+      })() : (posStyles[pos] ?? posStyles.bottom_center);
+      const fontSizeBase = model.chrome.swipeSize ?? 24;
+      const fontSize = Math.round(fontSizeBase * cs);
+      const swipeColor = model.chrome.swipeColor ?? textColor;
+      const c = escapeHtml(swipeColor);
+      const handW = Math.round(fontSize * (26 / 24));
+      const handSvg = (rotate: number) => `<svg width="${handW}" height="${handW}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(${rotate}deg);flex-shrink:0"><path d="M18 11V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2"/><path d="M14 10V4a2 2 0 0 0-2-2 2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg>`;
+      const chevW = Math.round(fontSize * (22 / 24));
+      const chevronsLeftSvg = `<svg width="${chevW}" height="${chevW}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m11 17-5-5 5-5"/><path d="m18 17-5-5 5-5"/></svg>`;
+      const chevronsRightSvg = `<svg width="${chevW}" height="${chevW}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 17 5-5-5-5"/><path d="m13 17 5-5-5-5"/></svg>`;
+      const moveW = Math.round(fontSize * (26 / 24));
+      const moveHorizontalSvg = `<svg width="${moveW}" height="${moveW}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m18 8 4 4-4 4"/><path d="M2 12h20"/><path d="m6 8-4 4 4 4"/></svg>`;
+      const fingerW = Math.round(fontSize * (28 / 24));
+      const fingerLeftSvg = `<svg width="${fingerW}" height="${fingerW}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transform:scaleX(-1)"><path d="M5 12h14M5 12l4-4M5 12l4 4"/></svg>`;
+      const fingerRightSvg = `<svg width="${fingerW}" height="${fingerW}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M19 12l-4-4M19 12l-4 4"/></svg>`;
+      const circleW = Math.round(fontSize * (28 / 24));
+      const circleArrowsSvg = `<svg width="${circleW}" height="${circleW}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m9 12-3-3 3-3"/><path d="M12 9H6"/><path d="m15 12 3-3-3-3"/><path d="M12 15h6"/></svg>`;
+      const lineW = Math.round(fontSize * (42 / 24));
+      const lineH = Math.round(fontSize * (28 / 24));
+      const lineDotsSvg = `<svg width="${lineW}" height="${lineH}" viewBox="0 0 36 24" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round"><line x1="2" y1="12" x2="34" y2="12"/><circle cx="8" cy="12" r="2" fill="${c}"/><circle cx="18" cy="12" r="2" fill="${c}" opacity="0.5"/><circle cx="28" cy="12" r="2" fill="${c}" opacity="0.2"/></svg>`;
+      const customImgH = Math.round(fontSize * (32 / 24));
+      const customImgFilter = swipeColor && /^#([0-9A-Fa-f]{3}){1,2}$/.test(swipeColor) ? hexToCssFilter(swipeColor) : "";
+      const customImg = model.chrome.swipeIconUrl
+        ? `<img src="${escapeHtml(model.chrome.swipeIconUrl)}" alt="" style="height:${customImgH}px;width:auto;max-width:80px;object-fit:contain;opacity:0.9${customImgFilter ? `;filter:${customImgFilter}` : ""}"/>`
+        : "";
       const swipeLabel = (model.chrome.swipeText ?? "swipe").trim() || "swipe";
       const inner = t === "custom" && model.chrome.swipeIconUrl ? customImg :
         t === "text" ? `<span style="letter-spacing:6px;font-size:${fontSize}px">${escapeHtml(swipeLabel)}</span>` :
-        t === "arrow-left" ? `←` :
-        t === "arrow-right" ? `→` :
-        t === "arrows" ? `<span style="font-size:24px">←</span><span style="font-size:24px">→</span>` :
+        t === "arrow-left" ? `<span style="font-size:${fontSize}px">←</span>` :
+        t === "arrow-right" ? `<span style="font-size:${fontSize}px">→</span>` :
+        t === "arrows" ? `<span style="font-size:${fontSize}px">←</span><span style="font-size:${fontSize}px">→</span>` :
         t === "hand-left" ? handSvg(-90) :
         t === "hand-right" ? handSvg(90) :
         t === "chevrons" ? chevronsLeftSvg + chevronsRightSvg :
-        t === "dots" ? `<span style="letter-spacing:8px;font-size:20px">• • •</span>` :
+        t === "dots" ? `<span style="letter-spacing:8px;font-size:${fontSize}px">• • •</span>` :
         t === "finger-swipe" ? moveHorizontalSvg :
         t === "finger-left" ? fingerLeftSvg :
         t === "finger-right" ? fingerRightSvg :
@@ -787,9 +852,7 @@ export function renderSlideHtml(
         `<span style="letter-spacing:6px;font-size:${fontSize}px">${escapeHtml(swipeLabel)}</span>`;
       return `<div class="chrome-swipe" style="color:${c};font-size:${fontSize}px;${posStyle};display:flex;align-items:center;justify-content:center;gap:4px">${inner}</div>`;
     })() : ""}
-  </div>
-  </div>
-  ${!noTextOrChrome && showCounter ? `<div style="position:absolute;top:${(model.chrome.counterTop ?? 24) * chromeScale}px;right:${model.chrome.counterRight ?? 24}px;padding:${6 * chromeScale}px ${12 * chromeScale}px;border-radius:9999px;background:rgba(255,255,255,0.08);font-size:${(model.chrome.counterFontSize ?? 20) * chromeScale}px;font-weight:500;letter-spacing:0.02em;opacity:0.85;z-index:10;color:${escapeHtml(textColor)}">${escapeHtml(model.chrome.counterText)}</div>` : ""}
+  ${!noTextOrChrome && showCounter ? `<div style="position:absolute;top:${(model.chrome.counterTop ?? 24) * chromeScale}px;right:${model.chrome.counterRight ?? 24}px;padding:${6 * chromeScale}px ${12 * chromeScale}px;border-radius:9999px;background:rgba(255,255,255,0.08);font-size:${(model.chrome.counterFontSize ?? 20) * chromeScale}px;font-weight:500;letter-spacing:0.02em;opacity:0.85;z-index:10;color:${escapeHtml(model.chrome.counterColor ?? textColor)}">${escapeHtml(model.chrome.counterText)}</div>` : ""}
   ${!noTextOrChrome && (model.chrome.watermark.text || model.chrome.watermark.logoUrl) && (showWatermarkOverride === undefined ? model.chrome.watermark.enabled : showWatermarkOverride) ? (() => {
     const wm = model.chrome.watermark;
     const useCustom = wm.position === "custom" || (wm.logoX != null && wm.logoY != null);
@@ -811,7 +874,7 @@ export function renderSlideHtml(
         : wm.logoUrl
           ? `height:${(wm.fontSize ?? 20) * 2.4 * chromeScale}px;width:auto;object-fit:contain`
           : "";
-    return `<div style="position:absolute;opacity:0.7;font-size:${wmFontSize}px;font-weight:500;z-index:10;color:${escapeHtml(textColor)};${posStyle}">${wm.logoUrl ? `<img src="${escapeHtml(wm.logoUrl)}" alt="" style="${logoImgStyle}" />` : escapeHtml(wm.text)}</div>`;
+    return `<div style="position:absolute;opacity:0.7;font-size:${wmFontSize}px;font-weight:500;z-index:10;color:${escapeHtml(wm.color ?? textColor)};${posStyle}">${wm.logoUrl ? `<img src="${escapeHtml(wm.logoUrl)}" alt="" style="${logoImgStyle}" />` : escapeHtml(wm.text)}</div>`;
   })() : ""}
   ${!noTextOrChrome && showMadeWithOverride !== false ? (() => {
     const mwY = model.chrome.madeWithY != null ? (model.chrome.madeWithY * chromeScale) : null;
@@ -821,7 +884,8 @@ export function renderSlideHtml(
     const topBottomCss = mwY != null ? `top:${mwY}px` : `bottom:${mwBottom}px`;
     const mwFs = (model.chrome.madeWithFontSize ?? 30) * chromeScale;
     const mwMaxW = 1032 * chromeScale;
-    return `<div style="position:absolute;${leftCss};${topBottomCss};max-width:${mwMaxW}px;font-size:${mwFs}px;font-weight:500;letter-spacing:0.02em;opacity:0.65;z-index:10;color:${escapeHtml(textColor)};text-shadow:0 1px 2px rgba(0,0,0,0.3);white-space:nowrap">${escapeHtml(model.chrome.madeWithText ?? "Made with KarouselMaker.com")}</div>`;
+    const mwColor = (model.chrome as { madeWithColor?: string }).madeWithColor ?? textColor;
+    return `<div style="position:absolute;${leftCss};${topBottomCss};max-width:${mwMaxW}px;font-size:${mwFs}px;font-weight:500;letter-spacing:0.02em;opacity:0.65;z-index:10;color:${escapeHtml(mwColor)};text-shadow:0 1px 2px rgba(0,0,0,0.3);white-space:nowrap">${escapeHtml(model.chrome.madeWithText ?? "Follow us")}</div>`;
   })() : ""}
   </div>
 </body>

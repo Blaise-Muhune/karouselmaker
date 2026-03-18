@@ -12,6 +12,10 @@ export type ImportTemplateButtonProps = {
   onCreated?: () => void;
   isPro?: boolean;
   atLimit?: boolean;
+  /** When true, import dialog shows AI suggestions (suggested font, etc.). */
+  isAdmin?: boolean;
+  /** Project watermark text (username). When set, preview shows it in the watermark slot when template has no logo. */
+  watermarkText?: string;
   variant?: "default" | "outline" | "ghost" | "link" | "secondary" | "destructive";
   size?: "default" | "sm" | "lg" | "icon" | "icon-sm";
   className?: string;
@@ -23,6 +27,8 @@ export function ImportTemplateButton({
   onCreated,
   isPro = true,
   atLimit = false,
+  isAdmin = false,
+  watermarkText,
   variant = "outline",
   size = "sm",
   className,
@@ -53,6 +59,8 @@ export function ImportTemplateButton({
         onCreated={onCreated}
         isPro={isPro}
         atLimit={atLimit}
+        isAdmin={isAdmin}
+        watermarkText={watermarkText}
       />
     </>
   );

@@ -1,22 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getUser } from "@/lib/server/auth/getUser";
-import { getProject, listCarousels, countCarousels, getSlideCountsForCarousels } from "@/lib/server/db";
+import { getProject, listCarousels, countCarousels, getSlideCountsForCarousels, getFirstSlideIdsForCarousels } from "@/lib/server/db";
 import { getSubscription } from "@/lib/server/subscription";
 import { Button } from "@/components/ui/button";
 import { GoProBar } from "@/components/subscription/GoProBar";
 import { PaginationNav } from "@/components/ui/pagination-nav";
-import { ChevronRightIcon, PencilIcon, PlusCircleIcon } from "lucide-react";
-
-function formatDate(date: Date) {
-  const now = new Date();
-  const diff = now.getTime() - date.getTime();
-  const days = Math.floor(diff / 864e5);
-  if (days === 0) return "Today";
-  if (days === 1) return "Yesterday";
-  if (days < 7) return `${days}d ago`;
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
+import { PencilIcon, PlusCircleIcon } from "lucide-react";
+import { CarouselListCard } from "@/components/carousels/CarouselListCard";
 
 const CAROUSELS_PAGE_SIZE = 10;
 
@@ -42,8 +33,13 @@ export default async function ProjectDashboardPage({
     getSubscription(user.id, user.email),
   ]);
   const totalPages = Math.max(1, Math.ceil(total / CAROUSELS_PAGE_SIZE));
-  const slideCounts =
-    carousels.length > 0 ? await getSlideCountsForCarousels(user.id, carousels.map((c) => c.id)) : {};
+  const [slideCounts, firstSlideIds] =
+    carousels.length > 0
+      ? await Promise.all([
+          getSlideCountsForCarousels(user.id, carousels.map((c) => c.id)),
+          getFirstSlideIdsForCarousels(user.id, carousels.map((c) => c.id)),
+        ])
+      : [{}, {}];
 
   return (
     <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">
@@ -89,21 +85,15 @@ export default async function ProjectDashboardPage({
           {carousels.length > 0 ? (
             <ul className="divide-y divide-border/50">
               {carousels.map((c) => (
-                <li key={c.id}>
-                  <Link
-                    href={`/p/${projectId}/c/${c.id}`}
-                    className="flex items-center justify-between gap-3 py-3.5 transition-colors hover:bg-accent/30 -mx-2 px-2 rounded-lg"
-                  >
-                    <span className="font-medium truncate">{c.title}</span>
-                    <span className="text-muted-foreground flex shrink-0 items-center gap-2 text-xs">
-                      {slideCounts[c.id] != null && (
-                        <span>{slideCounts[c.id]} frame{slideCounts[c.id] !== 1 ? "s" : ""}</span>
-                      )}
-                      {formatDate(new Date(c.created_at))}
-                      <ChevronRightIcon className="size-3.5 opacity-40" />
-                    </span>
-                  </Link>
-                </li>
+                <CarouselListCard
+                  key={c.id}
+                  projectId={projectId}
+                  carouselId={c.id}
+                  title={c.title}
+                  slideCount={slideCounts[c.id] ?? 0}
+                  createdAt={c.created_at}
+                  firstSlideId={firstSlideIds[c.id] ?? null}
+                />
               ))}
             </ul>
           ) : (

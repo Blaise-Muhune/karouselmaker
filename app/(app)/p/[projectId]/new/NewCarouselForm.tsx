@@ -529,6 +529,7 @@ export function NewCarouselForm({
                     <ImportTemplateButton
                       isPro={isPro}
                       atLimit={false}
+                      isAdmin={isAdminUser}
                       variant="outline"
                       size="sm"
                       className="shrink-0 gap-1.5"

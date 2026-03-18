@@ -5,7 +5,7 @@ import { getUser } from "@/lib/server/auth/getUser";
 import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { getSubscription, getPlanLimits } from "@/lib/server/subscription";
 import { getProject } from "@/lib/server/db/projects";
-import { getDefaultTemplateForNewCarousel, getDefaultLinkedInTemplate, getTemplate } from "@/lib/server/db/templates";
+import { getDefaultTemplateForNewCarousel, getDefaultTemplateForNewCarouselImage, getDefaultLinkedInTemplate, getTemplate } from "@/lib/server/db/templates";
 import { createCarousel, getCarousel, updateCarousel, countCarouselsThisMonth, countCarouselsLifetime, countAiGenerateCarouselsThisMonth } from "@/lib/server/db/carousels";
 import { replaceSlides, updateSlide } from "@/lib/server/db/slides";
 import type { Json } from "@/lib/server/db/types";
@@ -501,10 +501,18 @@ export async function generateCarousel(formData: FormData): Promise<
     }
   }
 
+  const hasImageQueriesForDefault = (s: { image_queries?: string[]; unsplash_queries?: string[]; image_query?: string; unsplash_query?: string }) =>
+    (s.image_queries?.length ?? s.unsplash_queries?.length ?? 0) > 0 || !!(s.image_query?.trim() || s.unsplash_query?.trim());
+  const carouselWillHaveImages =
+    (parsed.data.background_asset_ids?.length ?? 0) > 0 ||
+    (parsed.data.use_ai_backgrounds && validated.slides.some(hasImageQueriesForDefault));
+
   const defaultTemplate =
     carouselFor === "linkedin" && !data.template_id
       ? await getDefaultLinkedInTemplate(user.id)
-      : await getDefaultTemplateForNewCarousel(user.id);
+      : !data.template_id && carouselWillHaveImages
+        ? await getDefaultTemplateForNewCarouselImage(user.id)
+        : await getDefaultTemplateForNewCarousel(user.id);
   let defaultTemplateId: string | null = defaultTemplate?.templateId ?? null;
   let selectedTemplate: Awaited<ReturnType<typeof getTemplate>> = null;
   if (data.template_id) {

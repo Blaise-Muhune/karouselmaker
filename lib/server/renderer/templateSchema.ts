@@ -20,10 +20,10 @@ const textZoneSchema = z.object({
   y: z.number().int().min(0),
   w: z.number().int().min(1),
   h: z.number().int().min(1),
-  fontSize: z.number().int().min(8).max(200),
+  fontSize: z.number().int().min(8).max(280),
   fontWeight: z.number().int().min(100).max(900),
   lineHeight: z.number().min(0.5).max(3),
-  maxLines: z.number().int().min(1).max(20),
+  maxLines: z.number().int().min(1).max(30),
   align: z.enum(["left", "center", "right", "justify"]),
   /** Optional text color (hex). When unset, uses contrasting color from background. */
   color: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
@@ -68,6 +68,8 @@ const watermarkSchema = z.object({
   maxWidth: z.number().int().min(24).max(400).optional(),
   /** Max height for logo image (px). Optional; default 48. */
   maxHeight: z.number().int().min(24).max(200).optional(),
+  /** Text/icon color (hex). When unset, uses contrasting color from background. */
+  color: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
 });
 
 const swipeTypeEnum = z.enum([
@@ -95,6 +97,7 @@ const swipePositionEnum = z.enum([
   "top_right",
   "center_left",
   "center_right",
+  "custom",
 ]);
 
 const chromeSchema = z.object({
@@ -109,12 +112,16 @@ const chromeSchema = z.object({
   swipePosition: swipePositionEnum.optional(),
   /** Override position: X (px from left). When set with swipeY, ignores swipePosition preset. */
   swipeX: z.number().int().min(0).max(1080).optional(),
-  /** Override position: Y (px from top). When set with swipeX, ignores swipePosition preset. */
-  swipeY: z.number().int().min(0).max(1080).optional(),
+  /** Override position: Y (px from top). When set with swipeX, ignores swipePosition preset. Up to 1920 for 9:16. */
+  swipeY: z.number().int().min(0).max(1920).optional(),
   /** Swipe hint font/size (px). Default 24. */
   swipeSize: z.number().int().min(8).max(72).optional(),
+  /** Swipe hint color (hex). When unset, uses contrasting color from background. */
+  swipeColor: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
   showCounter: z.boolean(),
   counterStyle: z.string(),
+  /** Slide number color (hex). When unset, uses contrasting color from background. */
+  counterColor: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
   watermark: watermarkSchema,
 });
 

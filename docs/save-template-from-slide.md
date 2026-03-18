@@ -18,7 +18,8 @@ When you use **Save as template** in the slide editor, the following applies.
 - **Gradient overlay** — taken from the slide’s background overlay:
   - enabled, direction, strength (darken), extent, color, solidSize
 - **Chrome toggles** — show counter, show watermark (from the slide’s current state)
-- **Watermark** — same position/config as base template, with `enabled` set from the slide’s “show watermark”
+- **Chrome colors** — swipe color, counter (slide number) color, logo/watermark color — saved in template `chrome` and in `defaults.meta` (swipe_color, counter_color, watermark_zone_override.color) so they apply when the template is used
+- **Watermark** — same position/config as base template, with `enabled` set from the slide’s “show watermark”, and watermark color when set
 
 ### Defaults (preset applied when using this template)
 - **Background** — only when the slide background is **not** an image:

@@ -1,0 +1,36 @@
+/**
+ * Fonts that render well on LinkedIn and Instagram (preview + export).
+ * Shared by SlidePreview (UI) and importTemplateFromImage (server) so the server never imports from a client component.
+ */
+export const PREVIEW_FONTS = [
+  { id: "system", label: "System" },
+  { id: "Inter", label: "Inter" },
+  { id: "Georgia", label: "Georgia" },
+  { id: "Times New Roman", label: "Times New Roman" },
+  { id: "Roboto", label: "Roboto" },
+  { id: "Montserrat", label: "Montserrat" },
+  { id: "Open Sans", label: "Open Sans" },
+  { id: "Lato", label: "Lato" },
+  { id: "Poppins", label: "Poppins" },
+  { id: "Work Sans", label: "Work Sans" },
+  { id: "Playfair Display", label: "Playfair Display" },
+  { id: "Merriweather", label: "Merriweather" },
+  { id: "Libre Baskerville", label: "Libre Baskerville" },
+  { id: "Source Sans 3", label: "Source Sans 3" },
+  { id: "Chonburi", label: "Chonburi" },
+  { id: "Breaking March", label: "Breaking March" },
+  { id: "Orange Squash Pro", label: "Orange Squash Pro" },
+  { id: "Bringbold Nineties", label: "Bringbold Nineties" },
+  { id: "Bouselle", label: "Bouselle" },
+  { id: "Instrument Serif", label: "Instrument Serif" },
+  { id: "Bodoni Moda", label: "Bodoni Moda" },
+  { id: "Prata", label: "Prata" },
+  { id: "Arapey", label: "Arapey" },
+  { id: "Fraunces", label: "Fraunces" },
+  { id: "Abril Fatface", label: "Abril Fatface" },
+  { id: "Limelight", label: "Limelight" },
+  { id: "Syne", label: "Syne" },
+  { id: "Outfit", label: "Outfit" },
+  { id: "Urbanist", label: "Urbanist" },
+  { id: "Sora", label: "Sora" },
+] as const;

@@ -1,9 +1,31 @@
 "use client";
 
+import type { ComponentProps } from "react";
 import { SlidePreview } from "@/components/renderer/SlidePreview";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { getTemplatePreviewBackgroundOverride, getLinkedInPreviewOverlayOverride } from "@/lib/renderer/getTemplatePreviewBackground";
 import { LayoutTemplateIcon } from "lucide-react";
+
+/** Build imageDisplay from template defaults so PIP and full templates render exactly as designed. */
+function getImageDisplayFromConfig(config: TemplateConfig): ComponentProps<typeof SlidePreview>["imageDisplay"] {
+  const raw =
+    config.defaults?.meta &&
+    typeof config.defaults.meta === "object" &&
+    "image_display" in config.defaults.meta
+      ? (config.defaults.meta as { image_display?: unknown }).image_display
+      : undefined;
+  if (raw == null || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const d = raw as Record<string, unknown>;
+  const pipPos = d.pipPosition;
+  const validPipPos =
+    pipPos === "top_left" || pipPos === "top_right" || pipPos === "bottom_left" || pipPos === "bottom_right"
+      ? pipPos
+      : undefined;
+  return {
+    ...d,
+    pipPosition: d.mode === "pip" ? (validPipPos ?? "bottom_right") : undefined,
+  } as ComponentProps<typeof SlidePreview>["imageDisplay"];
+}
 
 const PREVIEW_W = 136;
 const PREVIEW_H = 170;
@@ -111,6 +133,7 @@ export function TemplatePreviewThumb({
           showCounterOverride={false}
           showWatermarkOverride={false}
           exportSize="1080x1350"
+          imageDisplay={getImageDisplayFromConfig(config)}
           {...getOverridesFromConfig(config)}
         />
       </div>

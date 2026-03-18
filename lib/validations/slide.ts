@@ -169,10 +169,10 @@ export const textZoneOverrideSchema = z.object({
   y: z.number().int().min(0).max(1080).optional(),
   w: z.number().int().min(1).max(1080).optional(),
   h: z.number().int().min(1).max(1080).optional(),
-  fontSize: z.number().int().min(8).max(200).optional(),
+  fontSize: z.number().int().min(8).max(280).optional(),
   fontWeight: z.number().int().min(100).max(900).optional(),
   lineHeight: z.number().min(0.5).max(3).optional(),
-  maxLines: z.number().int().min(1).max(20).optional(),
+  maxLines: z.number().int().min(1).max(30).optional(),
   align: z.enum(["left", "center"]).optional(),
   color: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
   /** Font family: "Inter", "Georgia", "system", "Roboto", "Montserrat", etc. */
@@ -190,27 +190,27 @@ export const slideMetaSchema = z.object({
   show_swipe: z.boolean().optional(),
   /** Override template: swipe hint style (text, chevrons, arrows, etc.). */
   swipe_type: z.enum(["text", "arrow-left", "arrow-right", "arrows", "hand-left", "hand-right", "chevrons", "dots", "finger-swipe", "finger-left", "finger-right", "circle-arrows", "line-dots", "custom"]).optional(),
-  /** Override template: swipe hint position (bottom_center, top_left, etc.). */
-  swipe_position: z.enum(["bottom_left", "bottom_center", "bottom_right", "top_left", "top_center", "top_right", "center_left", "center_right"]).optional(),
+  /** Override template: swipe hint position (bottom_center, top_left, etc., or custom when using swipe_x/swipe_y). */
+  swipe_position: z.enum(["bottom_left", "bottom_center", "bottom_right", "top_left", "top_center", "top_right", "center_left", "center_right", "custom"]).optional(),
   /** When swipe_type is "text", custom label. Default "swipe". */
   swipe_text: z.string().max(50).optional(),
   /** Swipe hint X (px from left). With swipe_y, overrides position preset. */
   swipe_x: z.number().int().min(0).max(1080).optional(),
-  /** Swipe hint Y (px from top). With swipe_x, overrides position preset. */
-  swipe_y: z.number().int().min(0).max(1080).optional(),
+  /** Swipe hint Y (px from top). With swipe_x, overrides position preset. Up to 1920 for 9:16. */
+  swipe_y: z.number().int().min(0).max(1920).optional(),
   /** Swipe hint font/size (px). 8–72. */
   swipe_size: z.number().int().min(8).max(72).optional(),
-  /** Override headline font size (px). 8–200. */
-  headline_font_size: z.number().int().min(8).max(200).optional(),
-  /** Override body font size (px). 8–200. */
-  body_font_size: z.number().int().min(8).max(200).optional(),
+  /** Override headline font size (px). 8–280. */
+  headline_font_size: z.number().int().min(8).max(280).optional(),
+  /** Override body font size (px). 8–280. */
+  body_font_size: z.number().int().min(8).max(280).optional(),
   /** Per-slide headline zone overrides (x, y, w, h, maxLines, align, etc.). */
   headline_zone_override: textZoneOverrideSchema,
   /** Per-slide body zone overrides. */
   body_zone_override: textZoneOverrideSchema,
   /** Slide number position & size: top (px), right (px), fontSize. */
   counter_zone_override: z.object({
-    top: z.number().int().min(0).max(1080).optional(),
+    top: z.number().int().min(0).max(1920).optional(),
     right: z.number().int().min(0).max(1080).optional(),
     fontSize: z.number().int().min(10).max(48).optional(),
   }).optional(),
@@ -218,17 +218,18 @@ export const slideMetaSchema = z.object({
   watermark_zone_override: z.object({
     position: z.enum(["top_left", "top_right", "bottom_left", "bottom_right", "custom"]).optional(),
     logoX: z.number().int().min(0).max(1080).optional(),
-    logoY: z.number().int().min(0).max(1080).optional(),
+    logoY: z.number().int().min(0).max(1920).optional(),
     fontSize: z.number().int().min(8).max(72).optional(),
     maxWidth: z.number().int().min(24).max(400).optional(),
     maxHeight: z.number().int().min(24).max(200).optional(),
   }).optional(),
-  /** "Made with" line: fontSize, x and y (px from top-left). Omit x,y for default (centered at bottom). */
+  /** "Made with" line: fontSize, x and y (px from top-left), color (hex). Omit x,y for default (centered at bottom). */
   made_with_zone_override: z.object({
     fontSize: z.number().int().min(12).max(48).optional(),
-    x: z.number().int().min(0).max(968).optional(),
-    y: z.number().int().min(0).max(1032).optional(),
+    x: z.number().int().min(0).max(1080).optional(),
+    y: z.number().int().min(0).max(1920).optional(),
     bottom: z.number().int().min(0).max(200).optional(),
+    color: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
   }).optional(),
   /** Custom "Made with" attribution text (Pro). When set, overrides default. Default for Pro: Made with KarouselMaker.com/@username. */
   made_with_text: z.string().max(200).optional(),
@@ -249,9 +250,9 @@ export const slideMetaSchema = z.object({
   /** Body highlight spans. */
   body_highlights: z.array(z.object({ start: z.number().int().min(0), end: z.number().int().min(0), color: z.string() })).optional(),
   /** Headline font-size spans (plain text indices). Apply only to selected range when user changes size on selection. */
-  headline_font_size_spans: z.array(z.object({ start: z.number().int().min(0), end: z.number().int().min(0), fontSize: z.number().int().min(8).max(200) })).optional(),
+  headline_font_size_spans: z.array(z.object({ start: z.number().int().min(0), end: z.number().int().min(0), fontSize: z.number().int().min(8).max(280) })).optional(),
   /** Body font-size spans. */
-  body_font_size_spans: z.array(z.object({ start: z.number().int().min(0), end: z.number().int().min(0), fontSize: z.number().int().min(8).max(200) })).optional(),
+  body_font_size_spans: z.array(z.object({ start: z.number().int().min(0), end: z.number().int().min(0), fontSize: z.number().int().min(8).max(280) })).optional(),
   /** When true, show background image even if template has allowImage false (user chose "blend" for no-image template). */
   allow_background_image_override: z.boolean().optional(),
 });

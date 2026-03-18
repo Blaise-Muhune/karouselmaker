@@ -8,6 +8,10 @@ import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { DEFAULT_TEMPLATE_CONFIG } from "@/lib/templateDefaults";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
+import { PREVIEW_FONTS } from "@/lib/constants/previewFonts";
+
+/** Single source of truth: all fonts the app supports. Import prompt uses this for accuracy. */
+const ALLOWED_FONT_LIST = PREVIEW_FONTS.map((f) => f.id).join(", ");
 
 const HEX_COLOR = /^#([0-9A-Fa-f]{3}){1,2}$/;
 
@@ -46,7 +50,7 @@ const VALID_IMAGE_POSITION = ["center", "top", "bottom", "left", "right", "top-l
 const VALID_PIP_POSITION = ["top_left", "top_right", "bottom_left", "bottom_right"] as const;
 const VALID_FIT = ["cover", "contain"] as const;
 const VALID_SWIPE_TYPES = ["text", "arrow-left", "arrow-right", "arrows", "hand-left", "hand-right", "chevrons", "dots", "finger-swipe", "finger-left", "finger-right", "circle-arrows", "line-dots", "custom"] as const;
-const VALID_SWIPE_POSITIONS = ["bottom_left", "bottom_center", "bottom_right", "top_left", "top_center", "top_right", "center_left", "center_right"] as const;
+const VALID_SWIPE_POSITIONS = ["bottom_left", "bottom_center", "bottom_right", "top_left", "top_center", "top_right", "center_left", "center_right", "custom"] as const;
 const VALID_GRADIENT_DIRECTIONS = ["bottom", "top", "left", "right"] as const;
 const VALID_DEFAULT_STYLES = ["darken", "blur", "none"] as const;
 const VALID_ALIGN = ["left", "center", "right", "justify"] as const;
@@ -112,6 +116,80 @@ function normalizeToValidConfig(parsed: unknown): TemplateConfig {
     },
   };
   const merged = deepMergeWithCoercion(fullDefault, parsed) as Record<string, unknown>;
+  const parsedObj = parsed as Record<string, unknown>;
+  // Preserve headline/body from AI so template preview shows actual text (e.g. "CHURCH VISUALS")
+  if (merged.defaults == null || typeof merged.defaults !== "object") merged.defaults = fullDefault.defaults ? { ...fullDefault.defaults } : {};
+  const def = merged.defaults as Record<string, unknown>;
+  const parsedDefaults = parsedObj?.defaults && typeof parsedObj.defaults === "object" ? (parsedObj.defaults as Record<string, unknown>) : parsedObj;
+  if (typeof parsedDefaults?.headline === "string" && String(parsedDefaults.headline).trim() !== "") def.headline = String(parsedDefaults.headline).trim();
+  else if (typeof parsedObj?.headline === "string" && String(parsedObj.headline).trim() !== "") def.headline = String(parsedObj.headline).trim();
+  if (parsedDefaults?.body != null && typeof parsedDefaults.body === "string") def.body = String(parsedDefaults.body).trim();
+  else if (parsedDefaults?.body === null) def.body = null;
+  else if (typeof parsedObj?.body === "string") def.body = String(parsedObj.body).trim();
+  // Ensure required top-level objects exist and have required keys (AI sometimes omits or returns partial)
+  if (merged.overlays == null || typeof merged.overlays !== "object") {
+    merged.overlays = fullDefault.overlays;
+  } else {
+    const ov = merged.overlays as Record<string, unknown>;
+    const dg = fullDefault.overlays.gradient;
+    const dv = fullDefault.overlays.vignette;
+    if (ov.gradient == null || typeof ov.gradient !== "object") {
+      ov.gradient = dg;
+    } else {
+      const g = ov.gradient as Record<string, unknown>;
+      ov.gradient = {
+        ...dg,
+        ...g,
+        enabled: typeof g.enabled === "boolean" ? g.enabled : dg.enabled,
+        direction: typeof g.direction === "string" && VALID_GRADIENT_DIRECTIONS.includes(g.direction as (typeof VALID_GRADIENT_DIRECTIONS)[number])
+          ? g.direction
+          : dg.direction,
+        strength: typeof g.strength === "number" && Number.isFinite(g.strength) ? g.strength : dg.strength,
+      };
+    }
+    if (ov.vignette == null || typeof ov.vignette !== "object") {
+      ov.vignette = dv;
+    } else {
+      const v = ov.vignette as Record<string, unknown>;
+      ov.vignette = {
+        ...dv,
+        ...v,
+        enabled: typeof v.enabled === "boolean" ? v.enabled : dv.enabled,
+        strength: typeof v.strength === "number" && Number.isFinite(v.strength) ? v.strength : dv.strength,
+      };
+    }
+  }
+  if (merged.chrome == null || typeof merged.chrome !== "object") {
+    merged.chrome = fullDefault.chrome;
+  } else {
+    const c = merged.chrome as Record<string, unknown>;
+    // Only copy defined values so we don't overwrite with undefined
+    const chromeMerged = { ...fullDefault.chrome };
+    for (const key of Object.keys(c)) {
+      if (c[key] !== undefined) (chromeMerged as Record<string, unknown>)[key] = c[key];
+    }
+    if (chromeMerged.watermark == null || typeof chromeMerged.watermark !== "object") {
+      chromeMerged.watermark = fullDefault.chrome.watermark;
+    }
+    if (typeof chromeMerged.showSwipe !== "boolean") chromeMerged.showSwipe = fullDefault.chrome.showSwipe;
+    if (typeof chromeMerged.showCounter !== "boolean") chromeMerged.showCounter = fullDefault.chrome.showCounter;
+    if (typeof chromeMerged.counterStyle !== "string") chromeMerged.counterStyle = fullDefault.chrome.counterStyle;
+    merged.chrome = chromeMerged;
+  }
+  if (merged.backgroundRules == null || typeof merged.backgroundRules !== "object") {
+    merged.backgroundRules = fullDefault.backgroundRules;
+  } else {
+    const br = merged.backgroundRules as Record<string, unknown>;
+    merged.backgroundRules = {
+      ...fullDefault.backgroundRules,
+      ...br,
+      allowImage: typeof br.allowImage === "boolean" ? br.allowImage : fullDefault.backgroundRules.allowImage,
+      defaultStyle:
+        typeof br.defaultStyle === "string" && VALID_DEFAULT_STYLES.includes(br.defaultStyle as (typeof VALID_DEFAULT_STYLES)[number])
+          ? br.defaultStyle
+          : fullDefault.backgroundRules.defaultStyle,
+    };
+  }
   if (typeof merged.layout === "string" && !VALID_LAYOUTS.includes(merged.layout as (typeof VALID_LAYOUTS)[number])) {
     merged.layout = fullDefault.layout;
   }
@@ -284,18 +362,31 @@ function normalizeToValidConfig(parsed: unknown): TemplateConfig {
       };
     }) as TemplateConfig["textZones"];
   }
-  const overlaysFromMerged = merged.overlays && typeof merged.overlays === "object" ? merged.overlays : fullDefault.overlays;
+  // Last-resort: ensure overlays/chrome/backgroundRules have all required fields so parse never fails.
+  let overlaysFromMerged: TemplateConfig["overlays"] = merged.overlays && typeof merged.overlays === "object" ? (merged.overlays as TemplateConfig["overlays"]) : fullDefault.overlays;
+  const og = overlaysFromMerged.gradient;
+  const ovig = overlaysFromMerged.vignette;
+  if (og == null || typeof og !== "object" || typeof og.enabled !== "boolean" || typeof og.strength !== "number" || (typeof og.direction !== "string" || !VALID_GRADIENT_DIRECTIONS.includes(og.direction as (typeof VALID_GRADIENT_DIRECTIONS)[number]))) {
+    overlaysFromMerged = fullDefault.overlays;
+  } else if (ovig == null || typeof ovig !== "object" || typeof ovig.enabled !== "boolean" || typeof ovig.strength !== "number") {
+    overlaysFromMerged = { ...overlaysFromMerged, vignette: fullDefault.overlays.vignette };
+  }
   const defaultsFromMerged = merged.defaults != null ? merged.defaults : fullDefault.defaults;
   const safeAreaFromMerged = merged.safeArea && typeof merged.safeArea === "object" ? merged.safeArea : fullDefault.safeArea;
-  // Ensure chrome and backgroundRules are always full objects (schema requires them; AI sometimes omits or returns undefined).
-  const chromeFromMerged =
+  let chromeFromMerged: TemplateConfig["chrome"] =
     merged.chrome && typeof merged.chrome === "object" && merged.chrome !== null
       ? { ...fullDefault.chrome, ...(merged.chrome as Record<string, unknown>) }
       : fullDefault.chrome;
-  const backgroundRulesFromMerged =
+  if (typeof chromeFromMerged.counterStyle !== "string" || chromeFromMerged.watermark == null || typeof chromeFromMerged.watermark !== "object") {
+    chromeFromMerged = { ...chromeFromMerged, counterStyle: fullDefault.chrome.counterStyle, watermark: fullDefault.chrome.watermark };
+  }
+  let backgroundRulesFromMerged: TemplateConfig["backgroundRules"] =
     merged.backgroundRules && typeof merged.backgroundRules === "object" && merged.backgroundRules !== null
       ? { ...fullDefault.backgroundRules, ...(merged.backgroundRules as Record<string, unknown>) }
       : fullDefault.backgroundRules;
+  if (typeof backgroundRulesFromMerged.allowImage !== "boolean" || typeof backgroundRulesFromMerged.defaultStyle !== "string" || !VALID_DEFAULT_STYLES.includes(backgroundRulesFromMerged.defaultStyle as (typeof VALID_DEFAULT_STYLES)[number])) {
+    backgroundRulesFromMerged = fullDefault.backgroundRules;
+  }
   try {
     return templateConfigSchema.parse({
       ...fullDefault,
@@ -320,11 +411,12 @@ const TEMPLATE_ANALYSIS_SYSTEM = `You are a carousel/slide template designer. Yo
 RULES:
 1. Analyze every image. Design canvas is 1080x1080 px. Infer layout, colors (hex), font sizes, weights, overlay semantics. No "unrelated" response—always output a valid template config.
 
-HOW TO INTERPRET OVERLAYS (be smart, critical for accuracy):
-- Two-tone split (e.g. solid green strip on LEFT, rest dark blue): You MUST output overlays.gradient with enabled: true, direction: "left", extent: 25 (or 20–30 for ~25–30% width), solidSize: 100 (solid block, no fade), color: the strip color in hex (e.g. "#32CD32", "#33CC66"), strength: 1. Set defaults.meta.background_color and defaults.background.color to the MAIN area color (the dark blue, e.g. "#0a2540", "#001F3F"). The left strip is the overlay; the rest is the template background.
-- Any solid-colored block on one side = gradient overlay: direction = that side (left strip → "left"), extent = 20–30 for narrow strip, solidSize = 100, color = hex of that block. Strength 0.8–1.
-- Soft gradient from edge (e.g. dark at bottom for text) = direction "bottom", extent 30–60, solidSize 0–30, color "#000000", strength 0.4–0.8.
-- Always set overlays.gradient: enabled, direction, strength, extent, color, solidSize. Set overlays.vignette if you see darkened corners.
+HOW TO INTERPRET OVERLAYS (critical—do not add overlays that are not in the image):
+- If the image has NO visible overlay or gradient (flat solid background, flat cream/white/color with no fade, no dark strip, no gradient from edge), set overlays.gradient.enabled to false. Do NOT add a gradient when the source image does not have one.
+- Two-tone split (e.g. solid green strip on LEFT, rest dark blue): overlays.gradient enabled: true, direction: "left", extent: 25, solidSize: 100, color: strip hex, strength: 1. Set defaults.background.color to the main area color.
+- Any solid-colored block on one side = gradient overlay: direction = that side, extent = 20–30, solidSize = 100, color = hex. Strength 0.8–1.
+- Soft gradient from edge (e.g. dark at bottom for text readability): only then set enabled: true, direction "bottom", extent 30–60, solidSize 0–30, color "#000000", strength 0.4–0.8.
+- When there is no overlay in the image: overlays.gradient.enabled = false. Set overlays.vignette only if you see darkened corners.
 
 COLORS (always hex, critical for readability):
 - overlays.gradient.color = the overlay/block color.
@@ -332,14 +424,21 @@ COLORS (always hex, critical for readability):
 - textZones[].color = MUST set for headline and body. Infer the exact text color from the image (e.g. cream "#FFFEF0", white "#ffffff", light gray "#b0b0b0", dark "#111111"). When the text sits on a dark area use light/white/cream; when on a light area use dark. If unsure, use a contrasting color to the background behind that text: dark background → "#ffffff" or "#f5f5dc"; light background → "#111111" or "#1a1a1a". Never omit color; wrong color breaks readability.
 - If a small image has a tint: defaults.meta.image_overlay_blend_enabled true, overlay_tint_opacity 0.4–0.75, overlay_tint_color = background hex.
 
-TEXT (exact from visual hierarchy):
-- Headline: large bold → fontSize 56–80, fontWeight 600–700; x,y,w,h from layout; align "left"|"center"|"right"; color hex (required—see COLORS); lineHeight 1.05–1.2, maxLines 2–5. Outline/shadow → headline_highlight_style "outline", headline_outline_stroke 1–2.
-- Body/caption: smaller → fontSize 24–36, fontWeight 400–600; color hex (required—use contrast to background if unsure).
+TEXT (match the image's font sizes, content, and font styles—critical for import):
+- You MUST output defaults.headline and defaults.body with the exact text visible in the image. Without these the template preview will show "Your headline here" instead of the real text. Example: if the image shows "CHURCH VISUALS" and "FONT - TAN MEMORIES", output defaults: { headline: "CHURCH VISUALS", body: "FONT - TAN MEMORIES", ... }. Use the actual words from the image. If no body text, use null or a short placeholder.
+- Estimate fontSize from how large the text actually appears in the image (canvas 1080px). Hero-sized or very large headline (full-width, dominant title) → fontSize 100–200, up to 280 allowed; medium headline → 56–90; smaller subhead → 32–48; body/caption → 24–36. Do not default to medium sizes when the image clearly has very large text. Always output textZones[].fontSize and defaults.meta.headline_font_size, body_font_size with the same values so the template preview matches the import.
+- Font family: Extract headline and body font separately. Set textZones[headline].fontFamily and textZones[body].fontFamily from what you see. Use exactly one of (our full font set): ${ALLOWED_FONT_LIST}. Match the visual style: bold/blocky sans-serif → Montserrat, Syne, or Poppins; condensed or impact → Syne or Montserrat; clean neutral → Inter or Roboto; serif → Playfair Display, Libre Baskerville, or Merriweather. When the image uses the same font for both, set both to the same value.
+- Font weight: Match the image. Bold or heavy hero headlines → fontWeight 700–800 (do not use 500–600 for clearly bold text). Medium body → 400–500; bold subhead → 600–700.
+- Two-tone text (some words in a different color): Set textZones[].color to the dominant/main text color (e.g. white "#ffffff", light gray "#e5e5e5"). For words that are in an accent color (e.g. lime green "#84cc16", bright green "#22c55e", yellow "#eab308"), you MUST set defaults.meta.headline_highlights or body_highlights to an array of { start, end, color } where start and end are 0-based character indices of that word in the headline/body string, and color is the hex. Example: "GRAPHIC DESIGN TRENDS YOU SHOULD TRY" with "DESIGN" in lime → headline_highlights: [{ start: 8, end: 14, color: "#84cc16" }]. Without this the preview will show all text in one color.
+- Headline: fontWeight 700–800 when the image looks bold/heavy; x,y,w,h from layout; align "left"|"center"|"right"; color hex (required—see COLORS); lineHeight 1.05–1.2, maxLines 2–10 (use 6–10 when headline spans many lines; up to 30 allowed). Preserve line breaks and vertical spacing. Outline/shadow → headline_highlight_style "outline", headline_outline_stroke 1–2.
+- Headline zone dimensions (critical for font size to apply correctly): For full-width or hero-sized headlines, set w to 900–936 (content width on 1080px canvas) and h to 400–600 so the full headline fits at the chosen fontSize without clipping. Never use a narrow w (e.g. under 800) with large fontSize or the preview will cut off text.
+- Body/caption: fontWeight 400–600; color hex (required—use contrast to background if unsure). maxLines 2–8 when body has multiple lines; up to 20 allowed. Body zone w 800–936 when body text is multi-line.
 
-CHROME:
-- Counter (e.g. "1/7") → showCounter true, counterStyle "1/7".
+CHROME (match what you see—critical for preview):
+- Counter/slide number: Set showCounter true ONLY when the image shows a slide number (e.g. "1/7", "2/8", "Slide 3"). If the image has NO slide number or pagination, set showCounter false.
+- Arrow (→ or swipe arrow icon) in the image → showSwipe true, swipeType "arrow-right" (or "arrow-left" if left arrow, "arrows" if both). Set swipePosition to match (e.g. bottom_right, bottom_center). Set chrome.swipeSize to match visibility: 32–48 for a clearly visible arrow (default 24 is too small). This makes the template preview show the arrow at an accurate size.
 - Dots or line at bottom → showSwipe true, swipeType "dots" or "line-dots", swipePosition "bottom_center".
-- Watermark → watermark.enabled, position (only: top_left, top_right, bottom_left, bottom_right, custom—never bottom_center).
+- Watermark/logo slot: We always show either the project's logo (if set) or the project's username (watermark_text from the project). So always set watermark.enabled true so the template has a slot for logo/username. When the image HAS a visible logo or branding (e.g. "OSHEA CREATIONS", logo graphic): set watermark position (and logoX/logoY if custom) from where it appears in the image. When the image has NO logo/watermark: set watermark.enabled true with position bottom_right (or a sensible default) so the slot is reserved—when the template is used, the project's username will show there if they have no logo. When the image has any watermark or footer branding, also set defaults.meta.show_made_with true.
 
 IMAGE & FRAME (critical—extract every visible detail so the template matches the import):
 - Image placement: If the photo/image is in a corner or small box → mode "pip". If it fills most of the slide or a large central area → mode "full". Always set mode.
@@ -366,20 +465,21 @@ LAYOUT & SAFE AREA:
 - layout: exactly one of "headline_bottom" | "headline_center" | "split_top_bottom" | "headline_only"
 - safeArea: { top, right, bottom, left } numbers 0–200 (padding from edges)
 
-TEXT TAB (textZones and defaults.meta text/font):
-- textZones: array. Each zone: id ("headline" or "body"), x, y, w, h (0–1080), fontSize (8–200), fontWeight (100–900), lineHeight (0.5–3), maxLines (1–20), align ("left"|"center"|"right"|"justify"), color (hex, required), fontFamily? ("system"|"Inter"|"Georgia"|…), rotation? (-180–180).
-- defaults.meta: headline_font_size?, body_font_size? (8–200), headline_font_family?, body_font_family?, headline_zone_override? { x,y,w,h, fontSize, fontWeight, lineHeight, maxLines, align, color, fontFamily, rotation }, body_zone_override? (same shape), headline_highlight_style? ("text"|"background"|"outline"), body_highlight_style?, headline_outline_stroke? (0–8), body_outline_stroke?, headline_highlights? [{ start, end, color }], body_highlights? (same).
+TEXT TAB (textZones and defaults.meta text/font)—extract headline and body separately:
+- textZones: array. Each zone: id ("headline" or "body"), x, y, w, h, fontSize (8–280), fontWeight (100–900), lineHeight (0.5–3), maxLines (1–30 for headline, 1–20 for body), align ("left"|"center"|"right"|"justify"), color (hex, required). For each zone set fontFamily from the font you see (use exactly one of: ${ALLOWED_FONT_LIST}). Same or different as in the image. rotation? (-180–180). Headline zone: use w 900–936 and h 400–600 for hero/full-width text so the font size applies without clipping. Body zone: use w 800–936 for multi-line body.
+- defaults.meta: headline_font_size, body_font_size (match textZones). headline_font_family, body_font_family—set from the same fonts as textZones headline/body. When some words are in an accent color, set headline_highlights or body_highlights to [{ start, end, color }] (0-based character indices, hex color). headline_zone_override?, body_zone_override?, headline_highlight_style?, body_highlight_style?, headline_outline_stroke? (0–8), body_outline_stroke?.
 
 BACKGROUND TAB (overlays, defaults.background, backgroundRules, defaults.meta background):
 - overlays.gradient: enabled, direction ("bottom"|"top"|"left"|"right"), strength (0–1), extent (0–100), color (hex), solidSize (0–100).
 - overlays.vignette: enabled, strength (0–1).
 - defaults.background: style ("solid"|"gradient"), color (hex). Optional: pattern?, decoration?, decorationColor?.
 - defaults.meta: background_color (hex), image_overlay_blend_enabled?, overlay_tint_opacity (0–1), overlay_tint_color (hex).
-- backgroundRules: allowImage (boolean), defaultStyle ("darken"|"blur"|"none"). Set allowImage to FALSE when the slide has no photo/image—e.g. text on a solid color (white, cream, dark blue, etc.) or gradient only. Then defaults.background.color and defaults.meta.background_color MUST match that solid/gradient background (e.g. "#ffffff" for white, "#0a0a0a" for dark) so the template preview matches the source.
+- backgroundRules: allowImage (boolean), defaultStyle ("darken"|"blur"|"none"). Set allowImage to FALSE when the slide has no photo/image—e.g. text on a solid color (white, cream, dark blue, etc.) or gradient only. Then defaults.background.color and defaults.meta.background_color MUST match that solid/gradient background (e.g. "#ffffff" for white, "#FFF8DC" for cream, "#0a0a0a" for dark) so the template preview matches the source. Do not set image_display.mode when there is no image in the slide.
+- TEXT-ONLY SLIDES (no photo, no graphic): If the image is only text on a flat solid background (e.g. headline + subhead on cream, white, or dark), set backgroundRules.allowImage to false, defaults.background to { style: "solid", color: "<exact background hex>" }, and defaults.meta.background_color to the same hex. Omit or leave image_display minimal so the template preview does not show a stock photo.
 
-CHROME / LAYOUT (counter, swipe, watermark, made with):
-- chrome: showSwipe, swipeType ("text"|"arrow-left"|"arrow-right"|"arrows"|"hand-left"|"hand-right"|"chevrons"|"dots"|"finger-swipe"|"finger-left"|"finger-right"|"circle-arrows"|"line-dots"|"custom"), swipePosition ("bottom_left"|"bottom_center"|"bottom_right"|"top_left"|"top_center"|"top_right"|"center_left"|"center_right"), showCounter, counterStyle (e.g. "1/8"), watermark: { enabled, position ("top_left"|"top_right"|"bottom_left"|"bottom_right"|"custom"), logoX?, logoY?, fontSize?, maxWidth?, maxHeight? }.
-- defaults.meta: show_counter?, show_watermark?, show_made_with?, counter_zone_override? { top?, right?, fontSize? }, watermark_zone_override? { position?, logoX?, logoY?, fontSize?, maxWidth?, maxHeight? }, made_with_zone_override? { fontSize?, x?, y?, bottom? }.
+CHROME / LAYOUT (counter, swipe, watermark, made with)—be accurate to pixel positions. Canvas: 1080px wide; for 4:5 aspect ratio height is 1350px.
+- chrome: showSwipe, swipeType, swipePosition, swipeSize. showCounter (true only if the image shows a slide number; otherwise false). counterStyle. watermark: always set enabled true (template reserves a slot for project logo or username). position from the image when there is a visible logo/watermark; when the image has no logo use bottom_right. logoX, logoY when position is custom. When the image has a watermark/branding, set defaults.meta.show_made_with true.
+- defaults.meta: counter_zone_override { top?, right?, fontSize? } in px—match where the slide number (e.g. "1/7") appears. watermark_zone_override { position or logoX, logoY, fontSize? }. made_with_zone_override { fontSize?, x?, y? } for the "Made with" / attribution line position. Report positions as accurately as possible from the image.
 
 IMAGE DISPLAY (defaults.meta.image_display — shape, frame, position, PIP):
 - mode: "full"|"pip". position: "center"|"top"|"bottom"|"left"|"right"|"top-left"|"top-right"|"bottom-left"|"bottom-right". pipPosition: "top_left"|"top_right"|"bottom_left"|"bottom_right".
@@ -388,12 +488,18 @@ IMAGE DISPLAY (defaults.meta.image_display — shape, frame, position, PIP):
 - fit: "cover"|"contain". layout (multi-image): "auto"|"side-by-side"|"stacked"|"grid"|"overlay-circles". gap (0–48). dividerStyle?, dividerColor?, dividerWidth?. overlayCircleSize?, overlayCircleBorderWidth?, overlayCircleBorderColor?, overlayCircleX?, overlayCircleY?.
 
 TEMPLATE NAME (optional but recommended):
-- name: a short suggested name for this template, 2–6 words, describing the design (e.g. "Green split LinkedIn", "Dark gradient with PIP", "Minimal white center"). The user will see this as the default name and can edit it before saving. Omit if the image is too generic.
+- name: a short suggested name for this template, 2–6 words. Omit if the image is too generic.
 
-Output valid JSON with every key from the list above that you can infer from the image. Include "name" when you can describe the template in a few words. Omit only keys that do not apply. Keep all numbers in range. All colors hex.`;
+SUGGESTED FONT (optional):
+- suggestedFont: string. Describe the headline font (e.g. "Georgia", "Libre Baskerville", "Playfair Display"). If the body uses a different font, include it (e.g. "Headline: Playfair Display; Body: Inter") or add a separate note in suggestions (e.g. "Body: Work Sans").
+
+OTHER SUGGESTIONS (optional):
+- suggestions: array of strings. Short recommendations, e.g. "Consider adding thin frame", "Logo could be bottom-right", "Headline outline would match original". 0–5 items. Omit if none.
+
+Output valid JSON with every key from the list above that you can infer. Include "name", "suggestedFont", "suggestions" when applicable. If the image has no overlay gradient, set overlays.gradient.enabled to false. Keep all numbers in range. All colors hex.`;
 
 export type ImportTemplateFromImageResult =
-  | { ok: true; config: TemplateConfig; suggestedName: string }
+  | { ok: true; config: TemplateConfig; suggestedName: string; suggestedFont?: string; suggestions?: string[] }
   | { ok: false; error: string; code?: "unrelated" | "invalid" | "analysis_failed" | "limit" | "auth" };
 
 function stripJson(raw: string): string {
@@ -475,22 +581,69 @@ export async function importTemplateFromImageAction(
       delete obj.unrelated;
     }
 
-    let config: TemplateConfig;
-    const result = templateConfigSchema.safeParse(parsed);
-    if (result.success) {
-      config = result.data;
-      console.log("[import-template] Config validated. Layout:", config.layout);
-    } else {
-      console.log("[import-template] Config validation failed, normalizing. Errors:", result.error.flatten());
-      config = normalizeToValidConfig(parsed);
-      console.log("[import-template] Normalized config. Layout:", config.layout);
-    }
+    // Always normalize first so we never validate raw AI output (avoids chrome/backgroundRules undefined errors).
+    let config = normalizeToValidConfig(parsed);
+    console.log("[import-template] Config ready. Layout:", config.layout);
 
     config = ensureTextZoneColors(config);
+    // Ensure headline/body zones are wide enough for the chosen font size so the template preview doesn't clip text.
+    if (config.textZones && Array.isArray(config.textZones)) {
+      config = {
+        ...config,
+        textZones: config.textZones.map((z) => {
+          const zone = { ...z };
+          if (zone.id === "headline") {
+            const fs = Number(zone.fontSize);
+            const w = Number(zone.w);
+            const h = Number(zone.h);
+            if (Number.isFinite(fs) && fs >= 72 && Number.isFinite(w) && w < 880) {
+              zone.w = 920;
+              if (Number.isFinite(h) && h < 350) zone.h = 400;
+            } else if (Number.isFinite(fs) && fs >= 56 && Number.isFinite(w) && w < 800) {
+              zone.w = 920;
+            }
+          } else if (zone.id === "body") {
+            const w = Number(zone.w);
+            if (Number.isFinite(w) && w < 750) zone.w = 800;
+          }
+          return zone;
+        }) as TemplateConfig["textZones"],
+      };
+    }
+    // When design is solid-only (no photo), ensure allowImage is false so preview and saved template match "Your image".
+    const meta = config.defaults?.meta && typeof config.defaults.meta === "object" ? (config.defaults.meta as { image_display?: { mode?: string }; headline_font_size?: number; body_font_size?: number }) : undefined;
+    const imageMode = meta?.image_display?.mode;
+    const bgStyle = config.defaults?.background && typeof config.defaults.background === "object" ? (config.defaults.background as { style?: string }).style : undefined;
+    const isSolidOnlyDesign = bgStyle === "solid" && imageMode !== "pip" && imageMode !== "full";
+    if (isSolidOnlyDesign && config.backgroundRules) {
+      config = { ...config, backgroundRules: { ...config.backgroundRules, allowImage: false } };
+    }
+    // Sync textZones font sizes into defaults.meta so preview and new slides use the imported sizes (not defaults).
+    const headlineZone = config.textZones?.find((z) => z.id === "headline");
+    const bodyZone = config.textZones?.find((z) => z.id === "body");
+    const existingMeta = config.defaults?.meta && typeof config.defaults.meta === "object" ? (config.defaults.meta as Record<string, unknown>) : {};
+    const needHeadlineFont = headlineZone && (existingMeta.headline_font_size == null || typeof existingMeta.headline_font_size !== "number");
+    const needBodyFont = bodyZone && (existingMeta.body_font_size == null || typeof existingMeta.body_font_size !== "number");
+    if ((needHeadlineFont || needBodyFont) && (headlineZone || bodyZone)) {
+      const nextMeta = {
+        ...existingMeta,
+        ...(needHeadlineFont && headlineZone && { headline_font_size: Math.round(Math.min(280, Math.max(8, headlineZone.fontSize))) }),
+        ...(needBodyFont && bodyZone && { body_font_size: Math.round(Math.min(280, Math.max(8, bodyZone.fontSize))) }),
+      };
+      config = {
+        ...config,
+        defaults: { ...config.defaults, meta: nextMeta },
+      };
+    }
     const rawName = typeof obj?.name === "string" ? String(obj.name).trim() : "";
     const suggestedName = rawName.length > 0 ? rawName.slice(0, 80) : "Imported from image";
-    console.log("[import-template] Success. Overlays.gradient:", config.overlays?.gradient?.enabled, config.overlays?.gradient?.direction, "suggestedName:", suggestedName);
-    return { ok: true, config, suggestedName };
+    const suggestedFont = typeof obj?.suggestedFont === "string" ? String(obj.suggestedFont).trim().slice(0, 120) : undefined;
+    const rawSuggestions = obj?.suggestions;
+    const suggestions = Array.isArray(rawSuggestions)
+      ? rawSuggestions.filter((s): s is string => typeof s === "string").map((s) => String(s).trim().slice(0, 200)).slice(0, 8)
+      : undefined;
+    console.log("[import-template] Success. Overlays.gradient:", config.overlays?.gradient?.enabled, "suggestedName:", suggestedName, "suggestedFont:", suggestedFont);
+    return { ok: true, config, suggestedName, ...(suggestedFont && { suggestedFont }), ...(suggestions?.length ? { suggestions } : undefined) };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.log("[import-template] Error:", msg);

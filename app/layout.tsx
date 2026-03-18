@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { ViewTransitions } from "next-view-transitions";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
+import { GoogleFontsLink } from "@/components/GoogleFontsLink";
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -112,6 +113,7 @@ export default function RootLayout({
     <ViewTransitions>
       <html lang="en" suppressHydrationWarning>
         <body className="min-h-screen">
+          <GoogleFontsLink />
           <StructuredDataScript />
           <ThemeProvider>{children}</ThemeProvider>
         </body>

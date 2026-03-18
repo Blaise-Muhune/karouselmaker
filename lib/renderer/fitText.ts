@@ -176,7 +176,7 @@ function wrapParagraph(paragraph: string, zone: TextZone, maxLines: number): str
 export function fitTextToZone(text: string, zone: TextZone): string[] {
   if (!text.trim()) return [];
 
-  const maxLines = Math.max(1, Math.min(20, Math.round(Number(zone.maxLines)) || 1));
+  const maxLines = Math.max(1, Math.min(30, Math.round(Number(zone.maxLines)) || 1));
   const paragraphs = text.split(/\n/);
   const allLines: string[] = [];
   let remainingLines = maxLines;

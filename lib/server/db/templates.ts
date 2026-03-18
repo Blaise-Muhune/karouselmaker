@@ -50,7 +50,7 @@ export async function getTemplate(
 }
 
 /**
- * Default template for new carousels and for slides with no template_id: if the user has any custom
+ * Default template for new carousels without images (text/solid/gradient): if the user has any custom
  * template, use the first (by name); otherwise use the system template "Follow CTA".
  */
 export async function getDefaultTemplateForNewCarousel(userId: string): Promise<{
@@ -68,6 +68,34 @@ export async function getDefaultTemplateForNewCarousel(userId: string): Promise<
   const fallback = allTemplates[0];
   if (fallback) return { templateId: fallback.id, isFollowCta: false };
   return null;
+}
+
+/**
+ * Default template for new carousels that have background images (PIP, full-bleed, etc.).
+ * Prefers the first template (user or system) where backgroundRules.allowImage is not false.
+ * Falls back to getDefaultTemplateForNewCarousel if none found.
+ */
+export async function getDefaultTemplateForNewCarouselImage(userId: string): Promise<{
+  templateId: string;
+  isFollowCta: boolean;
+} | null> {
+  const allTemplates = await listTemplatesForUser(userId, { includeSystem: true });
+  const allowImage = (t: Template) => {
+    const cfg = t.config as { backgroundRules?: { allowImage?: boolean } } | null;
+    return cfg?.backgroundRules?.allowImage !== false;
+  };
+  const userFirst = allTemplates.filter((t) => t.user_id != null);
+  const systemOnly = allTemplates.filter((t) => t.user_id == null);
+  const chosen =
+    userFirst.find(allowImage) ??
+    systemOnly.find(allowImage) ??
+    userFirst[0] ??
+    systemOnly[0];
+  if (chosen) {
+    const followCta = chosen.user_id === null && chosen.name === "Follow CTA";
+    return { templateId: chosen.id, isFollowCta: followCta };
+  }
+  return getDefaultTemplateForNewCarousel(userId);
 }
 
 /** Template ID to use when a slide has template_id null (e.g. export). Same order as above. */
