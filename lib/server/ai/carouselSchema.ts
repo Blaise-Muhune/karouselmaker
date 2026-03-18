@@ -5,7 +5,7 @@ const slideTypeEnum = z.enum(["hook", "point", "context", "cta", "generic"]);
 /** Words/phrases from the text to highlight (exact substring match). Used by "Auto" in the editor. */
 const highlightWordsSchema = z.array(z.string().min(1).max(60)).max(8).optional();
 
-/** Shorter headline+body that still make sense (AI rewrite, not truncation). */
+/** Text variant: short (~40/80 chars), normal (fits template), or long (up to 120/400). */
 export const shortenAlternateSchema = z.object({
   headline: z.string().max(120),
   body: z.string().max(600).optional().default(""),
@@ -13,6 +13,8 @@ export const shortenAlternateSchema = z.object({
   headline_highlight_words: highlightWordsSchema,
   /** Words from this alternate's body to highlight when user clicks Auto. Must appear exactly in body. */
   body_highlight_words: highlightWordsSchema,
+  /** Optional: "short" | "normal" | "long" for UI display. Order in array is [short, normal, long]. */
+  variant: z.enum(["short", "normal", "long"]).optional(),
 });
 
 export const aiSlideSchema = z.object({
@@ -40,8 +42,8 @@ export const aiSlideSchema = z.object({
   // Legacy: accept old field names from cached or older AI output
   unsplash_query: z.string().max(80).optional(),
   unsplash_queries: z.array(z.string().max(80)).max(4).optional(),
-  /** 2–3 shorter versions of headline+body that keep meaning (semantic shorten for "Shorten to fit" cycling). Optional; omit or empty array if not needed. */
-  shorten_alternates: z.array(shortenAlternateSchema).max(3).optional(),
+  /** Exactly 3 text variants per slide: [short, normal, long]. Used for "Shorten to fit" / variant cycling. Optional; omit or empty if not needed. */
+  shorten_alternates: z.array(shortenAlternateSchema).min(0).max(3).optional(),
 });
 
 export const carouselOutputSchema = z.object({

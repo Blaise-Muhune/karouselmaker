@@ -18,6 +18,7 @@ import {
   buildCarouselPrompts,
   buildValidationRetryPrompt,
 } from "@/lib/server/ai/prompts";
+import { buildTemplateContextForPrompt } from "@/lib/server/ai/templateContextForPrompt";
 import { searchImage } from "@/lib/server/imageSearch";
 import { searchUnsplashPhotosMultiple, trackUnsplashDownload } from "@/lib/server/unsplash";
 import { searchPixabayPhotos } from "@/lib/server/pixabay";
@@ -341,6 +342,22 @@ export async function generateCarousel(formData: FormData): Promise<
   const autoNewsWebSearch = hasFullAccess && looksLikeNewsOrTimeSensitive(data.input_value, data.input_type);
   const useWebSearch = hasFullAccess && (userAskedWebSearch || autoNewsWebSearch);
   const projectLanguage = (project as { language?: string }).language?.trim() || undefined;
+
+  // Resolve template for prompt so AI gets zone limits (font size, width, height, has headline/body).
+  let templateForPrompt: Awaited<ReturnType<typeof getTemplate>> = null;
+  if (data.template_id) {
+    templateForPrompt = await getTemplate(user.id, data.template_id);
+  } else {
+    const defaultForPrompt =
+      carouselFor === "linkedin"
+        ? await getDefaultLinkedInTemplate(user.id)
+        : await getDefaultTemplateForNewCarousel(user.id);
+    const defaultId = defaultForPrompt?.templateId ?? null;
+    if (defaultId) templateForPrompt = await getTemplate(user.id, defaultId);
+  }
+  const templateContext = buildTemplateContextForPrompt(templateForPrompt?.config ?? null);
+  const template_context = templateContext?.promptSection?.trim() ?? undefined;
+
   const ctx = {
     tone_preset: project.tone_preset,
     rules: projectRules,
@@ -357,7 +374,8 @@ export async function generateCarousel(formData: FormData): Promise<
     notes: data.notes,
     viral_shorts_style: !!parsed.data.viral_shorts_style && userIsAdmin,
     carousel_for: carouselFor,
-  } as const;
+    template_context,
+  };
 
   LOG("AI", useWebSearch ? "calling LLM with web search" : "calling LLM (JSON mode)");
   const llmStart = now();

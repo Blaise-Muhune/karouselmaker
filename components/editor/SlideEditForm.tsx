@@ -796,14 +796,12 @@ export function SlideEditForm({
   const [cyclingShorten, setCyclingShorten] = useState(false);
   const [applyingTemplate, setApplyingTemplate] = useState(false);
   const [applyingOverlay, setApplyingOverlay] = useState(false);
-  const [applyingDisplay, setApplyingDisplay] = useState(false);
   const [applyingImageDisplay, setApplyingImageDisplay] = useState(false);
   const [applyingImageCount, setApplyingImageCount] = useState(false);
   const [applyingBackground, setApplyingBackground] = useState(false);
   const [applyingClear, setApplyingClear] = useState(false);
   const [applyingHeadlineZone, setApplyingHeadlineZone] = useState(false);
   const [applyingBodyZone, setApplyingBodyZone] = useState(false);
-  const [applyingMadeWith, setApplyingMadeWith] = useState(false);
   const [applyingAutoHighlights, setApplyingAutoHighlights] = useState(false);
   const [applyingHighlightStyle, setApplyingHighlightStyle] = useState(false);
   const [applyingChromeSection, setApplyingChromeSection] = useState<null | "show" | "counter" | "logo" | "swipe" | "watermark">(null);
@@ -2222,22 +2220,11 @@ export function SlideEditForm({
     if (result.ok) router.refresh();
   };
 
-  const handlePositionNumberChange = async (checked: boolean) => {
-    setShowCounter(checked);
-    setApplyingDisplay(true);
-    const result = await applyToAllSlides(slide.carousel_id, { meta: { show_counter: checked } }, editorPath, applyScope);
-    setApplyingDisplay(false);
-    if (result.ok) router.refresh();
-  };
+  /** Toggle only updates current slide state; use "Apply to all" to propagate. */
+  const handlePositionNumberChange = (checked: boolean) => setShowCounter(checked);
 
-  const handleMadeWithChange = async (checked: boolean) => {
-    setShowMadeWith(checked);
-    setApplyingMadeWith(true);
-    const allScope = { includeFirstSlide: true, includeLastSlide: true };
-    const result = await applyToAllSlides(slide.carousel_id, { meta: { show_made_with: checked } }, editorPath, allScope);
-    setApplyingMadeWith(false);
-    if (result.ok) router.refresh();
-  };
+  /** Toggle only updates current slide state; use "Apply to all" to propagate. */
+  const handleMadeWithChange = (checked: boolean) => setShowMadeWith(checked);
 
   const handleApplyShowOnSlideToAll = async () => {
     setApplyingChromeSection("show");
@@ -4254,8 +4241,8 @@ export function SlideEditForm({
               </div>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <label className="flex cursor-pointer items-center gap-1.5 text-xs">
-                  <input type="checkbox" checked={showCounter} onChange={(e) => handlePositionNumberChange(e.target.checked)} disabled={applyingDisplay} className="rounded border-input accent-primary" />
-                  {applyingDisplay ? <Loader2Icon className="size-3.5 animate-spin" /> : <HashIcon className="size-3.5 text-muted-foreground" />}
+                  <input type="checkbox" checked={showCounter} onChange={(e) => handlePositionNumberChange(e.target.checked)} className="rounded border-input accent-primary" />
+                  <HashIcon className="size-3.5 text-muted-foreground" />
                   Slide number
                 </label>
                 {brandKit.watermark_text && (
@@ -4266,8 +4253,7 @@ export function SlideEditForm({
                 )}
                 {isPro && (
                   <label className="flex cursor-pointer items-center gap-1.5 text-xs">
-                    <input type="checkbox" checked={showMadeWith} onChange={(e) => handleMadeWithChange(e.target.checked)} disabled={applyingMadeWith} className="rounded border-input accent-primary" />
-                    {applyingMadeWith ? <Loader2Icon className="size-3.5 animate-spin" /> : null}
+                    <input type="checkbox" checked={showMadeWith} onChange={(e) => handleMadeWithChange(e.target.checked)} className="rounded border-input accent-primary" />
                     Watermark
                   </label>
                 )}

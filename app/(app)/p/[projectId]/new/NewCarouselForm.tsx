@@ -488,93 +488,6 @@ export function NewCarouselForm({
             )}
           </CardContent>
         </Card>
-
-        {(templateOptionsForPlatform.length > 0 || (carouselFor === "linkedin" ? defaultLinkedInTemplateConfig : defaultTemplateConfig)) && (
-          <Card className="py-4 gap-4">
-            <CardHeader className="pb-0 px-5">
-              <CardTitle className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
-                Template (optional)
-              </CardTitle>
-              <CardDescription>
-                {useAiBackgrounds
-                  ? "Previews use a sample image. Pick the layout for your carousel."
-                  : carouselFor === "linkedin"
-                    ? "Pick a layout for LinkedIn. Default uses the recommended LinkedIn template."
-                    : "Pick the layout. Default uses your recommended template."}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="px-5 pt-0">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setTemplateModalOpen(true)}
-              className="gap-2"
-            >
-              <LayoutTemplateIcon className="size-4" />
-              {selectedTemplateId
-                ? templateOptionsForPlatform.find((t) => t.id === selectedTemplateId)?.name ?? "Custom"
-                : "Default (recommended)"}
-            </Button>
-            <Dialog open={templateModalOpen} onOpenChange={setTemplateModalOpen}>
-              <DialogContent className="flex flex-col max-w-[calc(100%-2rem)] max-h-[85vh] sm:max-w-2xl md:max-w-[92vw] md:max-h-[92vh] md:w-[92vw] md:h-[92vh] lg:max-w-[94vw] lg:max-h-[94vh] lg:w-[94vw] lg:h-[94vh]">
-                <DialogHeader className="flex flex-row items-start justify-between gap-2">
-                  <div>
-                    <DialogTitle>Choose template</DialogTitle>
-                    <p className="text-muted-foreground text-sm mt-1">
-                      {carouselFor === "linkedin" ? "LinkedIn templates." : "Pick a layout for your carousel."} You can load more below.
-                    </p>
-                  </div>
-                  {isPro && (
-                    <ImportTemplateButton
-                      isPro={isPro}
-                      atLimit={false}
-                      isAdmin={isAdminUser}
-                      variant="outline"
-                      size="sm"
-                      className="shrink-0 gap-1.5"
-                      onCreated={() => router.refresh()}
-                    />
-                  )}
-                </DialogHeader>
-                <div className="overflow-y-auto overflow-x-hidden flex-1 min-h-0 min-w-0 w-full pr-1">
-                  <TemplateSelectCards
-                    templates={templateOptionsForPlatform.slice(0, visibleTemplateCount)}
-                    defaultTemplateId={carouselFor === "linkedin" ? defaultLinkedInTemplateId : defaultTemplateId}
-                    defaultTemplateConfig={carouselFor === "linkedin" ? defaultLinkedInTemplateConfig : defaultTemplateConfig}
-                    value={selectedTemplateId}
-                    onChange={(id) => {
-                      setSelectedTemplateId(id);
-                      setTemplateModalOpen(false);
-                    }}
-                    primaryColor={primaryColor}
-                    previewImageUrls={useAiBackgrounds ? TEMPLATE_PREVIEW_IMAGE_URLS : undefined}
-                    isAdmin={isAdminUser}
-                    isPro={isPro}
-                    onTemplateDeleted={() => {
-                      setTemplateModalOpen(false);
-                      router.refresh();
-                    }}
-                    showMyTemplatesSection={true}
-                  />
-                </div>
-                {visibleTemplateCount < templateOptionsForPlatform.length && (
-                  <div className="pt-2 border-t flex justify-center">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setVisibleTemplateCount((n) => n + TEMPLATE_PAGE_SIZE)}
-                    >
-                      Load more
-                    </Button>
-                  </div>
-                )}
-              </DialogContent>
-            </Dialog>
-            </CardContent>
-          </Card>
-        )}
             </>
           )}
         </div>
@@ -742,6 +655,93 @@ export function NewCarouselForm({
             </div>
           </CardContent>
         </Card>
+
+        {(templateOptionsForPlatform.length > 0 || (carouselFor === "linkedin" ? defaultLinkedInTemplateConfig : defaultTemplateConfig)) && (
+          <Card className="py-4 gap-4">
+            <CardHeader className="pb-0 px-5">
+              <CardTitle className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
+                Template (optional)
+              </CardTitle>
+              <CardDescription>
+                {useAiBackgrounds
+                  ? "Previews use a sample image. Pick the layout for your carousel."
+                  : carouselFor === "linkedin"
+                    ? "Pick a layout for LinkedIn. Default uses the recommended LinkedIn template."
+                    : "Pick the layout. Default uses your recommended template."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="px-5 pt-0">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setTemplateModalOpen(true)}
+              className="gap-2"
+            >
+              <LayoutTemplateIcon className="size-4" />
+              {selectedTemplateId
+                ? templateOptionsForPlatform.find((t) => t.id === selectedTemplateId)?.name ?? "Custom"
+                : "Default (recommended)"}
+            </Button>
+            <Dialog open={templateModalOpen} onOpenChange={setTemplateModalOpen}>
+              <DialogContent className="flex flex-col max-w-[calc(100%-2rem)] max-h-[85vh] sm:max-w-2xl md:max-w-[92vw] md:max-h-[92vh] md:w-[92vw] md:h-[92vh] lg:max-w-[94vw] lg:max-h-[94vh] lg:w-[94vw] lg:h-[94vh]">
+                <DialogHeader className="flex flex-row items-start justify-between gap-2">
+                  <div>
+                    <DialogTitle>Choose template</DialogTitle>
+                    <p className="text-muted-foreground text-sm mt-1">
+                      {carouselFor === "linkedin" ? "LinkedIn templates." : "Pick a layout for your carousel."} You can load more below.
+                    </p>
+                  </div>
+                  {isPro && (
+                    <ImportTemplateButton
+                      isPro={isPro}
+                      atLimit={false}
+                      isAdmin={isAdminUser}
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0 gap-1.5"
+                      onCreated={() => router.refresh()}
+                    />
+                  )}
+                </DialogHeader>
+                <div className="overflow-y-auto overflow-x-hidden flex-1 min-h-0 min-w-0 w-full pr-1">
+                  <TemplateSelectCards
+                    templates={templateOptionsForPlatform.slice(0, visibleTemplateCount)}
+                    defaultTemplateId={carouselFor === "linkedin" ? defaultLinkedInTemplateId : defaultTemplateId}
+                    defaultTemplateConfig={carouselFor === "linkedin" ? defaultLinkedInTemplateConfig : defaultTemplateConfig}
+                    value={selectedTemplateId}
+                    onChange={(id) => {
+                      setSelectedTemplateId(id);
+                      setTemplateModalOpen(false);
+                    }}
+                    primaryColor={primaryColor}
+                    previewImageUrls={useAiBackgrounds ? TEMPLATE_PREVIEW_IMAGE_URLS : undefined}
+                    isAdmin={isAdminUser}
+                    isPro={isPro}
+                    onTemplateDeleted={() => {
+                      setTemplateModalOpen(false);
+                      router.refresh();
+                    }}
+                    showMyTemplatesSection={true}
+                  />
+                </div>
+                {visibleTemplateCount < templateOptionsForPlatform.length && (
+                  <div className="pt-2 border-t flex justify-center">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setVisibleTemplateCount((n) => n + TEMPLATE_PAGE_SIZE)}
+                    >
+                      Load more
+                    </Button>
+                  </div>
+                )}
+              </DialogContent>
+            </Dialog>
+            </CardContent>
+          </Card>
+        )}
 
         <BackgroundImagesPickerModal
           open={backgroundPickerOpen}
