@@ -2,7 +2,7 @@ import { GOOGLE_FONT_IDS_SET } from "@/lib/constants/googleFonts";
 import { buildSlideRenderModel, getTextScaleForDimensions, getSwipeRightXForFormat, type BrandKit, type SlideData, type TextZoneOverrides, type ChromeOverrides } from "@/lib/renderer/renderModel";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { getContrastingTextColor, hexToRgba } from "@/lib/editor/colorUtils";
-import { parseInlineFormatting, BOLD_FONT_WEIGHT, stripHighlightMarkers, getFontSizeSegmentsForRange, getLineSubstringByPlainRange } from "@/lib/editor/inlineFormat";
+import { parseInlineFormatting, stripHighlightMarkers, getFontSizeSegmentsForRange, getLineSubstringByPlainRange } from "@/lib/editor/inlineFormat";
 import { getRoundedPolygonClipPath } from "@/lib/renderer/shapeClipPath";
 
 /** Hook slide second image: circle with thick border (matches SlidePreview). */
@@ -136,7 +136,6 @@ function getDecorationLayerHtml(
   accentColor: string,
   escapeHtmlFn: (s: string) => string
 ): string {
-  const base = escapeHtmlFn(baseColor);
   const accent = escapeHtmlFn(accentColor);
   switch (decoration) {
     case "big_circles": {
@@ -305,7 +304,7 @@ export function renderSlideHtml(
   const headlineZone = templateConfig.textZones.find((z) => z.id === "headline");
   const bodyZone = templateConfig.textZones.find((z) => z.id === "body");
   // Base merge: template + user zone/font overrides (matches editor preview)
-  let mergedZoneOverrides: TextZoneOverrides | undefined =
+  const mergedZoneOverrides: TextZoneOverrides | undefined =
     zoneOverrides || fontOverrides
       ? {
           headline: {
@@ -738,7 +737,7 @@ export function renderSlideHtml(
       .filter((f): f is string => !!f && GOOGLE_FONT_IDS_SET.has(f))
   );
   const fontFamilyParam = [...usedFontIds]
-    .map((id) => `family=${encodeURIComponent(id).replace(/%20/g, "+")}:wght@400;500;600;700;800`)
+    .map((id) => `family=${encodeURIComponent(id).replace(/%20/g, "+")}:wght@100;200;300;400;500;600;700;800;900`)
     .join("&");
   const fontLink = fontFamilyParam ? `<link href="https://fonts.googleapis.com/css2?${fontFamilyParam}&display=swap" rel="stylesheet">` : "";
 

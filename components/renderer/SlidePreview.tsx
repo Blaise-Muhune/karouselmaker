@@ -425,6 +425,8 @@ export type SlidePreviewProps = {
     onMadeWithXChange: (v: number) => void;
     onMadeWithYChange: (v: number) => void;
   };
+  /** Called when user clicks or drags a chrome element (counter, watermark, swipe, madeWith). Editor can switch to Layout tab and focus that section. */
+  onChromeFocus?: (chrome: "counter" | "watermark" | "swipe" | "madeWith" | null) => void;
   /** Scale from design (1080) to screen; used to convert pointer deltas when dragging. */
   editScale?: number;
   /** When true (edit slide page), only show move/resize container for text zones; no inline editing, toolbar, highlight, or rewrite in preview. */
@@ -589,6 +591,7 @@ export function SlidePreview({
   editChromeWatermark,
   editChromeSwipe,
   editChromeMadeWith,
+  onChromeFocus,
   editScale = 1,
   positionAndSizeOnly = false,
   onBackgroundImagePositionChange,
@@ -760,12 +763,14 @@ export function SlidePreview({
         !swipeChromeRef.current.contains(t) &&
         madeWithChromeRef.current &&
         !madeWithChromeRef.current.contains(t)
-      )
+      ) {
         setFocusedChrome(null);
+        onChromeFocus?.(null);
+      }
     };
     document.addEventListener("mousedown", handleMouseDown);
     return () => document.removeEventListener("mousedown", handleMouseDown);
-  }, [focusedChrome]);
+  }, [focusedChrome, onChromeFocus]);
   const [resizeState, setResizeState] = useState<{
     zone: "headline" | "body";
     corner: "nw" | "ne" | "sw" | "se";
@@ -2991,7 +2996,12 @@ export function SlidePreview({
           <div
             className={`flex items-center justify-center gap-1 py-3 ${editChromeSwipe ? "cursor-pointer ring-offset-2 ring-offset-transparent" : ""} ${focusedChrome === "swipe" ? "ring-2 ring-primary" : ""}`}
             style={{ fontSize: swipeFontSize, fontWeight: 600, letterSpacing: "0.1em", color: swipeColor, opacity: 0.9 }}
-            onClick={() => editChromeSwipe && setFocusedChrome((c) => (c === "swipe" ? null : "swipe"))}
+            onClick={() => {
+              if (!editChromeSwipe) return;
+              const next = focusedChrome === "swipe" ? null : "swipe";
+              setFocusedChrome(next);
+              onChromeFocus?.(next);
+            }}
             role={editChromeSwipe ? "button" : undefined}
             aria-label={editChromeSwipe ? "Edit swipe position (drag bar to move)" : undefined}
           >
@@ -3014,11 +3024,18 @@ export function SlidePreview({
             <div
               className={`flex items-center justify-center gap-1 py-3 ${editChromeSwipe ? "cursor-move ring-offset-2 ring-offset-transparent" : ""} ${focusedChrome === "swipe" ? "ring-2 ring-primary" : ""}`}
               style={{ fontSize: swipeFontSize, fontWeight: 600, letterSpacing: "0.1em", color: swipeColor, opacity: 0.9 }}
-              onClick={() => editChromeSwipe && setFocusedChrome((c) => (c === "swipe" ? null : "swipe"))}
+              onClick={() => {
+                if (!editChromeSwipe) return;
+                const next = focusedChrome === "swipe" ? null : "swipe";
+                setFocusedChrome(next);
+                onChromeFocus?.(next);
+              }}
               onPointerDown={
                 editChromeSwipe
                   ? (e) => {
                       e.preventDefault();
+                      setFocusedChrome("swipe");
+                      onChromeFocus?.("swipe");
                       (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
                       let baseX: number, baseY: number;
                       if (useCustomPos && model.chrome.swipeX != null && model.chrome.swipeY != null) {
@@ -3077,11 +3094,18 @@ export function SlidePreview({
               opacity: 0.85,
               backgroundColor: "rgba(255,255,255,0.08)",
             }}
-            onClick={() => editChromeCounter && setFocusedChrome((c) => (c === "counter" ? null : "counter"))}
+            onClick={() => {
+              if (!editChromeCounter) return;
+              const next = focusedChrome === "counter" ? null : "counter";
+              setFocusedChrome(next);
+              onChromeFocus?.(next);
+            }}
             onPointerDown={
               editChromeCounter
                 ? (e) => {
                     e.preventDefault();
+                    setFocusedChrome("counter");
+                    onChromeFocus?.("counter");
                     (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
                     chromeDragStartRef.current = { type: "counter", baseTop: editChromeCounter.top, baseRight: editChromeCounter.right };
                     setChromeDragType("counter");
@@ -3152,11 +3176,18 @@ export function SlidePreview({
                   fontSize: (model.chrome.watermark.fontSize ?? 20) * chromeScale,
                   fontWeight: 500,
                 }}
-                onClick={() => editChromeWatermark && setFocusedChrome((c) => (c === "watermark" ? null : "watermark"))}
+                onClick={() => {
+                  if (!editChromeWatermark) return;
+                  const next = focusedChrome === "watermark" ? null : "watermark";
+                  setFocusedChrome(next);
+                  onChromeFocus?.(next);
+                }}
                 onPointerDown={
                   editChromeWatermark
                     ? (e) => {
                         e.preventDefault();
+                        setFocusedChrome("watermark");
+                        onChromeFocus?.("watermark");
                         (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
                         let baseX: number, baseY: number;
                         if (model.chrome.watermark.position === "custom" || (model.chrome.watermark.logoX != null && model.chrome.watermark.logoY != null)) {
@@ -3262,11 +3293,18 @@ export function SlidePreview({
               textShadow: "0 1px 2px rgba(0,0,0,0.3)",
               whiteSpace: "nowrap",
             }}
-            onClick={() => editChromeMadeWith && setFocusedChrome((c) => (c === "madeWith" ? null : "madeWith"))}
+            onClick={() => {
+              if (!editChromeMadeWith) return;
+              const next = focusedChrome === "madeWith" ? null : "madeWith";
+              setFocusedChrome(next);
+              onChromeFocus?.(next);
+            }}
             onPointerDown={
               editChromeMadeWith
                 ? (e) => {
                     e.preventDefault();
+                    setFocusedChrome("madeWith");
+                    onChromeFocus?.("madeWith");
                     (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
                     const baseX = model.chrome.madeWithX ?? editChromeMadeWith.madeWithX ?? 540;
                     const baseY = model.chrome.madeWithY ?? editChromeMadeWith.madeWithY ?? canvasH - (model.chrome.madeWithBottom ?? 16) * chromeScale;

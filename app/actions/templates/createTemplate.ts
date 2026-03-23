@@ -2,7 +2,7 @@
 
 import { getUser } from "@/lib/server/auth/getUser";
 import { isAdmin } from "@/lib/server/auth/isAdmin";
-import { getSubscription, getPlanLimits } from "@/lib/server/subscription";
+import { getEffectivePlanLimits, hasFullProFeatureAccess } from "@/lib/server/subscription";
 import { getTemplate, createTemplate, createSystemTemplate, countUserTemplates } from "@/lib/server/db";
 import type { Json } from "@/lib/server/db/types";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
@@ -20,10 +20,10 @@ export async function createTemplateAction(
       return { ok: false, error: "Only admins can add a system template available to all users." };
     }
   } else {
-    const { isPro } = await getSubscription(user.id, user.email);
-    const limits = await getPlanLimits(user.id, user.email);
+    const fullAccess = await hasFullProFeatureAccess(user.id, user.email);
+    const limits = await getEffectivePlanLimits(user.id, user.email);
 
-    if (!isPro) {
+    if (!fullAccess) {
       return { ok: false, error: "Upgrade to Pro to create custom templates." };
     }
 

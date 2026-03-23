@@ -231,7 +231,7 @@ export default async function CarouselEditorPage({
                 projectId={projectId}
                 pathname={editorPath}
                 hasShuffleableSlides={hasShuffleableSlides}
-                disabled={isGenerating || !subscription.isPro}
+                disabled={isGenerating || !hasFullAccess}
               />
               <CarouselMenuDropdown
                 carouselId={carouselId}
@@ -246,7 +246,7 @@ export default async function CarouselEditorPage({
         {/* Export */}
         <EditorExportSection
           carouselId={carouselId}
-          isPro={subscription.isPro}
+          isPro={hasFullAccess}
           disabled={isGenerating}
           exportsUsedThisMonth={exportCount}
           exportFormat={getExportFormat(carousel)}
@@ -326,7 +326,7 @@ export default async function CarouselEditorPage({
             slideBackgroundImageUrls={slideBackgroundImageUrls}
             exportSize={getExportSize(carousel)}
             exportFormat={getExportFormat(carousel)}
-            isPro={subscription.isPro}
+            isPro={hasFullAccess}
             disabled={isGenerating}
             downloadFilenameSlug={slugifyForFilename([project.name, carousel.title].filter(Boolean).join(" - ")) || undefined}
           />

@@ -1,5 +1,5 @@
 import { getUser } from "@/lib/server/auth/getUser";
-import { getSubscription } from "@/lib/server/subscription";
+import { hasFullProFeatureAccess } from "@/lib/server/subscription";
 import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { getTemplate } from "@/lib/server/db";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
@@ -19,9 +19,9 @@ export default async function EditTemplatePage({
   const { id } = await params;
   const { user } = await getUser();
   const userIsAdmin = isAdmin(user.email ?? null);
-  const [template, subscription] = await Promise.all([
+  const [template, fullAccess] = await Promise.all([
     getTemplate(user.id, id),
-    getSubscription(user.id, user.email),
+    hasFullProFeatureAccess(user.id, user.email),
   ]);
 
   if (!template) notFound();
@@ -30,7 +30,7 @@ export default async function EditTemplatePage({
   if (!canEdit) notFound();
 
   const canEditWithoutPro = isSystemTemplate && userIsAdmin;
-  if (!subscription.isPro && !canEditWithoutPro) {
+  if (!fullAccess && !canEditWithoutPro) {
     return (
       <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">
         <div className="mx-auto max-w-xl space-y-6">

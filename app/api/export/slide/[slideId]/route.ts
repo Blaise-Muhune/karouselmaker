@@ -4,7 +4,7 @@ import { waitForImagesInPage } from "@/lib/server/browser/waitForImages";
 import { createClient } from "@/lib/supabase/server";
 import { getSlide, getTemplate, getCarousel, getProject, listSlides, getAsset } from "@/lib/server/db";
 import { getDefaultTemplateId } from "@/lib/server/db/templates";
-import { getSubscription } from "@/lib/server/subscription";
+import { hasFullProFeatureAccess } from "@/lib/server/subscription";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { renderSlideHtml } from "@/lib/server/renderer/renderSlideHtml";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
@@ -104,7 +104,7 @@ export async function GET(
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
 
-  const { isPro } = await getSubscription(userId, user.email);
+  const fullAccess = await hasFullProFeatureAccess(userId, user.email);
   const brandKit: BrandKit = await resolveBrandKitLogo(project.brand_kit as Record<string, unknown> | null);
   const carouselSlides = await listSlides(userId, slide.carousel_id);
   const totalSlides = carouselSlides.length || 1;
@@ -294,7 +294,7 @@ export async function GET(
   const merged = mergeWithTemplateDefaults(normalized, templateDefaults);
   const showCounterOverride = merged.showCounterOverride;
   const showWatermarkOverride = merged.showWatermarkOverride ?? defaultShowWatermark;
-  const showMadeWithOverride = merged.showMadeWithOverride ?? !isPro;
+  const showMadeWithOverride = merged.showMadeWithOverride ?? !fullAccess;
   const fontOverrides = merged.fontOverrides;
   const zoneOverrides = merged.zoneOverrides;
   const chromeOverrides = merged.chromeOverrides;

@@ -1,7 +1,7 @@
 "use server";
 
 import { getUser } from "@/lib/server/auth/getUser";
-import { getSubscription } from "@/lib/server/subscription";
+import { hasFullProFeatureAccess } from "@/lib/server/subscription";
 import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { getTemplate, updateTemplate as updateTemplateDb, updateTemplateAsAdmin } from "@/lib/server/db";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
@@ -43,8 +43,8 @@ export async function updateTemplateAction(
     return { ok: true };
   }
 
-  const { isPro } = await getSubscription(user.id, user.email);
-  if (!isPro) return { ok: false, error: "Upgrade to Pro to edit custom templates." };
+  const fullAccess = await hasFullProFeatureAccess(user.id, user.email);
+  if (!fullAccess) return { ok: false, error: "Upgrade to Pro to edit custom templates." };
 
   const result = await updateTemplateDb(user.id, templateId, updatePayload);
   if (!result.ok) return { ok: false, error: result.error ?? "Failed to update template" };

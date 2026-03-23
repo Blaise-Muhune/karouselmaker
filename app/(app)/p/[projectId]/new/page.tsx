@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getUser } from "@/lib/server/auth/getUser";
 import { isAdmin } from "@/lib/server/auth/isAdmin";
-import { getSubscription, getPlanLimits } from "@/lib/server/subscription";
+import { getSubscription, getEffectivePlanLimits } from "@/lib/server/subscription";
 import { getProject, getCarousel, countCarouselsThisMonth, countCarouselsLifetime, countAiGenerateCarouselsThisMonth, listTemplatesForUser, getDefaultTemplateForNewCarousel, getDefaultLinkedInTemplate } from "@/lib/server/db";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { PLAN_LIMITS, FREE_FULL_ACCESS_GENERATIONS, AI_GENERATE_LIMIT_PRO } from "@/lib/constants";
@@ -28,7 +28,7 @@ export default async function NewCarouselPage({
   const [project, subscription, limits, carouselCount, lifetimeCarouselCount, aiGenerateUsed, regenerateCarousel, templatesRaw, defaultTemplate, defaultLinkedInTemplate] = await Promise.all([
     getProject(user.id, projectId),
     getSubscription(user.id, user.email),
-    getPlanLimits(user.id, user.email),
+    getEffectivePlanLimits(user.id, user.email),
     countCarouselsThisMonth(user.id),
     countCarouselsLifetime(user.id),
     countAiGenerateCarouselsThisMonth(user.id),

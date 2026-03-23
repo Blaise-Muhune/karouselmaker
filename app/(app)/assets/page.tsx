@@ -1,5 +1,5 @@
 import { getUser } from "@/lib/server/auth/getUser";
-import { getSubscription, getPlanLimits } from "@/lib/server/subscription";
+import { getEffectivePlanLimits, hasFullProFeatureAccess } from "@/lib/server/subscription";
 import { listAssets, listProjects, countAssets } from "@/lib/server/db";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
 import { AssetLibrary } from "@/components/assets/AssetLibrary";
@@ -19,12 +19,12 @@ export default async function AssetsPage({
   const slideId = params.slide_id?.trim() ?? undefined;
   const returnTo = params.return_to?.trim() ?? undefined;
 
-  const [assets, projects, subscription, limits, assetCount] = await Promise.all([
+  const [assets, projects, limits, assetCount, fullAccess] = await Promise.all([
     listAssets(user.id, { projectId: projectIdFilter ?? undefined, limit: 200 }),
     listProjects(user.id),
-    getSubscription(user.id, user.email),
-    getPlanLimits(user.id, user.email),
+    getEffectivePlanLimits(user.id, user.email),
     countAssets(user.id),
+    hasFullProFeatureAccess(user.id, user.email),
   ]);
 
   const assetLimit = limits.assets;
@@ -59,7 +59,7 @@ export default async function AssetsPage({
           returnTo={returnTo}
           assetCount={assetCount}
           assetLimit={assetLimit}
-          isPro={subscription.isPro}
+          isPro={fullAccess}
         />
       </div>
     </div>

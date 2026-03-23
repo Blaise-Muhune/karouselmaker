@@ -13,7 +13,7 @@ import {
   listSlides,
 } from "@/lib/server/db";
 import { getDefaultTemplateId } from "@/lib/server/db/templates";
-import { getSubscription } from "@/lib/server/subscription";
+import { hasFullProFeatureAccess } from "@/lib/server/subscription";
 import { getVideoRenderStoragePaths } from "@/lib/server/db/exports";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { renderSlideHtml } from "@/lib/server/renderer/renderSlideHtml";
@@ -71,7 +71,7 @@ export async function POST(
     return NextResponse.json({ error: "Carousel not found" }, { status: 404 });
   }
 
-  const { isPro } = await getSubscription(userId, user.email);
+  const fullAccess = await hasFullProFeatureAccess(userId, user.email);
   const project = await getProject(userId, carousel.project_id);
   if (!project) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
@@ -279,7 +279,7 @@ export async function POST(
       const defaultShowWatermark = false;
       const showCounterOverride = merged.showCounterOverride;
       const showWatermarkOverride = merged.showWatermarkOverride ?? defaultShowWatermark;
-      const showMadeWithOverride = merged.showMadeWithOverride ?? !isPro;
+      const showMadeWithOverride = merged.showMadeWithOverride ?? !fullAccess;
       const fontOverrides = merged.fontOverrides;
       const zoneOverrides = merged.zoneOverrides;
       const chromeOverrides = merged.chromeOverrides;

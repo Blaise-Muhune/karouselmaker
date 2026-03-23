@@ -1,7 +1,7 @@
 "use server";
 
 import { getUser } from "@/lib/server/auth/getUser";
-import { getSubscription } from "@/lib/server/subscription";
+import { hasFullProFeatureAccess } from "@/lib/server/subscription";
 import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { getTemplate, deleteTemplate as deleteTemplateDb, deleteTemplateAsAdmin } from "@/lib/server/db";
 
@@ -22,8 +22,8 @@ export async function deleteTemplateAction(
     return { ok: true };
   }
 
-  const { isPro } = await getSubscription(user.id, user.email);
-  if (!isPro) return { ok: false, error: "Upgrade to Pro to manage custom templates." };
+  const fullAccess = await hasFullProFeatureAccess(user.id, user.email);
+  if (!fullAccess) return { ok: false, error: "Upgrade to Pro to manage custom templates." };
 
   const result = await deleteTemplateDb(user.id, templateId);
   if (!result.ok) return { ok: false, error: result.error ?? "Failed to delete template" };

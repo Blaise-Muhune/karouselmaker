@@ -14,7 +14,7 @@ import {
 } from "@/lib/server/db";
 import { getExportStoragePaths } from "@/lib/server/db/exports";
 import { getDefaultTemplateId } from "@/lib/server/db/templates";
-import { getSubscription, getPlanLimits } from "@/lib/server/subscription";
+import { getSubscription, getEffectivePlanLimits, hasFullProFeatureAccess } from "@/lib/server/subscription";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { renderSlideHtml } from "@/lib/server/renderer/renderSlideHtml";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
@@ -72,12 +72,13 @@ export async function POST(
   }
 
   const { isPro } = await getSubscription(userId, user.email);
-  const limits = await getPlanLimits(userId, user.email);
+  const fullAccess = await hasFullProFeatureAccess(userId, user.email);
+  const limits = await getEffectivePlanLimits(userId, user.email);
   const exportCount = await countExportsThisMonth(userId);
   if (exportCount >= limits.exportsPerMonth) {
     return NextResponse.json(
       {
-        error: `Export limit: ${exportCount}/${limits.exportsPerMonth} this month.${isPro ? "" : " Upgrade to Pro for more."}`,
+        error: `Export limit: ${exportCount}/${limits.exportsPerMonth} this month.${isPro || fullAccess ? "" : " Upgrade to Pro for more."}`,
       },
       { status: 403 }
     );
@@ -415,7 +416,7 @@ export async function POST(
         const merged = mergeWithTemplateDefaults(normalized, templateDefaults);
         const showCounterOverride = merged.showCounterOverride;
         const showWatermarkOverride = merged.showWatermarkOverride ?? defaultShowWatermark;
-        const showMadeWithOverride = merged.showMadeWithOverride ?? !isPro;
+        const showMadeWithOverride = merged.showMadeWithOverride ?? !fullAccess;
         const fontOverrides = merged.fontOverrides;
         const zoneOverrides = merged.zoneOverrides;
         const chromeOverrides = merged.chromeOverrides;

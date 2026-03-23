@@ -40,14 +40,41 @@ export async function getPlanLimits(
   return PLAN_LIMITS[plan];
 }
 
+/**
+ * True for paying Pro, testers, or free users who have created fewer than
+ * {@link FREE_FULL_ACCESS_GENERATIONS} carousels (full Pro feature access, not admin).
+ */
+export async function hasFullProFeatureAccess(
+  userId: string,
+  email?: string | null
+): Promise<boolean> {
+  if (email === TESTER_EMAIL) return true;
+  const { isPro } = await getSubscription(userId, email);
+  if (isPro) return true;
+  const lifetimeCount = await countCarouselsLifetime(userId);
+  return lifetimeCount < FREE_FULL_ACCESS_GENERATIONS;
+}
+
+/**
+ * During the free full-access trial (first N carousels), use Pro quotas so behavior matches Pro.
+ * Otherwise use the user's actual plan limits.
+ */
+export async function getEffectivePlanLimits(
+  userId: string,
+  email?: string | null
+): Promise<PlanLimits> {
+  if (email === TESTER_EMAIL) return PLAN_LIMITS.tester;
+  const fullAccess = await hasFullProFeatureAccess(userId, email);
+  if (fullAccess) return PLAN_LIMITS.pro;
+  return PLAN_LIMITS.free;
+}
+
 /** Allow Pro or free users still within their 3 full-access generations. */
 export async function requirePro(
   userId: string,
   email?: string | null
 ): Promise<{ allowed: boolean; error?: string }> {
-  const { isPro } = await getSubscription(userId, email);
-  if (isPro) return { allowed: true };
-  const lifetimeCount = await countCarouselsLifetime(userId);
-  if (lifetimeCount < FREE_FULL_ACCESS_GENERATIONS) return { allowed: true };
+  const ok = await hasFullProFeatureAccess(userId, email);
+  if (ok) return { allowed: true };
   return { allowed: false, error: "Upgrade to Pro to edit carousels and export." };
 }

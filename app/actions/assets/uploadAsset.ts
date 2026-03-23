@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getUser } from "@/lib/server/auth/getUser";
-import { getSubscription, getPlanLimits } from "@/lib/server/subscription";
+import { getSubscription, getEffectivePlanLimits, hasFullProFeatureAccess } from "@/lib/server/subscription";
 import { createAsset, countAssets } from "@/lib/server/db";
 import { uploadUserAsset } from "@/lib/server/storage/upload";
 import { processImageBuffer } from "@/lib/server/images/processImage";
@@ -30,12 +30,13 @@ export async function uploadAsset(
   if (!user) return { ok: false, error: "Unauthorized" };
 
   const { isPro } = await getSubscription(user.id, user.email);
-  const limits = await getPlanLimits(user.id, user.email);
+  const fullAccess = await hasFullProFeatureAccess(user.id, user.email);
+  const limits = await getEffectivePlanLimits(user.id, user.email);
   const currentCount = await countAssets(user.id);
   if (currentCount >= limits.assets) {
     return {
       ok: false,
-      error: `Asset limit reached (${limits.assets}${isPro ? "" : " on free plan. Upgrade to Pro for more"}).`,
+      error: `Asset limit reached (${limits.assets}${isPro || fullAccess ? "" : " on free plan. Upgrade to Pro for more"}).`,
     };
   }
 

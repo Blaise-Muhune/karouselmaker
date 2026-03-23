@@ -779,6 +779,12 @@ export function SlideEditForm({
   const [headlineFontModalOpen, setHeadlineFontModalOpen] = useState(false);
   const [bodyFontModalOpen, setBodyFontModalOpen] = useState(false);
   const [chromeLayoutOpen, setChromeLayoutOpen] = useState(false);
+  /** When set, scroll the Layout tab to this chrome section (from preview click/drag). */
+  const [scrollToChromeSection, setScrollToChromeSection] = useState<"counter" | "watermark" | "swipe" | "madeWith" | null>(null);
+  const layoutCounterRef = useRef<HTMLDivElement>(null);
+  const layoutLogoRef = useRef<HTMLDivElement>(null);
+  const layoutSwipeRef = useRef<HTMLDivElement>(null);
+  const layoutWatermarkRef = useRef<HTMLDivElement>(null);
   const [headlineHighlightOpen, setHeadlineHighlightOpen] = useState(false);
   const [bodyHighlightOpen, setBodyHighlightOpen] = useState(false);
   const headlineRef = useRef<HTMLTextAreaElement>(null);
@@ -890,8 +896,8 @@ export function SlideEditForm({
   /** Which text section is expanded in the Text tab (click to expand and show green container in preview). */
   const [expandedTextSection, setExpandedTextSection] = useState<"headline" | "body" | null>(null);
   /** "Edit more" (style, highlight, layout) open per section. */
-  const [headlineEditMoreOpen, setHeadlineEditMoreOpen] = useState(false);
-  const [bodyEditMoreOpen, setBodyEditMoreOpen] = useState(false);
+  const [headlineEditMoreOpen, setHeadlineEditMoreOpen] = useState(true);
+  const [bodyEditMoreOpen, setBodyEditMoreOpen] = useState(true);
   const headerRef = useRef<HTMLElement>(null);
   const mainScrollRef = useRef<HTMLDivElement>(null);
   const editorSectionRef = useRef<HTMLElement>(null);
@@ -1008,6 +1014,26 @@ export function SlideEditForm({
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
   }, [highlightModalOpen]);
+
+  useEffect(() => {
+    if (editorTab !== "layout" || !scrollToChromeSection) return;
+    const ref =
+      scrollToChromeSection === "counter"
+        ? layoutCounterRef.current
+        : scrollToChromeSection === "watermark"
+          ? layoutLogoRef.current
+          : scrollToChromeSection === "swipe"
+            ? layoutSwipeRef.current
+            : layoutWatermarkRef.current;
+    if (ref) {
+      const t = setTimeout(() => {
+        ref.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        setScrollToChromeSection(null);
+      }, 100);
+      return () => clearTimeout(t);
+    }
+    setScrollToChromeSection(null);
+  }, [editorTab, scrollToChromeSection]);
 
   useEffect(() => {
     const main = mainScrollRef.current;
@@ -3300,6 +3326,13 @@ export function SlideEditForm({
                 editChromeWatermark={editChromeWatermarkProp}
                 editChromeSwipe={editChromeSwipeProp}
                 editChromeMadeWith={editChromeMadeWithProp}
+                onChromeFocus={(chrome) => {
+                  setEditorTab("layout");
+                  if (chrome) {
+                    setChromeLayoutOpen(true);
+                    setScrollToChromeSection(chrome);
+                  }
+                }}
                 editScale={
                   previewWrapWidth != null && previewWrapWidth > 0
                     ? previewWrapWidth / 1080
@@ -4165,6 +4198,13 @@ export function SlideEditForm({
                         editChromeWatermark={editChromeWatermarkProp}
                         editChromeSwipe={editChromeSwipeProp}
                         editChromeMadeWith={editChromeMadeWithProp}
+                        onChromeFocus={(chrome) => {
+                          setEditorTab("layout");
+                          if (chrome) {
+                            setChromeLayoutOpen(true);
+                            setScrollToChromeSection(chrome);
+                          }
+                        }}
                         editScale={dims.scale}
                       />
                     </div>
@@ -4270,9 +4310,9 @@ export function SlideEditForm({
                     {chromeLayoutOpen ? <ChevronUpIcon className="size-3" /> : <ChevronDownIcon className="size-3" />} Layout (position & size)
                   </Button>
                   {chromeLayoutOpen && (
-                    <div className="rounded-lg border border-border/40 bg-muted/5 p-3 space-y-4 mt-2">
-                        <div className={showCounter ? "" : "opacity-50 pointer-events-none"}>
-                        <p className="text-[11px] font-medium text-foreground mb-2">Slide number</p>
+                    <div className="space-y-4 mt-2">
+                        <div ref={layoutCounterRef} className={`rounded-lg border border-border/50 bg-muted/5 p-3 ${showCounter ? "" : "opacity-50 pointer-events-none"}`}>
+                        <h4 className="text-xs font-semibold text-foreground mb-2 pb-1.5 border-b border-border/50">Slide number</h4>
                         <div className="grid grid-cols-3 gap-3">
                           {(["top", "right", "fontSize"] as const).map((key) => {
                             const label = key === "top" ? "Top (px)" : key === "right" ? "Right (px)" : "Font size";
@@ -4309,10 +4349,10 @@ export function SlideEditForm({
                             Apply to all
                           </Button>
                         )}
-                      </div>
+                        </div>
                       {(brandKit.watermark_text || brandKit.logo_url) && (
-                        <div className={showWatermark ? "" : "opacity-50 pointer-events-none"}>
-                          <p className="text-[11px] font-medium text-foreground mb-2">Logo</p>
+                        <div ref={layoutLogoRef} className={`rounded-lg border border-border/50 bg-muted/5 p-3 ${showWatermark ? "" : "opacity-50 pointer-events-none"}`}>
+                          <h4 className="text-xs font-semibold text-foreground mb-2 pb-1.5 border-b border-border/50">Logo</h4>
                           <div className="mb-2">
                             <Label className="text-xs">Color</Label>
                             <ColorPicker
@@ -4347,8 +4387,8 @@ export function SlideEditForm({
                         </div>
                       )}
                       {showSwipe && (
-                        <div className="space-y-2">
-                          <p className="text-[11px] font-medium text-foreground mb-2">Swipe</p>
+                        <div ref={layoutSwipeRef} className="rounded-lg border border-border/50 bg-muted/5 p-3 space-y-2">
+                          <h4 className="text-xs font-semibold text-foreground mb-2 pb-1.5 border-b border-border/50">Swipe</h4>
                           <div className="grid grid-cols-2 gap-3">
                             <div>
                               <Label className="text-xs">Position</Label>
@@ -4488,8 +4528,8 @@ export function SlideEditForm({
                           )}
                         </div>
                       )}
-                      <div className={showMadeWith ? "" : "opacity-50 pointer-events-none"}>
-                        <p className="text-[11px] font-medium text-foreground mb-2">Watermark</p>
+                      <div ref={layoutWatermarkRef} className={`rounded-lg border border-border/50 bg-muted/5 p-3 ${showMadeWith ? "" : "opacity-50 pointer-events-none"}`}>
+                        <h4 className="text-xs font-semibold text-foreground mb-2 pb-1.5 border-b border-border/50">Watermark</h4>
                         <div className="space-y-3">
                           {isPro ? (
                             <div>

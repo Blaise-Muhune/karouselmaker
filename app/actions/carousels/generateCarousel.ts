@@ -3,7 +3,7 @@
 import OpenAI from "openai";
 import { getUser } from "@/lib/server/auth/getUser";
 import { isAdmin } from "@/lib/server/auth/isAdmin";
-import { getSubscription, getPlanLimits } from "@/lib/server/subscription";
+import { getSubscription, getEffectivePlanLimits, hasFullProFeatureAccess } from "@/lib/server/subscription";
 import { getProject } from "@/lib/server/db/projects";
 import { getDefaultTemplateForNewCarousel, getDefaultTemplateForNewCarouselImage, getDefaultLinkedInTemplate, getTemplate } from "@/lib/server/db/templates";
 import { createCarousel, getCarousel, updateCarousel, countCarouselsThisMonth, countCarouselsLifetime, countAiGenerateCarouselsThisMonth } from "@/lib/server/db/carousels";
@@ -263,7 +263,7 @@ export async function generateCarousel(formData: FormData): Promise<
   LOG("limits", "checked");
 
   const { isPro } = await getSubscription(user.id, user.email);
-  const limits = await getPlanLimits(user.id, user.email);
+  const limits = await getEffectivePlanLimits(user.id, user.email);
   const [count, lifetimeCount] = await Promise.all([
     countCarouselsThisMonth(user.id),
     countCarouselsLifetime(user.id),
@@ -328,16 +328,17 @@ export async function generateCarousel(formData: FormData): Promise<
   const useStockPhotos = !!parsed.data.use_stock_photos;
   const requestedAiGenerate = carouselFor !== "linkedin" && !!parsed.data.use_ai_generate;
   const userIsAdmin = isAdmin(user.email ?? null);
-  if (requestedAiGenerate && !userIsAdmin && !isPro) {
+  const fullProFeatures = await hasFullProFeatureAccess(user.id, user.email);
+  if (requestedAiGenerate && !userIsAdmin && !fullProFeatures) {
     return { error: "AI-generated images are only available for Pro. Upgrade to use this feature." };
   }
-  if (requestedAiGenerate && !userIsAdmin && isPro) {
+  if (requestedAiGenerate && !userIsAdmin && fullProFeatures) {
     const aiGenerateCount = await countAiGenerateCarouselsThisMonth(user.id);
     if (aiGenerateCount >= AI_GENERATE_LIMIT_PRO) {
       return { error: `You've used your ${AI_GENERATE_LIMIT_PRO} AI-generated image carousels this month. Limit resets next month.` };
     }
   }
-  const useAiGenerate = requestedAiGenerate && (isPro || userIsAdmin);
+  const useAiGenerate = requestedAiGenerate && (fullProFeatures || userIsAdmin);
   const userAskedWebSearch = !!data.use_web_search;
   const autoNewsWebSearch = hasFullAccess && looksLikeNewsOrTimeSensitive(data.input_value, data.input_type);
   const useWebSearch = hasFullAccess && (userAskedWebSearch || autoNewsWebSearch);
@@ -1016,11 +1017,8 @@ export async function startCarouselGeneration(formData: FormData): Promise<
   if (!project) return { error: "Project not found" };
 
   const { isPro } = await getSubscription(user.id, user.email);
-  const limits = await getPlanLimits(user.id, user.email);
-  const [count, lifetimeCount] = await Promise.all([
-    countCarouselsThisMonth(user.id),
-    countCarouselsLifetime(user.id),
-  ]);
+  const limits = await getEffectivePlanLimits(user.id, user.email);
+  const count = await countCarouselsThisMonth(user.id);
   if (count >= limits.carouselsPerMonth) {
     return {
       error: `Generation limit: ${count}/${limits.carouselsPerMonth} carousels this month.${isPro ? "" : " Upgrade to Pro for more."}`,
@@ -1028,10 +1026,11 @@ export async function startCarouselGeneration(formData: FormData): Promise<
   }
   const requestedAiGenerate = parsed.data.carousel_for !== "linkedin" && !!data.use_ai_generate;
   const userIsAdmin = isAdmin(user.email ?? null);
-  if (requestedAiGenerate && !userIsAdmin && !isPro) {
+  const fullProFeatures = await hasFullProFeatureAccess(user.id, user.email);
+  if (requestedAiGenerate && !userIsAdmin && !fullProFeatures) {
     return { error: "AI-generated images are only available for Pro. Upgrade to use this feature." };
   }
-  if (requestedAiGenerate && !userIsAdmin) {
+  if (requestedAiGenerate && !userIsAdmin && fullProFeatures) {
     const aiGenerateCount = await countAiGenerateCarouselsThisMonth(user.id);
     if (aiGenerateCount >= AI_GENERATE_LIMIT_PRO) {
       return { error: `You've used your ${AI_GENERATE_LIMIT_PRO} AI-generated image carousels this month. Limit resets next month.` };

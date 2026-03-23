@@ -12,8 +12,12 @@ import {
   ChevronsRight,
   Gem,
   Check,
+  Sparkles,
+  Palette,
+  Share2,
 } from "lucide-react";
 import { HeroCarouselPreview } from "@/components/landing/HeroCarouselPreview";
+import { LandingDemoCarousel } from "@/components/landing/LandingDemoCarousel";
 import { PRO_PRICE_DISPLAY, PLAN_LIMITS } from "@/lib/constants";
 
 export default async function Home() {
@@ -54,8 +58,9 @@ export default async function Home() {
             Grow faster with{" "}
             <span className="text-primary">carousels</span>
           </h1>
-          <p className="text-muted-foreground text-base sm:text-lg max-w-xl mx-auto">
-            Topic in, carousel out. No design skills needed—just your ideas.
+          <p className="text-muted-foreground text-base sm:text-lg max-w-2xl mx-auto leading-relaxed">
+            Turn a topic or link into a full slide deck. Edit text, backgrounds, and layout on a live preview—then export
+            high-res images and a ZIP with a caption. No design skills needed.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 pt-2">
             <Button size="lg" className="gap-2 w-full sm:w-auto transition-transform hover:scale-[1.02] active:scale-[0.98]" asChild>
@@ -87,10 +92,15 @@ export default async function Home() {
 
           <div className="flex flex-wrap justify-center gap-4 sm:gap-6">
             {[
-              { num: 1, title: "Create project", desc: "Brand, niche, tone.", example: "Fitness tips" },
-              { num: 2, title: "Enter topic", desc: "Paste topic or URL.", example: "5 habits of founders" },
-              { num: 3, title: "Carousel drafted", desc: "Hook, points, CTA.", example: null },
-              { num: 4, title: "Edit & export", desc: "Tweak, export PNGs.", example: "1080×1080" },
+              { num: 1, title: "Create project", desc: "Organize carousels by brand, niche, and tone.", example: "Fitness tips" },
+              { num: 2, title: "Enter topic or link", desc: "One prompt or URL—AI drafts hooks, points, and CTAs.", example: "5 habits of founders" },
+              { num: 3, title: "Slides generated", desc: "Structured slides match your template—ready to refine.", example: null },
+              {
+                num: 4,
+                title: "Edit & ship",
+                desc: "Adjust text, highlights, backgrounds, slide chrome, and sizes—then export PNG/JPEG.",
+                example: "Square · 4:5 · Stories",
+              },
             ].map((step, i) => (
               <div key={step.num} className="relative w-full min-w-0 max-w-[260px] sm:max-w-[280px]">
                 <div className="rounded-xl border border-border/50 bg-muted/5 p-4 sm:p-5 h-full flex flex-col transition-colors hover:border-border/80">
@@ -116,64 +126,79 @@ export default async function Home() {
             ))}
           </div>
 
-          {/* Slide preview */}
+          {/* Slide preview — real in-app template (SlidePreview), not a mock */}
           <div className="mt-10 sm:mt-12 rounded-xl sm:rounded-2xl border border-border/50 bg-muted/10 p-4 sm:p-6 mx-auto max-w-2xl">
-            <div className="flex gap-3 sm:gap-4 overflow-x-auto pb-2 -mx-1 px-1 snap-x snap-mandatory scrollbar-thin">
-              {[
-                { title: "5 habits of founders", type: "hook" },
-                { title: "Wake up at 5am", type: "point" },
-                { title: "Read 30 min daily", type: "point" },
-                { title: "Follow @you", type: "cta" },
-              ].map((slide) => (
-                <div
-                  key={slide.title}
-                  className="shrink-0 w-[140px] sm:w-[160px] md:w-[180px] aspect-square rounded-lg sm:rounded-xl border border-border/50 bg-muted/5 overflow-hidden snap-start"
-                >
-                  <div className="h-full flex flex-col p-3 sm:p-4 justify-between bg-linear-to-b from-muted/40 to-muted">
-                    <span className="text-[9px] sm:text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                      {slide.type}
-                    </span>
-                    <p className="text-xs sm:text-sm font-semibold text-foreground line-clamp-3">
-                      {slide.title}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <p className="text-center text-muted-foreground text-xs mb-3">
+              Same renderer as the editor — headline + body zones, slide numbers, swipe hint
+            </p>
+            <LandingDemoCarousel variant="strip" />
           </div>
         </div>
 
         {/* Features */}
-        <div className="scroll-reveal [content-visibility:auto] mx-auto mt-14 sm:mt-16 md:mt-20 max-w-4xl w-full px-4">
+        <div className="scroll-reveal [content-visibility:auto] mx-auto mt-14 sm:mt-16 md:mt-20 max-w-5xl w-full px-4">
           <p className="text-muted-foreground text-center mb-3 text-xs font-medium uppercase tracking-wider">
             Features
           </p>
-          <ul className="grid gap-4 sm:gap-6 grid-cols-1 sm:grid-cols-3 justify-items-center">
-            <li className="rounded-xl border border-border/50 bg-muted/5 p-4 sm:p-5 text-center w-full max-w-[320px] transition-colors hover:border-primary/30">
-              <div className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-lg bg-primary/10 text-primary mb-2 sm:mb-3 mx-auto">
+          <h2 className="text-center font-semibold text-foreground text-lg sm:text-xl mb-2 max-w-2xl mx-auto">
+            Everything you need to publish scroll-stopping carousels
+          </h2>
+          <p className="text-center text-muted-foreground text-sm max-w-xl mx-auto mb-8">
+            Built for creators: structured AI output, template-locked design, and a fast editor—without turning you into a designer.
+          </p>
+          <ul className="grid gap-4 sm:gap-5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 justify-items-stretch">
+            <li className="rounded-xl border border-border/50 bg-muted/5 p-4 sm:p-5 text-left transition-colors hover:border-primary/30">
+              <div className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-lg bg-primary/10 text-primary mb-3">
+                <Sparkles className="size-4 sm:size-5" />
+              </div>
+              <h3 className="font-semibold text-foreground text-sm sm:text-base">AI from topic or link</h3>
+              <p className="text-muted-foreground text-xs sm:text-sm mt-1.5 leading-relaxed">
+                Describe an idea or paste a URL. Get a full carousel with hooks, bullet slides, and a CTA—structured for your template, not random layouts.
+              </p>
+            </li>
+            <li className="rounded-xl border border-border/50 bg-muted/5 p-4 sm:p-5 text-left transition-colors hover:border-primary/30">
+              <div className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-lg bg-primary/10 text-primary mb-3">
                 <LayoutTemplate className="size-4 sm:size-5" />
               </div>
-              <h3 className="font-semibold text-foreground text-sm sm:text-base">Projects & templates</h3>
-              <p className="text-muted-foreground text-xs sm:text-sm mt-1">
-                One project per niche. Locked layouts—no design skills.
+              <h3 className="font-semibold text-foreground text-sm sm:text-base">Projects, templates & brand</h3>
+              <p className="text-muted-foreground text-xs sm:text-sm mt-1.5 leading-relaxed">
+                Organize work by project. Pick proven layouts (and custom templates on Pro). Brand kit flows into slides—logo, colors, and attribution where you want them.
               </p>
             </li>
-            <li className="rounded-xl border border-border/50 bg-muted/5 p-4 sm:p-5 text-center w-full max-w-[320px] transition-colors hover:border-primary/30">
-              <div className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-lg bg-primary/10 text-primary mb-2 sm:mb-3 mx-auto">
+            <li className="rounded-xl border border-border/50 bg-muted/5 p-4 sm:p-5 text-left transition-colors hover:border-primary/30">
+              <div className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-lg bg-primary/10 text-primary mb-3">
                 <FileText className="size-4 sm:size-5" />
               </div>
-              <h3 className="font-semibold text-foreground text-sm sm:text-base">Content drafted</h3>
-              <p className="text-muted-foreground text-xs sm:text-sm mt-1">
-                Topic or URL in, full deck out. Edit, reorder, regenerate.
+              <h3 className="font-semibold text-foreground text-sm sm:text-base">Text & layout editor</h3>
+              <p className="text-muted-foreground text-xs sm:text-sm mt-1.5 leading-relaxed">
+                Headline and body with fonts, highlights, and outlines. Drag text zones on the preview. Tune slide chrome—slide numbers, swipe hint, logo, and watermark—with controls that jump to the right panel when you tap the canvas.
               </p>
             </li>
-            <li className="rounded-xl border border-border/50 bg-muted/5 p-4 sm:p-5 text-center w-full max-w-[320px] transition-colors hover:border-primary/30">
-              <div className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-lg bg-primary/10 text-primary mb-2 sm:mb-3 mx-auto">
+            <li className="rounded-xl border border-border/50 bg-muted/5 p-4 sm:p-5 text-left transition-colors hover:border-primary/30">
+              <div className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-lg bg-primary/10 text-primary mb-3">
+                <Palette className="size-4 sm:size-5" />
+              </div>
+              <h3 className="font-semibold text-foreground text-sm sm:text-base">Backgrounds & images</h3>
+              <p className="text-muted-foreground text-xs sm:text-sm mt-1.5 leading-relaxed">
+                Solid colors, uploads, and your asset library. Pro unlocks AI-generated backgrounds and deeper image controls (including multi-image layouts where templates allow).
+              </p>
+            </li>
+            <li className="rounded-xl border border-border/50 bg-muted/5 p-4 sm:p-5 text-left transition-colors hover:border-primary/30">
+              <div className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-lg bg-primary/10 text-primary mb-3">
                 <Package className="size-4 sm:size-5" />
               </div>
-              <h3 className="font-semibold text-foreground text-sm sm:text-base">Export ready</h3>
-              <p className="text-muted-foreground text-xs sm:text-sm mt-1">
-                Your images or suggested. Export ZIP with caption.
+              <h3 className="font-semibold text-foreground text-sm sm:text-base">Export images & ZIP</h3>
+              <p className="text-muted-foreground text-xs sm:text-sm mt-1.5 leading-relaxed">
+                PNG or JPEG at 1080×1080 (feed), 1080×1350 (portrait), or 1080×1920 (Stories/Reels). Download one frame or a full ZIP with a copy-ready caption.
+              </p>
+            </li>
+            <li className="rounded-xl border border-border/50 bg-muted/5 p-4 sm:p-5 text-left transition-colors hover:border-primary/30">
+              <div className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-lg bg-primary/10 text-primary mb-3">
+                <Share2 className="size-4 sm:size-5" />
+              </div>
+              <h3 className="font-semibold text-foreground text-sm sm:text-base">Apply-to-all controls</h3>
+              <p className="text-muted-foreground text-xs sm:text-sm mt-1.5 leading-relaxed">
+                Keep decks consistent fast: apply headline, body, background, and visibility settings across all slides in one tap.
               </p>
             </li>
           </ul>
@@ -216,7 +241,11 @@ export default async function Home() {
               </li>
               <li className="flex items-center gap-2">
                 <Check className="size-4 shrink-0 text-primary" />
-                AI backgrounds, full editor
+                AI backgrounds, asset library, full editor
+              </li>
+              <li className="flex items-center gap-2">
+                <Check className="size-4 shrink-0 text-primary" />
+                Apply-to-all editing for fast consistency
               </li>
             </ul>
             <Button size="lg" className="w-full gap-2" asChild>
@@ -243,8 +272,8 @@ export default async function Home() {
             <h3 className="font-semibold text-foreground text-base sm:text-lg mb-1">
               Ready to ship your first carousel?
             </h3>
-            <p className="text-muted-foreground text-xs sm:text-sm mb-4 sm:mb-5">
-              No design skills. Templates handle layout. You focus on ideas.
+            <p className="text-muted-foreground text-xs sm:text-sm mb-4 sm:mb-5 max-w-md mx-auto">
+              Templates keep every slide on-brand. You edit copy, visuals, and chrome—then export in the format your platform needs.
             </p>
             <Button size="lg" className="w-full sm:w-auto gap-2" asChild>
               <Link href="/signup">

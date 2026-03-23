@@ -1,8 +1,7 @@
 import Link from "next/link";
 import { getUser } from "@/lib/server/auth/getUser";
-import { getSubscription } from "@/lib/server/subscription";
+import { getEffectivePlanLimits, hasFullProFeatureAccess } from "@/lib/server/subscription";
 import { countUserTemplates, listTemplatesForUser } from "@/lib/server/db";
-import { PLAN_LIMITS } from "@/lib/constants";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { TemplateBuilderForm } from "@/components/templates/TemplateBuilderForm";
 import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
@@ -12,18 +11,19 @@ import { ArrowLeftIcon } from "lucide-react";
 
 export default async function NewTemplatePage() {
   const { user } = await getUser();
-  const [subscription, userTemplateCount, templates] = await Promise.all([
-    getSubscription(user.id, user.email),
+  const [userTemplateCount, templates, fullAccess, effectiveLimits] = await Promise.all([
     countUserTemplates(user.id),
     listTemplatesForUser(user.id, { includeSystem: true }),
+    hasFullProFeatureAccess(user.id, user.email),
+    getEffectivePlanLimits(user.id, user.email),
   ]);
 
   const systemTemplates = templates.filter((t) => t.user_id == null);
 
-  const limit = subscription.isPro ? PLAN_LIMITS.pro.customTemplates : PLAN_LIMITS.free.customTemplates;
+  const limit = effectiveLimits.customTemplates;
   const atLimit = userTemplateCount >= limit;
 
-  if (!subscription.isPro) {
+  if (!fullAccess) {
     return (
       <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">
         <div className="mx-auto max-w-xl space-y-6">

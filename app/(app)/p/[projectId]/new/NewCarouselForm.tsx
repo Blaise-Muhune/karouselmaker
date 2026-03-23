@@ -112,19 +112,20 @@ export function NewCarouselForm({
   primaryColor?: string;
 }) {
   const router = useRouter();
+  const hasFullAccess = hasFullAccessProp ?? isPro;
+  const canUseAiGenerate = isAdminUser || (hasFullAccess && aiGenerateUsed < aiGenerateLimit);
   const [inputType, setInputType] = useState<"topic" | "url" | "text">(initialInputType ?? "topic");
   const [inputValue, setInputValue] = useState(initialInputValue ?? "");
   const [numberOfSlides, setNumberOfSlides] = useState<string>("");
   const [backgroundAssetIds, setBackgroundAssetIds] = useState<string[]>([]);
   const [useAiBackgrounds, setUseAiBackgrounds] = useState(initialUseAiBackgrounds ?? (!!regenerateCarouselId));
-  const defaultImageSource = initialUseAiGenerate && (isAdminUser || (isPro && aiGenerateUsed < aiGenerateLimit))
-    ? "ai_generate"
-    : initialUseStockPhotos
-      ? "stock"
-      : isAdminUser
-        ? "brave"
-        : "stock";
-  const [imageSource, setImageSource] = useState<"stock" | "ai_generate" | "brave">(defaultImageSource);
+  const [imageSource, setImageSource] = useState<"stock" | "ai_generate" | "brave">(() => {
+    const ha = hasFullAccessProp ?? isPro;
+    const canAi = isAdminUser || (ha && aiGenerateUsed < aiGenerateLimit);
+    if (initialUseAiGenerate && canAi) return "ai_generate";
+    if (initialUseStockPhotos) return "stock";
+    return isAdminUser ? "brave" : "stock";
+  });
   const [useWebSearch, setUseWebSearch] = useState(initialUseWebSearch ?? false);
   const [carouselFor, setCarouselFor] = useState<"instagram" | "linkedin">(initialCarouselFor ?? "instagram");
   const [viralShortsStyle, setViralShortsStyle] = useState(false);
@@ -141,9 +142,6 @@ export function NewCarouselForm({
   const [driveFolderImporting, setDriveFolderImporting] = useState(false);
   const [driveFolderError, setDriveFolderError] = useState<string | null>(null);
   const [showMoreOptions, setShowMoreOptions] = useState(false);
-
-  const hasFullAccess = hasFullAccessProp ?? isPro;
-  const canUseAiGenerate = isAdminUser || (isPro && aiGenerateUsed < aiGenerateLimit);
 
   const handleUpgrade = async () => {
     setUpgradeLoading(true);
@@ -531,7 +529,7 @@ export function NewCarouselForm({
                 <span className="text-xs text-muted-foreground mr-1">Source:</span>
                 {([
                   "stock",
-                  ...(carouselFor !== "linkedin" && (isPro || isAdminUser) ? (["ai_generate"] as const) : []),
+                  ...(carouselFor !== "linkedin" && canUseAiGenerate ? (["ai_generate"] as const) : []),
                   ...(isAdminUser ? (["brave"] as const) : []),
                 ] as const).map((src) => (
                   <label
@@ -567,7 +565,7 @@ export function NewCarouselForm({
                     {!isAdminUser && ` · ${aiGenerateUsed}/${aiGenerateLimit} used this month`}
                   </span>
                 )}
-                {isPro && !isAdminUser && !canUseAiGenerate && imageSource === "ai_generate" && (
+                {hasFullAccess && !isAdminUser && !canUseAiGenerate && imageSource === "ai_generate" && (
                   <span className="text-[11px] text-amber-600 dark:text-amber-400 ml-1">{aiGenerateUsed}/{aiGenerateLimit} used — resets next month</span>
                 )}
               </div>
@@ -692,9 +690,9 @@ export function NewCarouselForm({
                       {carouselFor === "linkedin" ? "LinkedIn templates." : "Pick a layout for your carousel."} You can load more below.
                     </p>
                   </div>
-                  {isPro && (
+                  {hasFullAccess && (
                     <ImportTemplateButton
-                      isPro={isPro}
+                      isPro={hasFullAccess}
                       atLimit={false}
                       isAdmin={isAdminUser}
                       variant="outline"
@@ -717,7 +715,7 @@ export function NewCarouselForm({
                     primaryColor={primaryColor}
                     previewImageUrls={useAiBackgrounds ? TEMPLATE_PREVIEW_IMAGE_URLS : undefined}
                     isAdmin={isAdminUser}
-                    isPro={isPro}
+                    isPro={hasFullAccess}
                     onTemplateDeleted={() => {
                       setTemplateModalOpen(false);
                       router.refresh();

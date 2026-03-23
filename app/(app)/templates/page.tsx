@@ -1,10 +1,9 @@
 import { getUser } from "@/lib/server/auth/getUser";
-import { getSubscription } from "@/lib/server/subscription";
+import { getEffectivePlanLimits, hasFullProFeatureAccess } from "@/lib/server/subscription";
 import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { listTemplatesForUser, countUserTemplates } from "@/lib/server/db";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
-import { PLAN_LIMITS } from "@/lib/constants";
 import Link from "next/link";
 import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
 import { DeleteTemplateButton } from "@/components/templates/DeleteTemplateButton";
@@ -52,10 +51,11 @@ export default async function TemplatesPage({
   const params = await searchParams;
   const design = params.design === "noImage" ? "noImage" : "withImage";
 
-  const [templates, subscription, userTemplateCount] = await Promise.all([
+  const [templates, userTemplateCount, fullAccess, effectiveLimits] = await Promise.all([
     listTemplatesForUser(user.id, { includeSystem: true }),
-    getSubscription(user.id, user.email),
     countUserTemplates(user.id),
+    hasFullProFeatureAccess(user.id, user.email),
+    getEffectivePlanLimits(user.id, user.email),
   ]);
 
   const systemTemplatesAll = templates.filter((t) => t.user_id == null);
@@ -70,13 +70,13 @@ export default async function TemplatesPage({
       ? systemTemplatesAll.filter((t) => isNoImageTemplate(t, parseTemplateConfig))
       : systemTemplatesAll.filter((t) => !isNoImageTemplate(t, parseTemplateConfig));
 
-  const templateLimit = subscription.isPro ? PLAN_LIMITS.pro.customTemplates : PLAN_LIMITS.free.customTemplates;
+  const templateLimit = effectiveLimits.customTemplates;
   const atTemplateLimit = userTemplateCount >= templateLimit;
 
   return (
     <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">
       <div className="mx-auto max-w-4xl">
-        {!subscription.isPro && (
+        {!fullAccess && (
           <UpgradeBanner
             message="Free: View templates only. Upgrade to Pro to pick templates when editing carousels."
             variant="banner"
@@ -87,11 +87,11 @@ export default async function TemplatesPage({
         <header className="mb-10">
           <h1 className="text-xl font-semibold tracking-tight">Templates</h1>
           <p className="mt-1 text-muted-foreground text-sm">
-            {subscription.isPro
+            {fullAccess
               ? `${userTemplateCount}/${templateLimit} custom · Duplicate system templates to customize`
               : `System templates only · Pro for custom layouts`}
           </p>
-          {subscription.isPro && (
+          {fullAccess && (
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <Button
                 variant={atTemplateLimit ? "outline" : "default"}
@@ -110,7 +110,7 @@ export default async function TemplatesPage({
                 )}
               </Button>
               <ImportTemplateButton
-                isPro={subscription.isPro}
+                isPro={fullAccess}
                 atLimit={atTemplateLimit}
                 isAdmin={userIsAdmin}
                 variant="outline"
@@ -162,7 +162,7 @@ export default async function TemplatesPage({
                           templateId={t.id}
                           templateName={t.name}
                           category={t.category}
-                          isPro={subscription.isPro}
+                          isPro={fullAccess}
                           atLimit={atTemplateLimit}
                         />
                         <Button variant="ghost" size="icon-xs" asChild>
@@ -173,7 +173,7 @@ export default async function TemplatesPage({
                         <DeleteTemplateButton
                           templateId={t.id}
                           templateName={t.name}
-                          isPro={subscription.isPro}
+                          isPro={fullAccess}
                           isAdmin={userIsAdmin}
                           isSystemTemplate={false}
                         />
@@ -187,12 +187,12 @@ export default async function TemplatesPage({
           ) : (
             <div className="rounded-2xl border border-dashed border-border/60 bg-muted/20 py-10 text-center">
               <p className="text-muted-foreground text-sm">
-                {subscription.isPro
+                {fullAccess
                   ? "No custom templates yet"
                   : "Custom templates are Pro-only"}
               </p>
               <p className="text-muted-foreground/80 mt-1 text-xs">
-                {subscription.isPro
+                {fullAccess
                   ? "Duplicate a system template below to get started."
                   : "Upgrade to create your own layouts."}
               </p>
@@ -261,12 +261,12 @@ export default async function TemplatesPage({
                         )}
                       </div>
                       <div className="flex shrink-0 items-center gap-0.5">
-                        {subscription.isPro && (
+                        {fullAccess && (
                           <DuplicateTemplateButton
                             templateId={t.id}
                             templateName={t.name}
                             category={t.category}
-                            isPro={subscription.isPro}
+                            isPro={fullAccess}
                             atLimit={atTemplateLimit}
                           />
                         )}
@@ -280,7 +280,7 @@ export default async function TemplatesPage({
                         <DeleteTemplateButton
                           templateId={t.id}
                           templateName={t.name}
-                          isPro={subscription.isPro}
+                          isPro={fullAccess}
                           isAdmin={userIsAdmin}
                           isSystemTemplate={true}
                         />

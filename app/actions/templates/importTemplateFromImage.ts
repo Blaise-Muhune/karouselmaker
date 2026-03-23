@@ -2,7 +2,7 @@
 
 import OpenAI from "openai";
 import { getUser } from "@/lib/server/auth/getUser";
-import { getSubscription, getPlanLimits } from "@/lib/server/subscription";
+import { getEffectivePlanLimits, hasFullProFeatureAccess } from "@/lib/server/subscription";
 import { countUserTemplates } from "@/lib/server/db";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
@@ -516,10 +516,10 @@ export async function importTemplateFromImageAction(
   const { user } = await getUser();
   if (!user) return { ok: false, error: "Sign in to import templates.", code: "auth" };
 
-  const { isPro } = await getSubscription(user.id, user.email);
-  if (!isPro) return { ok: false, error: "Pro is required to import templates from images.", code: "auth" };
+  const fullAccess = await hasFullProFeatureAccess(user.id, user.email);
+  if (!fullAccess) return { ok: false, error: "Pro is required to import templates from images.", code: "auth" };
 
-  const limits = await getPlanLimits(user.id, user.email);
+  const limits = await getEffectivePlanLimits(user.id, user.email);
   const count = await countUserTemplates(user.id);
   if (count >= limits.customTemplates) {
     return { ok: false, error: `Template limit reached (${limits.customTemplates}). Delete one to import.`, code: "limit" };

@@ -5,7 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { SubscriptionStatusBanner } from "@/components/subscription/SubscriptionStatusBanner";
 import { GoProBar } from "@/components/subscription/GoProBar";
 import { ProjectMenuDropdown } from "@/components/projects/ProjectMenuDropdown";
-import { getSubscription } from "@/lib/server/subscription";
+import { getSubscription, hasFullProFeatureAccess } from "@/lib/server/subscription";
 import { PaginationNav } from "@/components/ui/pagination-nav";
 import { PlusCircleIcon } from "lucide-react";
 
@@ -22,11 +22,12 @@ export default async function ProjectsPage({
   const params = await searchParams;
   const page = Math.max(1, parseInt(params.page ?? "1", 10) || 1);
   const offset = (page - 1) * PROJECTS_PAGE_SIZE;
-  const [projects, total, subscription, carouselCount] = await Promise.all([
+  const [projects, total, subscription, carouselCount, fullAccess] = await Promise.all([
     listProjects(user.id, { limit: PROJECTS_PAGE_SIZE, offset }),
     countProjects(user.id),
     getSubscription(user.id, user.email),
     countCarouselsLifetime(user.id),
+    hasFullProFeatureAccess(user.id, user.email),
   ]);
   const totalPages = Math.max(1, Math.ceil(total / PROJECTS_PAGE_SIZE));
   const showGettingStarted = projects.length === 0 || carouselCount === 0;
@@ -42,7 +43,7 @@ export default async function ProjectsPage({
         <Suspense fallback={null}>
           <SubscriptionStatusBanner />
         </Suspense>
-        {!subscription.isPro && (
+        {!subscription.isPro && !fullAccess && (
           <GoProBar />
         )}
         <div className="flex items-center justify-between">

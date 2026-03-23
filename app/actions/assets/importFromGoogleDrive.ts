@@ -1,7 +1,7 @@
 "use server";
 
 import { getUser } from "@/lib/server/auth/getUser";
-import { getPlanLimits } from "@/lib/server/subscription";
+import { getEffectivePlanLimits } from "@/lib/server/subscription";
 import { createAsset, countAssets } from "@/lib/server/db";
 import { uploadUserAsset } from "@/lib/server/storage/upload";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
@@ -34,7 +34,7 @@ export async function importFromGoogleDrive(
   const trimmedFolderId = folderId?.trim();
   if (!trimmedFolderId) return { ok: false, error: "No folder selected." };
 
-  const limits = await getPlanLimits(user.id, user.email);
+  const limits = await getEffectivePlanLimits(user.id, user.email);
   const currentCount = await countAssets(user.id);
   const remaining = Math.max(0, limits.assets - currentCount);
   if (remaining === 0) {
@@ -186,7 +186,7 @@ export async function importFilesFromGoogleDrive(
   const { user } = await getUser();
   if (!user) return { ok: false, error: "Sign in to import from Google Drive." };
 
-  const limits = await getPlanLimits(user.id, user.email);
+  const limits = await getEffectivePlanLimits(user.id, user.email);
   const currentCount = await countAssets(user.id);
   const remaining = Math.max(0, limits.assets - currentCount);
   if (remaining === 0) {
@@ -227,7 +227,7 @@ export async function importSingleFileFromGoogleDrive(
   const trimmedId = fileId?.trim();
   if (!trimmedId) return { ok: false, error: "No file selected." };
 
-  const limits = await getPlanLimits(user.id, user.email);
+  const limits = await getEffectivePlanLimits(user.id, user.email);
   const currentCount = await countAssets(user.id);
   if (currentCount >= limits.assets) {
     return { ok: false, error: `Asset limit reached (${limits.assets}). Delete some assets or upgrade to add more.` };
