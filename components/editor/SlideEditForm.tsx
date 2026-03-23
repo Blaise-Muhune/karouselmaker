@@ -43,6 +43,7 @@ import { updateTemplateAction } from "@/app/actions/templates/updateTemplate";
 import { getTemplateConfigAction } from "@/app/actions/templates/getTemplateConfig";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
 import { cn, slugifyForFilename } from "@/lib/utils";
+import { imageSourceDisplayName } from "@/lib/utils/imageSourceDisplay";
 import { isSupabaseSignedUrl } from "@/lib/server/storage/signedUrlUtils";
 import { getTemplatePreviewBackgroundOverride } from "@/lib/renderer/getTemplatePreviewBackground";
 import { getSwipeRightXForFormat, type BrandKit, type ChromeOverrides } from "@/lib/renderer/renderModel";
@@ -5539,7 +5540,7 @@ export function SlideEditForm({
                                 : "bg-emerald-500/20 text-emerald-700 dark:text-emerald-400"
                             }`}
                           >
-                            {item.source === "unsplash" ? "Unsplash" : item.source === "pixabay" ? "Pixabay" : item.source === "pexels" ? "Pexels" : "Brave"}
+                            {imageSourceDisplayName(item.source)}
                           </span>
                         )}
                         <Button

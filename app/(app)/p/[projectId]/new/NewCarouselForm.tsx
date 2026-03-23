@@ -19,6 +19,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { createCheckoutSession } from "@/app/actions/subscription/createCheckoutSession";
 import { Gem, GlobeIcon, ImageIcon, LayoutTemplateIcon, Loader2Icon, Link2Icon, FileTextIcon, SparklesIcon, ChevronDownIcon, ChevronUpIcon, LinkedinIcon } from "lucide-react";
+import { WEB_IMAGES_SOURCE_DESCRIPTION, imageSourceDisplayName } from "@/lib/utils/imageSourceDisplay";
 
 /** Carousel for: Instagram (default) or LinkedIn. LinkedIn uses B2B-optimized content and stock/own images only (no AI generate). */
 const CAROUSEL_FOR_OPTIONS = [
@@ -228,7 +229,7 @@ export function NewCarouselForm({
         (message.toLowerCase().includes("fetch") && message.toLowerCase().includes("fail"));
       setError(
         isTimeout
-          ? "The request took too long (server timeout). Try fewer frames, or use Stock photos or Brave for images instead of AI generate, then try again."
+          ? "The request took too long (server timeout). Try fewer frames, or use Stock photos or Web images instead of AI generate, then try again."
           : message
       );
     } finally {
@@ -545,7 +546,9 @@ export function NewCarouselForm({
                       className="sr-only"
                     />
                     {src === "brave"
-                      ? "Brave"
+                      ? (
+                          <span title={WEB_IMAGES_SOURCE_DESCRIPTION}>{imageSourceDisplayName("brave")}</span>
+                        )
                       : src === "stock"
                         ? "Stock photos"
                         : (

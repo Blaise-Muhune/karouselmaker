@@ -43,6 +43,8 @@ Validation is done with Zod in `lib/server/ai/carouselSchema.ts`. Invalid output
 
 The prompt is built in `lib/server/ai/prompts.ts` from the current project and input.
 
+**Rule priority** (when instructions conflict): user **OVERRIDE** notes (from generation options) → Viral Shorts (if enabled) → platform block (LinkedIn vs Instagram) → default rules. **Last slide**: LinkedIn uses a conversion-style CTA; Instagram/default uses follow/subscribe unless Viral Shorts says otherwise (see prompts).
+
 ## Retry and validation
 
 1. Generate once with the main prompt.
