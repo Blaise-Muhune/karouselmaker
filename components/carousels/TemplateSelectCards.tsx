@@ -116,6 +116,11 @@ export function TemplateSelectCards({
   const hasLinkedIn = templates.some((t) => (t.category ?? "").toLowerCase() === "linkedin");
   const hasOther = templates.some((t) => (t.category ?? "").toLowerCase() !== "linkedin");
   const showTabs = showCategoryTabs && hasLinkedIn && hasOther;
+  const effectiveDefaultTemplateConfig =
+    defaultTemplateConfig ??
+    (defaultTemplateId ? templates.find((t) => t.id === defaultTemplateId)?.parsedConfig ?? null : null) ??
+    templates[0]?.parsedConfig ??
+    null;
   const currentTemplateIdForTab = value ?? defaultTemplateId;
   const currentCategoryForTab = currentTemplateIdForTab
     ? templates.find((t) => t.id === currentTemplateIdForTab)?.category?.toLowerCase()
@@ -338,7 +343,7 @@ export function TemplateSelectCards({
           className="mb-2 overflow-hidden rounded-md bg-muted/50 flex items-center justify-center relative shrink-0"
           style={{ width: PREVIEW_W, height: PREVIEW_H, minWidth: PREVIEW_W, minHeight: PREVIEW_H }}
         >
-          {defaultTemplateConfig ? (
+          {effectiveDefaultTemplateConfig ? (
             <div
               className="absolute origin-top-left"
               style={{
@@ -351,26 +356,26 @@ export function TemplateSelectCards({
             >
               <SlidePreview
                 slide={sampleSlide}
-                templateConfig={defaultTemplateConfig}
+                templateConfig={effectiveDefaultTemplateConfig}
                 brandKit={brandKit}
                 totalSlides={8}
                 backgroundImageUrl={
-                  defaultTemplateConfig.backgroundRules?.allowImage === false
+                  effectiveDefaultTemplateConfig.backgroundRules?.allowImage === false
                     ? undefined
                     : (previewImageUrl ?? FALLBACK_SAMPLE_IMAGE_URL)
                 }
                 backgroundOverride={
-                  defaultTemplateConfig.backgroundRules?.allowImage === false
-                    ? getTemplatePreviewBackgroundOverride(defaultTemplateConfig)
+                  effectiveDefaultTemplateConfig.backgroundRules?.allowImage === false
+                    ? getTemplatePreviewBackgroundOverride(effectiveDefaultTemplateConfig)
                     : isDefaultLinkedIn
-                      ? getLinkedInPreviewOverlayOverride(defaultTemplateConfig)
-                      : getTemplatePreviewOverlayOverride(defaultTemplateConfig)
+                      ? getLinkedInPreviewOverlayOverride(effectiveDefaultTemplateConfig)
+                      : getTemplatePreviewOverlayOverride(effectiveDefaultTemplateConfig)
                 }
                 showCounterOverride={false}
                 showWatermarkOverride={false}
                 exportSize="1080x1350"
-                imageDisplay={getImageDisplayFromConfig(defaultTemplateConfig)}
-                {...getOverridesFromConfig(defaultTemplateConfig)}
+                imageDisplay={getImageDisplayFromConfig(effectiveDefaultTemplateConfig)}
+                {...getOverridesFromConfig(effectiveDefaultTemplateConfig)}
               />
             </div>
           ) : (

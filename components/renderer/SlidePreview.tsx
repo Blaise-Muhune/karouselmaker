@@ -319,6 +319,8 @@ export type SlidePreviewProps = {
   onBackgroundImagePositionChange?: (x: number, y: number) => void;
   /** When set (editor live preview, PiP mode), user can drag to reposition the PiP box. */
   onPipPositionChange?: (x: number, y: number) => void;
+  /** When set (editor live preview, PiP mode), user can resize the PiP box from corner handles. */
+  onPipSizeChange?: (size: number) => void;
   /** When set, headline/body font sizes are scaled so text fits at this export size (4:5, 9:16). */
   exportSize?: "1080x1080" | "1080x1350" | "1080x1920";
   className?: string;
@@ -431,6 +433,8 @@ export type SlidePreviewProps = {
   editScale?: number;
   /** When true (edit slide page), only show move/resize container for text zones; no inline editing, toolbar, highlight, or rewrite in preview. */
   positionAndSizeOnly?: boolean;
+  /** How portrait viewport is filled: cover (crop sides) or contain (no crop). */
+  viewportFit?: "cover" | "contain";
 };
 
 const POSITION_TO_CSS: Record<string, string> = {
@@ -594,13 +598,18 @@ export function SlidePreview({
   onChromeFocus,
   editScale = 1,
   positionAndSizeOnly = false,
+  viewportFit = "cover",
   onBackgroundImagePositionChange,
   onPipPositionChange,
+  onPipSizeChange,
 }: SlidePreviewProps) {
   const canvasH = exportSize === "1080x1920" ? 1920 : exportSize === "1080x1350" ? 1350 : 1080;
   const textScale = getTextScaleForDimensions(CANVAS_SIZE, canvasH);
   // Cover: scale 1080x1080 design to fill viewport (4:5 and 9:16); center crop so we see a horizontal band.
-  const scale = Math.max(CANVAS_SIZE / CANVAS_SIZE, canvasH / CANVAS_SIZE);
+  // Contain: keep full design visible (no side crop), useful for compact/mobile preview.
+  const scale = viewportFit === "contain"
+    ? 1
+    : Math.max(CANVAS_SIZE / CANVAS_SIZE, canvasH / CANVAS_SIZE);
   const scaledSize = CANVAS_SIZE * scale;
   const slideTranslateX = (CANVAS_SIZE - scaledSize) / 2;
   const slideTranslateY = (canvasH - scaledSize) / 2;
@@ -683,9 +692,13 @@ export function SlidePreview({
   /** PiP drag: start client coords and start position (0–100). */
   const pipDragRef = useRef<{ startClientX: number; startClientY: number; startX: number; startY: number } | null>(null);
   const onPipPositionChangeRef = useRef(onPipPositionChange);
+  const onPipSizeChangeRef = useRef(onPipSizeChange);
   useEffect(() => {
     onPipPositionChangeRef.current = onPipPositionChange;
   }, [onPipPositionChange]);
+  useEffect(() => {
+    onPipSizeChangeRef.current = onPipSizeChange;
+  }, [onPipSizeChange]);
   /** When PiP fit is "contain", we size the frame to the image aspect ratio; this is set when the image loads. */
   const [pipImageAspectRatio, setPipImageAspectRatio] = useState<number | null>(null);
   const pipImageUrlRef = useRef(backgroundImageUrl);
@@ -735,6 +748,90 @@ export function SlidePreview({
         window.removeEventListener("pointermove", onMove);
         window.removeEventListener("pointerup", onUp);
         pipDragRef.current = null;
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    },
+    [imageDisplay?.pipPosition, imageDisplay?.pipX, imageDisplay?.pipY, editScale]
+  );
+  const handlePipResizePointerDown = useCallback(
+    (
+      e: React.PointerEvent,
+      corner: "top_left" | "top_right" | "bottom_left" | "bottom_right",
+      pipW: number,
+      pipH: number,
+      baseSize: number
+    ) => {
+      if (!onPipSizeChangeRef.current) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const pipInset = 48;
+      const getPresetLeftTop = (
+        preset: "top_left" | "top_right" | "bottom_left" | "bottom_right",
+        width: number,
+        height: number
+      ) => {
+        const left =
+          preset === "bottom_right" || preset === "top_right"
+            ? CANVAS_SIZE - pipInset - width
+            : pipInset;
+        const top =
+          preset === "bottom_right" || preset === "bottom_left"
+            ? CANVAS_SIZE - pipInset - height
+            : pipInset;
+        return { left, top };
+      };
+      const rangeX = CANVAS_SIZE - pipW;
+      const rangeY = CANVAS_SIZE - pipH;
+      const useCustomPipPos = imageDisplay?.pipX != null && imageDisplay?.pipY != null;
+      const preset = imageDisplay?.pipPosition ?? "bottom_right";
+      const startLeft = useCustomPipPos
+        ? (Math.min(100, Math.max(0, imageDisplay!.pipX!)) / 100) * rangeX
+        : getPresetLeftTop(preset, pipW, pipH).left;
+      const startTop = useCustomPipPos
+        ? (Math.min(100, Math.max(0, imageDisplay!.pipY!)) / 100) * rangeY
+        : getPresetLeftTop(preset, pipW, pipH).top;
+      const startClientX = e.clientX;
+      const startClientY = e.clientY;
+      const scale = editScale || 1;
+      (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+      const onMove = (ev: PointerEvent) => {
+        const dx = (ev.clientX - startClientX) / scale;
+        const dy = (ev.clientY - startClientY) / scale;
+        const growth =
+          corner === "bottom_right"
+            ? Math.max(dx, dy)
+            : corner === "top_left"
+              ? Math.max(-dx, -dy)
+              : corner === "top_right"
+                ? Math.max(dx, -dy)
+                : Math.max(-dx, dy);
+        const nextBase = Math.max(270, Math.min(CANVAS_SIZE, Math.round(baseSize + growth)));
+        const nextSize = Math.min(1, Math.max(0.25, nextBase / CANVAS_SIZE));
+        onPipSizeChangeRef.current?.(nextSize);
+        if (!onPipPositionChangeRef.current) return;
+        const nextW = pipW * (nextBase / baseSize);
+        const nextH = pipH * (nextBase / baseSize);
+        const nextRangeX = CANVAS_SIZE - nextW;
+        const nextRangeY = CANVAS_SIZE - nextH;
+        let nextLeft = startLeft;
+        let nextTop = startTop;
+        if (corner === "top_left") {
+          nextLeft = startLeft + (pipW - nextW);
+          nextTop = startTop + (pipH - nextH);
+        } else if (corner === "top_right") {
+          nextTop = startTop + (pipH - nextH);
+        } else if (corner === "bottom_left") {
+          nextLeft = startLeft + (pipW - nextW);
+        }
+        const nextX = nextRangeX > 0 ? Math.min(100, Math.max(0, (100 * nextLeft) / nextRangeX)) : 0;
+        const nextY = nextRangeY > 0 ? Math.min(100, Math.max(0, (100 * nextTop) / nextRangeY)) : 0;
+        onPipPositionChangeRef.current?.(nextX, nextY);
+      };
+      const onUp = () => {
+        (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
       };
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
@@ -1747,6 +1844,34 @@ export function SlidePreview({
                       onLoad={onPipImageLoad}
                     />
                   )}
+                  {onPipSizeChange && (
+                    <>
+                      <button
+                        type="button"
+                        className="absolute -left-2 -top-2 h-4 w-4 rounded-full border border-white/90 bg-primary/90 shadow cursor-nwse-resize"
+                        onPointerDown={(e) => handlePipResizePointerDown(e, "top_left", pipW, pipH, baseSize)}
+                        aria-label="Resize picture-in-picture from top left"
+                      />
+                      <button
+                        type="button"
+                        className="absolute -right-2 -top-2 h-4 w-4 rounded-full border border-white/90 bg-primary/90 shadow cursor-nesw-resize"
+                        onPointerDown={(e) => handlePipResizePointerDown(e, "top_right", pipW, pipH, baseSize)}
+                        aria-label="Resize picture-in-picture from top right"
+                      />
+                      <button
+                        type="button"
+                        className="absolute -left-2 -bottom-2 h-4 w-4 rounded-full border border-white/90 bg-primary/90 shadow cursor-nesw-resize"
+                        onPointerDown={(e) => handlePipResizePointerDown(e, "bottom_left", pipW, pipH, baseSize)}
+                        aria-label="Resize picture-in-picture from bottom left"
+                      />
+                      <button
+                        type="button"
+                        className="absolute -right-2 -bottom-2 h-4 w-4 rounded-full border border-white/90 bg-primary/90 shadow cursor-nwse-resize"
+                        onPointerDown={(e) => handlePipResizePointerDown(e, "bottom_right", pipW, pipH, baseSize)}
+                        aria-label="Resize picture-in-picture from bottom right"
+                      />
+                    </>
+                  )}
                 </div>
               </>
             );
@@ -2058,7 +2183,7 @@ export function SlidePreview({
             }
           }
           return (
-            <span key={i} className="block" style={{ whiteSpace: "nowrap" }}>
+            <span key={i} className="block" style={{ whiteSpace: "nowrap", width: "100%" }}>
               {items}
             </span>
           );
@@ -2070,6 +2195,8 @@ export function SlidePreview({
           lineHeight: block.zone.lineHeight,
           fontFamily: zoneFontFamily(block.zone),
           textAlign: effectiveAlign,
+          textAlignLast: effectiveAlign === "justify" ? "justify" : undefined,
+          textJustify: effectiveAlign === "justify" ? "inter-word" : undefined,
           boxSizing: "border-box",
           textWrap: "pretty",
           padding: 0,
@@ -2206,6 +2333,8 @@ export function SlidePreview({
                       fontWeight: block.zone.fontWeight,
                       lineHeight: block.zone.lineHeight,
                       textAlign: effectiveAlign,
+                      textAlignLast: effectiveAlign === "justify" ? "justify" : undefined,
+                      textJustify: effectiveAlign === "justify" ? "inter-word" : undefined,
                       fontFamily: zoneFontFamily(block.zone),
                       wordBreak: "break-word",
                       overflowWrap: "break-word",
@@ -2573,6 +2702,8 @@ export function SlidePreview({
                       fontWeight: block.zone.fontWeight,
                       lineHeight: block.zone.lineHeight,
                       textAlign: effectiveAlign,
+                      textAlignLast: effectiveAlign === "justify" ? "justify" : undefined,
+                      textJustify: effectiveAlign === "justify" ? "inter-word" : undefined,
                       fontFamily: zoneFontFamily(block.zone),
                       wordBreak: "break-word",
                       overflowWrap: "break-word",

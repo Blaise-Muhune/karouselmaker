@@ -67,7 +67,8 @@ export type NormalizedSlideMeta = {
   outlineStrokes?: { headline?: number; body?: number };
   /** Font weight for **bold** segments. Default 700. */
   boldWeights?: { headline?: number; body?: number };
-  showCounterOverride: boolean;
+  /** Explicit slide choice; `undefined` = inherit from template default (same as preview `?? model.chrome.showCounter`). */
+  showCounterOverride: boolean | undefined;
   showWatermarkOverride: boolean | undefined;
   showMadeWithOverride: boolean | undefined;
   headline_highlights?: { start: number; end: number; color: string }[];
@@ -146,7 +147,10 @@ export function mergeWithTemplateDefaults(
     highlightStyles: normalized.highlightStyles,
     outlineStrokes: normalized.outlineStrokes ?? templateDefaults.outlineStrokes,
     boldWeights: normalized.boldWeights ?? templateDefaults.boldWeights,
-    showCounterOverride: normalized.showCounterOverride || (templateDefaults.showCounterOverride ?? false),
+    showCounterOverride:
+      normalized.showCounterOverride !== undefined
+        ? normalized.showCounterOverride
+        : (templateDefaults.showCounterOverride ?? false),
     showWatermarkOverride: normalized.showWatermarkOverride ?? templateDefaults.showWatermarkOverride,
     showMadeWithOverride: normalized.showMadeWithOverride ?? templateDefaults.showMadeWithOverride,
     headline_highlights: normalized.headline_highlights,
@@ -313,7 +317,8 @@ export function normalizeSlideMetaForRender(meta: Record<string, unknown> | null
         }
       : undefined;
 
-  const showCounterOverride = m.show_counter === true;
+  const showCounterOverride =
+    typeof m.show_counter === "boolean" ? m.show_counter : undefined;
   const showWatermarkOverride = m.show_watermark as boolean | undefined;
   const showMadeWithOverride = m.show_made_with as boolean | undefined;
   const headline_highlights = normalizeHighlightSpans(m.headline_highlights);

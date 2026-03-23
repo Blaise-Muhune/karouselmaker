@@ -167,7 +167,7 @@ export default async function EditSlidePage({
   const carouselIncludeLast = (carousel as { include_last_slide?: boolean }).include_last_slide;
 
   return (
-    <div className="min-h-0 flex flex-col p-0">
+    <div className="min-h-0 flex flex-col p-0 lg:h-[calc(100dvh-3.5rem)] lg:overflow-hidden">
       {hasFullAccess && !isPro && (
         <div className="shrink-0 px-3 py-1.5">
           <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-2 text-sm text-foreground">
@@ -183,7 +183,7 @@ export default async function EditSlidePage({
           />
         </div>
       )}
-      <div className="min-h-0 flex flex-col w-full">
+      <div className="min-h-0 flex flex-col w-full flex-1 lg:overflow-hidden">
         <SlideEditForm
           isPro={hasFullAccess}
           slide={slide}

@@ -173,7 +173,7 @@ export const textZoneOverrideSchema = z.object({
   fontWeight: z.number().int().min(100).max(900).optional(),
   lineHeight: z.number().min(0.5).max(3).optional(),
   maxLines: z.number().int().min(1).max(30).optional(),
-  align: z.enum(["left", "center"]).optional(),
+  align: z.enum(["left", "center", "right", "justify"]).optional(),
   color: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
   /** Font family: "Inter", "Georgia", "system", "Roboto", "Montserrat", etc. */
   fontFamily: z.string().max(80).optional(),
@@ -249,6 +249,10 @@ export const slideMetaSchema = z.object({
   headline_highlights: z.array(z.object({ start: z.number().int().min(0), end: z.number().int().min(0), color: z.string() })).optional(),
   /** Body highlight spans. */
   body_highlights: z.array(z.object({ start: z.number().int().min(0), end: z.number().int().min(0), color: z.string() })).optional(),
+  /** AI-suggested highlight words used as guidance for Auto highlight. */
+  headline_highlight_words: z.array(z.string().min(1).max(60)).max(8).optional(),
+  /** AI-suggested highlight words for body. */
+  body_highlight_words: z.array(z.string().min(1).max(60)).max(8).optional(),
   /** Headline font-size spans (plain text indices). Apply only to selected range when user changes size on selection. */
   headline_font_size_spans: z.array(z.object({ start: z.number().int().min(0), end: z.number().int().min(0), fontSize: z.number().int().min(8).max(280) })).optional(),
   /** Body font-size spans. */

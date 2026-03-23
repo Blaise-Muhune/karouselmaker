@@ -19,15 +19,7 @@ export async function listTemplatesForUser(
 
   const { data, error } = await q;
   if (error) throw new Error(error.message);
-  const rows = (data ?? []) as Template[];
-  // Deduplicate by (user_id, name) — seed migration can run multiple times
-  const seen = new Set<string>();
-  return rows.filter((t) => {
-    const key = `${t.user_id ?? "null"}:${t.name}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  return (data ?? []) as Template[];
 }
 
 export async function getTemplate(

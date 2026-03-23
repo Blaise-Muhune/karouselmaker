@@ -58,6 +58,7 @@ export function AssetLibrary({
   const urls = initialUrls;
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [applyError, setApplyError] = useState<string | null>(null);
   const [projectFilter, setProjectFilter] = useState<string>(projectIdFilter ?? "all");
 
   const atLimit = assetLimit > 0 && assetCount >= assetLimit;
@@ -70,7 +71,7 @@ export function AssetLibrary({
     setUploadError(null);
     const formData = new FormData();
     formData.set("file", file);
-    if (projectFilter !== "all") formData.set("project_id", projectFilter);
+    if (projectFilter !== "all" && projectFilter !== "global") formData.set("project_id", projectFilter);
     const result = await uploadAsset(formData, "/assets");
     setUploading(false);
     e.target.value = "";
@@ -83,6 +84,7 @@ export function AssetLibrary({
 
   const handleUseAsBackground = async () => {
     if (!selectedAsset || !slideId) return;
+    setApplyError(null);
     const url = urls[selectedAsset.id] ?? "";
     if (onPick) {
       onPick(selectedAsset, url);
@@ -104,7 +106,9 @@ export function AssetLibrary({
       setSelectedAsset(null);
       if (returnTo) router.push(returnTo);
       else router.refresh();
+      return;
     }
+    setApplyError(result.error ?? "Couldn't apply this image as background.");
   };
 
   const filteredAssets =
@@ -196,7 +200,10 @@ export function AssetLibrary({
             <li key={asset.id}>
               <button
                 type="button"
-                onClick={() => setSelectedAsset(asset)}
+                onClick={() => {
+                  setApplyError(null);
+                  setSelectedAsset(asset);
+                }}
                 className="border-border/50 hover:border-primary/30 flex aspect-square w-full overflow-hidden rounded-lg border bg-muted/10 transition-colors hover:bg-muted/20 focus:outline-none focus:ring-2 focus:ring-primary/50"
               >
                 {urls[asset.id] ? (
@@ -217,7 +224,15 @@ export function AssetLibrary({
       )}
       </section>
 
-      <Dialog open={!!selectedAsset} onOpenChange={(open) => !open && setSelectedAsset(null)}>
+      <Dialog
+        open={!!selectedAsset}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedAsset(null);
+            setApplyError(null);
+          }
+        }}
+      >
         <DialogContent className="max-w-md" showCloseButton>
           <DialogHeader>
             <DialogTitle>{selectedAsset?.file_name ?? "Image"}</DialogTitle>
@@ -240,6 +255,11 @@ export function AssetLibrary({
             <Button onClick={handleUseAsBackground} className="w-full">
               Use as background
             </Button>
+          )}
+          {applyError && (
+            <p className="text-destructive text-xs rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">
+              {applyError}
+            </p>
           )}
         </DialogContent>
       </Dialog>

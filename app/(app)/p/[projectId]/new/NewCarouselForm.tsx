@@ -20,8 +20,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { createCheckoutSession } from "@/app/actions/subscription/createCheckoutSession";
 import { Gem, GlobeIcon, ImageIcon, LayoutTemplateIcon, Loader2Icon, Link2Icon, FileTextIcon, SparklesIcon, ChevronDownIcon, ChevronUpIcon, LinkedinIcon } from "lucide-react";
 
-const TEMPLATE_PAGE_SIZE = 8;
-
 /** Carousel for: Instagram (default) or LinkedIn. LinkedIn uses B2B-optimized content and stock/own images only (no AI generate). */
 const CAROUSEL_FOR_OPTIONS = [
   { value: "instagram" as const, label: "Instagram", icon: ImageIcon },
@@ -132,7 +130,6 @@ export function NewCarouselForm({
   const [notes, setNotes] = useState(initialNotes ?? "");
   const [backgroundPickerOpen, setBackgroundPickerOpen] = useState(false);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
-  const [visibleTemplateCount, setVisibleTemplateCount] = useState(TEMPLATE_PAGE_SIZE);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(() =>
     initialCarouselFor === "linkedin" && defaultLinkedInTemplateId ? defaultLinkedInTemplateId : null
   );
@@ -142,6 +139,9 @@ export function NewCarouselForm({
   const [driveFolderImporting, setDriveFolderImporting] = useState(false);
   const [driveFolderError, setDriveFolderError] = useState<string | null>(null);
   const [showMoreOptions, setShowMoreOptions] = useState(false);
+
+  /** Matches `handleSubmit`: topic, URL, or pasted text must be non-empty after trim. */
+  const hasRequiredInput = inputValue.trim().length > 0;
 
   const handleUpgrade = async () => {
     setUpgradeLoading(true);
@@ -158,10 +158,6 @@ export function NewCarouselForm({
       alert("Something went wrong");
     }
   };
-
-  useEffect(() => {
-    if (templateModalOpen) setVisibleTemplateCount(TEMPLATE_PAGE_SIZE);
-  }, [templateModalOpen]);
 
   useEffect(() => {
     if (carouselFor === "linkedin" && imageSource === "ai_generate") setImageSource("stock");
@@ -704,7 +700,7 @@ export function NewCarouselForm({
                 </DialogHeader>
                 <div className="overflow-y-auto overflow-x-hidden flex-1 min-h-0 min-w-0 w-full pr-1">
                   <TemplateSelectCards
-                    templates={templateOptionsForPlatform.slice(0, visibleTemplateCount)}
+                    templates={templateOptionsForPlatform}
                     defaultTemplateId={carouselFor === "linkedin" ? defaultLinkedInTemplateId : defaultTemplateId}
                     defaultTemplateConfig={carouselFor === "linkedin" ? defaultLinkedInTemplateConfig : defaultTemplateConfig}
                     value={selectedTemplateId}
@@ -720,21 +716,11 @@ export function NewCarouselForm({
                       setTemplateModalOpen(false);
                       router.refresh();
                     }}
+                    showCategoryTabs={carouselFor !== "linkedin"}
+                    paginateInternally
                     showMyTemplatesSection={true}
                   />
                 </div>
-                {visibleTemplateCount < templateOptionsForPlatform.length && (
-                  <div className="pt-2 border-t flex justify-center">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setVisibleTemplateCount((n) => n + TEMPLATE_PAGE_SIZE)}
-                    >
-                      Load more
-                    </Button>
-                  </div>
-                )}
               </DialogContent>
             </Dialog>
             </CardContent>
@@ -754,7 +740,12 @@ export function NewCarouselForm({
             type="submit"
             size="lg"
             className="w-full sm:w-auto min-w-[180px]"
-            disabled={isPending || carouselCount >= carouselLimit}
+            disabled={isPending || carouselCount >= carouselLimit || !hasRequiredInput}
+            title={
+              !hasRequiredInput && carouselCount < carouselLimit && !isPending
+                ? "Enter a topic, URL, or paste text first."
+                : undefined
+            }
           >
             {isPending ? (
               <>

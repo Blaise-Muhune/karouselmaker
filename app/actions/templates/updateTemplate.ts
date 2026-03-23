@@ -21,7 +21,7 @@ export async function updateTemplateAction(
 
   const updatePayload: { name?: string; category?: string; config?: unknown; user_id?: string | null } = {};
   if (payload.name !== undefined) updatePayload.name = payload.name.trim();
-  if (payload.category !== undefined) updatePayload.category = payload.category;
+  if (payload.category !== undefined) updatePayload.category = payload.category.trim().toLowerCase() || "generic";
   if (payload.config !== undefined) {
     const parsed = templateConfigSchema.safeParse(payload.config);
     if (!parsed.success) return { ok: false, error: "Invalid template config." };

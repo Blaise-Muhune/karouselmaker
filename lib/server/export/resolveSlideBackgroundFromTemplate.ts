@@ -65,7 +65,7 @@ export function resolveOverlayTint(
     (templateMeta?.image_overlay_blend_enabled === false ? 0 : undefined) ??
     (typeof slideMeta?.overlay_tint_opacity === "number" ? (slideMeta as { overlay_tint_opacity?: number }).overlay_tint_opacity : undefined) ??
     templateTintFromMeta ??
-    (isPip ? 0 : 0);
+    (isPip ? 0 : 0.75);
 
   const slideMetaTint = (slideMeta as { overlay_tint_color?: string })?.overlay_tint_color;
   const effectiveTintColor =

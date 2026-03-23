@@ -54,9 +54,11 @@ export async function createTemplateAction(
     return { ok: false, error: "Template config or base template is required." };
   }
 
+  const normalizedCategory = payload.category.trim().toLowerCase() || "generic";
+
   const insertPayload = {
     name: trimmed,
-    category: payload.category || "generic",
+    category: normalizedCategory,
     aspect_ratio: "1:1" as const,
     config: config as Json,
     is_locked: true,

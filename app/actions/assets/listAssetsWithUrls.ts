@@ -7,6 +7,7 @@ import type { Asset } from "@/lib/server/db/types";
 
 const BUCKET = "carousel-assets";
 const URL_EXPIRES = 600;
+const ASSET_PICKER_LIMIT = 200;
 
 export type ListAssetsWithUrlsResult =
   | { ok: true; assets: Asset[]; urls: Record<string, string> }
@@ -20,7 +21,7 @@ export async function listAssetsWithUrls(
 
   const assets = await listAssets(user.id, {
     projectId: projectId ?? undefined,
-    limit: 100,
+    limit: ASSET_PICKER_LIMIT,
   });
 
   const urls: Record<string, string> = {};

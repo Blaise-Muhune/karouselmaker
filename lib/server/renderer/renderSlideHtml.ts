@@ -393,21 +393,35 @@ export function renderSlideHtml(
     const useOutline = zoneOutlineStrokePx > 0;
     const outlineSpan = (inner: string) =>
       `<span style="color:${escapeHtml(fillColor)};-webkit-text-stroke:${zoneOutlineStrokePx}px #000;padding:0 1px;display:inline">${inner}</span>`;
+    const renderNested = (content: string): string =>
+      parseInlineFormatting(content)
+        .map((nested) => {
+          if (nested.type === "bold") {
+            return `<strong style="font-weight:${zoneBoldWeight}">${escapeHtml(nested.text)}</strong>`;
+          }
+          if (nested.type === "color" && nested.color) {
+            return zoneHighlightStyle === "background"
+              ? `<span style="background-color:${escapeHtml(nested.color)};padding:0.02em 0;margin:0;line-height:inherit;display:inline;border-radius:1px;box-decoration-break:clone;-webkit-box-decoration-break:clone">${escapeHtml(nested.text)}</span>`
+              : `<span style="color:${escapeHtml(nested.color)}">${escapeHtml(nested.text)}</span>`;
+          }
+          return escapeHtml(nested.text);
+        })
+        .join("");
     if (seg.type === "bold") {
       const strongStyle = `font-weight:${zoneBoldWeight}`;
       return useOutline
-        ? `<strong style="${strongStyle}">${outlineSpan(escaped)}</strong>`
-        : `<strong style="${strongStyle}">${escaped}</strong>`;
+        ? `<strong style="${strongStyle}">${outlineSpan(renderNested(seg.text))}</strong>`
+        : `<strong style="${strongStyle}">${renderNested(seg.text)}</strong>`;
     }
     if (seg.type === "color" && seg.color) {
       if (zoneHighlightStyle === "background") {
         const bgStyle = useOutline
           ? `background-color:${escapeHtml(seg.color)};padding:0.02em 0;margin:0;line-height:inherit;display:inline;border-radius:1px;box-decoration-break:clone;-webkit-box-decoration-break:clone;-webkit-text-stroke:${zoneOutlineStrokePx}px #000`
           : "background-color:" + escapeHtml(seg.color) + ";padding:0.02em 0;margin:0;line-height:inherit;display:inline;border-radius:1px;box-decoration-break:clone;-webkit-box-decoration-break:clone";
-        return `<span style="${bgStyle}">${escaped}</span>`;
+        return `<span style="${bgStyle}">${renderNested(seg.text)}</span>`;
       }
-      if (useOutline) return outlineSpan(escaped);
-      return `<span style="color:${escapeHtml(seg.color)}">${escaped}</span>`;
+      if (useOutline) return outlineSpan(renderNested(seg.text));
+      return `<span style="color:${escapeHtml(seg.color)}">${renderNested(seg.text)}</span>`;
     }
     if (useOutline) return outlineSpan(escaped);
     return escaped;
@@ -472,9 +486,10 @@ export function renderSlideHtml(
               }
               return lineToHtml(line, zoneHighlightStyle, zoneColor, zoneOutlineStrokePx, zoneBoldWeight);
             })
-            .map((lineHtml) => `<span>${lineHtml}</span>`)
+            .map((lineHtml) => `<span style="display:block;width:100%;white-space:nowrap;">${lineHtml}</span>`)
             .join("");
-          return `<div class="text-block" style="left:${block.zone.x}px;top:${block.zone.y}px;width:${block.zone.w}px;height:${block.zone.h}px;font-size:${fontSize}px;font-weight:${block.zone.fontWeight};line-height:${lineHeight};text-align:${zoneAlign};color:${escapeHtml(zoneColor)};font-family:${fontStack};z-index:5;${transformCss}">${linesHtml}</div>`;
+          const justifyCss = zoneAlign === "justify" ? "text-align-last:justify;text-justify:inter-word;" : "";
+          return `<div class="text-block" style="left:${block.zone.x}px;top:${block.zone.y}px;width:${block.zone.w}px;height:${block.zone.h}px;font-size:${fontSize}px;font-weight:${block.zone.fontWeight};line-height:${lineHeight};text-align:${zoneAlign};${justifyCss}color:${escapeHtml(zoneColor)};font-family:${fontStack};z-index:5;${transformCss}">${linesHtml}</div>`;
         })
         .join("");
 

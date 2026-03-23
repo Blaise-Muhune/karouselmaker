@@ -6,7 +6,7 @@ import { requirePro } from "@/lib/server/subscription";
 import { getCarousel, listSlides, updateSlide, getTemplate } from "@/lib/server/db";
 import type { Json } from "@/lib/server/db/types";
 import type { Slide } from "@/lib/server/db/types";
-import { getAutoHighlightSpans, normalizeHighlightSpansToWords, getHighlightSpansFromWords, HIGHLIGHT_COLORS } from "@/lib/editor/inlineFormat";
+import { buildAutoHighlightSpans, HIGHLIGHT_COLORS } from "@/lib/editor/inlineFormat";
 import { setSlideTemplate } from "@/app/actions/slides/setSlideTemplate";
 
 export type ApplyToAllResult = { ok: true; updated: number } | { ok: false; error: string };
@@ -342,20 +342,10 @@ export async function applyAutoHighlightsToAllSlides(
     const bodyWords = meta.body_highlight_words as string[] | undefined;
 
     const headlineSpans = doHeadline && headline.trim()
-      ? normalizeHighlightSpansToWords(
-          headline,
-          headlineWords?.length
-            ? getHighlightSpansFromWords(headline, headlineWords, color)
-            : getAutoHighlightSpans(headline, { style: "headline", defaultColor: color })
-        )
+      ? buildAutoHighlightSpans(headline, { style: "headline", defaultColor: color }, headlineWords)
       : null;
     const bodySpans = doBody && body.trim()
-      ? normalizeHighlightSpansToWords(
-          body,
-          bodyWords?.length
-            ? getHighlightSpansFromWords(body, bodyWords, color)
-            : getAutoHighlightSpans(body, { style: "body", defaultColor: color })
-        )
+      ? buildAutoHighlightSpans(body, { style: "body", defaultColor: color }, bodyWords)
       : null;
 
     const existingMeta = (slide.meta as Record<string, unknown>) ?? {};
@@ -378,4 +368,48 @@ export async function applyAutoHighlightsToAllSlides(
     : [];
   for (const p of paths) revalidatePath(p);
   return { ok: true, updated: slides.length };
+}
+
+/** Recolor existing highlight spans for a field across selected slides. Does not create new highlights. */
+export async function applyHighlightColorToAllSlides(
+  carouselId: string,
+  field: "headline" | "body",
+  color: string,
+  revalidatePathname?: string | string[],
+  scope?: ApplyScope
+): Promise<ApplyToAllResult> {
+  const { user } = await getUser();
+  if (!user) return { ok: false, error: "Unauthorized" };
+
+  const proCheck = await requirePro(user.id, user.email);
+  if (!proCheck.allowed) return { ok: false, error: proCheck.error ?? "Upgrade to Pro" };
+
+  const carousel = await getCarousel(user.id, carouselId);
+  if (!carousel) return { ok: false, error: "Carousel not found" };
+
+  const slides = filterSlidesByScope(await listSlides(user.id, carouselId), scope);
+  if (slides.length === 0) return { ok: true, updated: 0 };
+
+  const resolvedColor = color.startsWith("#") ? color : (HIGHLIGHT_COLORS[color] ?? DEFAULT_AUTO_HIGHLIGHT_COLOR);
+  const key = field === "headline" ? "headline_highlights" : "body_highlights";
+  let updated = 0;
+
+  for (const slide of slides) {
+    const existingMeta = (slide.meta as Record<string, unknown>) ?? {};
+    const spans = Array.isArray(existingMeta[key])
+      ? (existingMeta[key] as Array<{ start: number; end: number; color?: string }>)
+      : [];
+    if (spans.length === 0) continue;
+    const recolored = spans.map((s) => ({ ...s, color: resolvedColor }));
+    await updateSlide(user.id, slide.id, { meta: { ...existingMeta, [key]: recolored } as Json });
+    updated++;
+  }
+
+  const paths = revalidatePathname
+    ? Array.isArray(revalidatePathname)
+      ? revalidatePathname
+      : [revalidatePathname]
+    : [];
+  for (const p of paths) revalidatePath(p);
+  return { ok: true, updated };
 }

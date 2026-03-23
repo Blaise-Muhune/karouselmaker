@@ -100,7 +100,7 @@ function looksLikeNewsOrTimeSensitive(inputValue: string, inputType: string): bo
 /** Ensure list items in headline/body each have a newline (e.g. "1. A 2. B" -> "1. A\n2. B"). */
 function ensureListNewlines(text: string): string {
   if (!text?.trim()) return text;
-  let s = text
+  const s = text
     // Numbered list: "1. A 2. B" or "1) A 2) B" -> newline before each item after the first
     .replace(/([^\n]) (\d+)([.)]\s)/g, "$1\n$2$3")
     // Bullet list: "• A • B" -> newline before each bullet after the first
@@ -108,10 +108,20 @@ function ensureListNewlines(text: string): string {
   return s;
 }
 
+/** Keep only AI highlight words that actually appear in text (case-insensitive). */
+function sanitizeHighlightWordsForText(text: string, words?: string[]): string[] {
+  if (!text?.trim() || !words?.length) return [];
+  const lower = text.toLocaleLowerCase();
+  return words
+    .map((w) => w.trim())
+    .filter((w) => w.length > 0)
+    .filter((w) => lower.includes(w.toLocaleLowerCase()));
+}
+
 /** Remove URLs, markdown links, and parenthetical domain refs (e.g. (marvel.com)) from slide text so web-search generations stay link-free. */
 function stripLinksFromText(text: string): string {
   if (!text?.trim()) return text;
-  let s = text
+  const s = text
     // Markdown links [label](url) -> keep label only
     .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
     // Parenthetical domain/source refs e.g. (marvel.com), (www.example.org) — remove entirely
@@ -552,28 +562,34 @@ export async function generateCarousel(formData: FormData): Promise<
     const fullHeadline = ensureListNewlines(rawHeadline);
     const fullBody = ensureListNewlines(rawBody);
     type VariantEntry = { headline: string; body: string; headline_highlight_words?: string[]; body_highlight_words?: string[] };
+    const mainHeadlineWords = sanitizeHighlightWordsForText(fullHeadline, s.headline_highlight_words);
+    const mainBodyWords = sanitizeHighlightWordsForText(fullBody, s.body_highlight_words);
     const shortenVariants: VariantEntry[] = [{
       headline: fullHeadline,
       body: fullBody,
-      ...(s.headline_highlight_words?.length && { headline_highlight_words: s.headline_highlight_words }),
-      ...(s.body_highlight_words?.length && { body_highlight_words: s.body_highlight_words }),
+      ...(mainHeadlineWords.length && { headline_highlight_words: mainHeadlineWords }),
+      ...(mainBodyWords.length && { body_highlight_words: mainBodyWords }),
     }];
     const alternates = (s as { shorten_alternates?: { headline: string; body?: string; headline_highlight_words?: string[]; body_highlight_words?: string[] }[] }).shorten_alternates;
     if (alternates?.length) {
       for (const a of alternates) {
+        const altHeadline = ensureListNewlines(stripLinksFromText(a.headline));
+        const altBody = a.body ? ensureListNewlines(stripLinksFromText(a.body)) : "";
+        const altHeadlineWords = sanitizeHighlightWordsForText(altHeadline, a.headline_highlight_words);
+        const altBodyWords = sanitizeHighlightWordsForText(altBody, a.body_highlight_words);
         shortenVariants.push({
-          headline: ensureListNewlines(stripLinksFromText(a.headline)),
-          body: a.body ? ensureListNewlines(stripLinksFromText(a.body)) : "",
-          ...(a.headline_highlight_words?.length && { headline_highlight_words: a.headline_highlight_words }),
-          ...(a.body_highlight_words?.length && { body_highlight_words: a.body_highlight_words }),
+          headline: altHeadline,
+          body: altBody,
+          ...(altHeadlineWords.length && { headline_highlight_words: altHeadlineWords }),
+          ...(altBodyWords.length && { body_highlight_words: altBodyWords }),
         });
       }
     }
     const meta: Record<string, unknown> = {
       show_counter: false,
       ...(shortenVariants.length > 1 && { shorten_variants: shortenVariants }),
-      ...(s.headline_highlight_words?.length && { headline_highlight_words: s.headline_highlight_words }),
-      ...(s.body_highlight_words?.length && { body_highlight_words: s.body_highlight_words }),
+      ...(mainHeadlineWords.length && { headline_highlight_words: mainHeadlineWords }),
+      ...(mainBodyWords.length && { body_highlight_words: mainBodyWords }),
     };
     return {
       carousel_id: carousel.id,

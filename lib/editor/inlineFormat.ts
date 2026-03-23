@@ -394,15 +394,29 @@ export function getHighlightSpansFromWords(
   if (!text || !words?.length) return [];
   const hex = color.startsWith("#") ? color : (HIGHLIGHT_COLORS[color] ?? "#facc15");
   const spans: HighlightSpan[] = [];
+  const isWordBoundary = (idx: number) => {
+    if (idx < 0 || idx >= text.length) return true;
+    return !WORD_CHAR.test(text[idx] ?? "");
+  };
   for (const word of words) {
     const w = word?.trim();
     if (!w) continue;
+    const escapedWord = w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(escapedWord, "giu");
     let pos = 0;
     for (;;) {
-      const idx = text.indexOf(w, pos);
-      if (idx < 0) break;
+      re.lastIndex = pos;
+      const m = re.exec(text);
+      if (!m) break;
+      const idx = m.index;
+      const matchText = m[0] ?? "";
       const start = idx;
-      const end = idx + w.length;
+      const end = idx + matchText.length;
+      // Keep semantic "word" highlights by matching whole words when possible.
+      if (!isWordBoundary(start - 1) || !isWordBoundary(end)) {
+        pos = end;
+        continue;
+      }
       const overlaps = spans.some(
         (s) =>
           (start >= s.start && start < s.end) ||
@@ -415,6 +429,37 @@ export function getHighlightSpansFromWords(
   }
   spans.sort((a, b) => a.start - b.start);
   return spans;
+}
+
+/** Keep only highlight words that actually occur in text (case-insensitive). */
+export function sanitizeHighlightWordsForText(text: string, words: string[] | undefined): string[] {
+  if (!text?.trim() || !words?.length) return [];
+  const available = text.toLocaleLowerCase();
+  return words
+    .map((w) => w.trim())
+    .filter((w) => w.length > 0)
+    .filter((w) => available.includes(w.toLocaleLowerCase()));
+}
+
+/**
+ * Build deterministic auto-highlight spans from optional seed words.
+ * - If valid seed words exist in text, use them.
+ * - Otherwise use heuristic auto-highlighting.
+ * - Then enforce target coverage consistently.
+ */
+export function buildAutoHighlightSpans(
+  text: string,
+  options: AutoHighlightOptions & { targetFraction?: number },
+  seedWords?: string[]
+): HighlightSpan[] {
+  if (!text.trim()) return [];
+  const color = options.defaultColor ?? "yellow";
+  const validSeedWords = sanitizeHighlightWordsForText(text, seedWords);
+  const rawSpans = validSeedWords.length
+    ? getHighlightSpansFromWords(text, validSeedWords, color)
+    : getAutoHighlightSpans(text, options);
+  const covered = ensureHighlightCoverage(text, rawSpans, options);
+  return normalizeHighlightSpansToWords(text, covered);
 }
 
 function wordRangesCoveredBySpans(wordRanges: { start: number; end: number }[], spans: HighlightSpan[]): number {
@@ -442,7 +487,7 @@ export function ensureHighlightCoverage(
   let covered = wordRangesCoveredBySpans(ranges, initialSpans);
 
   if (covered > targetCount) {
-    // Trim: randomly remove spans until coverage is at or just above 60%
+    // Trim deterministically: remove trailing removable spans first.
     let result = [...initialSpans];
     while (result.length > 0) {
       const currentCovered = wordRangesCoveredBySpans(ranges, result);
@@ -452,7 +497,7 @@ export function ensureHighlightCoverage(
         return without.length > 0 && wordRangesCoveredBySpans(ranges, without) >= targetCount;
       });
       if (removable.length === 0) break;
-      const toRemove = removable[Math.floor(Math.random() * removable.length)]!;
+      const toRemove = removable[removable.length - 1]!;
       result = result.filter((x) => x !== toRemove);
     }
     result.sort((a, b) => a.start - b.start);

@@ -8,7 +8,16 @@ import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import type { Json } from "@/lib/server/db/types";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
 
-export type SetSlideTemplateResult = { ok: true } | { ok: false; error: string };
+export type SetSlideTemplateResult =
+  | {
+      ok: true;
+      slide: {
+        template_id: string | null;
+        background: Record<string, unknown> | null;
+        meta: Record<string, unknown> | null;
+      };
+    }
+  | { ok: false; error: string };
 
 /** When changing template without defaults, clear previous font/zone overrides. When template has defaults, we apply them below. */
 function clearPreviousTemplateOverrides(meta: Record<string, unknown>): Record<string, unknown> {
@@ -68,9 +77,10 @@ export async function setSlideTemplate(
   if (!slide) return { ok: false, error: "Slide not found" };
 
   const existingMeta = (slide.meta as Record<string, unknown>) ?? {};
+  let updated = slide;
 
   if (templateId == null) {
-    await updateSlide(user.id, slideId, {
+    updated = await updateSlide(user.id, slideId, {
       template_id: null,
       meta: clearPreviousTemplateOverrides(existingMeta) as Json,
     });
@@ -220,12 +230,25 @@ export async function setSlideTemplate(
       delete next.previous_background_before_clear;
       patch.meta = next as Json;
     }
-    await updateSlide(user.id, slideId, patch);
+    updated = await updateSlide(user.id, slideId, patch);
   }
 
   if (revalidatePathname) {
     const paths = Array.isArray(revalidatePathname) ? revalidatePathname : [revalidatePathname];
     for (const p of paths) revalidatePath(p);
   }
-  return { ok: true };
+  return {
+    ok: true,
+    slide: {
+      template_id: updated.template_id,
+      background:
+        updated.background && typeof updated.background === "object"
+          ? (updated.background as Record<string, unknown>)
+          : null,
+      meta:
+        updated.meta && typeof updated.meta === "object"
+          ? (updated.meta as Record<string, unknown>)
+          : null,
+    },
+  };
 }

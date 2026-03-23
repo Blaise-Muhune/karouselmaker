@@ -71,7 +71,9 @@ export function DeleteTemplateButton({
         <DialogHeader>
           <DialogTitle>Delete template</DialogTitle>
           <DialogDescription>
-            Delete &quot;{templateName}&quot;? Frames using this template will fall back to the default. This cannot be undone.
+            {isSystemTemplate
+              ? `Delete "${templateName}" for everyone? Frames using it will fall back to each user's default template. This cannot be undone.`
+              : `Delete "${templateName}" from your account? Frames using this template will fall back to your default template. This cannot be undone.`}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>

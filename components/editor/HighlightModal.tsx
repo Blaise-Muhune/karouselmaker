@@ -33,9 +33,9 @@ type HighlightModalProps = {
   onApplyToSelection: (color: string, useSaved: boolean) => void;
   onRemoveFromSelection: (useSaved: boolean) => void;
   onAuto: () => void;
-  onApplyToAll: () => void;
+  onApplyColorToAll: () => void;
+  onApplyAutoToAll: () => void;
   onClearAll: () => void;
-  lastHighlightAction: "auto" | "manual";
   totalSlides: number;
   applyingAutoHighlights: boolean;
   /** When true, render only the form content (no Dialog); used when rendering inside a portal below the live preview. */
@@ -59,9 +59,9 @@ export function HighlightModal({
   onApplyToSelection,
   onRemoveFromSelection,
   onAuto,
-  onApplyToAll,
+  onApplyColorToAll,
+  onApplyAutoToAll,
   onClearAll,
-  lastHighlightAction,
   totalSlides,
   applyingAutoHighlights,
   contentOnly = false,
@@ -79,28 +79,29 @@ export function HighlightModal({
         <div className="flex items-center justify-between gap-2 shrink-0">
           <h2 className="text-base font-semibold leading-none truncate min-w-0">{title}</h2>
           <div className="flex items-center gap-2 shrink-0">
-            {(highlights.length > 0 || (totalSlides > 1 && lastHighlightAction === "auto")) && (
+            {highlights.length > 0 && (
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
                 className="h-7 text-xs shrink-0"
-                onClick={onApplyToAll}
-                disabled={applyingAutoHighlights}
-                title={
-                  lastHighlightAction === "auto" && totalSlides > 1
-                    ? target === "headline"
-                      ? "Run Auto on headlines for every frame"
-                      : "Run Auto on body for every frame"
-                    : "Apply current color to all highlights in this field"
-                }
+                onClick={onApplyColorToAll}
+                title="Apply current color to all highlights in this field"
               >
-                {applyingAutoHighlights ? (
-                  <Loader2Icon className="size-3.5 animate-spin" />
-                ) : (
-                  <CopyIcon className="size-3.5" />
-                )}{" "}
-                Apply to all highlights
+                <CopyIcon className="size-3.5" /> Apply color to all
+              </Button>
+            )}
+            {totalSlides > 1 && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs shrink-0"
+                onClick={onApplyAutoToAll}
+                disabled={applyingAutoHighlights}
+                title={target === "headline" ? "Run Auto on headlines for every frame" : "Run Auto on body for every frame"}
+              >
+                {applyingAutoHighlights ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />} Auto all slides
               </Button>
             )}
             <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0" onClick={() => onOpenChange(false)} aria-label="Close">
@@ -109,7 +110,7 @@ export function HighlightModal({
           </div>
         </div>
         <p className="text-[11px] text-muted-foreground leading-relaxed shrink-0">
-          Select text in the box below, then pick a color (or Auto to highlight key words). Use No color to remove a highlight. You can see the result in the live preview above. If you just used Auto, "Apply to all highlights" runs Auto on every frame; otherwise it applies the current color to every highlight here.
+          Select text in the box below, then pick a color (or Auto to highlight key words). Use No color to remove a highlight. You can see the result in the live preview above.
         </p>
         <div className="space-y-4 min-w-0">
           <div>
@@ -208,33 +209,34 @@ export function HighlightModal({
         <DialogHeader className="flex flex-col gap-2">
           <div className="flex items-center justify-between gap-2">
             <DialogTitle className="text-base">{title}</DialogTitle>
-            {(highlights.length > 0 || (totalSlides > 1 && lastHighlightAction === "auto")) && (
+            {highlights.length > 0 && (
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
                 className="h-7 text-xs shrink-0"
-                onClick={onApplyToAll}
-                disabled={applyingAutoHighlights}
-                title={
-                  lastHighlightAction === "auto" && totalSlides > 1
-                    ? target === "headline"
-                      ? "Run Auto on headlines for every frame"
-                      : "Run Auto on body for every frame"
-                    : "Apply current color to all highlights in this field"
-                }
+                onClick={onApplyColorToAll}
+                title="Apply current color to all highlights in this field"
               >
-                {applyingAutoHighlights ? (
-                  <Loader2Icon className="size-3.5 animate-spin" />
-                ) : (
-                  <CopyIcon className="size-3.5" />
-                )}{" "}
-                Apply to all highlights
+                <CopyIcon className="size-3.5" /> Apply color to all
+              </Button>
+            )}
+            {totalSlides > 1 && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs shrink-0"
+                onClick={onApplyAutoToAll}
+                disabled={applyingAutoHighlights}
+                title={target === "headline" ? "Run Auto on headlines for every frame" : "Run Auto on body for every frame"}
+              >
+                {applyingAutoHighlights ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />} Auto all slides
               </Button>
             )}
           </div>
           <p className="text-[11px] text-muted-foreground leading-relaxed">
-            Select text in the box below, then pick a color (or Auto to highlight key words). Use No color to remove a highlight. You can see the result in the live preview above. If you just used Auto, “Apply to all highlights” runs Auto on every frame; otherwise it applies the current color to every highlight here.
+            Select text in the box below, then pick a color (or Auto to highlight key words). Use No color to remove a highlight. You can see the result in the live preview above.
           </p>
         </DialogHeader>
 

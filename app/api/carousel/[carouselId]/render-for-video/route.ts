@@ -9,35 +9,22 @@ import { createClient } from "@/lib/supabase/server";
 import {
   getCarousel,
   getProject,
-  getTemplate,
   listSlides,
 } from "@/lib/server/db";
-import { getDefaultTemplateId } from "@/lib/server/db/templates";
-import { hasFullProFeatureAccess } from "@/lib/server/subscription";
 import { getVideoRenderStoragePaths } from "@/lib/server/db/exports";
-import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { renderSlideHtml } from "@/lib/server/renderer/renderSlideHtml";
-import { getContrastingTextColor } from "@/lib/editor/colorUtils";
-import { getTemplatePreviewBackgroundOverride } from "@/lib/renderer/getTemplatePreviewBackground";
 import { resolveBrandKitLogo } from "@/lib/server/brandKit";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
 import {
   normalizeSlideMetaForRender,
-  getTemplateDefaultOverrides,
-  mergeWithTemplateDefaults,
 } from "@/lib/server/export/normalizeSlideMetaForRender";
-import {
-  resolveOverlayTint,
-  resolveBackgroundColorFromMeta,
-  resolveImageDisplay,
-  resolveOverlayEnabled,
-} from "@/lib/server/export/resolveSlideBackgroundFromTemplate";
 import { resolveSlideBackgroundUrls } from "@/lib/server/export/resolveSlideBackgroundUrls";
 import {
   isExternalImageUrl,
   materializeImageUrl,
 } from "@/lib/server/export/materializeImageUrl";
 import type { BrandKit } from "@/lib/renderer/renderModel";
+import { DEFAULT_TEMPLATE_CONFIG } from "@/lib/templateDefaults";
 
 const BUCKET = "carousel-assets";
 const VIDEO_ASSET_EXPIRES = 600;
@@ -71,7 +58,6 @@ export async function POST(
     return NextResponse.json({ error: "Carousel not found" }, { status: 404 });
   }
 
-  const fullAccess = await hasFullProFeatureAccess(userId, user.email);
   const project = await getProject(userId, carousel.project_id);
   if (!project) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
@@ -85,9 +71,9 @@ export async function POST(
     return NextResponse.json({ error: "Carousel has no slides" }, { status: 400 });
   }
 
-  const defaultTemplateId = await getDefaultTemplateId(userId);
   const runId = crypto.randomUUID();
   const paths = getVideoRenderStoragePaths(userId, carouselId, runId);
+  const videoTemplateConfig = DEFAULT_TEMPLATE_CONFIG;
 
   const carouselExportSize = (carousel as { export_size?: string }).export_size ?? "1080x1350";
   const dimensions =
@@ -127,19 +113,6 @@ export async function POST(
         await new Promise((r) => setTimeout(r, INTER_SLIDE_DELAY_MS));
       }
       const slide = slides[i]!;
-      const templateId = slide.template_id ?? defaultTemplateId;
-      if (!templateId) {
-        throw new Error(`Slide ${slide.slide_index + 1} has no template`);
-      }
-      const template = await getTemplate(userId, templateId);
-      if (!template) {
-        throw new Error(`Template not found for slide ${slide.slide_index + 1}`);
-      }
-      const config = templateConfigSchema.safeParse(template.config);
-      if (!config.success) {
-        throw new Error(`Invalid template config for slide ${slide.slide_index + 1}`);
-      }
-
       const slideBg = slide.background as
         | {
             style?: string;
@@ -158,73 +131,17 @@ export async function POST(
         | null
         | undefined;
 
-      const templateCfg = config.data;
-      const slideMetaForBg = (slide.meta ?? null) as Record<string, unknown> | null;
-      const imageDisplayMerged = resolveImageDisplay(config.data, slideBg);
-      // Video uses full-bleed image (no PiP), so resolve overlay/tint as non-PiP for correct gradient and tint.
-      const isPipForVideo = false;
-      const { tintOpacity: effectiveTintOpacity, tintColor: effectiveTintColor } = resolveOverlayTint(
-        slideBg,
-        slideMetaForBg,
-        templateCfg,
-        isPipForVideo
-      );
-      const overlayEnabled = resolveOverlayEnabled(slideBg);
-      const metaBgColor = resolveBackgroundColorFromMeta(slideMetaForBg, templateCfg);
-      const templateDefaultColor =
-        (templateCfg?.defaults?.background as { color?: string } | undefined)?.color ?? metaBgColor ?? "#0a0a0a";
-
-      const dir = slideBg?.overlay?.direction ?? templateCfg?.overlays?.gradient?.direction;
-      const gradientDirection: "top" | "bottom" | "left" | "right" =
-        dir === "top" || dir === "bottom" || dir === "left" || dir === "right" ? dir : "bottom";
-      const gradientColor =
-        slideBg?.overlay?.color ?? (templateCfg?.overlays?.gradient?.color || "#0a0a0a");
-      const templateStrength = templateCfg?.overlays?.gradient?.strength ?? 0.5;
-      const gradientStrength =
-        slideBg?.overlay?.darken != null && slideBg.overlay.darken !== 0.5
-          ? slideBg.overlay.darken
-          : templateStrength;
-      const templateExtent = templateCfg?.overlays?.gradient?.extent ?? 50;
-      const templateSolidSize = templateCfg?.overlays?.gradient?.solidSize ?? 25;
-      const gradientExtent = slideBg?.overlay?.extent != null ? slideBg.overlay.extent : templateExtent;
-      const gradientSolidSize = slideBg?.overlay?.solidSize != null ? slideBg.overlay.solidSize : templateSolidSize;
-      const overlayFields = {
-        gradientStrength,
-        gradientColor,
-        textColor: getContrastingTextColor(gradientColor),
-        gradientDirection,
-        gradientExtent,
-        gradientSolidSize,
-        overlayEnabled,
-        ...(effectiveTintOpacity > 0 ? { tintColor: effectiveTintColor, tintOpacity: effectiveTintOpacity } : {}),
-      };
-      const hasBackgroundImage =
-        slideBg?.mode === "image" &&
-        (!!slideBg.images?.length || !!slideBg.image_url || !!slideBg.storage_path);
-      const defaultStyle = templateCfg?.backgroundRules?.defaultStyle;
-      const gradientOn =
-        hasBackgroundImage && (defaultStyle === "none" || defaultStyle === "blur")
-          ? false
-          : (slideBg?.gradientOn ?? slideBg?.overlay?.gradient ?? true);
-      const templateBg = getTemplatePreviewBackgroundOverride(templateCfg);
-      const effectiveStyle =
-        !hasBackgroundImage ? (slideBg?.style ?? templateBg.style ?? "solid") : slideBg?.style;
-      const effectivePattern =
-        !hasBackgroundImage && effectiveStyle === "pattern"
-          ? (slideBg?.pattern ?? templateBg.pattern)
-          : slideBg?.pattern;
-      const effectiveColorRaw = !hasBackgroundImage ? (slideBg?.color ?? templateBg.color ?? metaBgColor) : (slideBg?.color ?? templateBg.color ?? metaBgColor);
-      const effectiveColor = /^#([0-9A-Fa-f]{3}){1,2}$/.test(effectiveColorRaw ?? "") ? effectiveColorRaw! : "#0a0a0a";
-      const effectiveDecoration = !hasBackgroundImage ? templateBg.decoration : undefined;
-      const effectiveDecorationColor = !hasBackgroundImage ? templateBg.decorationColor : undefined;
-      const backgroundOverride = slideBg
+      const effectiveStyle = slideBg?.style;
+      const effectivePattern = slideBg?.pattern;
+      const effectiveColor = /^#([0-9A-Fa-f]{3}){1,2}$/.test(slideBg?.color ?? "") ? slideBg!.color! : "#0a0a0a";
+      const backgroundOverrideForVideo = slideBg
         ? {
             style: (effectiveStyle === "solid" || effectiveStyle === "gradient" || effectiveStyle === "pattern" ? effectiveStyle : undefined) as "solid" | "gradient" | "pattern" | undefined,
             pattern: effectivePattern,
             color: effectiveColor,
-            ...(effectiveDecoration && { decoration: effectiveDecoration, ...(effectiveDecorationColor && { decorationColor: effectiveDecorationColor }) }),
-            gradientOn,
-            ...overlayFields,
+            overlayEnabled: false,
+            gradientOn: false,
+            tintOpacity: 0,
           }
         : undefined;
 
@@ -273,27 +190,23 @@ export async function POST(
       }
       const borderedFrame = !!(backgroundImageUrl || (backgroundImageUrls?.length ?? 0) > 0);
       const slideMeta = (slide.meta ?? null) as Record<string, unknown> | null;
-      const normalized = normalizeSlideMetaForRender(slideMeta);
-      const templateDefaults = getTemplateDefaultOverrides(config.data);
-      const merged = mergeWithTemplateDefaults(normalized, templateDefaults);
-      const defaultShowWatermark = false;
-      const showCounterOverride = merged.showCounterOverride;
-      const showWatermarkOverride = merged.showWatermarkOverride ?? defaultShowWatermark;
-      const showMadeWithOverride = merged.showMadeWithOverride ?? !fullAccess;
-      const fontOverrides = merged.fontOverrides;
-      const zoneOverrides = merged.zoneOverrides;
-      const chromeOverrides = merged.chromeOverrides;
+      const merged = normalizeSlideMetaForRender(slideMeta);
+      const showCounterOverride = false;
+      const showWatermarkOverride = false;
+      const showMadeWithOverride = false;
+      const fontOverrides = undefined;
+      const zoneOverrides = undefined;
+      const chromeOverrides = undefined;
       const highlightStyles = merged.highlightStyles;
-      const imageDisplayParam = resolveImageDisplay(config.data, slideBg);
+      const imageDisplayParam =
+        slideBg?.image_display != null && typeof slideBg.image_display === "object" && !Array.isArray(slideBg.image_display)
+          ? (slideBg.image_display as Record<string, unknown>)
+          : undefined;
       // Video uses full-bleed image (no PiP) so the frame works with burned-in captions and voiceover.
       const imageDisplayForVideo =
         imageDisplayParam?.mode === "pip"
           ? { ...imageDisplayParam, mode: "full" as const }
           : imageDisplayParam;
-      // Video = background image (if any) + caption if enabled. No tint, no gradient overlay.
-      const backgroundOverrideForVideo = backgroundOverride
-        ? { ...backgroundOverride, overlayEnabled: false, gradientOn: false, tintOpacity: 0 }
-        : undefined;
 
       const html = renderSlideHtml(
         {
@@ -304,7 +217,7 @@ export async function POST(
           ...(merged.headline_highlights?.length && { headline_highlights: merged.headline_highlights }),
           ...(merged.body_highlights?.length && { body_highlights: merged.body_highlights }),
         },
-        config.data,
+        videoTemplateConfig,
         brandKit,
         slides.length,
         backgroundOverrideForVideo,
@@ -351,7 +264,7 @@ export async function POST(
             ...(merged.headline_highlights?.length && { headline_highlights: merged.headline_highlights }),
             ...(merged.body_highlights?.length && { body_highlights: merged.body_highlights }),
           },
-        config.data,
+        videoTemplateConfig,
         brandKit,
         slides.length,
         backgroundOverrideForVideo,
@@ -396,7 +309,7 @@ export async function POST(
               slide_index: slide.slide_index,
               slide_type: slide.slide_type,
             },
-            config.data,
+            videoTemplateConfig,
             brandKit,
             slides.length,
             backgroundOverrideForVideo,

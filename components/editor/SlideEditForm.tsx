@@ -34,7 +34,7 @@ import { Slider } from "@/components/ui/slider";
 import { updateSlide } from "@/app/actions/slides/updateSlide";
 import { updateExportSettings } from "@/app/actions/carousels/updateExportFormat";
 import { updateApplyScope } from "@/app/actions/carousels/updateApplyScope";
-import { applyToAllSlides, applyOverlayToAllSlides, applyImageDisplayToAllSlides, applyImageCountToAllSlides, applyFontSizeToAllSlides, clearTextFromSlides, applyAutoHighlightsToAllSlides, type ApplyScope } from "@/app/actions/slides/applyToAllSlides";
+import { applyToAllSlides, applyOverlayToAllSlides, applyImageDisplayToAllSlides, applyImageCountToAllSlides, applyFontSizeToAllSlides, clearTextFromSlides, applyAutoHighlightsToAllSlides, applyHighlightColorToAllSlides, type ApplyScope } from "@/app/actions/slides/applyToAllSlides";
 import { setSlideTemplate } from "@/app/actions/slides/setSlideTemplate";
 import { ensureSlideTextVariants } from "@/app/actions/slides/ensureSlideTextVariants";
 import { rewriteHook } from "@/app/actions/slides/rewriteHook";
@@ -83,7 +83,7 @@ import {
 import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { ColorPicker } from "@/components/ui/color-picker";
 import { StepperWithLongPress } from "@/components/ui/stepper-with-long-press";
-import { HIGHLIGHT_COLORS, expandSelectionToWordBoundaries, normalizeHighlightSpansToWords, clampHighlightSpansToText, getAutoHighlightSpans, getHighlightSpansFromWords, ensureHighlightCoverage, shiftHighlightSpansForBoldInsert, shiftHighlightSpansForBoldRemove, type HighlightSpan } from "@/lib/editor/inlineFormat";
+import { HIGHLIGHT_COLORS, expandSelectionToWordBoundaries, normalizeHighlightSpansToWords, clampHighlightSpansToText, buildAutoHighlightSpans, shiftHighlightSpansForBoldInsert, shiftHighlightSpansForBoldRemove, type HighlightSpan } from "@/lib/editor/inlineFormat";
 
 /** Rainbow gradient for custom highlight color picker (circle, same size as preset swatches). */
 const HIGHLIGHT_RAINBOW = "conic-gradient(from 0deg, #ef4444, #f97316, #eab308, #84cc16, #22c55e, #06b6d4, #3b82f6, #8b5cf6, #ec4899, #ef4444)";
@@ -171,7 +171,7 @@ export type SlideBackgroundState = SlideBackgroundOverride & {
 };
 
 /** Max preview size (longest side) so it always fits on screen. Keeps mobile and desktop usable. */
-const PREVIEW_MAX = 380;
+const PREVIEW_MAX = 560;
 const PREVIEW_MAX_LARGE = 780;
 
 /** Preview dimensions and scale. Content is 1080 x exportH; scale to CONTAIN so the full slide fits (no zoom/clip). */
@@ -215,7 +215,7 @@ function getMaxPreviewSizeForArea(
 const SECTION_INFO: Record<string, { title: string; body: string }> = {
   content: {
     title: "Content",
-    body: "Type your headline and optional body here. For bold, wrap a word in **like this**. Highlights: select a word (or drag to select), then click a color—Yellow, Amber, or the color picker. Or click Auto to highlight key words automatically. Use “Apply to all highlights” to change the color of every highlight in that field; use “Apply to all frames” to run Auto on every frame. Highlight style: colored text only, or highlighter (colored background + dark text).",
+    body: "Type your headline and optional body here. For bold, wrap a word in **like this**. Highlights: select a word (or drag to select), then click a color—Yellow, Amber, or the color picker. Or click Auto to highlight key words automatically. Use “Apply color to all” to recolor existing highlights in that field, and “Auto all slides” to regenerate highlights across frames. Highlight style: colored text only, or highlighter (colored background + dark text).",
   },
   layout: {
     title: "Frame layout",
@@ -811,8 +811,8 @@ export function SlideEditForm({
   const [applyingAutoHighlights, setApplyingAutoHighlights] = useState(false);
   const [applyingHighlightStyle, setApplyingHighlightStyle] = useState(false);
   const [applyingChromeSection, setApplyingChromeSection] = useState<null | "show" | "counter" | "logo" | "swipe" | "watermark">(null);
-  const [lastHeadlineHighlightAction, setLastHeadlineHighlightAction] = useState<"auto" | "manual">("manual");
-  const [lastBodyHighlightAction, setLastBodyHighlightAction] = useState<"auto" | "manual">("manual");
+  const [, setLastHeadlineHighlightAction] = useState<"auto" | "manual">("manual");
+  const [, setLastBodyHighlightAction] = useState<"auto" | "manual">("manual");
   /** Ranges of "**word**" in current text from Auto bold (for toggle-off). Refs so second click always sees them. */
   const autoBoldRangesHeadlineRef = useRef<{ start: number; end: number }[]>([]);
   const autoBoldRangesBodyRef = useRef<{ start: number; end: number }[]>([]);
@@ -891,7 +891,7 @@ export function SlideEditForm({
     })
   );
   const previewWrapRef = useRef<HTMLDivElement>(null);
-  const [previewWrapWidth, setPreviewWrapWidth] = useState<number | null>(null);
+  const [previewWrapSize, setPreviewWrapSize] = useState<{ w: number; h: number } | null>(null);
   const [activeEditZone, setActiveEditZone] = useState<"headline" | "body" | null>(null);
   /** Which text section is expanded in the Text tab (click to expand and show green container in preview). */
   const [expandedTextSection, setExpandedTextSection] = useState<"headline" | "body" | null>(null);
@@ -912,22 +912,43 @@ export function SlideEditForm({
   const [rewriteHookVariants, setRewriteHookVariants] = useState<string[]>([]);
   const [rewritingHook, setRewritingHook] = useState(false);
 
-  const currentSnapshot = JSON.stringify({
-    headline,
-    body,
-    templateId,
-    showCounter,
-    showWatermark,
-    showMadeWith,
-    showSwipe,
-    swipeType,
-    swipePosition,
-    swipeText,
-    swipeX,
-    swipeY,
-    swipeSize,
-  });
-  const hasUnsavedChanges = currentSnapshot !== lastSavedRef.current;
+  /** Must match every `lastSavedRef` update — otherwise "Unsaved" stays after save (e.g. swipe text/position). */
+  const buildEditorDirtySnapshotString = useCallback(
+    (templateIdForSnapshot?: string | null) => {
+      const tid = templateIdForSnapshot !== undefined ? templateIdForSnapshot : templateId;
+      return JSON.stringify({
+        headline,
+        body,
+        templateId: tid,
+        showCounter,
+        showWatermark,
+        showMadeWith,
+        showSwipe,
+        swipeType,
+        swipePosition,
+        swipeText,
+        swipeX,
+        swipeY,
+        swipeSize,
+      });
+    },
+    [
+      headline,
+      body,
+      templateId,
+      showCounter,
+      showWatermark,
+      showMadeWith,
+      showSwipe,
+      swipeType,
+      swipePosition,
+      swipeText,
+      swipeX,
+      swipeY,
+      swipeSize,
+    ]
+  );
+  const hasUnsavedChanges = buildEditorDirtySnapshotString() !== lastSavedRef.current;
 
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
@@ -1071,9 +1092,10 @@ export function SlideEditForm({
   useEffect(() => {
     const el = previewWrapRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => setPreviewWrapWidth(el.clientWidth));
+    const updateSize = () => setPreviewWrapSize({ w: el.clientWidth, h: el.clientHeight });
+    const ro = new ResizeObserver(updateSize);
     ro.observe(el);
-    setPreviewWrapWidth(el.clientWidth);
+    updateSize();
     return () => ro.disconnect();
   }, [exportSize]);
 
@@ -1399,6 +1421,7 @@ export function SlideEditForm({
   const validImageCount = imageUrls.filter((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim())).length;
   const multiImageDefaults: ImageDisplayState = { position: "top", fit: "cover", frame: "none", frameRadius: 0, frameColor: "#ffffff", frameShape: "squircle", layout: "auto", gap: 0, dividerStyle: "wave", dividerColor: "#ffffff", dividerWidth: 48 };
   const effectiveImageDisplay = validImageCount >= 2 ? { ...multiImageDefaults, ...imageDisplay } : imageDisplay;
+  const templateDisallowsImage = templateConfig?.backgroundRules?.allowImage === false;
 
   /** Word-style: apply color to selection by storing a span (no brackets in text). Color is preset name or hex. Uses modal textarea ref when modal is open. */
   const applyHighlightToSelection = useCallback(
@@ -1473,19 +1496,9 @@ export function SlideEditForm({
     [headline, body]
   );
 
-  /** Auto-highlight: toggle — if this field already has auto highlights, remove them; otherwise apply. */
+  /** Auto-highlight for one field using AI seed words when available. */
   const applyAutoHighlight = useCallback(
     (target: "headline" | "body") => {
-      if (target === "headline" && lastHeadlineHighlightAction === "auto" && headlineHighlights.length > 0) {
-        setHeadlineHighlights([]);
-        setLastHeadlineHighlightAction("manual");
-        return;
-      }
-      if (target === "body" && lastBodyHighlightAction === "auto" && bodyHighlights.length > 0) {
-        setBodyHighlights([]);
-        setLastBodyHighlightAction("manual");
-        return;
-      }
       const text = target === "headline" ? headline : body;
       if (!text.trim()) return;
       const color = target === "headline" ? headlineHighlightColor : bodyHighlightColor;
@@ -1511,13 +1524,7 @@ export function SlideEditForm({
         }
       }
       const wordsToUse = target === "headline" ? headlineWords : bodyWords;
-      const opts = { style: target, defaultColor: color };
-      const rawSpans =
-        wordsToUse?.length
-          ? getHighlightSpansFromWords(text, wordsToUse, color)
-          : getAutoHighlightSpans(text, opts);
-      const spans = ensureHighlightCoverage(text, rawSpans, opts);
-      const normalized = normalizeHighlightSpansToWords(text, spans);
+      const normalized = buildAutoHighlightSpans(text, { style: target, defaultColor: color }, wordsToUse);
       if (target === "headline") {
         setHeadlineHighlights(normalized);
         setLastHeadlineHighlightAction("auto");
@@ -1526,7 +1533,7 @@ export function SlideEditForm({
         setLastBodyHighlightAction("auto");
       }
     },
-    [headline, body, headlineHighlights.length, bodyHighlights.length, lastHeadlineHighlightAction, lastBodyHighlightAction, headlineHighlightColor, bodyHighlightColor, slide.meta, slide.headline, slide.body]
+    [headline, body, headlineHighlightColor, bodyHighlightColor, slide.meta, slide.headline, slide.body]
   );
 
   /** Set all highlights in this field to the chosen color (for that field). */
@@ -1580,8 +1587,13 @@ export function SlideEditForm({
 
   /** Clear all highlights in this field. */
   const clearAllHighlights = useCallback((target: "headline" | "body") => {
-    if (target === "headline") setHeadlineHighlights([]);
-    else setBodyHighlights([]);
+    if (target === "headline") {
+      setHeadlineHighlights([]);
+      setLastHeadlineHighlightAction("manual");
+    } else {
+      setBodyHighlights([]);
+      setLastBodyHighlightAction("manual");
+    }
   }, []);
 
   /** Bold the current selection (or saved selection): wrap with ** and shift highlight spans. */
@@ -1684,13 +1696,7 @@ export function SlideEditForm({
       }
       const wordsToUse = target === "headline" ? headlineWords : bodyWords;
       const color = target === "headline" ? headlineHighlightColor : bodyHighlightColor;
-      const opts = { style: target, defaultColor: color };
-      const rawSpans =
-        wordsToUse?.length
-          ? getHighlightSpansFromWords(text, wordsToUse, color)
-          : getAutoHighlightSpans(text, opts);
-      const spans = ensureHighlightCoverage(text, rawSpans, opts);
-      const normalized = normalizeHighlightSpansToWords(text, spans);
+      const normalized = buildAutoHighlightSpans(text, { style: target, defaultColor: color }, wordsToUse);
       const ranges = normalized.map((s) => ({ start: s.start, end: s.end })).sort((a, b) => b.start - a.start);
       let newText = text;
       const existingSpans = target === "headline" ? headlineHighlights : bodyHighlights;
@@ -1788,14 +1794,7 @@ export function SlideEditForm({
       );
       setSaving(false);
       if (result.ok) {
-        lastSavedRef.current = JSON.stringify({
-          headline,
-          body,
-          templateId,
-          showCounter,
-          showWatermark,
-          showMadeWith,
-        });
+        lastSavedRef.current = buildEditorDirtySnapshotString();
         setSavedFeedback(true);
         setTimeout(() => setSavedFeedback(false), 1500);
         if (navigateBack) router.push(backHref);
@@ -1864,6 +1863,9 @@ export function SlideEditForm({
                 };
               })()
             : {}),
+          ...(background.mode === "image" || validUrls.length > 0
+            ? { allow_background_image_override: templateDisallowsImage }
+            : {}),
           ...(headlineFontSize != null && { headline_font_size: headlineFontSize }),
           ...(bodyFontSize != null && { body_font_size: bodyFontSize }),
           ...(headlineZoneOverride && Object.keys(headlineZoneOverride).length > 0 && { headline_zone_override: headlineZoneOverride }),
@@ -1910,17 +1912,7 @@ export function SlideEditForm({
     );
     setSaving(false);
     if (result.ok) {
-      lastSavedRef.current = JSON.stringify({
-        headline,
-        body,
-        templateId,
-        showCounter,
-        showWatermark,
-        showMadeWith,
-        showSwipe,
-        swipeType,
-        swipePosition,
-      });
+      lastSavedRef.current = buildEditorDirtySnapshotString();
       setSavedFeedback(true);
       setTimeout(() => setSavedFeedback(false), 1500);
       router.refresh();
@@ -2086,67 +2078,66 @@ export function SlideEditForm({
   const handleTemplateChange = async (
     newTemplateId: string | null,
     options?: { reloadAfter?: boolean; clearBackground?: boolean; allowBlend?: boolean }
-  ) => {
+  ): Promise<boolean> => {
     setTemplateId(newTemplateId);
     setHeadlineFontSize(undefined);
     setBodyFontSize(undefined);
     setHeadlineZoneOverride(undefined);
     setBodyZoneOverride(undefined);
     setApplyingTemplate(true);
-    await setSlideTemplate(
-      slide.id,
-      newTemplateId,
-      options?.reloadAfter ? editorPath : undefined,
-      options?.clearBackground || options?.allowBlend ? { clearBackground: options.clearBackground, allowBlend: options.allowBlend } : undefined
-    );
-    if (!options?.reloadAfter) setApplyingTemplate(false);
-    // Apply new template's overlay, background, and image_display to local state so preview updates without refresh (when not reloading)
-    if (newTemplateId && !options?.reloadAfter) {
-      const newConfig = getTemplateConfig(newTemplateId, templates);
-      const grad = newConfig?.overlays?.gradient;
-      const defaultsMeta = newConfig?.defaults?.meta && typeof newConfig.defaults.meta === "object" ? (newConfig.defaults.meta as { overlay_tint_opacity?: number; overlay_tint_color?: string; image_overlay_blend_enabled?: boolean; image_display?: unknown }) : undefined;
-      const templateTintOpacity = defaultsMeta?.image_overlay_blend_enabled === false ? 0 : defaultsMeta?.overlay_tint_opacity;
-      const templateTintColor = defaultsMeta?.overlay_tint_color && /^#([0-9A-Fa-f]{3}){1,2}$/.test(defaultsMeta.overlay_tint_color) ? defaultsMeta.overlay_tint_color : (newConfig?.defaults?.background && typeof newConfig.defaults.background === "object" && "color" in newConfig.defaults.background ? (newConfig.defaults.background as { color?: string }).color : undefined);
-      setBackground((prev) => {
-        const templateBg = newConfig?.defaults?.background && typeof newConfig.defaults.background === "object" ? (newConfig.defaults.background as { style?: string; color?: string; pattern?: string }) : undefined;
-        const bgColor = templateBg?.color && /^#([0-9A-Fa-f]{3}){1,2}$/.test(templateBg.color) ? templateBg.color : (grad?.color && /^#([0-9A-Fa-f]{3}){1,2}$/.test(grad.color) ? grad.color : undefined) ?? prev.color ?? "#0a0a0a";
-        const style = templateBg?.style === "pattern" || templateBg?.style === "gradient" || templateBg?.style === "solid" ? templateBg.style : (templateBg ? prev.style : undefined);
-        const pattern = templateBg?.pattern && ["dots", "ovals", "lines", "circles"].includes(templateBg.pattern) ? (templateBg.pattern as "dots" | "ovals" | "lines" | "circles") : (templateBg ? prev.pattern : undefined);
-        return {
-          ...prev,
-          ...(templateBg ? { style, pattern, color: bgColor } : {}),
-          overlay: {
-            ...prev?.overlay,
-            ...(grad != null ? { gradient: grad.enabled ?? true, color: bgColor, textColor: getContrastingTextColor(bgColor), direction: (grad.direction ?? "bottom") as "top" | "bottom" | "left" | "right", darken: grad.strength ?? 0.5, extent: grad.extent ?? 50, solidSize: grad.solidSize ?? 25 } : {}),
-            ...(templateTintOpacity != null ? { tintOpacity: templateTintOpacity } : {}),
-            ...(templateTintColor ? { tintColor: templateTintColor } : {}),
-          },
-        };
-      });
-      if (defaultsMeta?.image_display != null && typeof defaultsMeta.image_display === "object" && !Array.isArray(defaultsMeta.image_display)) {
-        const d = { ...defaultsMeta.image_display } as ImageDisplayState;
-        const ds = d.dividerStyle as string | undefined;
-        if (ds === "dotted") d.dividerStyle = "dashed";
-        else if (ds === "double" || ds === "triple") d.dividerStyle = "scalloped";
-        setImageDisplay(d);
+    try {
+      const result = await setSlideTemplate(
+        slide.id,
+        newTemplateId,
+        options?.reloadAfter ? editorPath : undefined,
+        options?.clearBackground || options?.allowBlend ? { clearBackground: options.clearBackground, allowBlend: options.allowBlend } : undefined
+      );
+      if (!result.ok) {
+        alert(result.error ?? "Failed to apply template.");
+        return false;
       }
-      const newMeta = newConfig?.defaults?.meta && typeof newConfig.defaults.meta === "object" ? (newConfig.defaults.meta as { show_counter?: boolean; show_watermark?: boolean; show_made_with?: boolean }) : undefined;
-      setShowCounter(newMeta?.show_counter ?? newConfig?.chrome?.showCounter ?? false);
-      setShowWatermark(newMeta?.show_watermark ?? newConfig?.chrome?.watermark?.enabled ?? false);
-      if (newMeta?.show_made_with != null && typeof newMeta.show_made_with === "boolean") setShowMadeWith(newMeta.show_made_with);
-      setShowSwipe(newConfig?.chrome?.showSwipe ?? true);
-      setSwipeType((newConfig?.chrome?.swipeType as SwipeType) ?? "text");
-      const newPos = (newConfig?.chrome?.swipePosition as SwipePosition) ?? "bottom_center";
-      setSwipePosition(newPos);
-      const c = newConfig?.chrome as { swipeText?: string; swipeX?: number; swipeY?: number; swipeSize?: number; swipeColor?: string; counterColor?: string } | undefined;
-      const wm = newConfig?.chrome?.watermark as { color?: string } | undefined;
-      setSwipeText(typeof c?.swipeText === "string" && c.swipeText.trim() !== "" ? c.swipeText.trim() : "swipe");
-      setSwipeX(c?.swipeX);
-      setSwipeY(c?.swipeY);
-      setSwipeSize(c?.swipeSize);
-      setSwipeColorOverride(c?.swipeColor);
-      setCounterColorOverride(c?.counterColor);
-      setWatermarkColorOverride(wm?.color);
+      // Hydrate from server-applied slide so local preview matches persisted template config (no hard refresh needed).
+      if (!options?.reloadAfter) {
+        const appliedBackground = result.slide.background as SlideBackgroundState | null;
+        if (appliedBackground && typeof appliedBackground === "object") {
+          setBackground({
+            ...appliedBackground,
+            overlay: appliedBackground.overlay ?? background.overlay,
+          });
+        }
+        const appliedMeta = (result.slide.meta ?? {}) as Record<string, unknown>;
+        const mergedImageDisplay =
+          appliedBackground?.image_display && typeof appliedBackground.image_display === "object" && !Array.isArray(appliedBackground.image_display)
+            ? ({ ...(appliedBackground.image_display as Record<string, unknown>) } as ImageDisplayState)
+            : appliedMeta.image_display && typeof appliedMeta.image_display === "object" && !Array.isArray(appliedMeta.image_display)
+              ? ({ ...(appliedMeta.image_display as Record<string, unknown>) } as ImageDisplayState)
+              : {};
+        const ds = mergedImageDisplay.dividerStyle as string | undefined;
+        if (ds === "dotted") mergedImageDisplay.dividerStyle = "dashed";
+        else if (ds === "double" || ds === "triple") mergedImageDisplay.dividerStyle = "scalloped";
+        setImageDisplay(mergedImageDisplay);
+        setShowCounter(typeof appliedMeta.show_counter === "boolean" ? appliedMeta.show_counter : false);
+        setShowWatermark(typeof appliedMeta.show_watermark === "boolean" ? appliedMeta.show_watermark : false);
+        if (typeof appliedMeta.show_made_with === "boolean") setShowMadeWith(appliedMeta.show_made_with);
+        setShowSwipe(typeof appliedMeta.show_swipe === "boolean" ? appliedMeta.show_swipe : true);
+        setSwipeType(((appliedMeta.swipe_type as SwipeType | undefined) ?? "text"));
+        setSwipePosition(((appliedMeta.swipe_position as SwipePosition | undefined) ?? "bottom_center"));
+        setSwipeText(typeof appliedMeta.swipe_text === "string" && appliedMeta.swipe_text.trim() !== "" ? appliedMeta.swipe_text.trim() : "swipe");
+        setSwipeX(typeof appliedMeta.swipe_x === "number" ? appliedMeta.swipe_x : undefined);
+        setSwipeY(typeof appliedMeta.swipe_y === "number" ? appliedMeta.swipe_y : undefined);
+        setSwipeSize(typeof appliedMeta.swipe_size === "number" ? appliedMeta.swipe_size : undefined);
+        setSwipeColorOverride(typeof appliedMeta.swipe_color === "string" ? appliedMeta.swipe_color : undefined);
+        setCounterColorOverride(typeof appliedMeta.counter_color === "string" ? appliedMeta.counter_color : undefined);
+        const wm = appliedMeta.watermark_zone_override;
+        if (wm && typeof wm === "object" && !Array.isArray(wm)) {
+          setWatermarkColorOverride(typeof (wm as { color?: unknown }).color === "string" ? (wm as { color: string }).color : undefined);
+        } else {
+          setWatermarkColorOverride(undefined);
+        }
+      }
+      return true;
+    } finally {
+      setApplyingTemplate(false);
     }
   };
 
@@ -2354,26 +2345,17 @@ export function SlideEditForm({
     if (result.ok) router.refresh();
   };
 
-  /** Apply to all highlights: if last action was Auto and multiple slides, run Auto on all slides; else apply current color to all highlights in this field. */
-  const handleApplyToAllHighlights = useCallback(
-    (field: "headline" | "body") => {
-      const lastAction = field === "headline" ? lastHeadlineHighlightAction : lastBodyHighlightAction;
-      const count = field === "headline" ? headlineHighlights.length : bodyHighlights.length;
-      if (lastAction === "auto" && totalSlides > 1) {
-        handleApplyAutoHighlightsToAll(field);
-      } else if (count > 0) {
-        applyColorToAllHighlights(field);
-      }
-    },
-    [
-      lastHeadlineHighlightAction,
-      lastBodyHighlightAction,
-      totalSlides,
-      headlineHighlights.length,
-      bodyHighlights.length,
-      applyColorToAllHighlights,
-    ]
-  );
+  /** Recolor existing highlights for this field across all selected slides. */
+  const handleApplyHighlightColorToAll = async (field: "headline" | "body") => {
+    const count = field === "headline" ? headlineHighlights.length : bodyHighlights.length;
+    if (count === 0) return;
+    setApplyingAutoHighlights(true);
+    const colorForField = field === "headline" ? headlineHighlightColor : bodyHighlightColor;
+    const color = colorForField.startsWith("#") ? colorForField : (HIGHLIGHT_COLORS[colorForField] ?? "#facc15");
+    const result = await applyHighlightColorToAllSlides(slide.carousel_id, field, color, editorPath, applyScope);
+    setApplyingAutoHighlights(false);
+    if (result.ok) router.refresh();
+  };
 
   const handleApplyClearHeadlineToAll = async () => {
     setApplyingClear(true);
@@ -2538,9 +2520,17 @@ export function SlideEditForm({
       return;
     }
     const defaults = config.defaults;
+    const inferredCategory =
+      slide.slide_type === "hook" ||
+      slide.slide_type === "point" ||
+      slide.slide_type === "context" ||
+      slide.slide_type === "cta" ||
+      slide.slide_type === "linkedin"
+        ? slide.slide_type
+        : "generic";
     const result = await createTemplateAction({
       name,
-      category: "generic",
+      category: inferredCategory,
       config,
       asSystemTemplate: isAdmin ? saveAsSystemTemplate : false,
     });
@@ -2599,6 +2589,16 @@ export function SlideEditForm({
     templateConfig &&
     currentTemplate &&
     (currentTemplate.user_id == null ? isAdmin : isPro);
+  const ensureNoImageTemplateImageFallback = useCallback(() => {
+    if (!templateDisallowsImage) return;
+    // Safe default when user adds an image to a no-image template.
+    setImageDisplay((prev) => ({
+      ...prev,
+      mode: "pip",
+      pipPosition: prev.pipPosition ?? "bottom_right",
+      pipSize: prev.pipSize ?? 0.4,
+    }));
+  }, [templateDisallowsImage]);
 
   const handlePickImage = (asset: { id: string; storage_path: string }, url: string) => {
     if (pickerForSecondary) {
@@ -2624,6 +2624,7 @@ export function SlideEditForm({
       setBackgroundImageUrlForPreview(url);
       // Clear URL list so preview uses this asset (otherwise old URL still wins and preview doesn't update)
       setImageUrls([{ url: "", source: undefined }]);
+      ensureNoImageTemplateImageFallback();
     }
     setPickerOpen(false);
   };
@@ -2648,13 +2649,14 @@ export function SlideEditForm({
         }));
         setBackgroundImageUrlForPreview(asset.url);
         setImageUrls([{ url: "", source: undefined }]);
+        ensureNoImageTemplateImageFallback();
         setDriveSuccess("Image from Drive applied. Save the frame to keep it.");
         setTimeout(() => setDriveSuccess(null), 4000);
       } else if (!result.ok) {
         setDriveError(result.error);
       }
     },
-    [projectId]
+    [projectId, ensureNoImageTemplateImageFallback]
   );
 
   const validImageUrls = imageUrls.filter((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim()));
@@ -2663,6 +2665,9 @@ export function SlideEditForm({
     validImageUrls.length > 0 ||
     !!(background.image_url && /^https?:\/\//i.test(background.image_url)) ||
     !!background.asset_id;
+  const allowBackgroundImageOverrideForPreview =
+    ((slide.meta as { allow_background_image_override?: boolean } | null)?.allow_background_image_override === true) ||
+    (templateDisallowsImage && isImageMode);
   const previewBackgroundImageUrl =
     validImageUrls.length === 1
       ? validImageUrls[0]!.url
@@ -2699,6 +2704,11 @@ export function SlideEditForm({
   const templateSolidSize = templateConfig?.overlays?.gradient?.solidSize ?? 25;
   const effectiveExtent = background.overlay?.extent != null ? background.overlay.extent : templateExtent;
   const effectiveSolidSize = background.overlay?.solidSize != null ? background.overlay.solidSize : templateSolidSize;
+  const isBackgroundColorCustom = background.color != null;
+  const isGradientColorCustom = background.overlay?.color != null;
+  const isGradientOpacityCustom = background.overlay?.darken != null;
+  const isGradientSpreadCustom = background.overlay?.extent != null;
+  const isGradientSolidCustom = background.overlay?.solidSize != null;
 
   const overlayEnabled = background.overlay?.enabled !== false;
   const templateBgForPreview = getTemplatePreviewBackgroundOverride(templateConfig ?? null);
@@ -2785,7 +2795,7 @@ export function SlideEditForm({
               className="h-7 text-xs text-muted-foreground hover:text-foreground"
               onClick={handleApplyOverlayToAll}
               disabled={applyingOverlay}
-              title="Apply overlay to all frames"
+              title="Apply background color and overlay settings to all frames"
             >
               {applyingOverlay ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
               Apply to all
@@ -2798,6 +2808,9 @@ export function SlideEditForm({
       <div className="flex flex-wrap items-center gap-4">
         <div className="flex items-center gap-2">
           <span className="text-muted-foreground text-xs font-medium">Color</span>
+          <span className="text-[10px] text-muted-foreground rounded bg-muted px-1.5 py-0.5">
+            {isBackgroundColorCustom ? "Custom" : "Template"}
+          </span>
           <input
             type="color"
             value={effectiveBackgroundColor}
@@ -2806,7 +2819,6 @@ export function SlideEditForm({
               setBackground((b) => ({
                 ...b,
                 color,
-                overlay: { ...b.overlay, gradient: true, color, textColor: getContrastingTextColor(color), darken: b.overlay?.darken ?? templateOverlayStrength },
               }));
             }}
             className="h-10 w-12 cursor-pointer rounded-lg border border-input/80 bg-background"
@@ -2826,7 +2838,7 @@ export function SlideEditForm({
             }
             className="h-4 w-4 rounded border-input accent-primary"
           />
-          <span className="text-xs font-medium">Gradient overlay</span>
+          <span className="text-xs font-medium">{isImageMode ? "Overlay on image" : "Gradient fill"}</span>
         </label>
       </div>
       {(isImageMode ? overlayEnabled : (background.gradientOn ?? true)) && (
@@ -2856,6 +2868,9 @@ export function SlideEditForm({
         <div className="flex items-end gap-2">
           <div className="space-y-1.5">
             <span className="text-muted-foreground text-xs font-medium">Color</span>
+            <span className="text-[10px] text-muted-foreground rounded bg-muted px-1.5 py-0.5 ml-1">
+              {isGradientColorCustom ? "Custom" : "Template"}
+            </span>
             <input
               type="color"
               value={background.overlay?.color ?? effectiveBackgroundColor}
@@ -2863,7 +2878,6 @@ export function SlideEditForm({
                 const color = e.target.value;
                 setBackground((b) => ({
                   ...b,
-                  ...(!isImageMode ? { color } : {}),
                   overlay: { ...b.overlay, gradient: true, color, textColor: getContrastingTextColor(color), darken: b.overlay?.darken ?? templateOverlayStrength },
                 }));
               }}
@@ -2872,6 +2886,9 @@ export function SlideEditForm({
           </div>
           <div className="space-y-1.5">
             <span className="text-muted-foreground text-xs font-medium">Opacity</span>
+            <span className="text-[10px] text-muted-foreground rounded bg-muted px-1.5 py-0.5 ml-1">
+              {isGradientOpacityCustom ? "Custom" : "Template"}
+            </span>
             <div className="flex items-center gap-2">
               <input
                 type="range"
@@ -2896,6 +2913,9 @@ export function SlideEditForm({
           <div className="space-y-2">
             <div className="flex justify-between">
               <Label className="text-xs">Gradient spread (0–100%)</Label>
+              <span className="text-[10px] text-muted-foreground rounded bg-muted px-1.5 py-0.5">
+                {isGradientSpreadCustom ? "Custom" : "Template"}
+              </span>
               <span className="text-muted-foreground text-xs">{effectiveExtent}%</span>
             </div>
             <Slider
@@ -2915,6 +2935,9 @@ export function SlideEditForm({
           <div className="space-y-2">
             <div className="flex justify-between">
               <Label className="text-xs">Solid block (0–100%)</Label>
+              <span className="text-[10px] text-muted-foreground rounded bg-muted px-1.5 py-0.5">
+                {isGradientSolidCustom ? "Custom" : "Template"}
+              </span>
               <span className="text-muted-foreground text-xs">{effectiveSolidSize}%</span>
             </div>
             <Slider
@@ -2991,9 +3014,19 @@ export function SlideEditForm({
           </>
         )}
       </div>
-      {isPipImageStyle && <span className="text-muted-foreground text-[11px]">Only for full slide</span>}
+      {isPipImageStyle && (
+        <span className="text-muted-foreground text-[11px]">
+          Blend is disabled in PiP mode. Switch image mode to Full to use tint overlay blend.
+        </span>
+      )}
     </div>
   );
+
+  const exportCanvasHeight = exportSize === "1080x1080" ? 1080 : exportSize === "1080x1350" ? 1350 : 1920;
+  const previewScale =
+    previewWrapSize != null && previewWrapSize.w > 0 && previewWrapSize.h > 0
+      ? Math.min(previewWrapSize.w / 1080, previewWrapSize.h / exportCanvasHeight)
+      : getPreviewDimensions(exportSize).scale;
 
   const previewContent = (
     <div className="flex flex-col rounded-xl border border-border/50 bg-muted/5 overflow-hidden">
@@ -3138,7 +3171,7 @@ export function SlideEditForm({
                 top: 0,
                 width: 1080,
                 height: exportSize === "1080x1080" ? 1080 : exportSize === "1080x1350" ? 1350 : 1920,
-                transform: `scale(${previewWrapWidth != null && previewWrapWidth > 0 ? previewWrapWidth / 1080 : getPreviewDimensions(exportSize).scale})`,
+                transform: `scale(${previewScale})`,
                 transformOrigin: "top left",
               }}
             >
@@ -3173,9 +3206,10 @@ export function SlideEditForm({
                 headlineFontSizeSpans={headlineFontSizeSpans.length > 0 ? headlineFontSizeSpans : undefined}
                 bodyFontSizeSpans={bodyFontSizeSpans.length > 0 ? bodyFontSizeSpans : undefined}
                 borderedFrame={!!(previewBackgroundImageUrl || previewBackgroundImageUrls?.length)}
-                allowBackgroundImageOverride={(slide.meta as { allow_background_image_override?: boolean } | null)?.allow_background_image_override === true}
+                allowBackgroundImageOverride={allowBackgroundImageOverrideForPreview}
                 imageDisplay={isImageMode ? effectiveImageDisplay : undefined}
                 exportSize={exportSize}
+                viewportFit={isMobile ? "contain" : "cover"}
                 onHeadlineChange={setHeadline}
                 onBodyChange={(v) => setBody(v)}
                 focusedZone={activeEditZone}
@@ -3225,6 +3259,11 @@ export function SlideEditForm({
                 onPipPositionChange={
                   isImageMode && validImageCount < 2 && effectiveImageDisplay.mode === "pip"
                     ? (x, y) => setImageDisplay((d) => ({ ...d, pipX: x, pipY: y }))
+                    : undefined
+                }
+                onPipSizeChange={
+                  isImageMode && validImageCount < 2 && effectiveImageDisplay.mode === "pip"
+                    ? (size) => setImageDisplay((d) => ({ ...d, pipSize: size }))
                     : undefined
                 }
                 positionAndSizeOnly
@@ -3333,11 +3372,7 @@ export function SlideEditForm({
                     setScrollToChromeSection(chrome);
                   }
                 }}
-                editScale={
-                  previewWrapWidth != null && previewWrapWidth > 0
-                    ? previewWrapWidth / 1080
-                    : getPreviewDimensions(exportSize).scale
-                }
+                editScale={previewScale}
               />
             </div>
           ) : (
@@ -3364,19 +3399,33 @@ export function SlideEditForm({
           <div className="w-9 shrink-0" aria-hidden />
         )}
       </div>
-      <div className="flex justify-center items-center gap-2 pb-2">
-        <span className="text-muted-foreground text-[11px]">Template:</span>
+      <div className="mx-auto mb-2 flex w-full max-w-[560px] items-center justify-center gap-2 rounded-lg border border-border/70 bg-card/80 px-3 py-2 shadow-sm">
+        <span className="text-foreground/85 text-[11px] font-medium">Template</span>
         <Button
           type="button"
           variant="outline"
           size="sm"
-          className="gap-1.5 h-8 text-xs"
+          className="gap-1.5 h-8 text-xs border-primary/30 bg-primary/5 hover:bg-primary/10 max-w-[240px]"
           onClick={() => setTemplateModalOpen(true)}
           disabled={applyingTemplate}
         >
           <LayoutTemplateIcon className="size-3.5" />
           <span className="truncate max-w-[160px]">{templates.find((t) => t.id === templateId)?.name ?? "Choose template"}</span>
         </Button>
+        {totalSlides > 1 && isPro && (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="h-8 text-xs"
+            onClick={handleApplyTemplateToAll}
+            disabled={applyingTemplate}
+            title="Apply current template to all frames"
+          >
+            {applyingTemplate ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
+            Apply to all
+          </Button>
+        )}
       </div>
       {saveError && (
         <p className="text-destructive text-sm px-3 pb-2" role="alert">
@@ -3388,7 +3437,7 @@ export function SlideEditForm({
 
   return (
     <>
-    <div className="flex flex-col min-h-0 w-full">
+    <div className="flex flex-col min-h-0 w-full md:h-full md:overflow-hidden">
       {isMobile && !mobileBannerDismissed && (
         <div className="flex items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 shrink-0">
           <MonitorIcon className="size-5 shrink-0 text-amber-600 dark:text-amber-500" />
@@ -3763,18 +3812,12 @@ export function SlideEditForm({
                 setCounterZoneOverride(undefined);
                 setWatermarkZoneOverride(undefined);
                 setMadeWithZoneOverride(undefined);
-                await handleTemplateChange(resolvedId, { reloadAfter: true });
-                lastSavedRef.current = JSON.stringify({
-                  headline,
-                  body,
-                  templateId: resolvedId,
-                  showCounter,
-                  showWatermark,
-                  showMadeWith,
-                });
+                const ok = await handleTemplateChange(resolvedId);
+                if (!ok) return;
+                lastSavedRef.current = buildEditorDirtySnapshotString(resolvedId);
                 router.refresh();
+                setTemplateModalOpen(false);
                 allowUnloadRef.current = true;
-                window.location.reload();
               }}
               primaryColor={brandKit.primary_color ?? undefined}
               previewImageUrls={previewBackgroundImageUrl ? [previewBackgroundImageUrl] : (previewBackgroundImageUrls?.length ? previewBackgroundImageUrls : undefined)}
@@ -3806,11 +3849,12 @@ export function SlideEditForm({
                 if (!id) return;
                 setClearPictureDialogTemplateId(null);
                 setApplyingTemplate(true);
-                await handleTemplateChange(id, { reloadAfter: true, clearBackground: true });
-                lastSavedRef.current = JSON.stringify({ headline, body, templateId: id, showCounter, showWatermark, showMadeWith });
+                const ok = await handleTemplateChange(id, { clearBackground: true });
+                if (!ok) return;
+                lastSavedRef.current = buildEditorDirtySnapshotString(id);
                 router.refresh();
+                setTemplateModalOpen(false);
                 allowUnloadRef.current = true;
-                window.location.reload();
               }}
             >
               Clear picture
@@ -3821,11 +3865,12 @@ export function SlideEditForm({
                 if (!id) return;
                 setClearPictureDialogTemplateId(null);
                 setApplyingTemplate(true);
-                await handleTemplateChange(id, { reloadAfter: true, allowBlend: true });
-                lastSavedRef.current = JSON.stringify({ headline, body, templateId: id, showCounter, showWatermark, showMadeWith });
+                const ok = await handleTemplateChange(id, { allowBlend: true });
+                if (!ok) return;
+                lastSavedRef.current = buildEditorDirtySnapshotString(id);
                 router.refresh();
+                setTemplateModalOpen(false);
                 allowUnloadRef.current = true;
-                window.location.reload();
               }}
             >
               Go ahead and blend
@@ -3908,18 +3953,12 @@ export function SlideEditForm({
                 setCounterZoneOverride(undefined);
                 setWatermarkZoneOverride(undefined);
                 setMadeWithZoneOverride(undefined);
-                await handleTemplateChange(resolvedId, { reloadAfter: true });
-                lastSavedRef.current = JSON.stringify({
-                  headline,
-                  body,
-                  templateId: resolvedId,
-                  showCounter,
-                  showWatermark,
-                  showMadeWith,
-                });
+                const ok = await handleTemplateChange(resolvedId);
+                if (!ok) return;
+                lastSavedRef.current = buildEditorDirtySnapshotString(resolvedId);
                 router.refresh();
+                setTemplateModalOpen(false);
                 allowUnloadRef.current = true;
-                window.location.reload();
               }}
             >
               Confirm
@@ -4045,7 +4084,7 @@ export function SlideEditForm({
                         headlineFontSizeSpans={headlineFontSizeSpans.length > 0 ? headlineFontSizeSpans : undefined}
                         bodyFontSizeSpans={bodyFontSizeSpans.length > 0 ? bodyFontSizeSpans : undefined}
                         borderedFrame={!!(previewBackgroundImageUrl || previewBackgroundImageUrls?.length)}
-                        allowBackgroundImageOverride={(slide.meta as { allow_background_image_override?: boolean } | null)?.allow_background_image_override === true}
+                        allowBackgroundImageOverride={allowBackgroundImageOverrideForPreview}
                         imageDisplay={isImageMode ? effectiveImageDisplay : undefined}
                         exportSize={exportSize}
                         positionAndSizeOnly
@@ -4098,6 +4137,11 @@ export function SlideEditForm({
                         onPipPositionChange={
                           isImageMode && validImageCount < 2 && effectiveImageDisplay.mode === "pip"
                             ? (x, y) => setImageDisplay((d) => ({ ...d, pipX: x, pipY: y }))
+                            : undefined
+                        }
+                        onPipSizeChange={
+                          isImageMode && validImageCount < 2 && effectiveImageDisplay.mode === "pip"
+                            ? (size) => setImageDisplay((d) => ({ ...d, pipSize: size }))
                             : undefined
                         }
                         editToolbarHeadline={
@@ -4220,16 +4264,21 @@ export function SlideEditForm({
         </DialogContent>
       </Dialog>
 
+      <div className="lg:flex lg:flex-1 lg:min-h-0 lg:overflow-hidden">
       <main
         ref={mainScrollRef}
-        className="relative z-10 flex-1 min-h-[min(36vh,320px)] md:min-h-0 flex items-start justify-center p-4 bg-muted/20 overflow-auto"
+        className="relative z-10 flex-1 min-h-[min(36vh,320px)] lg:min-h-0 flex items-start justify-center p-4 lg:px-10 lg:py-8 bg-muted/20 overflow-auto order-2 lg:overflow-hidden lg:order-2"
       >
-        <div className="w-full max-w-[560px] shrink-0">{previewContent}</div>
+        <div className="w-full max-w-[760px] shrink-0">{previewContent}</div>
       </main>
 
-      <section ref={editorSectionRef} className="relative z-0 shrink-0 border-t border-border md:flex md:flex-col md:items-center md:px-4">
-        <div className="w-full md:max-w-xl md:rounded-t-xl md:border md:border-b-0 md:border-border md:bg-card md:shadow-sm flex flex-col h-fit">
-          <div className="flex shrink-0 border-b border-border bg-muted/20 md:bg-muted/20" role="tablist" aria-label="Editor sections">
+      <section ref={editorSectionRef} className="relative z-0 shrink-0 border-t border-border order-1 lg:border-t-0 lg:border-r lg:w-[500px] lg:min-w-[470px] lg:max-w-[560px] lg:bg-card lg:flex lg:flex-col lg:order-1 lg:h-full lg:overflow-y-auto">
+        <div className="w-full lg:h-full flex flex-col lg:items-stretch">
+          <div
+            className={`shrink-0 ${isMobile ? "flex border-b border-border bg-muted/20" : "sticky top-0 z-10 grid grid-cols-4 border-b border-border bg-card/95 backdrop-blur p-2 gap-1.5"}`}
+            role="tablist"
+            aria-label="Editor sections"
+          >
             {(["layout", "text", "background", "more"] as const).map((tab) => {
             const Icon = tab === "text" ? Type : tab === "layout" ? LayoutTemplateIcon : tab === "background" ? PaletteIcon : MoreHorizontal;
             const label = tab === "text" ? "Text" : tab === "layout" ? "Layout" : tab === "background" ? "Background" : "More";
@@ -4243,14 +4292,30 @@ export function SlideEditForm({
                 role="tab"
                 aria-selected={editorTab === tab}
                 aria-controls={panelId}
-                onClick={() => setEditorTab(tab)}
-                className={`flex flex-1 min-w-0 items-center justify-center gap-1.5 py-2 px-2 text-xs capitalize transition-colors border-b-2 -mb-px ${
-                  editorTab === tab
-                    ? "border-primary text-primary bg-background/80 font-semibold"
-                    : "border-transparent text-muted-foreground font-medium hover:text-foreground hover:bg-muted/30"
-                }`}
+                onClick={() => {
+                  setEditorTab(tab);
+                  if (tab === "layout") setChromeLayoutOpen(true);
+                  if (tab === "text" && !expandedTextSection) setExpandedTextSection("headline");
+                  setTimeout(() => {
+                    const panel = document.getElementById(`editor-panel-${tab}`);
+                    if (panel) panel.scrollTo({ top: 0, behavior: "smooth" });
+                  }, 0);
+                }}
+                className={
+                  isMobile
+                    ? `flex flex-1 min-w-0 items-center justify-center gap-1.5 py-2 px-2 text-xs capitalize transition-colors border-b-2 -mb-px ${
+                        editorTab === tab
+                          ? "border-primary text-primary bg-background/80 font-semibold"
+                          : "border-transparent text-muted-foreground font-medium hover:text-foreground hover:bg-muted/30"
+                      }`
+                    : `flex w-full items-center justify-center gap-1.5 rounded-md px-2 py-2.5 text-sm transition-colors ${
+                        editorTab === tab
+                          ? "bg-primary/10 text-primary font-semibold"
+                          : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
+                      }`
+                }
               >
-                <Icon className="size-3.5 shrink-0" aria-hidden />
+                <Icon className={`${isMobile ? "size-3.5" : "size-4"} shrink-0`} aria-hidden />
                 <span className="truncate">{label}</span>
               </button>
             );
@@ -4260,7 +4325,7 @@ export function SlideEditForm({
             id={`editor-panel-${editorTab}`}
             role="tabpanel"
             aria-labelledby={`editor-tab-${editorTab}`}
-            className={`overflow-y-auto shrink-0 p-4 bg-card min-h-0 ${isMobile ? "max-h-[min(58vh,520px)]" : "max-h-[min(40vh,400px)]"}`}
+            className={`overflow-y-auto overflow-x-hidden shrink-0 p-4 md:p-5 bg-card min-h-0 md:flex-1 ${isMobile ? "max-h-[min(52dvh,520px)]" : "max-h-none md:h-auto"}`}
           >
           {editorTab === "layout" && (
           <section className={`space-y-5 ${!isPro ? "pointer-events-none opacity-60" : ""}`} aria-label="Layout">
@@ -4779,7 +4844,7 @@ export function SlideEditForm({
                         </div>
                         <div className="flex flex-wrap items-center gap-1.5">
                           <span className="text-[11px] text-muted-foreground shrink-0">Highlight:</span>
-                          <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 shrink-0" onClick={() => applyAutoHighlight("headline")} title="Toggle auto highlight (add or remove)">
+                          <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 shrink-0" onClick={() => applyAutoHighlight("headline")} title="Auto highlight key words">
                             Auto
                           </Button>
                           <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 shrink-0 gap-1" onClick={() => applyBoldToSelection("headline", true)} onMouseDown={() => saveHighlightSelectionForPicker("headline")} title="Bold selected word(s)">
@@ -4864,7 +4929,7 @@ export function SlideEditForm({
               {editorTab === "text" && (
               <div className="border-t border-border/40 pt-3 mt-3 hidden">
                   <div className="space-y-2">
-                    <p className="text-[11px] text-muted-foreground">Select a word (or drag to select), then click a color. Or click Auto to highlight key words. Use “Apply to all highlights” to change every highlight’s color; “Apply to all frames” runs Auto on every frame.</p>
+                    <p className="text-[11px] text-muted-foreground">Select a word (or drag to select), then click a color. Or click Auto to highlight key words. Use “Apply color to all” to recolor all current highlights; use “Auto all slides” to regenerate highlights on every frame.</p>
                     <div className="flex flex-wrap items-center gap-1.5">
                       <Button
                         type="button"
@@ -4931,7 +4996,7 @@ export function SlideEditForm({
                             onClick={() => applyColorToAllHighlights("headline")}
                             title="Apply chosen color to all headline highlights"
                           >
-                            Apply to all highlights
+                            Apply color to all
                           </Button>
                           <Button
                             type="button"
@@ -4956,7 +5021,7 @@ export function SlideEditForm({
                           title="Run Auto highlight on headlines only, on every frame (uses headline color)"
                         >
                           {applyingAutoHighlights ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
-                          Apply Auto to all slides
+                          Auto all slides
                         </Button>
                       )}
                       <Button type="button" variant={headlineHighlightStyle === "text" ? "secondary" : "ghost"} size="sm" className="h-6 text-[11px]" onClick={() => setHeadlineHighlightStyle("text")} title="Highlight style: text color only">
@@ -5119,7 +5184,7 @@ export function SlideEditForm({
                         </div>
                         <div className="flex flex-wrap items-center gap-1.5">
                           <span className="text-[11px] text-muted-foreground shrink-0">Highlight:</span>
-                          <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 shrink-0" onClick={() => applyAutoHighlight("body")} title="Toggle auto highlight (add or remove)">
+                          <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 shrink-0" onClick={() => applyAutoHighlight("body")} title="Auto highlight key words">
                             Auto
                           </Button>
                           <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 shrink-0 gap-1" onClick={() => applyBoldToSelection("body", true)} onMouseDown={() => saveHighlightSelectionForPicker("body")} title="Bold selected word(s)">
@@ -5204,7 +5269,7 @@ export function SlideEditForm({
               {editorTab === "text" && (
               <div className="border-t border-border/40 pt-3 mt-3 hidden">
                   <div className="space-y-2">
-                    <p className="text-[11px] text-muted-foreground">Select a word (or drag to select), then click a color. Or click Auto to highlight key words. Use “Apply to all highlights” to change every highlight’s color; “Apply to all frames” runs Auto on every frame.</p>
+                    <p className="text-[11px] text-muted-foreground">Select a word (or drag to select), then click a color. Or click Auto to highlight key words. Use “Apply color to all” to recolor all current highlights; use “Auto all slides” to regenerate highlights on every frame.</p>
                     <div className="flex flex-wrap items-center gap-1.5">
                       <Button
                         type="button"
@@ -5266,7 +5331,7 @@ export function SlideEditForm({
                             onClick={() => applyColorToAllHighlights("body")}
                             title="Apply chosen color to all body highlights"
                           >
-                            Apply to all highlights
+                            Apply color to all
                           </Button>
                           <Button
                             type="button"
@@ -5291,7 +5356,7 @@ export function SlideEditForm({
                           title="Run Auto highlight on body only, on every frame (uses body color)"
                         >
                           {applyingAutoHighlights ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
-                          Apply Auto to all slides
+                          Auto all slides
                         </Button>
                       )}
                       <Button type="button" variant={bodyHighlightStyle === "text" ? "secondary" : "ghost"} size="sm" className="h-6 text-[11px]" onClick={() => setBodyHighlightStyle("text")} title="Highlight style: text color only">
@@ -5421,6 +5486,7 @@ export function SlideEditForm({
                               next[i] = { ...next[i]!, url: v };
                               return next;
                             });
+                            if (v && /^https?:\/\//i.test(v)) ensureNoImageTemplateImageFallback();
                           }}
                           className="h-10 flex-1 rounded-lg border-input/80 bg-background text-sm"
                         />
@@ -6014,10 +6080,11 @@ export function SlideEditForm({
                     type="url"
                     value={!isImageMode && imageUrls[0] ? imageUrls[0].url : ""}
                     onChange={(e) => {
-                      const v = e.target.value.trim();
-                      if (v && /^https?:\/\//i.test(v)) {
-                        setImageUrls([{ url: v, source: undefined }]);
+                      const v = e.target.value;
+                      setImageUrls([{ url: v, source: undefined }]);
+                      if (v.trim() && /^https?:\/\//i.test(v.trim())) {
                         setBackground((b) => ({ ...b, mode: "image" }));
+                        ensureNoImageTemplateImageFallback();
                       }
                     }}
                     placeholder="https://..."
@@ -6111,6 +6178,7 @@ export function SlideEditForm({
           </div>
         </div>
       </section>
+      </div>
 
     </div>
     {layoutModalOpen &&
@@ -6446,9 +6514,9 @@ export function SlideEditForm({
                   onApplyToSelection={(color, useSaved) => applyHighlightToSelection(color, "headline", useSaved)}
                   onRemoveFromSelection={(useSaved) => removeHighlightFromSelection("headline", useSaved)}
                   onAuto={() => applyAutoHighlight("headline")}
-                  onApplyToAll={() => handleApplyToAllHighlights("headline")}
+                  onApplyColorToAll={() => handleApplyHighlightColorToAll("headline")}
+                  onApplyAutoToAll={() => handleApplyAutoHighlightsToAll("headline")}
                   onClearAll={() => clearAllHighlights("headline")}
-                  lastHighlightAction={lastHeadlineHighlightAction}
                   totalSlides={totalSlides}
                   applyingAutoHighlights={applyingAutoHighlights}
                   contentOnly
@@ -6472,9 +6540,9 @@ export function SlideEditForm({
                   onApplyToSelection={(color, useSaved) => applyHighlightToSelection(color, "body", useSaved)}
                   onRemoveFromSelection={(useSaved) => removeHighlightFromSelection("body", useSaved)}
                   onAuto={() => applyAutoHighlight("body")}
-                  onApplyToAll={() => handleApplyToAllHighlights("body")}
+                  onApplyColorToAll={() => handleApplyHighlightColorToAll("body")}
+                  onApplyAutoToAll={() => handleApplyAutoHighlightsToAll("body")}
                   onClearAll={() => clearAllHighlights("body")}
-                  lastHighlightAction={lastBodyHighlightAction}
                   totalSlides={totalSlides}
                   applyingAutoHighlights={applyingAutoHighlights}
                   contentOnly
