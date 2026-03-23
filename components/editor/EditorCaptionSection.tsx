@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { CaptionEditModal } from "@/components/editor/CaptionEditModal";
+import { buildLinkedInCarouselCaption } from "@/lib/caption/linkedinPostCaption";
 import { CopyIcon, CheckIcon } from "lucide-react";
 
 const UTM = "utm_source=karouselmaker&utm_medium=referral";
@@ -36,6 +37,8 @@ type EditorCaptionSectionProps = {
   editorPath: string;
   /** When true (e.g. carousel is generating), disable edit and copy actions. */
   disabled?: boolean;
+  /** When LinkedIn, show feed-first tips and combined "Copy for LinkedIn". */
+  carouselFor?: "instagram" | "linkedin";
 };
 
 export function EditorCaptionSection({
@@ -45,11 +48,13 @@ export function EditorCaptionSection({
   unsplashAttributions = [],
   editorPath,
   disabled = false,
+  carouselFor,
 }: EditorCaptionSectionProps) {
   const [editOpen, setEditOpen] = useState(false);
-  const [copied, setCopied] = useState<"title" | "medium" | "long" | "hashtags" | "credits" | null>(null);
+  const [copied, setCopied] = useState<"title" | "medium" | "long" | "hashtags" | "credits" | "linkedin" | null>(null);
+  const isLinkedIn = carouselFor === "linkedin";
 
-  const copyToClipboard = useCallback(async (text: string, key: "title" | "medium" | "long" | "hashtags" | "credits") => {
+  const copyToClipboard = useCallback(async (text: string, key: "title" | "medium" | "long" | "hashtags" | "credits" | "linkedin") => {
     if (!text.trim()) return;
     try {
       await navigator.clipboard.writeText(text);
@@ -67,6 +72,15 @@ export function EditorCaptionSection({
   const creditsText =
     unsplashAttributions.length > 0 ? unsplashAttributions.map(formatCreditLine).join("\n") : "";
 
+  const linkedInCombined = buildLinkedInCarouselCaption({
+    caption_variants: {
+      title: titleText || undefined,
+      medium: mediumText || undefined,
+      long: longText || undefined,
+    },
+    hashtags,
+  });
+
   return (
     <>
       <section>
@@ -79,10 +93,35 @@ export function EditorCaptionSection({
           </Button>
         </div>
         <div className="mt-3 space-y-4">
+          {isLinkedIn && (
+            <p className="text-muted-foreground text-sm rounded-md border border-border bg-muted/40 px-3 py-2">
+              <strong className="text-foreground">LinkedIn:</strong> Paste the document carousel first, then this caption. The{" "}
+              <span className="text-foreground font-medium">first line</span> is what people see before &quot;see more&quot;—keep the hook there.{" "}
+              Use <span className="text-foreground font-medium">3–5</span> niche hashtags.
+            </p>
+          )}
+          {isLinkedIn && linkedInCombined.trim() && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2">
+              <p className="text-sm text-foreground font-medium">Ready to paste on LinkedIn</p>
+              <Button
+                variant="default"
+                size="sm"
+                className="shrink-0 gap-1.5"
+                onClick={() => copyToClipboard(linkedInCombined, "linkedin")}
+                disabled={disabled || !linkedInCombined.trim()}
+                title="Copy opening line + body + hashtags for your LinkedIn post"
+              >
+                {copied === "linkedin" ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
+                Copy for LinkedIn
+              </Button>
+            </div>
+          )}
           {titleText && (
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0 flex-1">
-                <p className="text-muted-foreground text-xs">Title (SEO)</p>
+                <p className="text-muted-foreground text-xs">
+                  {isLinkedIn ? "First line (feed preview)" : "Title (SEO)"}
+                </p>
                 <p className="text-sm">{titleText}</p>
               </div>
               <Button
@@ -90,7 +129,7 @@ export function EditorCaptionSection({
                 size="sm"
                 className="text-muted-foreground shrink-0 gap-1.5 h-8"
                 onClick={() => copyToClipboard(titleText, "title")}
-                title="Copy title"
+                title={isLinkedIn ? "Copy first line" : "Copy title"}
                 disabled={disabled}
               >
                 {copied === "title" ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
@@ -120,7 +159,9 @@ export function EditorCaptionSection({
           {longText && (
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0 flex-1">
-                <p className="text-muted-foreground text-xs">Long caption</p>
+                <p className="text-muted-foreground text-xs">
+                  {isLinkedIn ? "Longer variant (optional)" : "Long caption"}
+                </p>
                 <p className="text-sm">{longText}</p>
               </div>
               <Button
@@ -142,7 +183,7 @@ export function EditorCaptionSection({
 
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1">
-              <p className="text-muted-foreground text-xs">Hashtags</p>
+              <p className="text-muted-foreground text-xs">{isLinkedIn ? "Hashtags (3–5 recommended)" : "Hashtags"}</p>
               {hashtags.length > 0 ? (
                 <p className="text-sm wrap-break-word">{hashtagText}</p>
               ) : (
@@ -219,6 +260,7 @@ export function EditorCaptionSection({
         }}
         hashtags={hashtags}
         editorPath={editorPath}
+        carouselFor={carouselFor}
       />
     </>
   );

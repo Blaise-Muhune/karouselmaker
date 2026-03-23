@@ -23,6 +23,8 @@ type CaptionEditModalProps = {
   hashtags: string[];
   editorPath: string;
   onSaved?: () => void;
+  /** LinkedIn-specific labels and hints for document carousel posts. */
+  carouselFor?: "instagram" | "linkedin";
 };
 
 export function CaptionEditModal({
@@ -33,7 +35,9 @@ export function CaptionEditModal({
   hashtags,
   editorPath,
   onSaved,
+  carouselFor,
 }: CaptionEditModalProps) {
+  const isLinkedIn = carouselFor === "linkedin";
   const [title, setTitle] = useState(captionVariants.title ?? "");
   const [medium, setMedium] = useState(captionVariants.medium ?? "");
   const [long, setLong] = useState(captionVariants.long ?? "");
@@ -72,12 +76,16 @@ export function CaptionEditModal({
         </DialogHeader>
         <div className="grid gap-4 py-2">
           <div>
-            <Label htmlFor="title">Title (SEO)</Label>
+            <Label htmlFor="title">{isLinkedIn ? "First line (feed preview)" : "Title (SEO)"}</Label>
             <Textarea
               id="title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="Short post title, optimized for search"
+              placeholder={
+                isLinkedIn
+                  ? "Strong hook—this is what shows before “see more”"
+                  : "Short post title, optimized for search"
+              }
               className="mt-1 min-h-[60px]"
             />
           </div>
@@ -92,22 +100,26 @@ export function CaptionEditModal({
             />
           </div>
           <div>
-            <Label htmlFor="long">Long caption</Label>
+            <Label htmlFor="long">{isLinkedIn ? "Longer variant (optional)" : "Long caption"}</Label>
             <Textarea
               id="long"
               value={long}
               onChange={(e) => setLong(e.target.value)}
-              placeholder="Longer caption with full context"
+              placeholder={
+                isLinkedIn
+                  ? "Alternative fuller caption (takeaways, bullets)—use “Copy for LinkedIn” on the main page to combine title + body"
+                  : "Longer caption with full context"
+              }
               className="mt-1 min-h-[120px]"
             />
           </div>
           <div>
-            <Label htmlFor="hashtags">Hashtags</Label>
+            <Label htmlFor="hashtags">{isLinkedIn ? "Hashtags (3–5 recommended)" : "Hashtags"}</Label>
             <Textarea
               id="hashtags"
               value={hashtagsStr}
               onChange={(e) => setHashtagsStr(e.target.value)}
-              placeholder="#tag1 #tag2 or tag1, tag2"
+              placeholder={isLinkedIn ? "e.g. leadership saas b2b (3–5 niche tags)" : "#tag1 #tag2 or tag1, tag2"}
               className="mt-1 min-h-[60px]"
             />
           </div>

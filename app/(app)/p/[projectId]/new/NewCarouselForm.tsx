@@ -112,6 +112,8 @@ export function NewCarouselForm({
 }) {
   const router = useRouter();
   const hasFullAccess = hasFullAccessProp ?? isPro;
+  /** Web image search (Brave): Pro or first free full-access generations — not admin-only. */
+  const canUseWebImages = hasFullAccess;
   const canUseAiGenerate = isAdminUser || (hasFullAccess && aiGenerateUsed < aiGenerateLimit);
   const [inputType, setInputType] = useState<"topic" | "url" | "text">(initialInputType ?? "topic");
   const [inputValue, setInputValue] = useState(initialInputValue ?? "");
@@ -120,10 +122,12 @@ export function NewCarouselForm({
   const [useAiBackgrounds, setUseAiBackgrounds] = useState(initialUseAiBackgrounds ?? (!!regenerateCarouselId));
   const [imageSource, setImageSource] = useState<"stock" | "ai_generate" | "brave">(() => {
     const ha = hasFullAccessProp ?? isPro;
+    const canWeb = ha;
     const canAi = isAdminUser || (ha && aiGenerateUsed < aiGenerateLimit);
     if (initialUseAiGenerate && canAi) return "ai_generate";
     if (initialUseStockPhotos) return "stock";
-    return isAdminUser ? "brave" : "stock";
+    if (regenerateCarouselId && !initialUseStockPhotos && !initialUseAiGenerate && canWeb) return "brave";
+    return "stock";
   });
   const [useWebSearch, setUseWebSearch] = useState(initialUseWebSearch ?? false);
   const [carouselFor, setCarouselFor] = useState<"instagram" | "linkedin">(initialCarouselFor ?? "instagram");
@@ -161,8 +165,14 @@ export function NewCarouselForm({
   };
 
   useEffect(() => {
-    if (carouselFor === "linkedin" && imageSource === "ai_generate") setImageSource("stock");
-  }, [carouselFor]);
+    if (carouselFor === "linkedin" && (imageSource === "ai_generate" || imageSource === "brave")) {
+      setImageSource("stock");
+    }
+  }, [carouselFor, imageSource]);
+
+  useEffect(() => {
+    if (!canUseWebImages && imageSource === "brave") setImageSource("stock");
+  }, [canUseWebImages, imageSource]);
 
   const prevCarouselForRef = useRef<"instagram" | "linkedin">(carouselFor);
   useEffect(() => {
@@ -493,9 +503,12 @@ export function NewCarouselForm({
               Backgrounds
             </CardTitle>
             <CardDescription className="text-muted-foreground/90">
-              AI images or your own. Off = project colors.
+              Stock photos work on every plan. Web images and AI generate need Pro or your first {freeGenerationsTotal} free generations. Off = project colors.
               {hasFullAccess && !isPro && (
-                <span className="block mt-1"> <strong>{freeGenerationsTotal - freeGenerationsUsed}/{freeGenerationsTotal} free</strong> AI gens left.</span>
+                <span className="block mt-1">
+                  {" "}
+                  <strong>{freeGenerationsTotal - freeGenerationsUsed}/{freeGenerationsTotal} free</strong> generations left with Web images + full editor access.
+                </span>
               )}
             </CardDescription>
           </CardHeader>
@@ -527,7 +540,7 @@ export function NewCarouselForm({
                 {([
                   "stock",
                   ...(carouselFor !== "linkedin" && canUseAiGenerate ? (["ai_generate"] as const) : []),
-                  ...(isAdminUser ? (["brave"] as const) : []),
+                  ...(carouselFor !== "linkedin" && canUseWebImages ? (["brave"] as const) : []),
                 ] as const).map((src) => (
                   <label
                     key={src}

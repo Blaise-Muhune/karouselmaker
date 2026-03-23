@@ -4,6 +4,7 @@ import type { ComponentProps } from "react";
 import { SlidePreview } from "@/components/renderer/SlidePreview";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { getTemplatePreviewBackgroundOverride, getLinkedInPreviewOverlayOverride } from "@/lib/renderer/getTemplatePreviewBackground";
+import { getTemplatePreviewImageUrls } from "@/lib/renderer/templatePreviewImages";
 import { LayoutTemplateIcon } from "lucide-react";
 
 /** Build imageDisplay from template defaults so PIP and full templates render exactly as designed. */
@@ -90,6 +91,10 @@ export function TemplatePreviewThumb({
   className,
 }: TemplatePreviewThumbProps) {
   const brandKit = { primary_color: primaryColor };
+  const urlsFromTemplate = getTemplatePreviewImageUrls(config);
+  const firstUrl = previewImageUrl ?? urlsFromTemplate[0];
+  const multiUrls = !previewImageUrl && urlsFromTemplate.length >= 2 ? urlsFromTemplate : undefined;
+  const hasPreviewPhoto = !!(firstUrl || (multiUrls && multiUrls.length > 0));
 
   if (!config) {
     return (
@@ -122,9 +127,10 @@ export function TemplatePreviewThumb({
           templateConfig={config}
           brandKit={brandKit}
           totalSlides={8}
-          backgroundImageUrl={previewImageUrl ?? undefined}
+          backgroundImageUrl={firstUrl ?? undefined}
+          backgroundImageUrls={multiUrls}
           backgroundOverride={
-            !previewImageUrl
+            !hasPreviewPhoto
               ? getTemplatePreviewBackgroundOverride(config)
               : category === "linkedin"
                 ? getLinkedInPreviewOverlayOverride(config)

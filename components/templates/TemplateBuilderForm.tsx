@@ -28,6 +28,7 @@ import { createTemplateAction } from "@/app/actions/templates/createTemplate";
 import { updateTemplateAction } from "@/app/actions/templates/updateTemplate";
 import { DEFAULT_TEMPLATE_CONFIG, LAYOUT_PRESETS } from "@/lib/templateDefaults";
 import { getTemplatePreviewBackgroundOverride } from "@/lib/renderer/getTemplatePreviewBackground";
+import { getTemplatePreviewImageUrls } from "@/lib/renderer/templatePreviewImages";
 import { getSwipeRightXForFormat } from "@/lib/renderer/renderModel";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import type { Template } from "@/lib/server/db/types";
@@ -148,7 +149,11 @@ export function TemplateBuilderForm({
   const [error, setError] = useState<string | null>(null);
   const [previewHeadline, setPreviewHeadline] = useState("Your headline text");
   const [previewBody, setPreviewBody] = useState("Body text goes here for preview.");
-  const [previewImageUrls, setPreviewImageUrls] = useState<string[]>([""]);
+  const [previewImageUrls, setPreviewImageUrls] = useState<string[]>(() => {
+    const fromTemplate = initialConfig ? getTemplatePreviewImageUrls(initialConfig) : [];
+    if (fromTemplate.length > 0) return fromTemplate;
+    return [""];
+  });
   const [previewBackgroundColor, setPreviewBackgroundColor] = useState("#0a0a0a");
   const [previewSize, setPreviewSize] = useState<PreviewSize>("1080x1350");
   const [previewSlideIndex, setPreviewSlideIndex] = useState(1);

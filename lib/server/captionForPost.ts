@@ -1,3 +1,5 @@
+export { buildLinkedInCarouselCaption } from "@/lib/caption/linkedinPostCaption";
+
 /**
  * Build a single caption/message string from carousel caption_variants and hashtags
  * for use when posting to Facebook, Instagram, etc.

@@ -285,6 +285,8 @@ export async function generateCarousel(formData: FormData): Promise<
   }
   const hasFreeFullAccess = !isPro && lifetimeCount < FREE_FULL_ACCESS_GENERATIONS;
   const hasFullAccess = isPro || hasFreeFullAccess;
+  /** Web image search (Brave) — same tier as LLM web search: Pro or first N free generations. */
+  const canUseWebImages = hasFullAccess;
 
   const projectRulesJson = project.project_rules as {
     rules?: string;
@@ -335,7 +337,7 @@ export async function generateCarousel(formData: FormData): Promise<
   const carouselFor = (parsed.data.carousel_for === "linkedin" || parsed.data.carousel_for === "instagram")
     ? parsed.data.carousel_for
     : undefined;
-  const useStockPhotos = !!parsed.data.use_stock_photos;
+  const useStockPhotosRaw = !!parsed.data.use_stock_photos;
   const requestedAiGenerate = carouselFor !== "linkedin" && !!parsed.data.use_ai_generate;
   const userIsAdmin = isAdmin(user.email ?? null);
   const fullProFeatures = await hasFullProFeatureAccess(user.id, user.email);
@@ -349,6 +351,11 @@ export async function generateCarousel(formData: FormData): Promise<
     }
   }
   const useAiGenerate = requestedAiGenerate && (fullProFeatures || userIsAdmin);
+  /** Free users without Web-image access who pick "Web images" are served stock instead (UI + API both clamp). LinkedIn never uses web image search. */
+  const requestedBravePath = !useStockPhotosRaw && !useAiGenerate;
+  const effectiveUseStockPhotos =
+    useStockPhotosRaw || (requestedBravePath && (!canUseWebImages || carouselFor === "linkedin"));
+  const requestedUseAiBackgrounds = !!(data.use_ai_backgrounds);
   const userAskedWebSearch = !!data.use_web_search;
   const autoNewsWebSearch = hasFullAccess && looksLikeNewsOrTimeSensitive(data.input_value, data.input_type);
   const useWebSearch = hasFullAccess && (userAskedWebSearch || autoNewsWebSearch);
@@ -375,8 +382,8 @@ export async function generateCarousel(formData: FormData): Promise<
     number_of_slides,
     input_type: data.input_type as "topic" | "url" | "text",
     input_value: data.input_value,
-    use_ai_backgrounds: hasFullAccess ? (data.use_ai_backgrounds ?? false) : false,
-    use_stock_photos: useStockPhotos,
+    use_ai_backgrounds: requestedUseAiBackgrounds,
+    use_stock_photos: effectiveUseStockPhotos,
     use_ai_generate: useAiGenerate,
     use_web_search: useWebSearch,
     creator_handle: creatorHandle,
@@ -510,8 +517,8 @@ export async function generateCarousel(formData: FormData): Promise<
     caption_variants: validated.caption_variants,
     hashtags: validated.hashtags,
     generation_options: {
-      use_ai_backgrounds: !!data.use_ai_backgrounds,
-      use_stock_photos: useStockPhotos,
+      use_ai_backgrounds: requestedUseAiBackgrounds,
+      use_stock_photos: effectiveUseStockPhotos,
       use_ai_generate: useAiGenerate,
       use_web_search: useWebSearch,
       ...(carouselFor && { carousel_for: carouselFor }),
@@ -534,7 +541,7 @@ export async function generateCarousel(formData: FormData): Promise<
     (s.image_queries?.length ?? s.unsplash_queries?.length ?? 0) > 0 || !!(s.image_query?.trim() || s.unsplash_query?.trim());
   const carouselWillHaveImages =
     (parsed.data.background_asset_ids?.length ?? 0) > 0 ||
-    (parsed.data.use_ai_backgrounds && validated.slides.some(hasImageQueriesForDefault));
+    (requestedUseAiBackgrounds && validated.slides.some(hasImageQueriesForDefault));
 
   const defaultTemplate =
     carouselFor === "linkedin" && !data.template_id
@@ -659,7 +666,7 @@ export async function generateCarousel(formData: FormData): Promise<
 
   const hasImageQueries = (s: { image_queries?: string[]; unsplash_queries?: string[]; image_query?: string; unsplash_query?: string }) =>
     (s.image_queries?.length ?? s.unsplash_queries?.length ?? 0) > 0 || !!(s.image_query?.trim() || s.unsplash_query?.trim());
-  if (parsed.data.use_ai_backgrounds && validated.slides.some(hasImageQueries)) {
+  if (requestedUseAiBackgrounds && validated.slides.some(hasImageQueries)) {
     const aiSlideByIndex = new Map(
       validated.slides.map((s) => [s.slide_index, s])
     );
@@ -744,7 +751,10 @@ export async function generateCarousel(formData: FormData): Promise<
       }
       LOG("backgrounds", "AI generate done");
     } else {
-      LOG("backgrounds", useStockPhotos ? `stock photos (Unsplash/Pexels/Pixabay, concurrency ${SEARCH_IMAGE_CONCURRENCY})` : "Brave search");
+      LOG(
+        "backgrounds",
+        effectiveUseStockPhotos ? `stock photos (Unsplash/Pexels/Pixabay, concurrency ${SEARCH_IMAGE_CONCURRENCY})` : "Brave search"
+      );
       type ImageResult = {
         url: string;
         source: "brave" | "unsplash" | "pixabay" | "pexels";
@@ -834,7 +844,7 @@ export async function generateCarousel(formData: FormData): Promise<
         }
       };
 
-      if (useStockPhotos) {
+      if (effectiveUseStockPhotos) {
         const providers: StockProvider[] = ["unsplash", "pexels", "pixabay"];
         /** Pick a random result from the top N to get variety (avoids always same image for similar queries). */
         const pickRandomFrom = <T>(arr: T[]): { primary: T; rest: T[] } => {
@@ -1034,12 +1044,17 @@ export async function startCarouselGeneration(formData: FormData): Promise<
 
   const { isPro } = await getSubscription(user.id, user.email);
   const limits = await getEffectivePlanLimits(user.id, user.email);
-  const count = await countCarouselsThisMonth(user.id);
+  const [count, lifetimeCount] = await Promise.all([
+    countCarouselsThisMonth(user.id),
+    countCarouselsLifetime(user.id),
+  ]);
   if (count >= limits.carouselsPerMonth) {
     return {
       error: `Generation limit: ${count}/${limits.carouselsPerMonth} carousels this month.${isPro ? "" : " Upgrade to Pro for more."}`,
     };
   }
+  const hasFreeFullAccess = !isPro && lifetimeCount < FREE_FULL_ACCESS_GENERATIONS;
+  const hasFullAccess = isPro || hasFreeFullAccess;
   const requestedAiGenerate = parsed.data.carousel_for !== "linkedin" && !!data.use_ai_generate;
   const userIsAdmin = isAdmin(user.email ?? null);
   const fullProFeatures = await hasFullProFeatureAccess(user.id, user.email);
@@ -1060,11 +1075,19 @@ export async function startCarouselGeneration(formData: FormData): Promise<
     data.input_value,
     "Generating…"
   );
+  const useAiBg = !!data.use_ai_backgrounds;
+  const useStockRaw = !!parsed.data.use_stock_photos;
+  const useAiGenStored = parsed.data.carousel_for !== "linkedin" && !!data.use_ai_generate;
+  /** Match generateCarousel: Web images without entitlement → stock; LinkedIn → stock only. */
+  let useStockStored = useStockRaw;
+  if (useAiBg && !useStockRaw && !useAiGenStored && (!hasFullAccess || parsed.data.carousel_for === "linkedin")) {
+    useStockStored = true;
+  }
   const generationOptions: Record<string, unknown> = {
-    use_ai_backgrounds: !!data.use_ai_backgrounds,
-    use_stock_photos: !!parsed.data.use_stock_photos,
-    use_ai_generate: parsed.data.carousel_for !== "linkedin" && !!data.use_ai_generate,
-    use_web_search: !!data.use_web_search,
+    use_ai_backgrounds: useAiBg,
+    use_stock_photos: useStockStored,
+    use_ai_generate: useAiGenStored,
+    use_web_search: hasFullAccess && !!data.use_web_search,
     generation_started: false,
     number_of_slides: data.number_of_slides,
     notes: data.notes,

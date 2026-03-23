@@ -340,6 +340,7 @@ export default async function CarouselEditorPage({
           unsplashAttributions={unsplashAttributions}
           editorPath={editorPath}
           disabled={isGenerating}
+          carouselFor={(carousel.generation_options as { carousel_for?: "instagram" | "linkedin" } | undefined)?.carousel_for}
         />
       </div>
     </div>

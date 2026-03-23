@@ -137,8 +137,24 @@ export async function setSlideTemplate(
           : undefined;
     const hasImageDisplay = resolvedImageDisplay != null && Object.keys(resolvedImageDisplay).length > 0;
 
+    const templateAllowsImage = parsed.data?.backgroundRules?.allowImage !== false;
+
+    // Full template defaults.background (solid, gradient, or image with images[] / image_url).
+    const templateBgFromDefaults =
+      parsed.data?.defaults?.background != null &&
+      typeof parsed.data.defaults.background === "object" &&
+      !Array.isArray(parsed.data.defaults.background)
+        ? (parsed.data.defaults.background as Record<string, unknown>)
+        : undefined;
+
+    const templateHasStoredImageBg =
+      templateAllowsImage &&
+      templateBgFromDefaults != null &&
+      templateBgFromDefaults.mode === "image" &&
+      backgroundHasImage(templateBgFromDefaults);
+
     // Resolve template background color/style/pattern so they persist after reload (editor reads slide.background.color).
-    const defaultsBg = parsed.data?.defaults?.background as { color?: string; style?: string; pattern?: string } | undefined;
+    const defaultsBg = templateBgFromDefaults as { color?: string; style?: string; pattern?: string } | undefined;
     const templateBgColor =
       (defaultsMeta != null && typeof defaultsMeta.background_color === "string" && /^#([0-9A-Fa-f]{3}){1,2}$/.test(defaultsMeta.background_color as string))
         ? (defaultsMeta.background_color as string)
@@ -148,7 +164,6 @@ export async function setSlideTemplate(
     const templateBgStyle = defaultsBg && (defaultsBg.style === "solid" || defaultsBg.style === "pattern") ? defaultsBg.style : undefined;
     const templateBgPattern = defaultsBg && typeof defaultsBg.pattern === "string" ? defaultsBg.pattern : undefined;
 
-    const templateAllowsImage = parsed.data?.backgroundRules?.allowImage !== false;
     const clearBackground = options?.clearBackground === true;
     const allowBlend = options?.allowBlend === true;
     const noImageTemplateApplyClear = !templateAllowsImage && !allowBlend;
@@ -190,6 +205,13 @@ export async function setSlideTemplate(
           ...(templateBgPattern != null && { pattern: templateBgPattern }),
           overlay: mergedOverlay,
         } as Json;
+      } else if (templateHasStoredImageBg && templateBgFromDefaults) {
+        // Template embeds saved image(s) from "Save as template" (incl. multi-slot shuffle / PiP).
+        patch.background = {
+          ...templateBgFromDefaults,
+          ...(hasOverlayOrTint && { overlay: mergedOverlay }),
+          ...(hasImageDisplay && { image_display: resolvedImageDisplay }),
+        } as Json;
       } else {
         patch.background = {
           ...existingBg,
@@ -200,6 +222,12 @@ export async function setSlideTemplate(
           ...(hasImageDisplay && { image_display: resolvedImageDisplay }),
         } as Json;
       }
+    } else if (templateHasStoredImageBg && templateBgFromDefaults) {
+      patch.background = {
+        ...templateBgFromDefaults,
+        ...(hasOverlayOrTint && { overlay: mergedOverlay }),
+        ...(hasImageDisplay && { image_display: resolvedImageDisplay }),
+      } as Json;
     }
 
     if (defaultsMeta != null && typeof defaultsMeta === "object" && Object.keys(defaultsMeta).length > 0) {

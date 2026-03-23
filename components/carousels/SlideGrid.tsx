@@ -445,6 +445,14 @@ export function SlideGrid({
   const [selectedSlideIds, setSelectedSlideIds] = useState<Set<string>>(new Set());
   const [bulkApplyTemplateIds, setBulkApplyTemplateIds] = useState<string[] | null>(null);
   const [bulkActionPending, setBulkActionPending] = useState(false);
+  /** Progress when applying a template to many slides (grid bulk apply). */
+  const [bulkTemplateProgress, setBulkTemplateProgress] = useState<{ done: number; total: number } | null>(null);
+  /** True while a template is being saved after picking one slide’s template. */
+  const [applyingSingleTemplate, setApplyingSingleTemplate] = useState(false);
+
+  /** Keep overlay until progress cleared / single apply finishes (not tied to bulk ids, so closing order vs refresh stays consistent). */
+  const isApplyingTemplate =
+    applyingSingleTemplate || bulkTemplateProgress != null;
 
   const templateOptions: TemplateOption[] = templates.map((t) => ({
     id: t.id,
@@ -586,7 +594,11 @@ export function SlideGrid({
                 onClick={() => setBulkApplyTemplateIds(Array.from(selectedSlideIds))}
                 disabled={bulkActionPending || templates.length === 0}
               >
-                <LayoutTemplateIcon className="size-4 mr-1.5" />
+                {bulkActionPending && isBulkTemplateOpen ? (
+                  <Loader2Icon className="size-4 mr-1.5 animate-spin" aria-hidden />
+                ) : (
+                  <LayoutTemplateIcon className="size-4 mr-1.5" aria-hidden />
+                )}
                 Apply template
               </Button>
               <Button
@@ -1031,13 +1043,46 @@ export function SlideGrid({
       <Dialog
         open={isTemplateDialogOpen}
         onOpenChange={(open) => {
+          if (!open && isApplyingTemplate) return;
           if (!open) {
             setTemplateModalSlideId(null);
             setBulkApplyTemplateIds(null);
+            setBulkTemplateProgress(null);
+            setApplyingSingleTemplate(false);
           }
         }}
       >
-        <DialogContent className="flex flex-col max-w-[calc(100%-2rem)] max-h-[85vh] sm:max-w-2xl md:max-w-[92vw] md:max-h-[92vh] md:w-[92vw] md:h-[92vh] lg:max-w-[94vw] lg:max-h-[94vh] lg:w-[94vw] lg:h-[94vh]">
+        <DialogContent
+          showCloseButton={!isApplyingTemplate}
+          className="relative flex flex-col max-w-[calc(100%-2rem)] max-h-[85vh] sm:max-w-2xl md:max-w-[92vw] md:max-h-[92vh] md:w-[92vw] md:h-[92vh] lg:max-w-[94vw] lg:max-h-[94vh] lg:w-[94vw] lg:h-[94vh]"
+          aria-busy={isApplyingTemplate}
+          onPointerDownOutside={(e) => {
+            if (isApplyingTemplate) e.preventDefault();
+          }}
+          onEscapeKeyDown={(e) => {
+            if (isApplyingTemplate) e.preventDefault();
+          }}
+        >
+          {isApplyingTemplate && (
+            <div
+              className="absolute inset-0 z-100 flex flex-col items-center justify-center gap-3 rounded-lg bg-background/92 backdrop-blur-sm px-6 text-center"
+              role="status"
+              aria-live="polite"
+              aria-label={bulkTemplateProgress ? "Applying template to slides" : "Applying template"}
+            >
+              <Loader2Icon className="size-10 animate-spin text-primary shrink-0" aria-hidden />
+              <p className="text-sm font-medium text-foreground">
+                {bulkTemplateProgress
+                  ? `Applying template… ${bulkTemplateProgress.done} / ${bulkTemplateProgress.total}`
+                  : "Applying template…"}
+              </p>
+              <p className="text-xs text-muted-foreground max-w-xs">
+                {bulkTemplateProgress
+                  ? "Keep this window open until all frames are updated."
+                  : "Saving layout to your slide…"}
+              </p>
+            </div>
+          )}
           <DialogHeader>
             <DialogTitle>
               {isBulkTemplateOpen ? `Apply template to ${bulkApplyTemplateIds!.length} slides` : "Choose template"}
@@ -1068,31 +1113,37 @@ export function SlideGrid({
                     const templateId = id === null ? templates[0]?.id ?? null : id;
                     if (!templateId) return;
                     setBulkActionPending(true);
+                    setBulkTemplateProgress({ done: 0, total: ids.length });
                     startTransition(async () => {
                       const selectedTemplate = templates.find((t) => t.id === templateId);
                       const templateOverlay = overlayFromTemplateGradient(selectedTemplate?.parsedConfig?.overlays?.gradient);
-                      for (const slideId of ids) {
-                        await setSlideTemplate(slideId, templateId, editorPath);
-                      }
-                      setBulkApplyTemplateIds(null);
-                      setSelectedSlideIds(new Set());
-                      setBulkActionPending(false);
-                      router.refresh();
-                      if (templateOverlay) {
-                        setSlidesOrder((prev) =>
-                          prev.map((s) =>
-                            ids.includes(s.id)
-                              ? {
-                                  ...s,
-                                  template_id: templateId,
-                                  background: {
-                                    ...(typeof s.background === "object" && s.background ? s.background : {}),
-                                    overlay: { ...((s.background as Record<string, unknown>)?.overlay as Record<string, unknown> | undefined), ...templateOverlay },
-                                  } as Slide["background"],
-                                }
-                              : s
+                      try {
+                        for (let i = 0; i < ids.length; i++) {
+                          await setSlideTemplate(ids[i]!, templateId, editorPath);
+                          setBulkTemplateProgress({ done: i + 1, total: ids.length });
+                        }
+                        router.refresh();
+                        if (templateOverlay) {
+                          setSlidesOrder((prev) =>
+                            prev.map((s) =>
+                              ids.includes(s.id)
+                                ? {
+                                    ...s,
+                                    template_id: templateId,
+                                    background: {
+                                      ...(typeof s.background === "object" && s.background ? s.background : {}),
+                                      overlay: { ...((s.background as Record<string, unknown>)?.overlay as Record<string, unknown> | undefined), ...templateOverlay },
+                                    } as Slide["background"],
+                                  }
+                                : s
                             )
-                        );
+                          );
+                        }
+                        setBulkApplyTemplateIds(null);
+                        setSelectedSlideIds(new Set());
+                      } finally {
+                        setBulkActionPending(false);
+                        setBulkTemplateProgress(null);
                       }
                     });
                   }}
@@ -1131,27 +1182,32 @@ export function SlideGrid({
                     }
                     const selectedTemplate = templates.find((t) => t.id === templateId);
                     const templateOverlay = overlayFromTemplateGradient(selectedTemplate?.parsedConfig?.overlays?.gradient);
+                    setApplyingSingleTemplate(true);
                     startTransition(async () => {
-                      const result = await setSlideTemplate(slideForModal.id, templateId, editorPath);
-                      if (result.ok) {
-                        setTemplateModalSlideId(null);
-                        router.refresh();
-                        if (templateOverlay) {
-                          setSlidesOrder((prev) =>
-                            prev.map((s) =>
-                              s.id === slideForModal.id
-                                ? {
-                                    ...s,
-                                    template_id: templateId,
-                                    background: {
-                                      ...(typeof s.background === "object" && s.background ? s.background : {}),
-                                      overlay: { ...((s.background as Record<string, unknown>)?.overlay as Record<string, unknown> | undefined), ...templateOverlay },
-                                    } as Slide["background"],
-                                  }
-                                : s
-                            )
-                          );
+                      try {
+                        const result = await setSlideTemplate(slideForModal.id, templateId, editorPath);
+                        if (result.ok) {
+                          router.refresh();
+                          if (templateOverlay) {
+                            setSlidesOrder((prev) =>
+                              prev.map((s) =>
+                                s.id === slideForModal.id
+                                  ? {
+                                      ...s,
+                                      template_id: templateId,
+                                      background: {
+                                        ...(typeof s.background === "object" && s.background ? s.background : {}),
+                                        overlay: { ...((s.background as Record<string, unknown>)?.overlay as Record<string, unknown> | undefined), ...templateOverlay },
+                                      } as Slide["background"],
+                                    }
+                                  : s
+                              )
+                            );
+                          }
+                          setTemplateModalSlideId(null);
                         }
+                      } finally {
+                        setApplyingSingleTemplate(false);
                       }
                     });
                   }}

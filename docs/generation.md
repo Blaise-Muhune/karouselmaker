@@ -45,6 +45,8 @@ The prompt is built in `lib/server/ai/prompts.ts` from the current project and i
 
 **Rule priority** (when instructions conflict): user **OVERRIDE** notes (from generation options) → Viral Shorts (if enabled) → platform block (LinkedIn vs Instagram) → default rules. **Last slide**: LinkedIn uses a conversion-style CTA; Instagram/default uses follow/subscribe unless Viral Shorts says otherwise (see prompts).
 
+**LinkedIn captions** (`carousel_for === "linkedin"`): AI writes `caption_variants` for the **feed post** (not slide text): `title` = first line before “see more”; `medium` = body after a blank line; `long` = optional fuller variant; **3–5** niche hashtags. The editor shows **Copy for LinkedIn** (title + body + hashtags) via `lib/caption/linkedinPostCaption.ts`.
+
 ## Retry and validation
 
 1. Generate once with the main prompt.

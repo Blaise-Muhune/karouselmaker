@@ -216,7 +216,7 @@ function getMaxPreviewSizeForArea(
 const SECTION_INFO: Record<string, { title: string; body: string }> = {
   content: {
     title: "Content",
-    body: "Type your headline and optional body here. For bold, wrap a word in **like this**. Highlights: select a word (or drag to select), then click a color—Yellow, Amber, or the color picker. Or click Auto to highlight key words automatically. Use “Apply color to all” to recolor existing highlights in that field, and “Auto all slides” to regenerate highlights across frames. Highlight style: colored text only, or highlighter (colored background + dark text).",
+    body: "Headline and body each have Typography (size, color, font), then the text field, then Advanced for placement on the slide (Layout, Align), highlights and bold tools, and outline/stroke. For bold, wrap a word in **like this**. Highlights: select text, pick a color or Auto. Highlight style: Text or Bg (highlighter).",
   },
   layout: {
     title: "Frame layout",
@@ -2438,7 +2438,8 @@ export function SlideEditForm({
         : effectiveBgColor;
     const bgColorHex = /^#([0-9A-Fa-f]{3}){1,2}$/.test(effectiveBgColor) ? effectiveBgColor : "#0a0a0a";
     const defaults = {
-      background: Object.keys(backgroundPayload).length > 0 && !isBackgroundImage ? backgroundPayload : undefined,
+      /** Include image backgrounds (incl. multi-slot shuffle / PiP) so templates preserve URLs for preview and apply. */
+      background: Object.keys(backgroundPayload).length > 0 ? backgroundPayload : undefined,
       meta: {
         show_counter: showCounter,
         show_watermark: showWatermark,
@@ -4700,6 +4701,9 @@ export function SlideEditForm({
           )}
           {editorTab === "text" && (
           <section className="space-y-3" aria-label="Text">
+            <p className="text-xs text-muted-foreground leading-relaxed px-0.5">
+              <span className="font-medium text-foreground">Headline & body</span> — expand each block. Use the top row for size, color, and font; open <span className="whitespace-nowrap">“Advanced”</span> for placement on the slide, highlights, and outline.
+            </p>
             <div className="relative min-h-0 space-y-3">
             {/* Headline: collapsible */}
             <div className={`rounded-lg border transition-colors ${activeEditZone === "headline" ? "border-primary/60 ring-1 ring-primary/30" : "border-border/50"} bg-muted/5 overflow-hidden`}>
@@ -4722,8 +4726,10 @@ export function SlideEditForm({
                 </span>
               </button>
               <div id="text-section-headline" className={expandedTextSection === "headline" ? "p-3 pt-0 space-y-3" : "hidden"}>
-              {/* Compact style row above input: size, color, font (each font in its style) */}
+              {/* Typography: size, color, font */}
               {isPro && (
+                <div className="space-y-1.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Typography</p>
                 <div className="flex flex-wrap items-center gap-2">
                   <StepperWithLongPress
                     value={headlineFontSize ?? defaultHeadlineSize}
@@ -4761,6 +4767,7 @@ export function SlideEditForm({
                     onSelect={(v) => setHeadlineZoneOverride((o) => ({ ...headlineZoneFromTemplate, ...o, fontFamily: v || undefined }))}
                     title="Headline font"
                   />
+                </div>
                 </div>
               )}
               <Textarea
@@ -4806,7 +4813,7 @@ export function SlideEditForm({
                     aria-expanded={headlineEditMoreOpen}
                   >
                     <ChevronDownIcon className={`size-3.5 shrink-0 transition-transform ${headlineEditMoreOpen ? "" : "-rotate-90"}`} />
-                    {headlineEditMoreOpen ? "Less" : "Edit more — style, highlight & layout"}
+                    {headlineEditMoreOpen ? "Less" : "Advanced — placement, highlights, outline"}
                   </button>
                   {totalSlides > 1 && isPro && (
                     <span onClick={(e) => e.stopPropagation()}>
@@ -4818,10 +4825,12 @@ export function SlideEditForm({
                   )}
                 </div>
                 {headlineEditMoreOpen && (
-                  <div className="mt-3 space-y-3">
+                  <div className="mt-3 space-y-4">
                     {isPro && (
                       <>
-                        <div className="flex flex-wrap items-center gap-2">
+                        <div className="space-y-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">On the slide</p>
+                          <div className="flex flex-wrap items-center gap-2">
                           <Button type="button" variant="secondary" size="sm" className="h-7 text-xs" onClick={() => { setHeadlineHighlightOpen(false); setHeadlineLayoutModalOpen((o) => !o); }} title="Position & size in preview">
                             <LayoutTemplateIcon className="size-3" /> Layout
                           </Button>
@@ -4842,9 +4851,11 @@ export function SlideEditForm({
                               </SelectContent>
                             </Select>
                           </div>
+                          </div>
                         </div>
+                        <div className="space-y-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Highlights & bold</p>
                         <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="text-[11px] text-muted-foreground shrink-0">Highlight:</span>
                           <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 shrink-0" onClick={() => applyAutoHighlight("headline")} title="Auto highlight key words">
                             Auto
                           </Button>
@@ -4888,6 +4899,9 @@ export function SlideEditForm({
                             ))}
                           </div>
                         </div>
+                        </div>
+                        <div className="space-y-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Outline & stroke</p>
                         <div className="flex items-center gap-2">
                           <span className="text-[11px] text-muted-foreground shrink-0">Outline</span>
                           <Button
@@ -4907,8 +4921,8 @@ export function SlideEditForm({
                           </div>
                         </div>
                         {(headline ?? "").includes("**") && (
-                          <div className="flex items-center gap-2">
-                            <span className="text-[11px] text-muted-foreground shrink-0">Bold</span>
+                          <div className="flex items-center gap-2 pt-0.5">
+                            <span className="text-[11px] text-muted-foreground shrink-0">Bold weight</span>
                             <div className="flex items-center rounded border border-border/60 overflow-hidden">
                               <Button type="button" variant="ghost" size="sm" className="h-7 w-7 rounded-none shrink-0" onClick={() => setHeadlineBoldWeight((v) => Math.max(100, Math.min(900, v - 100)))} aria-label="Decrease bold weight">−</Button>
                               <span className="min-w-[2.5rem] text-center text-xs tabular-nums px-1">{headlineBoldWeight}</span>
@@ -4916,6 +4930,7 @@ export function SlideEditForm({
                             </div>
                           </div>
                         )}
+                        </div>
                       </>
                     )}
                     {totalSlides > 1 && isPro && (
@@ -5065,8 +5080,10 @@ export function SlideEditForm({
                 </span>
               </button>
               <div id="text-section-body" className={expandedTextSection === "body" ? "p-3 pt-0 space-y-3" : "hidden"}>
-              {/* Compact style row above input: size, color, font (each font in its style) */}
+              {/* Typography: size, color, font */}
               {isPro && (
+                <div className="space-y-1.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Typography</p>
                 <div className="flex flex-wrap items-center gap-2">
                   <StepperWithLongPress
                     value={bodyFontSize ?? defaultBodySize}
@@ -5104,6 +5121,7 @@ export function SlideEditForm({
                     onSelect={(v) => setBodyZoneOverride((o) => ({ ...bodyZoneFromTemplate, ...o, fontFamily: v || undefined }))}
                     title="Body font"
                   />
+                </div>
                 </div>
               )}
               <Textarea
@@ -5146,7 +5164,7 @@ export function SlideEditForm({
                     aria-expanded={bodyEditMoreOpen}
                   >
                     <ChevronDownIcon className={`size-3.5 shrink-0 transition-transform ${bodyEditMoreOpen ? "" : "-rotate-90"}`} />
-                    {bodyEditMoreOpen ? "Less" : "Edit more — style, highlight & layout"}
+                    {bodyEditMoreOpen ? "Less" : "Advanced — placement, highlights, outline"}
                   </button>
                   {totalSlides > 1 && isPro && (
                     <span onClick={(e) => e.stopPropagation()}>
@@ -5158,10 +5176,12 @@ export function SlideEditForm({
                   )}
                 </div>
                 {bodyEditMoreOpen && (
-                  <div className="mt-3 space-y-3">
+                  <div className="mt-3 space-y-4">
                     {isPro && (
                       <>
-                        <div className="flex flex-wrap items-center gap-2">
+                        <div className="space-y-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">On the slide</p>
+                          <div className="flex flex-wrap items-center gap-2">
                           <Button type="button" variant="secondary" size="sm" className="h-7 text-xs" onClick={() => { setBodyHighlightOpen(false); setBodyLayoutModalOpen((o) => !o); }} title="Position & size in preview">
                             <LayoutTemplateIcon className="size-3" /> Layout
                           </Button>
@@ -5182,9 +5202,11 @@ export function SlideEditForm({
                               </SelectContent>
                             </Select>
                           </div>
+                          </div>
                         </div>
+                        <div className="space-y-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Highlights & bold</p>
                         <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="text-[11px] text-muted-foreground shrink-0">Highlight:</span>
                           <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 shrink-0" onClick={() => applyAutoHighlight("body")} title="Auto highlight key words">
                             Auto
                           </Button>
@@ -5228,6 +5250,9 @@ export function SlideEditForm({
                             ))}
                           </div>
                         </div>
+                        </div>
+                        <div className="space-y-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Outline & stroke</p>
                         <div className="flex items-center gap-2">
                           <span className="text-[11px] text-muted-foreground shrink-0">Outline</span>
                           <Button
@@ -5247,8 +5272,8 @@ export function SlideEditForm({
                           </div>
                         </div>
                         {(body ?? "").includes("**") && (
-                          <div className="flex items-center gap-2">
-                            <span className="text-[11px] text-muted-foreground shrink-0">Bold</span>
+                          <div className="flex items-center gap-2 pt-0.5">
+                            <span className="text-[11px] text-muted-foreground shrink-0">Bold weight</span>
                             <div className="flex items-center rounded border border-border/60 overflow-hidden">
                               <Button type="button" variant="ghost" size="sm" className="h-7 w-7 rounded-none shrink-0" onClick={() => setBodyBoldWeight((v) => Math.max(100, Math.min(900, v - 100)))} aria-label="Decrease bold weight">−</Button>
                               <span className="min-w-[2.5rem] text-center text-xs tabular-nums px-1">{bodyBoldWeight}</span>
@@ -5256,6 +5281,7 @@ export function SlideEditForm({
                             </div>
                           </div>
                         )}
+                        </div>
                       </>
                     )}
                     {totalSlides > 1 && isPro && (

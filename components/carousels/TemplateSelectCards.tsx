@@ -5,6 +5,7 @@ import { SlidePreview, type SlideBackgroundOverride } from "@/components/rendere
 import { DeleteTemplateButton } from "@/components/templates/DeleteTemplateButton";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { getTemplatePreviewBackgroundOverride, getLinkedInPreviewOverlayOverride, getTemplatePreviewOverlayOverride } from "@/lib/renderer/getTemplatePreviewBackground";
+import { getTemplatePreviewImageUrls } from "@/lib/renderer/templatePreviewImages";
 import { CheckIcon, LayoutTemplateIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -121,6 +122,21 @@ export function TemplateSelectCards({
     (defaultTemplateId ? templates.find((t) => t.id === defaultTemplateId)?.parsedConfig ?? null : null) ??
     templates[0]?.parsedConfig ??
     null;
+  const defaultTemplateStoredUrls = effectiveDefaultTemplateConfig
+    ? getTemplatePreviewImageUrls(effectiveDefaultTemplateConfig)
+    : [];
+  const defaultTemplateBgUrl =
+    effectiveDefaultTemplateConfig?.backgroundRules?.allowImage === false
+      ? undefined
+      : defaultTemplateStoredUrls.length > 0
+        ? defaultTemplateStoredUrls[0]
+        : (previewImageUrl ?? FALLBACK_SAMPLE_IMAGE_URL);
+  const defaultTemplateBgUrls =
+    effectiveDefaultTemplateConfig?.backgroundRules?.allowImage === false
+      ? undefined
+      : defaultTemplateStoredUrls.length >= 2
+        ? defaultTemplateStoredUrls
+        : undefined;
   const currentTemplateIdForTab = value ?? defaultTemplateId;
   const currentCategoryForTab = currentTemplateIdForTab
     ? templates.find((t) => t.id === currentTemplateIdForTab)?.category?.toLowerCase()
@@ -209,6 +225,23 @@ export function TemplateSelectCards({
   const renderCard = (t: TemplateOption, idx: number) => {
     const isSystem = t.isSystemTemplate === true;
     const showDelete = (isAdmin && isSystem) || (!isSystem && isPro);
+    const storedPreviewUrls = getTemplatePreviewImageUrls(t.parsedConfig);
+    const fallbackPreview = getPreviewImageOrFallback(idx + 1, true);
+    const previewBgUrl =
+      t.parsedConfig.backgroundRules?.allowImage === false
+        ? undefined
+        : storedPreviewUrls.length > 0
+          ? storedPreviewUrls[0]
+          : fallbackPreview;
+    const previewBgUrls =
+      t.parsedConfig.backgroundRules?.allowImage === false
+        ? undefined
+        : storedPreviewUrls.length >= 2
+          ? storedPreviewUrls
+          : undefined;
+    const useSolidPreviewOverride =
+      t.parsedConfig.backgroundRules?.allowImage === false ||
+      (storedPreviewUrls.length === 0 && !fallbackPreview);
     return (
       <div
         key={t.id}
@@ -263,14 +296,10 @@ export function TemplateSelectCards({
                 templateConfig={t.parsedConfig}
                 brandKit={brandKit}
                 totalSlides={8}
-                backgroundImageUrl={
-                  t.parsedConfig.backgroundRules?.allowImage === false
-                    ? undefined
-                    : getPreviewImageOrFallback(idx + 1, true)
-                }
+                backgroundImageUrl={previewBgUrl}
+                backgroundImageUrls={previewBgUrls}
                 backgroundOverride={
-                  t.parsedConfig.backgroundRules?.allowImage === false ||
-                  !getPreviewImageOrFallback(idx + 1, true)
+                  useSolidPreviewOverride
                     ? getTemplatePreviewBackgroundOverride(t.parsedConfig)
                     : t.category === "linkedin"
                       ? getLinkedInPreviewOverlayOverride(t.parsedConfig)
@@ -359,11 +388,8 @@ export function TemplateSelectCards({
                 templateConfig={effectiveDefaultTemplateConfig}
                 brandKit={brandKit}
                 totalSlides={8}
-                backgroundImageUrl={
-                  effectiveDefaultTemplateConfig.backgroundRules?.allowImage === false
-                    ? undefined
-                    : (previewImageUrl ?? FALLBACK_SAMPLE_IMAGE_URL)
-                }
+                backgroundImageUrl={defaultTemplateBgUrl}
+                backgroundImageUrls={defaultTemplateBgUrls}
                 backgroundOverride={
                   effectiveDefaultTemplateConfig.backgroundRules?.allowImage === false
                     ? getTemplatePreviewBackgroundOverride(effectiveDefaultTemplateConfig)
