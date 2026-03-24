@@ -585,10 +585,11 @@ export function SlideGrid({
               <span className="text-sm text-muted-foreground">
                 <strong className="text-foreground">{selectionCount}</strong> selected
               </span>
-              <Button variant="ghost" size="sm" onClick={clearSelection} disabled={bulkActionPending}>
+              <Button type="button" variant="ghost" size="sm" onClick={clearSelection} disabled={bulkActionPending}>
                 Clear
               </Button>
               <Button
+                type="button"
                 variant="outline"
                 size="sm"
                 onClick={() => setBulkApplyTemplateIds(Array.from(selectedSlideIds))}
@@ -602,6 +603,7 @@ export function SlideGrid({
                 Apply template
               </Button>
               <Button
+                type="button"
                 variant="outline"
                 size="sm"
                 className="text-destructive hover:text-destructive hover:bg-destructive/10"
@@ -631,7 +633,7 @@ export function SlideGrid({
             </>
           ) : (
             <>
-              <Button variant="outline" size="sm" onClick={selectAllSlides}>
+              <Button type="button" variant="outline" size="sm" onClick={selectAllSlides}>
                 Select all
               </Button>
               <span className="text-xs text-muted-foreground">
@@ -887,6 +889,7 @@ export function SlideGrid({
                   )}
                   <div className="flex items-center gap-2 flex-wrap">
                     <Button
+                      type="button"
                       variant="outline"
                       size="sm"
                       className="text-xs justify-start min-w-0 max-w-[180px]"
@@ -1054,7 +1057,8 @@ export function SlideGrid({
       >
         <DialogContent
           showCloseButton={!isApplyingTemplate}
-          className="relative flex flex-col max-w-[calc(100%-2rem)] max-h-[85vh] sm:max-w-2xl md:max-w-[92vw] md:max-h-[92vh] md:w-[92vw] md:h-[92vh] lg:max-w-[94vw] lg:max-h-[94vh] lg:w-[94vw] lg:h-[94vh]"
+          overlayClassName="z-[100]"
+          className="relative z-[101] flex flex-col min-h-0 overflow-hidden max-w-[calc(100%-2rem)] max-h-[85vh] sm:max-w-2xl md:max-w-[92vw] md:max-h-[92vh] md:w-[92vw] md:h-[92vh] lg:max-w-[94vw] lg:max-h-[94vh] lg:w-[94vw] lg:h-[94vh]"
           aria-busy={isApplyingTemplate}
           onPointerDownOutside={(e) => {
             if (isApplyingTemplate) e.preventDefault();
@@ -1065,7 +1069,7 @@ export function SlideGrid({
         >
           {isApplyingTemplate && (
             <div
-              className="absolute inset-0 z-100 flex flex-col items-center justify-center gap-3 rounded-lg bg-background/92 backdrop-blur-sm px-6 text-center"
+              className="absolute inset-0 z-[110] flex flex-col items-center justify-center gap-3 rounded-lg bg-background/92 backdrop-blur-sm px-6 text-center"
               role="status"
               aria-live="polite"
               aria-label={bulkTemplateProgress ? "Applying template to slides" : "Applying template"}
@@ -1101,7 +1105,7 @@ export function SlideGrid({
                   : (slideBackgroundImageUrls[firstSlide.id] as string[])
                 : undefined;
             return (
-              <div className="overflow-y-auto overflow-x-hidden flex-1 min-h-0 min-w-0 w-full pr-1 -mb-2">
+              <div className="overflow-y-auto overflow-x-hidden flex-1 min-h-[min(50vh,520px)] min-w-0 w-full pr-1 -mb-2">
                 <TemplateSelectCards
                   templates={templateOptions}
                   defaultTemplateId={templates[0]?.id ?? null}
@@ -1166,7 +1170,7 @@ export function SlideGrid({
                   ? slideBgImages
                   : undefined;
             return (
-              <div className="overflow-y-auto overflow-x-hidden flex-1 min-h-0 min-w-0 w-full pr-1 -mb-2">
+              <div className="overflow-y-auto overflow-x-hidden flex-1 min-h-[min(50vh,520px)] min-w-0 w-full pr-1 -mb-2">
                 <TemplateSelectCards
                   templates={templateOptions}
                   defaultTemplateId={templates[0]?.id ?? null}
