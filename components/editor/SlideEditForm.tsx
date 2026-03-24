@@ -90,6 +90,16 @@ import { HIGHLIGHT_COLORS, expandSelectionToWordBoundaries, normalizeHighlightSp
 /** Rainbow gradient for custom highlight color picker (circle, same size as preset swatches). */
 const HIGHLIGHT_RAINBOW = "conic-gradient(from 0deg, #ef4444, #f97316, #eab308, #84cc16, #22c55e, #06b6d4, #3b82f6, #8b5cf6, #ec4899, #ef4444)";
 
+const TEXT_BACKDROP_HEX_RE = /^#([0-9A-Fa-f]{3}){1,2}$/;
+/** Default fill when user turns backdrop on (still adjustable). */
+const DEFAULT_TEXT_BACKDROP_HEX = "#000000";
+const DEFAULT_TEXT_BACKDROP_OPACITY = 0.85;
+
+function textBackdropIsOn(zone: { boxBackgroundColor?: string } | null | undefined): boolean {
+  const c = zone?.boxBackgroundColor?.trim() ?? "";
+  return c.length > 0 && TEXT_BACKDROP_HEX_RE.test(c);
+}
+
 /** Design-space coordinates for swipe position presets (1080px width; Y for 1:1). Bottom Y=980 keeps swipe visible (100px from bottom). Right-side x = 992 for 1:1. */
 const SWIPE_POSITION_PRESETS: Record<string, { x: number; y: number }> = {
   bottom_left: { x: 24, y: 980 },
@@ -217,7 +227,7 @@ function getMaxPreviewSizeForArea(
 const SECTION_INFO: Record<string, { title: string; body: string }> = {
   content: {
     title: "Content",
-    body: "Headline and body each have Typography (size, color, font), then the text field, then Advanced for placement on the slide (Layout, Align), highlights and bold tools, and outline/stroke. For bold, wrap a word in **like this**. Highlights: select text, pick a color or Auto. Highlight style: Text or Bg (highlighter).",
+    body: "Headline and body: Text style (size, text color, font), Backdrop (Off/On, then color and strength behind the text on the slide), then the text field. Advanced: placement, highlights, bold (**word**), outline. Highlight style: Text or Bg for selected words only.",
   },
   layout: {
     title: "Frame layout",
@@ -740,7 +750,24 @@ export function SlideEditForm({
     const v = m?.body_bold_weight;
     return typeof v === "number" && v >= 100 && v <= 900 ? v : 700;
   });
-  type ZoneOverride = { x?: number; y?: number; w?: number; h?: number; fontSize?: number; fontWeight?: number; lineHeight?: number; maxLines?: number; align?: "left" | "center" | "right" | "justify"; color?: string; fontFamily?: string; rotation?: number };
+  type ZoneOverride = {
+    x?: number;
+    y?: number;
+    w?: number;
+    h?: number;
+    fontSize?: number;
+    fontWeight?: number;
+    lineHeight?: number;
+    maxLines?: number;
+    align?: "left" | "center" | "right" | "justify";
+    color?: string;
+    fontFamily?: string;
+    rotation?: number;
+    /** Solid fill behind the zone text (export + preview). */
+    boxBackgroundColor?: string;
+    /** 0–1; how solid the box fill is (default 1). */
+    boxBackgroundOpacity?: number;
+  };
   /** Max lines that fit in zone height (fontSize * lineHeight per line). Clamped 1–20. */
   const computeMaxLinesForZone = useCallback((h: number, fontSize: number, lineHeight: number) => {
     const linePx = fontSize * lineHeight;
@@ -4799,7 +4826,7 @@ export function SlideEditForm({
           {editorTab === "text" && (
           <section className="space-y-3" aria-label="Text">
             <p className="text-xs text-muted-foreground leading-relaxed px-0.5">
-              <span className="font-medium text-foreground">Headline & body</span> — expand each block. Use the top row for size, color, and font; open <span className="whitespace-nowrap">“Advanced”</span> for placement on the slide, highlights, and outline.
+              <span className="font-medium text-foreground">Headline & body</span> — open a block to edit. <span className="whitespace-nowrap">Text style</span> is size, color, and font; <span className="whitespace-nowrap">Backdrop</span> uses Off/On, then color and strength. Use <span className="whitespace-nowrap">Advanced</span> for position, highlights, and outline.
             </p>
             <div className="relative min-h-0 space-y-3">
             {/* Headline: collapsible */}
@@ -4823,40 +4850,170 @@ export function SlideEditForm({
                 </span>
               </button>
               <div id="text-section-headline" className={expandedTextSection === "headline" ? "p-3 pt-0 space-y-3" : "hidden"}>
-              {/* Typography: size, color, font */}
               {isPro && (
-                <div className="space-y-1.5">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Typography</p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <StepperWithLongPress
-                    value={headlineFontSize ?? defaultHeadlineSize}
-                    min={24}
-                    max={160}
-                    step={4}
-                    onChange={(v) => setHeadlineFontSize(v)}
-                    label="Size"
-                    className="shrink-0 max-w-[90px]"
-                  />
-                  <div className="flex items-center gap-1 shrink-0 rounded-md border border-input/80 bg-background px-1.5 py-0.5">
-                    <ColorPicker
-                      value={headlineZoneOverride?.color ?? ""}
-                      onChange={(v) => setHeadlineZoneOverride((o) => ({ ...o, color: v.trim() || undefined }))}
-                      placeholder="Auto"
-                      compact
-                      swatchOnly
-                    />
+                <div className="rounded-lg border border-border/50 bg-muted/20 p-3 space-y-4">
+                  <div className="space-y-3">
+                    <p className="text-xs font-medium text-foreground">Text style</p>
+                    <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-[11px] text-muted-foreground font-normal">Size</Label>
+                        <StepperWithLongPress
+                          value={headlineFontSize ?? defaultHeadlineSize}
+                          min={24}
+                          max={160}
+                          step={4}
+                          onChange={(v) => setHeadlineFontSize(v)}
+                          label="Size"
+                          className="shrink-0 max-w-[90px]"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-[11px] text-muted-foreground font-normal">Text color</Label>
+                        <div className="flex h-8 items-center rounded-md border border-input/80 bg-background px-1.5">
+                          <ColorPicker
+                            value={headlineZoneOverride?.color ?? ""}
+                            onChange={(v) => setHeadlineZoneOverride((o) => ({ ...o, color: v.trim() || undefined }))}
+                            placeholder="Auto"
+                            compact
+                            swatchOnly
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-[11px] text-muted-foreground font-normal">Font</Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 w-full max-w-[280px] justify-start text-xs font-normal"
+                        onClick={() => setHeadlineFontModalOpen(true)}
+                      >
+                        <span
+                          style={
+                            (headlineZoneOverride?.fontFamily ?? headlineZoneFromTemplate?.fontFamily ?? "system") !== "system"
+                              ? { fontFamily: getFontStack(headlineZoneOverride?.fontFamily ?? headlineZoneFromTemplate?.fontFamily ?? "system") }
+                              : undefined
+                          }
+                        >
+                          {PREVIEW_FONTS.find((f) => f.id === (headlineZoneOverride?.fontFamily ?? headlineZoneFromTemplate?.fontFamily ?? "system"))?.label ?? "System"}
+                        </span>
+                      </Button>
+                    </div>
                   </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-7 w-[110px] text-xs justify-start font-normal"
-                    onClick={() => setHeadlineFontModalOpen(true)}
-                  >
-                    <span style={(headlineZoneOverride?.fontFamily ?? headlineZoneFromTemplate?.fontFamily ?? "system") !== "system" ? { fontFamily: getFontStack(headlineZoneOverride?.fontFamily ?? headlineZoneFromTemplate?.fontFamily ?? "system") } : undefined}>
-                      {PREVIEW_FONTS.find((f) => f.id === (headlineZoneOverride?.fontFamily ?? headlineZoneFromTemplate?.fontFamily ?? "system"))?.label ?? "System"}
-                    </span>
-                  </Button>
+
+                  <div className="border-t border-border/40 pt-3 space-y-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-foreground">Backdrop</p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">
+                          Panel behind this text on the slide — not highlighted words. Turn on, then pick a color.
+                        </p>
+                      </div>
+                      <div
+                        className="inline-flex shrink-0 rounded-lg border border-input/80 bg-muted/40 p-0.5"
+                        role="group"
+                        aria-label="Backdrop on or off"
+                      >
+                        <button
+                          type="button"
+                          className={cn(
+                            "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                            !textBackdropIsOn(headlineZoneOverride)
+                              ? "bg-background text-foreground shadow-sm"
+                              : "text-muted-foreground hover:text-foreground"
+                          )}
+                          onClick={() => {
+                            setHeadlineZoneOverride((o) => {
+                              const next = { ...(o ?? {}) };
+                              delete next.boxBackgroundColor;
+                              delete next.boxBackgroundOpacity;
+                              return Object.keys(next).length > 0 ? next : undefined;
+                            });
+                          }}
+                        >
+                          Off
+                        </button>
+                        <button
+                          type="button"
+                          className={cn(
+                            "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                            textBackdropIsOn(headlineZoneOverride)
+                              ? "bg-background text-foreground shadow-sm"
+                              : "text-muted-foreground hover:text-foreground"
+                          )}
+                          onClick={() => {
+                            setHeadlineZoneOverride((o) => {
+                              const cur = o?.boxBackgroundColor?.trim();
+                              const hasValid = !!cur && TEXT_BACKDROP_HEX_RE.test(cur);
+                              const prevOp = o?.boxBackgroundOpacity;
+                              const keepOpacity =
+                                typeof prevOp === "number" && !Number.isNaN(prevOp) && hasValid;
+                              return {
+                                ...(o ?? {}),
+                                boxBackgroundColor: hasValid ? cur! : DEFAULT_TEXT_BACKDROP_HEX,
+                                boxBackgroundOpacity: keepOpacity ? prevOp! : DEFAULT_TEXT_BACKDROP_OPACITY,
+                              };
+                            });
+                          }}
+                        >
+                          On
+                        </button>
+                      </div>
+                    </div>
+                    {textBackdropIsOn(headlineZoneOverride) && (
+                      <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-3">
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Label className="text-[11px] text-muted-foreground font-normal w-12 shrink-0 hidden sm:inline">
+                            Color
+                          </Label>
+                          <div className="flex h-8 items-center rounded-md border border-input/80 bg-background px-1.5">
+                            <ColorPicker
+                              value={headlineZoneOverride?.boxBackgroundColor ?? ""}
+                              onChange={(v) => {
+                                const c = v.trim();
+                                const ok = c.length > 0 && TEXT_BACKDROP_HEX_RE.test(c);
+                                setHeadlineZoneOverride((o) => {
+                                  if (!ok) {
+                                    const next = { ...(o ?? {}) };
+                                    delete next.boxBackgroundColor;
+                                    delete next.boxBackgroundOpacity;
+                                    return Object.keys(next).length > 0 ? next : undefined;
+                                  }
+                                  return {
+                                    ...(o ?? {}),
+                                    boxBackgroundColor: c,
+                                    boxBackgroundOpacity: o?.boxBackgroundOpacity ?? DEFAULT_TEXT_BACKDROP_OPACITY,
+                                  };
+                                });
+                              }}
+                              placeholder="#000000"
+                              compact
+                              swatchOnly
+                            />
+                          </div>
+                        </div>
+                        <div className="flex flex-1 items-center gap-2 min-w-0 min-h-9">
+                          <span className="text-[11px] text-muted-foreground shrink-0 w-14 hidden sm:inline">Strength</span>
+                          <Slider
+                            className="flex-1 py-1"
+                            min={0}
+                            max={100}
+                            step={1}
+                            value={[Math.round((headlineZoneOverride?.boxBackgroundOpacity ?? DEFAULT_TEXT_BACKDROP_OPACITY) * 100)]}
+                            onValueChange={(vals) => {
+                              const pct = vals[0] ?? 100;
+                              setHeadlineZoneOverride((o) => ({ ...(o ?? {}), boxBackgroundOpacity: pct / 100 }));
+                            }}
+                          />
+                          <span className="text-[11px] tabular-nums text-muted-foreground w-10 text-right shrink-0">
+                            {Math.round((headlineZoneOverride?.boxBackgroundOpacity ?? DEFAULT_TEXT_BACKDROP_OPACITY) * 100)}%
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
                   <FontPickerModal
                     open={headlineFontModalOpen}
                     onOpenChange={setHeadlineFontModalOpen}
@@ -4864,7 +5021,6 @@ export function SlideEditForm({
                     onSelect={(v) => setHeadlineZoneOverride((o) => ({ ...headlineZoneFromTemplate, ...o, fontFamily: v || undefined }))}
                     title="Headline font"
                   />
-                </div>
                 </div>
               )}
               <Textarea
@@ -5335,40 +5491,170 @@ export function SlideEditForm({
                 </span>
               </button>
               <div id="text-section-body" className={expandedTextSection === "body" ? "p-3 pt-0 space-y-3" : "hidden"}>
-              {/* Typography: size, color, font */}
               {isPro && (
-                <div className="space-y-1.5">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Typography</p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <StepperWithLongPress
-                    value={bodyFontSize ?? defaultBodySize}
-                    min={18}
-                    max={120}
-                    step={4}
-                    onChange={(v) => setBodyFontSize(v)}
-                    label="Size"
-                    className="shrink-0 max-w-[90px]"
-                  />
-                  <div className="flex items-center gap-1 shrink-0 rounded-md border border-input/80 bg-background px-1.5 py-0.5">
-                    <ColorPicker
-                      value={bodyZoneOverride?.color ?? ""}
-                      onChange={(v) => setBodyZoneOverride((o) => ({ ...o, color: v.trim() || undefined }))}
-                      placeholder="Auto"
-                      compact
-                      swatchOnly
-                    />
+                <div className="rounded-lg border border-border/50 bg-muted/20 p-3 space-y-4">
+                  <div className="space-y-3">
+                    <p className="text-xs font-medium text-foreground">Text style</p>
+                    <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-[11px] text-muted-foreground font-normal">Size</Label>
+                        <StepperWithLongPress
+                          value={bodyFontSize ?? defaultBodySize}
+                          min={18}
+                          max={120}
+                          step={4}
+                          onChange={(v) => setBodyFontSize(v)}
+                          label="Size"
+                          className="shrink-0 max-w-[90px]"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-[11px] text-muted-foreground font-normal">Text color</Label>
+                        <div className="flex h-8 items-center rounded-md border border-input/80 bg-background px-1.5">
+                          <ColorPicker
+                            value={bodyZoneOverride?.color ?? ""}
+                            onChange={(v) => setBodyZoneOverride((o) => ({ ...o, color: v.trim() || undefined }))}
+                            placeholder="Auto"
+                            compact
+                            swatchOnly
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-[11px] text-muted-foreground font-normal">Font</Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 w-full max-w-[280px] justify-start text-xs font-normal"
+                        onClick={() => setBodyFontModalOpen(true)}
+                      >
+                        <span
+                          style={
+                            (bodyZoneOverride?.fontFamily ?? bodyZoneFromTemplate?.fontFamily ?? "system") !== "system"
+                              ? { fontFamily: getFontStack(bodyZoneOverride?.fontFamily ?? bodyZoneFromTemplate?.fontFamily ?? "system") }
+                              : undefined
+                          }
+                        >
+                          {PREVIEW_FONTS.find((f) => f.id === (bodyZoneOverride?.fontFamily ?? bodyZoneFromTemplate?.fontFamily ?? "system"))?.label ?? "System"}
+                        </span>
+                      </Button>
+                    </div>
                   </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-7 w-[110px] text-xs justify-start font-normal"
-                    onClick={() => setBodyFontModalOpen(true)}
-                  >
-                    <span style={(bodyZoneOverride?.fontFamily ?? bodyZoneFromTemplate?.fontFamily ?? "system") !== "system" ? { fontFamily: getFontStack(bodyZoneOverride?.fontFamily ?? bodyZoneFromTemplate?.fontFamily ?? "system") } : undefined}>
-                      {PREVIEW_FONTS.find((f) => f.id === (bodyZoneOverride?.fontFamily ?? bodyZoneFromTemplate?.fontFamily ?? "system"))?.label ?? "System"}
-                    </span>
-                  </Button>
+
+                  <div className="border-t border-border/40 pt-3 space-y-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-foreground">Backdrop</p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">
+                          Panel behind this text on the slide — not highlighted words. Turn on, then pick a color.
+                        </p>
+                      </div>
+                      <div
+                        className="inline-flex shrink-0 rounded-lg border border-input/80 bg-muted/40 p-0.5"
+                        role="group"
+                        aria-label="Backdrop on or off"
+                      >
+                        <button
+                          type="button"
+                          className={cn(
+                            "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                            !textBackdropIsOn(bodyZoneOverride)
+                              ? "bg-background text-foreground shadow-sm"
+                              : "text-muted-foreground hover:text-foreground"
+                          )}
+                          onClick={() => {
+                            setBodyZoneOverride((o) => {
+                              const next = { ...(o ?? {}) };
+                              delete next.boxBackgroundColor;
+                              delete next.boxBackgroundOpacity;
+                              return Object.keys(next).length > 0 ? next : undefined;
+                            });
+                          }}
+                        >
+                          Off
+                        </button>
+                        <button
+                          type="button"
+                          className={cn(
+                            "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                            textBackdropIsOn(bodyZoneOverride)
+                              ? "bg-background text-foreground shadow-sm"
+                              : "text-muted-foreground hover:text-foreground"
+                          )}
+                          onClick={() => {
+                            setBodyZoneOverride((o) => {
+                              const cur = o?.boxBackgroundColor?.trim();
+                              const hasValid = !!cur && TEXT_BACKDROP_HEX_RE.test(cur);
+                              const prevOp = o?.boxBackgroundOpacity;
+                              const keepOpacity =
+                                typeof prevOp === "number" && !Number.isNaN(prevOp) && hasValid;
+                              return {
+                                ...(o ?? {}),
+                                boxBackgroundColor: hasValid ? cur! : DEFAULT_TEXT_BACKDROP_HEX,
+                                boxBackgroundOpacity: keepOpacity ? prevOp! : DEFAULT_TEXT_BACKDROP_OPACITY,
+                              };
+                            });
+                          }}
+                        >
+                          On
+                        </button>
+                      </div>
+                    </div>
+                    {textBackdropIsOn(bodyZoneOverride) && (
+                      <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-3">
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Label className="text-[11px] text-muted-foreground font-normal w-12 shrink-0 hidden sm:inline">
+                            Color
+                          </Label>
+                          <div className="flex h-8 items-center rounded-md border border-input/80 bg-background px-1.5">
+                            <ColorPicker
+                              value={bodyZoneOverride?.boxBackgroundColor ?? ""}
+                              onChange={(v) => {
+                                const c = v.trim();
+                                const ok = c.length > 0 && TEXT_BACKDROP_HEX_RE.test(c);
+                                setBodyZoneOverride((o) => {
+                                  if (!ok) {
+                                    const next = { ...(o ?? {}) };
+                                    delete next.boxBackgroundColor;
+                                    delete next.boxBackgroundOpacity;
+                                    return Object.keys(next).length > 0 ? next : undefined;
+                                  }
+                                  return {
+                                    ...(o ?? {}),
+                                    boxBackgroundColor: c,
+                                    boxBackgroundOpacity: o?.boxBackgroundOpacity ?? DEFAULT_TEXT_BACKDROP_OPACITY,
+                                  };
+                                });
+                              }}
+                              placeholder="#000000"
+                              compact
+                              swatchOnly
+                            />
+                          </div>
+                        </div>
+                        <div className="flex flex-1 items-center gap-2 min-w-0 min-h-9">
+                          <span className="text-[11px] text-muted-foreground shrink-0 w-14 hidden sm:inline">Strength</span>
+                          <Slider
+                            className="flex-1 py-1"
+                            min={0}
+                            max={100}
+                            step={1}
+                            value={[Math.round((bodyZoneOverride?.boxBackgroundOpacity ?? DEFAULT_TEXT_BACKDROP_OPACITY) * 100)]}
+                            onValueChange={(vals) => {
+                              const pct = vals[0] ?? 100;
+                              setBodyZoneOverride((o) => ({ ...(o ?? {}), boxBackgroundOpacity: pct / 100 }));
+                            }}
+                          />
+                          <span className="text-[11px] tabular-nums text-muted-foreground w-10 text-right shrink-0">
+                            {Math.round((bodyZoneOverride?.boxBackgroundOpacity ?? DEFAULT_TEXT_BACKDROP_OPACITY) * 100)}%
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
                   <FontPickerModal
                     open={bodyFontModalOpen}
                     onOpenChange={setBodyFontModalOpen}
@@ -5376,7 +5662,6 @@ export function SlideEditForm({
                     onSelect={(v) => setBodyZoneOverride((o) => ({ ...bodyZoneFromTemplate, ...o, fontFamily: v || undefined }))}
                     title="Body font"
                   />
-                </div>
                 </div>
               )}
               <Textarea

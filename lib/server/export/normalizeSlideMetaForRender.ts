@@ -98,6 +98,13 @@ function normalizeZoneOverride(
   if (raw.align && ALIGN_VALUES.has(raw.align as string)) out.align = raw.align;
   if (typeof raw.color === "string" && /^#([0-9A-Fa-f]{3}){1,2}$/.test(raw.color)) out.color = raw.color;
   if (typeof raw.fontFamily === "string" && raw.fontFamily.trim() !== "") out.fontFamily = raw.fontFamily.trim();
+  if (typeof raw.boxBackgroundColor === "string" && /^#([0-9A-Fa-f]{3}){1,2}$/.test(raw.boxBackgroundColor.trim())) {
+    out.boxBackgroundColor = raw.boxBackgroundColor.trim();
+  }
+  if (raw.boxBackgroundOpacity != null) {
+    const n = Number(raw.boxBackgroundOpacity);
+    if (!Number.isNaN(n)) out.boxBackgroundOpacity = Math.min(1, Math.max(0, n));
+  }
   return Object.keys(out).length > 0 ? out : undefined;
 }
 

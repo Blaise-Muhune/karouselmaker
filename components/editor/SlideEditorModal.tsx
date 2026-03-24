@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { SlidePreview, type SlideBackgroundOverride } from "@/components/renderer/SlidePreview";
 import { AssetPickerModal } from "@/components/assets/AssetPickerModal";
 import { Button } from "@/components/ui/button";
@@ -24,7 +24,7 @@ import { Label } from "@/components/ui/label";
 import { updateSlide } from "@/app/actions/slides/updateSlide";
 import { shortenToFit } from "@/app/actions/slides/shortenToFit";
 import { rewriteHook } from "@/app/actions/slides/rewriteHook";
-import type { BrandKit } from "@/lib/renderer/renderModel";
+import type { BrandKit, TextZoneOverrides } from "@/lib/renderer/renderModel";
 import { getTemplatePreviewBackgroundOverride } from "@/lib/renderer/getTemplatePreviewBackground";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import type { Slide, Template } from "@/lib/server/db/types";
@@ -53,6 +53,61 @@ export type SlideBackgroundState = SlideBackgroundOverride & {
 const PREVIEW_PX = 540;
 const PREVIEW_SCALE = PREVIEW_PX / 1080;
 const PREVIEW_SIZE = PREVIEW_PX;
+
+/** Template defaults.meta zone + font (same idea as carousel SlideGrid). */
+function getZoneAndFontOverridesFromTemplate(config: TemplateConfig | null): {
+  zoneOverrides?: { headline?: Record<string, unknown>; body?: Record<string, unknown> };
+  fontOverrides?: { headline_font_size?: number; body_font_size?: number };
+} {
+  if (!config?.defaults?.meta || typeof config.defaults.meta !== "object") return {};
+  const meta = config.defaults.meta;
+  const headlineZone =
+    meta.headline_zone_override && typeof meta.headline_zone_override === "object" && Object.keys(meta.headline_zone_override).length > 0
+      ? meta.headline_zone_override
+      : undefined;
+  const bodyZone =
+    meta.body_zone_override && typeof meta.body_zone_override === "object" && Object.keys(meta.body_zone_override).length > 0
+      ? meta.body_zone_override
+      : undefined;
+  const zoneOverrides =
+    headlineZone || bodyZone
+      ? { headline: headlineZone as Record<string, unknown>, body: bodyZone as Record<string, unknown> }
+      : undefined;
+  const fontOverrides =
+    meta.headline_font_size != null || meta.body_font_size != null
+      ? {
+          ...(meta.headline_font_size != null && { headline_font_size: Number(meta.headline_font_size) }),
+          ...(meta.body_font_size != null && { body_font_size: Number(meta.body_font_size) }),
+        }
+      : undefined;
+  return { zoneOverrides, fontOverrides };
+}
+
+function getZoneOverridesFromSlide(slide: Slide): TextZoneOverrides | undefined {
+  const m = slide.meta as {
+    headline_zone_override?: Record<string, unknown>;
+    body_zone_override?: Record<string, unknown>;
+  } | null;
+  if (m == null) return undefined;
+  if (!m.headline_zone_override && !m.body_zone_override) return undefined;
+  return {
+    headline:
+      m.headline_zone_override && Object.keys(m.headline_zone_override).length > 0
+        ? (m.headline_zone_override as TextZoneOverrides["headline"])
+        : undefined,
+    body:
+      m.body_zone_override && Object.keys(m.body_zone_override).length > 0
+        ? (m.body_zone_override as TextZoneOverrides["body"])
+        : undefined,
+  };
+}
+
+function getFontOverridesFromSlide(slide: Slide): { headline_font_size?: number; body_font_size?: number } | undefined {
+  const m = slide.meta as { headline_font_size?: number; body_font_size?: number } | null;
+  if (m == null) return undefined;
+  if (m.headline_font_size == null && m.body_font_size == null) return undefined;
+  return { headline_font_size: m.headline_font_size, body_font_size: m.body_font_size };
+}
 
 export type TemplateWithConfig = Template & { parsedConfig: TemplateConfig };
 
@@ -114,6 +169,19 @@ export function SlideEditorModal({
 
   const templateConfig = getTemplateConfig(templateId, templates);
   const isHook = slide.slide_type === "hook";
+
+  const templateDefaultsForPreview = useMemo(
+    () => getZoneAndFontOverridesFromTemplate(templateConfig),
+    [templateConfig]
+  );
+  const previewZoneOverrides = useMemo(
+    () => getZoneOverridesFromSlide(slide) ?? templateDefaultsForPreview.zoneOverrides,
+    [slide, templateDefaultsForPreview.zoneOverrides]
+  );
+  const previewFontOverrides = useMemo(
+    () => getFontOverridesFromSlide(slide) ?? templateDefaultsForPreview.fontOverrides,
+    [slide, templateDefaultsForPreview.fontOverrides]
+  );
 
   const handleSave = async () => {
     setSaving(true);
@@ -361,6 +429,8 @@ export function SlideEditorModal({
                     backgroundImageUrl={previewBackgroundImageUrl}
                     backgroundOverride={previewBackgroundOverride}
                     showCounterOverride={showCounter}
+                    {...(previewZoneOverrides && { zoneOverrides: previewZoneOverrides })}
+                    {...(previewFontOverrides && { fontOverrides: previewFontOverrides })}
                   />
                 </div>
               ) : (

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useMemo, type ComponentProps } from "react";
+import { cn } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -33,6 +34,15 @@ import { getSwipeRightXForFormat } from "@/lib/renderer/renderModel";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import type { Template } from "@/lib/server/db/types";
 import { ArrowLeftIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, LayoutTemplateIcon, Loader2Icon, Maximize2Icon, MinusIcon, MoreHorizontal, PaletteIcon, PlusIcon, Type } from "lucide-react";
+
+const TMPL_BACKDROP_HEX_RE = /^#([0-9A-Fa-f]{3}){1,2}$/;
+const DEFAULT_TMPL_BACKDROP_HEX = "#000000";
+const DEFAULT_TMPL_BACKDROP_OP = 0.85;
+
+function templateTextBackdropOn(z: { boxBackgroundColor?: string }) {
+  const c = z.boxBackgroundColor?.trim() ?? "";
+  return c.length > 0 && TMPL_BACKDROP_HEX_RE.test(c);
+}
 
 /** Design-space coordinates for swipe position presets (1080px width; Y for 1:1). Right-side x = 992 for 1:1, same for other formats (viewport width stays 1080). */
 const SWIPE_POSITION_PRESETS: Record<string, { x: number; y: number }> = {
@@ -897,6 +907,102 @@ export function TemplateBuilderForm({
                   <Label className="text-xs block mb-1.5">Text color</Label>
                   <ColorPicker value={headlineZone.color ?? ""} onChange={(v) => updateTextZone("headline", { color: v.trim() || undefined })} placeholder="Auto (contrast)" />
                 </div>
+                <div className="mt-4 space-y-2 border-t border-border/40 pt-3">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+                    <div className="min-w-0">
+                      <Label className="text-xs">Backdrop</Label>
+                      <p className="text-[10px] text-muted-foreground mt-0.5 leading-snug">
+                        Default panel behind headline on the slide (creators can override per slide).
+                      </p>
+                    </div>
+                    <div
+                      className="inline-flex shrink-0 rounded-lg border border-input/80 bg-muted/40 p-0.5"
+                      role="group"
+                      aria-label="Headline backdrop"
+                    >
+                      <button
+                        type="button"
+                        className={cn(
+                          "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                          !templateTextBackdropOn(headlineZone)
+                            ? "bg-background text-foreground shadow-sm"
+                            : "text-muted-foreground hover:text-foreground"
+                        )}
+                        onClick={() =>
+                          updateTextZone("headline", { boxBackgroundColor: undefined, boxBackgroundOpacity: undefined })
+                        }
+                      >
+                        Off
+                      </button>
+                      <button
+                        type="button"
+                        className={cn(
+                          "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                          templateTextBackdropOn(headlineZone)
+                            ? "bg-background text-foreground shadow-sm"
+                            : "text-muted-foreground hover:text-foreground"
+                        )}
+                        onClick={() => {
+                          const cur = headlineZone.boxBackgroundColor?.trim();
+                          const hasValid = !!cur && TMPL_BACKDROP_HEX_RE.test(cur);
+                          const prevOp = headlineZone.boxBackgroundOpacity;
+                          const keepOpacity =
+                            typeof prevOp === "number" && !Number.isNaN(prevOp) && hasValid;
+                          updateTextZone("headline", {
+                            boxBackgroundColor: hasValid ? cur : DEFAULT_TMPL_BACKDROP_HEX,
+                            boxBackgroundOpacity: keepOpacity ? prevOp : DEFAULT_TMPL_BACKDROP_OP,
+                          });
+                        }}
+                      >
+                        On
+                      </button>
+                    </div>
+                  </div>
+                  {templateTextBackdropOn(headlineZone) && (
+                    <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-3">
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-[10px] text-muted-foreground w-10 shrink-0 hidden sm:inline">Color</span>
+                        <div className="flex h-8 items-center rounded-md border border-input/80 bg-background px-1.5">
+                          <ColorPicker
+                            value={headlineZone.boxBackgroundColor ?? ""}
+                            onChange={(v) => {
+                              const c = v.trim();
+                              const ok = c.length > 0 && TMPL_BACKDROP_HEX_RE.test(c);
+                              if (!ok) {
+                                updateTextZone("headline", { boxBackgroundColor: undefined, boxBackgroundOpacity: undefined });
+                                return;
+                              }
+                              updateTextZone("headline", {
+                                boxBackgroundColor: c,
+                                boxBackgroundOpacity: headlineZone.boxBackgroundOpacity ?? DEFAULT_TMPL_BACKDROP_OP,
+                              });
+                            }}
+                            placeholder="#000000"
+                            compact
+                            swatchOnly
+                          />
+                        </div>
+                      </div>
+                      <div className="flex flex-1 items-center gap-2 min-w-0 min-h-9">
+                        <span className="text-[10px] text-muted-foreground shrink-0 w-12 hidden sm:inline">Strength</span>
+                        <Slider
+                          className="flex-1 py-1"
+                          min={0}
+                          max={100}
+                          step={1}
+                          value={[Math.round((headlineZone.boxBackgroundOpacity ?? DEFAULT_TMPL_BACKDROP_OP) * 100)]}
+                          onValueChange={(vals) => {
+                            const pct = vals[0] ?? 100;
+                            updateTextZone("headline", { boxBackgroundOpacity: pct / 100 });
+                          }}
+                        />
+                        <span className="text-[10px] tabular-nums text-muted-foreground w-10 text-right shrink-0">
+                          {Math.round((headlineZone.boxBackgroundOpacity ?? DEFAULT_TMPL_BACKDROP_OP) * 100)}%
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -988,6 +1094,102 @@ export function TemplateBuilderForm({
                 <div className="mt-4">
                   <Label className="text-xs block mb-1.5">Text color</Label>
                   <ColorPicker value={bodyZone.color ?? ""} onChange={(v) => updateTextZone("body", { color: v.trim() || undefined })} placeholder="Auto (contrast)" />
+                </div>
+                <div className="mt-4 space-y-2 border-t border-border/40 pt-3">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+                    <div className="min-w-0">
+                      <Label className="text-xs">Backdrop</Label>
+                      <p className="text-[10px] text-muted-foreground mt-0.5 leading-snug">
+                        Default panel behind body on the slide (creators can override per slide).
+                      </p>
+                    </div>
+                    <div
+                      className="inline-flex shrink-0 rounded-lg border border-input/80 bg-muted/40 p-0.5"
+                      role="group"
+                      aria-label="Body backdrop"
+                    >
+                      <button
+                        type="button"
+                        className={cn(
+                          "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                          !templateTextBackdropOn(bodyZone)
+                            ? "bg-background text-foreground shadow-sm"
+                            : "text-muted-foreground hover:text-foreground"
+                        )}
+                        onClick={() =>
+                          updateTextZone("body", { boxBackgroundColor: undefined, boxBackgroundOpacity: undefined })
+                        }
+                      >
+                        Off
+                      </button>
+                      <button
+                        type="button"
+                        className={cn(
+                          "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                          templateTextBackdropOn(bodyZone)
+                            ? "bg-background text-foreground shadow-sm"
+                            : "text-muted-foreground hover:text-foreground"
+                        )}
+                        onClick={() => {
+                          const cur = bodyZone.boxBackgroundColor?.trim();
+                          const hasValid = !!cur && TMPL_BACKDROP_HEX_RE.test(cur);
+                          const prevOp = bodyZone.boxBackgroundOpacity;
+                          const keepOpacity =
+                            typeof prevOp === "number" && !Number.isNaN(prevOp) && hasValid;
+                          updateTextZone("body", {
+                            boxBackgroundColor: hasValid ? cur : DEFAULT_TMPL_BACKDROP_HEX,
+                            boxBackgroundOpacity: keepOpacity ? prevOp : DEFAULT_TMPL_BACKDROP_OP,
+                          });
+                        }}
+                      >
+                        On
+                      </button>
+                    </div>
+                  </div>
+                  {templateTextBackdropOn(bodyZone) && (
+                    <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-3">
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-[10px] text-muted-foreground w-10 shrink-0 hidden sm:inline">Color</span>
+                        <div className="flex h-8 items-center rounded-md border border-input/80 bg-background px-1.5">
+                          <ColorPicker
+                            value={bodyZone.boxBackgroundColor ?? ""}
+                            onChange={(v) => {
+                              const c = v.trim();
+                              const ok = c.length > 0 && TMPL_BACKDROP_HEX_RE.test(c);
+                              if (!ok) {
+                                updateTextZone("body", { boxBackgroundColor: undefined, boxBackgroundOpacity: undefined });
+                                return;
+                              }
+                              updateTextZone("body", {
+                                boxBackgroundColor: c,
+                                boxBackgroundOpacity: bodyZone.boxBackgroundOpacity ?? DEFAULT_TMPL_BACKDROP_OP,
+                              });
+                            }}
+                            placeholder="#000000"
+                            compact
+                            swatchOnly
+                          />
+                        </div>
+                      </div>
+                      <div className="flex flex-1 items-center gap-2 min-w-0 min-h-9">
+                        <span className="text-[10px] text-muted-foreground shrink-0 w-12 hidden sm:inline">Strength</span>
+                        <Slider
+                          className="flex-1 py-1"
+                          min={0}
+                          max={100}
+                          step={1}
+                          value={[Math.round((bodyZone.boxBackgroundOpacity ?? DEFAULT_TMPL_BACKDROP_OP) * 100)]}
+                          onValueChange={(vals) => {
+                            const pct = vals[0] ?? 100;
+                            updateTextZone("body", { boxBackgroundOpacity: pct / 100 });
+                          }}
+                        />
+                        <span className="text-[10px] tabular-nums text-muted-foreground w-10 text-right shrink-0">
+                          {Math.round((bodyZone.boxBackgroundOpacity ?? DEFAULT_TMPL_BACKDROP_OP) * 100)}%
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

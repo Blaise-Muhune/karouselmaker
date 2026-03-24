@@ -4,6 +4,7 @@ import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { getContrastingTextColor, hexToRgba } from "@/lib/editor/colorUtils";
 import { parseInlineFormatting, stripHighlightMarkers, getFontSizeSegmentsForRange, getLineSubstringByPlainRange } from "@/lib/editor/inlineFormat";
 import { getRoundedPolygonClipPath } from "@/lib/renderer/shapeClipPath";
+import { zoneBoxChromeInlineCss } from "@/lib/renderer/zoneBoxChrome";
 
 /** Hook slide second image: circle with thick border (matches SlidePreview). */
 const HOOK_CIRCLE_SIZE = 200;
@@ -489,7 +490,10 @@ export function renderSlideHtml(
             .map((lineHtml) => `<span style="display:block;width:100%;white-space:nowrap;">${lineHtml}</span>`)
             .join("");
           const justifyCss = zoneAlign === "justify" ? "text-align-last:justify;text-justify:inter-word;" : "";
-          return `<div class="text-block" style="left:${block.zone.x}px;top:${block.zone.y}px;width:${block.zone.w}px;height:${block.zone.h}px;font-size:${fontSize}px;font-weight:${block.zone.fontWeight};line-height:${lineHeight};text-align:${zoneAlign};${justifyCss}color:${escapeHtml(zoneColor)};font-family:${fontStack};z-index:5;${transformCss}">${linesHtml}</div>`;
+          const boxChrome = zoneBoxChromeInlineCss(
+            block.zone as { boxBackgroundColor?: string; boxBackgroundOpacity?: number }
+          );
+          return `<div class="text-block" style="left:${block.zone.x}px;top:${block.zone.y}px;width:${block.zone.w}px;height:${block.zone.h}px;font-size:${fontSize}px;font-weight:${block.zone.fontWeight};line-height:${lineHeight};text-align:${zoneAlign};${justifyCss}color:${escapeHtml(zoneColor)};font-family:${fontStack};z-index:5;${transformCss}${boxChrome}">${linesHtml}</div>`;
         })
         .join("");
 

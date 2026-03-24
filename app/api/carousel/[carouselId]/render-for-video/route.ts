@@ -17,6 +17,8 @@ import { resolveBrandKitLogo } from "@/lib/server/brandKit";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
 import {
   normalizeSlideMetaForRender,
+  mergeWithTemplateDefaults,
+  getTemplateDefaultOverrides,
 } from "@/lib/server/export/normalizeSlideMetaForRender";
 import { resolveSlideBackgroundUrls } from "@/lib/server/export/resolveSlideBackgroundUrls";
 import {
@@ -190,13 +192,15 @@ export async function POST(
       }
       const borderedFrame = !!(backgroundImageUrl || (backgroundImageUrls?.length ?? 0) > 0);
       const slideMeta = (slide.meta ?? null) as Record<string, unknown> | null;
-      const merged = normalizeSlideMetaForRender(slideMeta);
+      const normalized = normalizeSlideMetaForRender(slideMeta);
+      const templateDefaults = getTemplateDefaultOverrides(videoTemplateConfig);
+      const merged = mergeWithTemplateDefaults(normalized, templateDefaults);
       const showCounterOverride = false;
       const showWatermarkOverride = false;
       const showMadeWithOverride = false;
-      const fontOverrides = undefined;
-      const zoneOverrides = undefined;
-      const chromeOverrides = undefined;
+      const fontOverrides = merged.fontOverrides;
+      const zoneOverrides = merged.zoneOverrides;
+      const chromeOverrides = merged.chromeOverrides;
       const highlightStyles = merged.highlightStyles;
       const imageDisplayParam =
         slideBg?.image_display != null && typeof slideBg.image_display === "object" && !Array.isArray(slideBg.image_display)

@@ -177,6 +177,10 @@ export const textZoneOverrideSchema = z.object({
   color: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
   /** Font family: "Inter", "Georgia", "system", "Roboto", "Montserrat", etc. */
   fontFamily: z.string().max(80).optional(),
+  rotation: z.number().min(-180).max(180).optional(),
+  /** Panel fill behind zone text (export + preview). */
+  boxBackgroundColor: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
+  boxBackgroundOpacity: z.number().min(0).max(1).optional(),
 }).optional();
 export type TextZoneOverride = z.output<typeof textZoneOverrideSchema>;
 

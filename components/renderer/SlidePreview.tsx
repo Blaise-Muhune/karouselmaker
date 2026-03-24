@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, Fragment, type ReactNode, typ
 import { applyTemplate } from "@/lib/renderer/applyTemplate";
 import { getTextScaleForDimensions, getSwipeRightXForFormat, normalizeTextZoneOverrides, type BrandKit, type SlideData, type TextZoneOverrides, type ChromeOverrides } from "@/lib/renderer/renderModel";
 import { getRoundedPolygonClipPath } from "@/lib/renderer/shapeClipPath";
+import { parseZoneBoxChrome } from "@/lib/renderer/zoneBoxChrome";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { getContrastingTextColor, hexToRgba } from "@/lib/editor/colorUtils";
 import { parseInlineFormatting, HIGHLIGHT_COLORS, stripHighlightMarkers, getFontSizeSegmentsForRange, getLineSubstringByPlainRange, type HighlightSpan, type InlineSegment } from "@/lib/editor/inlineFormat";
@@ -2037,6 +2038,17 @@ export function SlidePreview({
         const zoneOutlineStrokePx = block.zone.id === "headline" ? (headlineOutlineStroke ?? 0) : (bodyOutlineStroke ?? 0);
         const useOutline = zoneOutlineStrokePx > 0;
         const zoneBoldWeight = block.zone.id === "headline" ? headlineBoldWeight : bodyBoldWeight;
+        const zoneBoxChromeStyle = parseZoneBoxChrome(block.zone);
+        const zoneDragX =
+          dragOffset != null &&
+          ((block.zone.id === "headline" && dragOffset.zone === "headline") || (block.zone.id === "body" && dragOffset.zone === "body"))
+            ? dragOffset.x
+            : 0;
+        const zoneDragY =
+          dragOffset != null &&
+          ((block.zone.id === "headline" && dragOffset.zone === "headline") || (block.zone.id === "body" && dragOffset.zone === "body"))
+            ? dragOffset.y
+            : 0;
         const isEditableHeadline =
           block.zone.id === "headline" &&
           (onHeadlineChange != null || (positionAndSizeOnly && onHeadlinePositionChange != null && editToolbarHeadline != null)) &&
@@ -2197,12 +2209,11 @@ export function SlidePreview({
           textAlign: effectiveAlign,
           textAlignLast: effectiveAlign === "justify" ? "justify" : undefined,
           textJustify: effectiveAlign === "justify" ? "inter-word" : undefined,
-          boxSizing: "border-box",
           textWrap: "pretty",
-          padding: 0,
           margin: 0,
           overflowWrap: "break-word",
           wordBreak: "break-word",
+          ...(zoneBoxChromeStyle ?? { padding: 0, boxSizing: "border-box" }),
         };
         const zoneRotation = (block.zone as { rotation?: number }).rotation ?? 0;
         const rotationStyle = zoneRotation !== 0 ? {
@@ -2216,8 +2227,8 @@ export function SlidePreview({
             className="absolute flex flex-col justify-center shrink-0 overflow-visible"
             style={{
               ...readOnlyBlockStyles,
-              left: block.zone.x,
-              top: block.zone.y,
+              left: block.zone.x + zoneDragX,
+              top: block.zone.y + zoneDragY,
               width: block.zone.w,
               minWidth: block.zone.w,
               maxWidth: block.zone.w,
@@ -2287,9 +2298,8 @@ export function SlidePreview({
             minWidth: block.zone.w,
             maxWidth: block.zone.w,
             height: block.zone.h,
-            boxSizing: "border-box" as const,
-            padding: 0,
             margin: 0,
+            ...(zoneBoxChromeStyle ?? { padding: 0, boxSizing: "border-box" as const }),
           };
           const zoneBoxContent = positionAndSizeOnly ? (
             <>
@@ -2661,9 +2671,8 @@ export function SlidePreview({
             minWidth: block.zone.w,
             maxWidth: block.zone.w,
             height: block.zone.h,
-            boxSizing: "border-box" as const,
-            padding: 0,
             margin: 0,
+            ...(zoneBoxChromeStyle ?? { padding: 0, boxSizing: "border-box" as const }),
           };
           const bodyZoneBoxContent = (
             <>
