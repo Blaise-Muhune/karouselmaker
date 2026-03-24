@@ -30,6 +30,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Slider } from "@/components/ui/slider";
 import { updateSlide } from "@/app/actions/slides/updateSlide";
 import { updateExportSettings } from "@/app/actions/carousels/updateExportFormat";
@@ -366,6 +367,54 @@ function getZoneAndFontOverridesFromTemplate(config: TemplateConfig | null): {
       ? { counter, watermark, madeWith }
       : undefined;
   return { zoneOverrides, fontOverrides, chromeOverrides };
+}
+
+/** Fixed panel box (viewport px) so modals sit over the editor column, not centered on the preview. */
+type EditorAnchoredPanelPlacement = {
+  panelLeft: number;
+  panelTop: number;
+  panelWidth: number;
+  panelMaxHeight: number;
+};
+
+const TAILWIND_LG_PX = 1024;
+
+/**
+ * On lg+ viewports, anchor the panel inside the editor sidebar rect so the live preview stays visible.
+ * On smaller screens, center horizontally and place below the top safe area.
+ */
+function computeEditorAnchoredPanelPlacement(
+  editorSection: HTMLElement | null,
+  maxPanelWidth: number
+): EditorAnchoredPanelPlacement {
+  if (typeof window === "undefined") {
+    return { panelLeft: 0, panelTop: 0, panelWidth: maxPanelWidth, panelMaxHeight: 480 };
+  }
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const gutter = 12;
+  if (!editorSection) {
+    return {
+      panelLeft: gutter,
+      panelTop: gutter,
+      panelWidth: Math.min(maxPanelWidth, vw - gutter * 2),
+      panelMaxHeight: Math.max(200, vh - gutter * 2),
+    };
+  }
+  const sr = editorSection.getBoundingClientRect();
+  const isLg = vw >= TAILWIND_LG_PX;
+  if (isLg && sr.width >= 240) {
+    const panelWidth = Math.min(maxPanelWidth, sr.width - gutter * 2);
+    const panelLeft = sr.left + Math.max(gutter, (sr.width - panelWidth) / 2);
+    const panelTop = Math.max(gutter, sr.top + gutter);
+    const panelMaxHeight = Math.max(200, Math.min(vh - panelTop - gutter, sr.bottom - panelTop - gutter));
+    return { panelLeft, panelTop, panelWidth, panelMaxHeight };
+  }
+  const panelWidth = Math.min(maxPanelWidth, vw - gutter * 2);
+  const panelLeft = Math.max(gutter, (vw - panelWidth) / 2);
+  const panelTop = Math.max(gutter, vh * 0.08);
+  const panelMaxHeight = Math.max(200, vh - panelTop - gutter);
+  return { panelLeft, panelTop, panelWidth, panelMaxHeight };
 }
 
 export function SlideEditForm({
@@ -774,9 +823,9 @@ export function SlideEditForm({
       : (HIGHLIGHT_COLORS.yellow ?? "#facc15");
   const [headlineHighlightColor, setHeadlineHighlightColor] = useState<string>(defaultHighlightColor);
   const [bodyHighlightColor, setBodyHighlightColor] = useState<string>(defaultHighlightColor);
-  const [headlineLayoutModalOpen, setHeadlineLayoutModalOpen] = useState(false);
+  const [headlineLayoutPopoverOpen, setHeadlineLayoutPopoverOpen] = useState(false);
   const [expandedColorOverlay, setExpandedColorOverlay] = useState(true);
-  const [bodyLayoutModalOpen, setBodyLayoutModalOpen] = useState(false);
+  const [bodyLayoutPopoverOpen, setBodyLayoutPopoverOpen] = useState(false);
   const [headlineFontModalOpen, setHeadlineFontModalOpen] = useState(false);
   const [bodyFontModalOpen, setBodyFontModalOpen] = useState(false);
   const [chromeLayoutOpen, setChromeLayoutOpen] = useState(false);
@@ -827,6 +876,9 @@ export function SlideEditForm({
   const [updateTemplateOpen, setUpdateTemplateOpen] = useState(false);
   const [updateTemplateName, setUpdateTemplateName] = useState("");
   const [updateMakeAvailableForAll, setUpdateMakeAvailableForAll] = useState(false);
+  /** When saving/updating template with full-bleed image: if false, omit image URLs from template defaults (default off). */
+  const [saveTemplateIncludeImageBg, setSaveTemplateIncludeImageBg] = useState(false);
+  const [updateTemplateIncludeImageBg, setUpdateTemplateIncludeImageBg] = useState(false);
   const [driveImporting, setDriveImporting] = useState(false);
   const [driveError, setDriveError] = useState<string | null>(null);
   const [driveSuccess, setDriveSuccess] = useState<string | null>(null);
@@ -905,8 +957,7 @@ export function SlideEditForm({
   const lastScrollTopRef = useRef(0);
   /** When true, beforeunload should not prompt (e.g. intentional reload after applying template). */
   const allowUnloadRef = useRef(false);
-  const [layoutModalRect, setLayoutModalRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
-  const [highlightModalRect, setHighlightModalRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
+  const [highlightModalPlacement, setHighlightModalPlacement] = useState<EditorAnchoredPanelPlacement | null>(null);
   const [headerVisible, setHeaderVisible] = useState(true);
   const [headerHeight, setHeaderHeight] = useState(44);
   const [rewriteHookOpen, setRewriteHookOpen] = useState(false);
@@ -987,50 +1038,15 @@ export function SlideEditForm({
     else if (st < last || st <= 30) setHeaderVisible(true);
   }, [isMobile]);
 
-  const layoutModalOpen = headlineLayoutModalOpen || bodyLayoutModalOpen;
-  useLayoutEffect(() => {
-    if (!layoutModalOpen) {
-      setLayoutModalRect(null);
-      return;
-    }
-    const measure = () => {
-      const main = mainScrollRef.current;
-      const section = editorSectionRef.current;
-      if (main && section) {
-        const mr = main.getBoundingClientRect();
-        const sr = section.getBoundingClientRect();
-        setLayoutModalRect({
-          top: mr.bottom,
-          left: sr.left,
-          width: sr.width,
-          height: Math.max(0, window.innerHeight - mr.bottom),
-        });
-      }
-    };
-    measure();
-    window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
-  }, [layoutModalOpen]);
-
   const highlightModalOpen = headlineHighlightOpen || bodyHighlightOpen;
+  const HIGHLIGHT_MODAL_MAX_W = 512; // ~max-w-lg
   useLayoutEffect(() => {
     if (!highlightModalOpen) {
-      setHighlightModalRect(null);
+      setHighlightModalPlacement(null);
       return;
     }
     const measure = () => {
-      const main = mainScrollRef.current;
-      const section = editorSectionRef.current;
-      if (main && section) {
-        const mr = main.getBoundingClientRect();
-        const sr = section.getBoundingClientRect();
-        setHighlightModalRect({
-          top: mr.bottom,
-          left: sr.left,
-          width: sr.width,
-          height: Math.max(0, window.innerHeight - mr.bottom),
-        });
-      }
+      setHighlightModalPlacement(computeEditorAnchoredPanelPlacement(editorSectionRef.current, HIGHLIGHT_MODAL_MAX_W));
     };
     measure();
     window.addEventListener("resize", measure);
@@ -1422,6 +1438,16 @@ export function SlideEditForm({
   const validImageCount = imageUrls.filter((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim())).length;
   const multiImageDefaults: ImageDisplayState = { position: "top", fit: "cover", frame: "none", frameRadius: 0, frameColor: "#ffffff", frameShape: "squircle", layout: "auto", gap: 0, dividerStyle: "wave", dividerColor: "#ffffff", dividerWidth: 48 };
   const effectiveImageDisplay = validImageCount >= 2 ? { ...multiImageDefaults, ...imageDisplay } : imageDisplay;
+  /** Full-bleed image (not PiP): offer checkbox to embed slide image into template defaults. */
+  const offerEmbedImageBackgroundInTemplate = useMemo(() => {
+    const valid = imageUrls.filter((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim()));
+    const hasImg =
+      background.mode === "image" ||
+      valid.length > 0 ||
+      !!(background.image_url && /^https?:\/\//i.test(String(background.image_url).trim())) ||
+      !!background.asset_id;
+    return hasImg && (effectiveImageDisplay.mode ?? "full") === "full";
+  }, [background.mode, background.image_url, background.asset_id, imageUrls, effectiveImageDisplay.mode]);
   const templateDisallowsImage = templateConfig?.backgroundRules?.allowImage === false;
 
   /** Word-style: apply color to selection by storing a span (no brackets in text). Color is preset name or hex. Uses modal textarea ref when modal is open. */
@@ -2401,8 +2427,18 @@ export function SlideEditForm({
   };
 
   /** Build template config from current slide state (layout, overlay, chrome, defaults). Used by Save as template and Update template. */
-  const buildTemplateConfigFromSlide = (): TemplateConfig | null => {
+  const buildTemplateConfigFromSlide = (options?: { embedSlideImageBackground?: boolean }): TemplateConfig | null => {
     if (!templateConfig) return null;
+    const validImageUrlsForTemplate = imageUrls.filter((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim()));
+    const offerFullImageEmbedChoice =
+      (background.mode === "image" ||
+        validImageUrlsForTemplate.length > 0 ||
+        !!(background.image_url && /^https?:\/\//i.test(String(background.image_url ?? "").trim())) ||
+        !!background.asset_id) &&
+      (effectiveImageDisplay.mode ?? "full") === "full";
+    const embedSlideImage = options?.embedSlideImageBackground ?? true;
+    const shouldStripEmbeddedImage = offerFullImageEmbedChoice && !embedSlideImage;
+
     const overlayColor = background.overlay?.color ?? "#000000";
     const ov = background.overlay;
     const overlayEnabled = ov?.enabled !== false;
@@ -2414,7 +2450,21 @@ export function SlideEditForm({
       color: overlayColor,
       solidSize: ov?.solidSize,
     };
-    const backgroundPayload = buildBackgroundPayload();
+    const overlayPayloadForTemplate = background.overlay ?? { gradient: true, darken: 0.5, color: "#000000", textColor: "#ffffff" };
+    const effectiveBgColor =
+      background.color ??
+      (templateConfig?.defaults?.meta as { background_color?: string } | undefined)?.background_color ??
+      (templateConfig?.defaults?.background as { color?: string } | undefined)?.color ??
+      "#0a0a0a";
+    const backgroundPayload = shouldStripEmbeddedImage
+      ? {
+          style: background.style ?? "solid",
+          pattern: background.pattern,
+          color: /^#([0-9A-Fa-f]{3}){1,2}$/.test(effectiveBgColor) ? effectiveBgColor : "#0a0a0a",
+          gradientOn: background.gradientOn ?? false,
+          overlay: overlayPayloadForTemplate,
+        }
+      : buildBackgroundPayload();
     const isBackgroundImage = (backgroundPayload as { mode?: string }).mode === "image";
     const hasHeadlineZone = headlineZoneOverride != null && Object.keys(headlineZoneOverride).length > 0;
     const hasBodyZone = bodyZoneOverride != null && Object.keys(bodyZoneOverride).length > 0;
@@ -2426,7 +2476,6 @@ export function SlideEditForm({
     const headlineFontFamily = headlineZoneOverride?.fontFamily ?? headlineZoneFromTemplate?.fontFamily;
     const bodyFontFamily = bodyZoneOverride?.fontFamily ?? bodyZoneFromTemplate?.fontFamily;
     const imageDisplayPayload = buildImageDisplayPayload();
-    const effectiveBgColor = background.color ?? (templateConfig?.defaults?.meta as { background_color?: string } | undefined)?.background_color ?? (templateConfig?.defaults?.background as { color?: string } | undefined)?.color ?? "#0a0a0a";
     const isPipForTemplate = (imageDisplayPayload?.mode ?? (templateConfig?.defaults?.meta as { image_display?: { mode?: string } })?.image_display?.mode) === "pip";
     // Use only current form state for tint so saved template always reflects user's choices. PIP always saves tint 0.
     const effectiveTintOpacity = isPipForTemplate
@@ -2478,9 +2527,11 @@ export function SlideEditForm({
         ...(normalizeHighlightSpansToWords(body, bodyHighlights).length > 0 ? { body_highlights: normalizeHighlightSpansToWords(body, bodyHighlights) } : {}),
       },
     };
-    const backgroundRules = isBackgroundImage
+    const backgroundRules = shouldStripEmbeddedImage
       ? (templateConfig.backgroundRules ?? { allowImage: true, defaultStyle: "darken" })
-      : { allowImage: false as const, defaultStyle: "none" as const };
+      : isBackgroundImage
+        ? (templateConfig.backgroundRules ?? { allowImage: true, defaultStyle: "darken" })
+        : { allowImage: false as const, defaultStyle: "none" as const };
     return {
       ...templateConfig,
       backgroundRules,
@@ -2516,12 +2567,12 @@ export function SlideEditForm({
       setSavingTemplate(false);
       return;
     }
-    const config = buildTemplateConfigFromSlide();
+    const embedBg = !offerEmbedImageBackgroundInTemplate || saveTemplateIncludeImageBg;
+    const config = buildTemplateConfigFromSlide({ embedSlideImageBackground: embedBg });
     if (!config) {
       setSavingTemplate(false);
       return;
     }
-    const defaults = config.defaults;
     const inferredCategory =
       slide.slide_type === "hook" ||
       slide.slide_type === "point" ||
@@ -2564,7 +2615,8 @@ export function SlideEditForm({
     if (!saveResult.ok) {
       return;
     }
-    const config = buildTemplateConfigFromSlide();
+    const embedBg = !offerEmbedImageBackgroundInTemplate || updateTemplateIncludeImageBg;
+    const config = buildTemplateConfigFromSlide({ embedSlideImageBackground: embedBg });
     if (!config) return;
     setUpdatingTemplate(true);
     const result = await updateTemplateAction(templateId, { name, config, makeAvailableForAll: updateMakeAvailableForAll });
@@ -2582,6 +2634,7 @@ export function SlideEditForm({
   const openUpdateTemplateDialog = () => {
     setUpdateTemplateName(currentTemplate?.name ?? "");
     setUpdateMakeAvailableForAll(false);
+    setUpdateTemplateIncludeImageBg(false);
     setUpdateTemplateOpen(true);
   };
 
@@ -3530,7 +3583,13 @@ export function SlideEditForm({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={saveTemplateOpen} onOpenChange={setSaveTemplateOpen}>
+      <Dialog
+        open={saveTemplateOpen}
+        onOpenChange={(open) => {
+          if (open) setSaveTemplateIncludeImageBg(false);
+          setSaveTemplateOpen(open);
+        }}
+      >
         <DialogContent showCloseButton>
           <DialogHeader>
             <DialogTitle>Save as template</DialogTitle>
@@ -3548,6 +3607,20 @@ export function SlideEditForm({
               className="rounded-lg"
               onKeyDown={(e) => e.key === "Enter" && handleSaveTemplate()}
             />
+            {offerEmbedImageBackgroundInTemplate && (
+              <div className="flex items-start gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="save-template-include-image-bg"
+                  checked={saveTemplateIncludeImageBg}
+                  onChange={(e) => setSaveTemplateIncludeImageBg(e.target.checked)}
+                  className="rounded border-input mt-0.5 shrink-0"
+                />
+                <Label htmlFor="save-template-include-image-bg" className="font-normal cursor-pointer text-muted-foreground leading-snug">
+                  Include the current background image in the template (URLs or asset refs). Leave off to save layout and colors only; slides keep their own photos.
+                </Label>
+              </div>
+            )}
             {isAdmin && (
               <div className="flex items-center gap-2 pt-1">
                 <input
@@ -3575,7 +3648,17 @@ export function SlideEditForm({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={updateTemplateOpen} onOpenChange={(open) => { setUpdateTemplateOpen(open); if (!open) { setUpdateTemplateName(""); setUpdateMakeAvailableForAll(false); } }}>
+      <Dialog
+        open={updateTemplateOpen}
+        onOpenChange={(open) => {
+          if (open) setUpdateTemplateIncludeImageBg(false);
+          setUpdateTemplateOpen(open);
+          if (!open) {
+            setUpdateTemplateName("");
+            setUpdateMakeAvailableForAll(false);
+          }
+        }}
+      >
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Update template</DialogTitle>
@@ -3593,6 +3676,20 @@ export function SlideEditForm({
               className="rounded-lg"
               onKeyDown={(e) => e.key === "Enter" && handleUpdateTemplate()}
             />
+            {offerEmbedImageBackgroundInTemplate && (
+              <div className="flex items-start gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="update-template-include-image-bg"
+                  checked={updateTemplateIncludeImageBg}
+                  onChange={(e) => setUpdateTemplateIncludeImageBg(e.target.checked)}
+                  className="rounded border-input mt-0.5 shrink-0"
+                />
+                <Label htmlFor="update-template-include-image-bg" className="font-normal cursor-pointer text-muted-foreground leading-snug">
+                  Include the current background image in the template (URLs or asset refs). Leave off to save layout and colors only; slides keep their own photos.
+                </Label>
+              </div>
+            )}
             {isAdmin && currentTemplate?.user_id != null && (
               <div className="flex items-center gap-2 pt-1">
                 <input
@@ -4831,9 +4928,167 @@ export function SlideEditForm({
                         <div className="space-y-2">
                           <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">On the slide</p>
                           <div className="flex flex-wrap items-center gap-2">
-                          <Button type="button" variant="secondary" size="sm" className="h-7 text-xs" onClick={() => { setHeadlineHighlightOpen(false); setHeadlineLayoutModalOpen((o) => !o); }} title="Position & size in preview">
-                            <LayoutTemplateIcon className="size-3" /> Layout
-                          </Button>
+                          <Popover
+                            open={headlineLayoutPopoverOpen}
+                            onOpenChange={(open) => {
+                              setHeadlineLayoutPopoverOpen(open);
+                              if (open) {
+                                setHeadlineHighlightOpen(false);
+                                setBodyLayoutPopoverOpen(false);
+                              }
+                            }}
+                          >
+                            <PopoverTrigger asChild>
+                              <Button type="button" variant="secondary" size="sm" className="h-7 text-xs" title="Position & size in preview">
+                                <LayoutTemplateIcon className="size-3" /> Layout
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent
+                              align="start"
+                              side="bottom"
+                              sideOffset={6}
+                              collisionPadding={12}
+                              className="w-[min(calc(100vw-1.5rem),36rem)] max-h-[min(72vh,580px)] p-0 overflow-hidden flex flex-col"
+                              onOpenAutoFocus={(e) => e.preventDefault()}
+                            >
+                              {templateConfig?.textZones?.find((z) => z.id === "headline") ? (
+                                <>
+                                  <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border/50 shrink-0 bg-muted/30">
+                                    <span className="text-xs font-medium text-foreground">Headline position & layout</span>
+                                    <div className="flex items-center gap-1">
+                                      {totalSlides > 1 && (
+                                        <Button type="button" variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={handleApplyHeadlineToAll} disabled={applyingHeadlineZone} title="Apply headline size, position & layout to all frames">
+                                          {applyingHeadlineZone ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
+                                          Apply to all
+                                        </Button>
+                                      )}
+                                      <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0 text-xs" onClick={() => setHeadlineLayoutPopoverOpen(false)} aria-label="Close">
+                                        ×
+                                      </Button>
+                                    </div>
+                                  </div>
+                                  <div className="flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-3 space-y-3 min-w-0 min-h-0">
+                                    <div>
+                                      <p className="text-muted-foreground text-[11px] mb-1.5 sm:mb-2">Position & size (px)</p>
+                                      <div className="grid grid-cols-2 gap-2 sm:gap-4 sm:grid-cols-4">
+                                        {(["x", "y", "w", "h"] as const).map((key) => {
+                                          const base = effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!;
+                                          const val = headlineZoneOverride?.[key] ?? base[key];
+                                          const minVal = key === "w" || key === "h" ? 1 : 0;
+                                          const step = 8;
+                                          const label = key === "x" ? "X" : key === "y" ? "Y" : key === "w" ? "Width" : "Height";
+                                          return (
+                                            <div key={key} className="space-y-1 sm:space-y-1.5 min-w-0">
+                                              <Label className="text-xs">{label}</Label>
+                                              <StepperWithLongPress
+                                                value={val}
+                                                min={minVal}
+                                                max={1080}
+                                                step={step}
+                                                onChange={(v) => {
+                                                  const baseZone = effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!;
+                                                  if (key === "h") {
+                                                    const fs = headlineZoneOverride?.fontSize ?? baseZone.fontSize ?? 48;
+                                                    const lh = headlineZoneOverride?.lineHeight ?? baseZone.lineHeight ?? 1.2;
+                                                    setHeadlineZoneOverride((o) => ({ ...baseZone, ...o, h: v, maxLines: computeMaxLinesForZone(v, fs, lh) }));
+                                                  } else {
+                                                    setHeadlineZoneOverride((o) => ({ ...baseZone, ...o, [key]: v }));
+                                                  }
+                                                }}
+                                                label={label.toLowerCase()}
+                                                className="w-full max-w-[140px]"
+                                              />
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <p className="text-muted-foreground text-[11px] mb-1.5 sm:mb-2">Typography</p>
+                                      <div className="grid grid-cols-2 gap-2 sm:gap-4 sm:grid-cols-4">
+                                        <div className="space-y-1 sm:space-y-1.5 min-w-0">
+                                          <Label className="text-xs">Max lines</Label>
+                                          <StepperWithLongPress
+                                            value={headlineZoneOverride?.maxLines ?? (effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!).maxLines}
+                                            min={1}
+                                            max={20}
+                                            step={1}
+                                            onChange={(v) => setHeadlineZoneOverride((o) => ({ ...(effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!), ...o, maxLines: v }))}
+                                            label="max lines"
+                                            className="w-full max-w-[100px]"
+                                          />
+                                        </div>
+                                        <div className="space-y-1 sm:space-y-1.5 min-w-0">
+                                          <Label className="text-xs">Font weight</Label>
+                                          <StepperWithLongPress
+                                            value={headlineZoneOverride?.fontWeight ?? (effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!).fontWeight}
+                                            min={100}
+                                            max={900}
+                                            step={100}
+                                            onChange={(v) => setHeadlineZoneOverride((o) => ({ ...(effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!), ...o, fontWeight: v }))}
+                                            label="font weight"
+                                            className="w-full max-w-[100px]"
+                                          />
+                                        </div>
+                                        <div className="space-y-1 sm:space-y-1.5 min-w-0">
+                                          <Label className="text-xs">Line height</Label>
+                                          <StepperWithLongPress
+                                            value={Math.round((headlineZoneOverride?.lineHeight ?? (effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!).lineHeight) * 20) / 20}
+                                            min={0.5}
+                                            max={3}
+                                            step={0.05}
+                                            onChange={(v) => {
+                                              const lh = Math.round(v * 20) / 20;
+                                              const baseZone = effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!;
+                                              const h = headlineZoneOverride?.h ?? baseZone.h ?? 340;
+                                              const fs = headlineZoneOverride?.fontSize ?? baseZone.fontSize ?? 48;
+                                              setHeadlineZoneOverride((o) => ({ ...baseZone, ...o, lineHeight: lh, maxLines: computeMaxLinesForZone(h, fs, lh) }));
+                                            }}
+                                            formatDisplay={(v) => v.toFixed(1)}
+                                            label="line height"
+                                            className="w-full max-w-[100px]"
+                                          />
+                                        </div>
+                                        <div className="space-y-1 sm:space-y-1.5 min-w-0">
+                                          <Label className="text-xs">Rotation (°)</Label>
+                                          <div className="flex flex-wrap items-center gap-1.5">
+                                            {([-15, 0, 15, 90] as const).map((preset) => {
+                                              const base = effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!;
+                                              const current = headlineZoneOverride?.rotation ?? base?.rotation ?? 0;
+                                              return (
+                                                <Button
+                                                  key={preset}
+                                                  type="button"
+                                                  variant={current === preset ? "secondary" : "outline"}
+                                                  size="sm"
+                                                  className="h-7 px-2 text-xs tabular-nums"
+                                                  onClick={() => setHeadlineZoneOverride((o) => ({ ...base, ...o, rotation: preset }))}
+                                                  title={`Set rotation to ${preset}°`}
+                                                >
+                                                  {preset}°
+                                                </Button>
+                                              );
+                                            })}
+                                          </div>
+                                          <StepperWithLongPress
+                                            value={headlineZoneOverride?.rotation ?? (effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!)?.rotation ?? 0}
+                                            min={-180}
+                                            max={180}
+                                            step={5}
+                                            onChange={(v) => setHeadlineZoneOverride((o) => ({ ...(effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!), ...o, rotation: v }))}
+                                            label="rotation degrees"
+                                            className="w-full max-w-[100px] mt-1"
+                                          />
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </>
+                              ) : (
+                                <p className="p-3 text-xs text-muted-foreground">This template has no headline text zone.</p>
+                              )}
+                            </PopoverContent>
+                          </Popover>
                           <div className="flex items-center gap-2">
                             <Label className="text-[11px] text-muted-foreground shrink-0">Align</Label>
                             <Select
@@ -5182,9 +5437,167 @@ export function SlideEditForm({
                         <div className="space-y-2">
                           <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">On the slide</p>
                           <div className="flex flex-wrap items-center gap-2">
-                          <Button type="button" variant="secondary" size="sm" className="h-7 text-xs" onClick={() => { setBodyHighlightOpen(false); setBodyLayoutModalOpen((o) => !o); }} title="Position & size in preview">
-                            <LayoutTemplateIcon className="size-3" /> Layout
-                          </Button>
+                          <Popover
+                            open={bodyLayoutPopoverOpen}
+                            onOpenChange={(open) => {
+                              setBodyLayoutPopoverOpen(open);
+                              if (open) {
+                                setBodyHighlightOpen(false);
+                                setHeadlineLayoutPopoverOpen(false);
+                              }
+                            }}
+                          >
+                            <PopoverTrigger asChild>
+                              <Button type="button" variant="secondary" size="sm" className="h-7 text-xs" title="Position & size in preview">
+                                <LayoutTemplateIcon className="size-3" /> Layout
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent
+                              align="start"
+                              side="bottom"
+                              sideOffset={6}
+                              collisionPadding={12}
+                              className="w-[min(calc(100vw-1.5rem),36rem)] max-h-[min(72vh,580px)] p-0 overflow-hidden flex flex-col"
+                              onOpenAutoFocus={(e) => e.preventDefault()}
+                            >
+                              {templateConfig?.textZones?.find((z) => z.id === "body") ? (
+                                <>
+                                  <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border/50 shrink-0 bg-muted/30">
+                                    <span className="text-xs font-medium text-foreground">Body position & layout</span>
+                                    <div className="flex items-center gap-1">
+                                      {totalSlides > 1 && (
+                                        <Button type="button" variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={handleApplyBodyToAll} disabled={applyingBodyZone} title="Apply body size, position & layout to all frames">
+                                          {applyingBodyZone ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
+                                          Apply to all
+                                        </Button>
+                                      )}
+                                      <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0 text-xs" onClick={() => setBodyLayoutPopoverOpen(false)} aria-label="Close">
+                                        ×
+                                      </Button>
+                                    </div>
+                                  </div>
+                                  <div className="flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-3 space-y-3 min-w-0 min-h-0">
+                                    <div>
+                                      <p className="text-muted-foreground text-[11px] mb-1.5 sm:mb-2">Position & size (px)</p>
+                                      <div className="grid grid-cols-2 gap-2 sm:gap-4 sm:grid-cols-4">
+                                        {(["x", "y", "w", "h"] as const).map((key) => {
+                                          const base = effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!;
+                                          const val = bodyZoneOverride?.[key] ?? base[key];
+                                          const minVal = key === "w" || key === "h" ? 1 : 0;
+                                          const step = 8;
+                                          const label = key === "x" ? "X" : key === "y" ? "Y" : key === "w" ? "Width" : "Height";
+                                          return (
+                                            <div key={key} className="space-y-1 sm:space-y-1.5 min-w-0">
+                                              <Label className="text-xs">{label}</Label>
+                                              <StepperWithLongPress
+                                                value={val}
+                                                min={minVal}
+                                                max={1080}
+                                                step={step}
+                                                onChange={(v) => {
+                                                  const baseZone = effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!;
+                                                  if (key === "h") {
+                                                    const fs = bodyZoneOverride?.fontSize ?? baseZone.fontSize ?? 36;
+                                                    const lh = bodyZoneOverride?.lineHeight ?? baseZone.lineHeight ?? 1.3;
+                                                    setBodyZoneOverride((o) => ({ ...baseZone, ...o, h: v, maxLines: computeMaxLinesForZone(v, fs, lh) }));
+                                                  } else {
+                                                    setBodyZoneOverride((o) => ({ ...baseZone, ...o, [key]: v }));
+                                                  }
+                                                }}
+                                                label={label.toLowerCase()}
+                                                className="w-full max-w-[140px]"
+                                              />
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <p className="text-muted-foreground text-[11px] mb-1.5 sm:mb-2">Typography</p>
+                                      <div className="grid grid-cols-2 gap-2 sm:gap-4 sm:grid-cols-4">
+                                        <div className="space-y-1 sm:space-y-1.5 min-w-0">
+                                          <Label className="text-xs">Max lines</Label>
+                                          <StepperWithLongPress
+                                            value={bodyZoneOverride?.maxLines ?? (effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!).maxLines}
+                                            min={1}
+                                            max={20}
+                                            step={1}
+                                            onChange={(v) => setBodyZoneOverride((o) => ({ ...(effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!), ...o, maxLines: v }))}
+                                            label="max lines"
+                                            className="w-full max-w-[100px]"
+                                          />
+                                        </div>
+                                        <div className="space-y-1 sm:space-y-1.5 min-w-0">
+                                          <Label className="text-xs">Font weight</Label>
+                                          <StepperWithLongPress
+                                            value={bodyZoneOverride?.fontWeight ?? (effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!).fontWeight}
+                                            min={100}
+                                            max={900}
+                                            step={100}
+                                            onChange={(v) => setBodyZoneOverride((o) => ({ ...(effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!), ...o, fontWeight: v }))}
+                                            label="font weight"
+                                            className="w-full max-w-[100px]"
+                                          />
+                                        </div>
+                                        <div className="space-y-1 sm:space-y-1.5 min-w-0">
+                                          <Label className="text-xs">Line height</Label>
+                                          <StepperWithLongPress
+                                            value={Math.round((bodyZoneOverride?.lineHeight ?? (effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!).lineHeight) * 20) / 20}
+                                            min={0.5}
+                                            max={3}
+                                            step={0.05}
+                                            onChange={(v) => {
+                                              const lh = Math.round(v * 20) / 20;
+                                              const baseZone = effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!;
+                                              const h = bodyZoneOverride?.h ?? baseZone.h ?? 220;
+                                              const fs = bodyZoneOverride?.fontSize ?? baseZone.fontSize ?? 36;
+                                              setBodyZoneOverride((o) => ({ ...baseZone, ...o, lineHeight: lh, maxLines: computeMaxLinesForZone(h, fs, lh) }));
+                                            }}
+                                            formatDisplay={(v) => v.toFixed(1)}
+                                            label="line height"
+                                            className="w-full max-w-[100px]"
+                                          />
+                                        </div>
+                                        <div className="space-y-1 sm:space-y-1.5 min-w-0">
+                                          <Label className="text-xs">Rotation (°)</Label>
+                                          <div className="flex flex-wrap items-center gap-1.5">
+                                            {([-15, 0, 15, 90] as const).map((preset) => {
+                                              const base = effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!;
+                                              const current = bodyZoneOverride?.rotation ?? base?.rotation ?? 0;
+                                              return (
+                                                <Button
+                                                  key={preset}
+                                                  type="button"
+                                                  variant={current === preset ? "secondary" : "outline"}
+                                                  size="sm"
+                                                  className="h-7 px-2 text-xs tabular-nums"
+                                                  onClick={() => setBodyZoneOverride((o) => ({ ...base, ...o, rotation: preset }))}
+                                                  title={`Set rotation to ${preset}°`}
+                                                >
+                                                  {preset}°
+                                                </Button>
+                                              );
+                                            })}
+                                          </div>
+                                          <StepperWithLongPress
+                                            value={bodyZoneOverride?.rotation ?? (effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!)?.rotation ?? 0}
+                                            min={-180}
+                                            max={180}
+                                            step={5}
+                                            onChange={(v) => setBodyZoneOverride((o) => ({ ...(effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!), ...o, rotation: v }))}
+                                            label="rotation degrees"
+                                            className="w-full max-w-[100px] mt-1"
+                                          />
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </>
+                              ) : (
+                                <p className="p-3 text-xs text-muted-foreground">This template has no body text zone.</p>
+                              )}
+                            </PopoverContent>
+                          </Popover>
                           <div className="flex items-center gap-2">
                             <Label className="text-[11px] text-muted-foreground shrink-0">Align</Label>
                             <Select
@@ -6180,7 +6593,17 @@ export function SlideEditForm({
               <h3 className="text-xs font-semibold text-foreground">Template</h3>
               <p className="text-muted-foreground text-[11px] leading-snug">Save as new template or update the current one for everyone using it.</p>
               <div className="flex flex-wrap gap-2">
-                <Button type="button" variant="outline" size="sm" className="h-8 md:min-w-[160px] rounded-md text-xs gap-1.5" onClick={() => setSaveTemplateOpen(true)} disabled={!templateConfig}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 md:min-w-[160px] rounded-md text-xs gap-1.5"
+                  onClick={() => {
+                    setSaveTemplateIncludeImageBg(false);
+                    setSaveTemplateOpen(true);
+                  }}
+                  disabled={!templateConfig}
+                >
                   <Bookmark className="size-3.5" />
                   Save as template
                 </Button>
@@ -6208,311 +6631,11 @@ export function SlideEditForm({
       </div>
 
     </div>
-    {layoutModalOpen &&
-      layoutModalRect &&
-      typeof document !== "undefined" &&
-      createPortal(
-        <div
-          className="fixed z-[100] overflow-hidden flex flex-col"
-          style={{
-            top: layoutModalRect.top,
-            left: layoutModalRect.left,
-            width: layoutModalRect.width,
-            height: layoutModalRect.height,
-          }}
-        >
-          <div
-            className="absolute inset-0 bg-black/50"
-            aria-hidden
-            onClick={() => {
-              setHeadlineLayoutModalOpen(false);
-              setBodyLayoutModalOpen(false);
-            }}
-          />
-          {isPro && headlineLayoutModalOpen && templateConfig?.textZones?.find((z) => z.id === "headline") && (
-            <div className="absolute inset-0 z-[101] flex items-start justify-center overflow-y-auto p-3" onClick={(e) => e.stopPropagation()}>
-              <div className="w-full max-w-xl flex flex-col bg-background shadow-2xl border border-border/50 rounded-lg overflow-hidden shrink-0 my-auto">
-                <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border/50 shrink-0 bg-muted/30">
-                  <span className="text-xs font-medium text-foreground">Headline position & layout</span>
-                  <div className="flex items-center gap-1">
-                    {totalSlides > 1 && (
-                      <Button type="button" variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={handleApplyHeadlineToAll} disabled={applyingHeadlineZone} title="Apply headline size, position & layout to all frames">
-                        {applyingHeadlineZone ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
-                        Apply to all
-                      </Button>
-                    )}
-                    <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0 text-xs" onClick={() => setHeadlineLayoutModalOpen(false)} aria-label="Close">×</Button>
-                  </div>
-                </div>
-                <div className="flex-1 overflow-y-auto p-2 sm:p-3 space-y-3 min-w-0">
-                  <div>
-                    <p className="text-muted-foreground text-[11px] mb-1.5 sm:mb-2">Position & size (px)</p>
-                    <div className="grid grid-cols-2 gap-2 sm:gap-4 sm:grid-cols-4">
-                      {(["x", "y", "w", "h"] as const).map((key) => {
-                        const base = effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!;
-                        const val = headlineZoneOverride?.[key] ?? base[key];
-                        const minVal = key === "w" || key === "h" ? 1 : 0;
-                        const step = 8;
-                        const label = key === "x" ? "X" : key === "y" ? "Y" : key === "w" ? "Width" : "Height";
-                        return (
-                          <div key={key} className="space-y-1 sm:space-y-1.5 min-w-0">
-                            <Label className="text-xs">{label}</Label>
-                            <StepperWithLongPress
-                              value={val}
-                              min={minVal}
-                              max={1080}
-                              step={step}
-                              onChange={(v) => {
-                                const baseZone = effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!;
-                                if (key === "h") {
-                                  const fs = headlineZoneOverride?.fontSize ?? baseZone.fontSize ?? 48;
-                                  const lh = headlineZoneOverride?.lineHeight ?? baseZone.lineHeight ?? 1.2;
-                                  setHeadlineZoneOverride((o) => ({ ...baseZone, ...o, h: v, maxLines: computeMaxLinesForZone(v, fs, lh) }));
-                                } else {
-                                  setHeadlineZoneOverride((o) => ({ ...baseZone, ...o, [key]: v }));
-                                }
-                              }}
-                              label={label.toLowerCase()}
-                              className="w-full max-w-[140px]"
-                            />
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground text-[11px] mb-1.5 sm:mb-2">Typography</p>
-                    <div className="grid grid-cols-2 gap-2 sm:gap-4 sm:grid-cols-4">
-                      <div className="space-y-1 sm:space-y-1.5 min-w-0">
-                        <Label className="text-xs">Max lines</Label>
-                        <StepperWithLongPress
-                          value={headlineZoneOverride?.maxLines ?? (effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!).maxLines}
-                          min={1}
-                          max={20}
-                          step={1}
-                          onChange={(v) => setHeadlineZoneOverride((o) => ({ ...(effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!), ...o, maxLines: v }))}
-                          label="max lines"
-                          className="w-full max-w-[100px]"
-                        />
-                      </div>
-                      <div className="space-y-1 sm:space-y-1.5 min-w-0">
-                        <Label className="text-xs">Font weight</Label>
-                        <StepperWithLongPress
-                          value={headlineZoneOverride?.fontWeight ?? (effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!).fontWeight}
-                          min={100}
-                          max={900}
-                          step={100}
-                          onChange={(v) => setHeadlineZoneOverride((o) => ({ ...(effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!), ...o, fontWeight: v }))}
-                          label="font weight"
-                          className="w-full max-w-[100px]"
-                        />
-                      </div>
-                      <div className="space-y-1 sm:space-y-1.5 min-w-0">
-                        <Label className="text-xs">Line height</Label>
-                        <StepperWithLongPress
-                          value={Math.round((headlineZoneOverride?.lineHeight ?? (effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!).lineHeight) * 20) / 20}
-                          min={0.5}
-                          max={3}
-                          step={0.05}
-                          onChange={(v) => {
-                            const lh = Math.round(v * 20) / 20;
-                            const baseZone = effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!;
-                            const h = headlineZoneOverride?.h ?? baseZone.h ?? 340;
-                            const fs = headlineZoneOverride?.fontSize ?? baseZone.fontSize ?? 48;
-                            setHeadlineZoneOverride((o) => ({ ...baseZone, ...o, lineHeight: lh, maxLines: computeMaxLinesForZone(h, fs, lh) }));
-                          }}
-                          formatDisplay={(v) => v.toFixed(1)}
-                          label="line height"
-                          className="w-full max-w-[100px]"
-                        />
-                      </div>
-                      <div className="space-y-1 sm:space-y-1.5 min-w-0">
-                        <Label className="text-xs">Rotation (°)</Label>
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          {([-15, 0, 15, 90] as const).map((preset) => {
-                            const base = effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!;
-                            const current = headlineZoneOverride?.rotation ?? base?.rotation ?? 0;
-                            return (
-                              <Button
-                                key={preset}
-                                type="button"
-                                variant={current === preset ? "secondary" : "outline"}
-                                size="sm"
-                                className="h-7 px-2 text-xs tabular-nums"
-                                onClick={() => setHeadlineZoneOverride((o) => ({ ...base, ...o, rotation: preset }))}
-                                title={`Set rotation to ${preset}°`}
-                              >
-                                {preset}°
-                              </Button>
-                            );
-                          })}
-                        </div>
-                        <StepperWithLongPress
-                          value={headlineZoneOverride?.rotation ?? (effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!)?.rotation ?? 0}
-                          min={-180}
-                          max={180}
-                          step={5}
-                          onChange={(v) => setHeadlineZoneOverride((o) => ({ ...(effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!), ...o, rotation: v }))}
-                          label="rotation degrees"
-                          className="w-full max-w-[100px] mt-1"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-          {isPro && bodyLayoutModalOpen && templateConfig?.textZones?.find((z) => z.id === "body") && (
-            <div className="absolute inset-0 z-[101] flex items-start justify-center overflow-y-auto p-3" onClick={(e) => e.stopPropagation()}>
-              <div className="w-full max-w-xl flex flex-col bg-background shadow-2xl border border-border/50 rounded-lg overflow-hidden shrink-0 my-auto">
-                <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border/50 shrink-0 bg-muted/30">
-                  <span className="text-xs font-medium text-foreground">Body position & layout</span>
-                  <div className="flex items-center gap-1">
-                    {totalSlides > 1 && (
-                      <Button type="button" variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={handleApplyBodyToAll} disabled={applyingBodyZone} title="Apply body size, position & layout to all frames">
-                        {applyingBodyZone ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
-                        Apply to all
-                      </Button>
-                    )}
-                    <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0 text-xs" onClick={() => setBodyLayoutModalOpen(false)} aria-label="Close">×</Button>
-                  </div>
-                </div>
-                <div className="flex-1 overflow-y-auto p-2 sm:p-3 space-y-3 min-w-0">
-                  <div>
-                    <p className="text-muted-foreground text-[11px] mb-1.5 sm:mb-2">Position & size (px)</p>
-                    <div className="grid grid-cols-2 gap-2 sm:gap-4 sm:grid-cols-4">
-                      {(["x", "y", "w", "h"] as const).map((key) => {
-                        const base = effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!;
-                        const val = bodyZoneOverride?.[key] ?? base[key];
-                        const minVal = key === "w" || key === "h" ? 1 : 0;
-                        const step = 8;
-                        const label = key === "x" ? "X" : key === "y" ? "Y" : key === "w" ? "Width" : "Height";
-                        return (
-                          <div key={key} className="space-y-1 sm:space-y-1.5 min-w-0">
-                            <Label className="text-xs">{label}</Label>
-                            <StepperWithLongPress
-                              value={val}
-                              min={minVal}
-                              max={1080}
-                              step={step}
-                              onChange={(v) => {
-                                const baseZone = effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!;
-                                if (key === "h") {
-                                  const fs = bodyZoneOverride?.fontSize ?? baseZone.fontSize ?? 36;
-                                  const lh = bodyZoneOverride?.lineHeight ?? baseZone.lineHeight ?? 1.3;
-                                  setBodyZoneOverride((o) => ({ ...baseZone, ...o, h: v, maxLines: computeMaxLinesForZone(v, fs, lh) }));
-                                } else {
-                                  setBodyZoneOverride((o) => ({ ...baseZone, ...o, [key]: v }));
-                                }
-                              }}
-                              label={label.toLowerCase()}
-                              className="w-full max-w-[140px]"
-                            />
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground text-[11px] mb-1.5 sm:mb-2">Typography</p>
-                    <div className="grid grid-cols-2 gap-2 sm:gap-4 sm:grid-cols-4">
-                      <div className="space-y-1 sm:space-y-1.5 min-w-0">
-                        <Label className="text-xs">Max lines</Label>
-                        <StepperWithLongPress
-                          value={bodyZoneOverride?.maxLines ?? (effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!).maxLines}
-                          min={1}
-                          max={20}
-                          step={1}
-                          onChange={(v) => setBodyZoneOverride((o) => ({ ...(effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!), ...o, maxLines: v }))}
-                          label="max lines"
-                          className="w-full max-w-[100px]"
-                        />
-                      </div>
-                      <div className="space-y-1 sm:space-y-1.5 min-w-0">
-                        <Label className="text-xs">Font weight</Label>
-                        <StepperWithLongPress
-                          value={bodyZoneOverride?.fontWeight ?? (effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!).fontWeight}
-                          min={100}
-                          max={900}
-                          step={100}
-                          onChange={(v) => setBodyZoneOverride((o) => ({ ...(effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!), ...o, fontWeight: v }))}
-                          label="font weight"
-                          className="w-full max-w-[100px]"
-                        />
-                      </div>
-                      <div className="space-y-1 sm:space-y-1.5 min-w-0">
-                        <Label className="text-xs">Line height</Label>
-                        <StepperWithLongPress
-                          value={Math.round((bodyZoneOverride?.lineHeight ?? (effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!).lineHeight) * 20) / 20}
-                          min={0.5}
-                          max={3}
-                          step={0.05}
-                          onChange={(v) => {
-                            const lh = Math.round(v * 20) / 20;
-                            const baseZone = effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!;
-                            const h = bodyZoneOverride?.h ?? baseZone.h ?? 220;
-                            const fs = bodyZoneOverride?.fontSize ?? baseZone.fontSize ?? 36;
-                            setBodyZoneOverride((o) => ({ ...baseZone, ...o, lineHeight: lh, maxLines: computeMaxLinesForZone(h, fs, lh) }));
-                          }}
-                          formatDisplay={(v) => v.toFixed(1)}
-                          label="line height"
-                          className="w-full max-w-[100px]"
-                        />
-                      </div>
-                      <div className="space-y-1 sm:space-y-1.5 min-w-0">
-                        <Label className="text-xs">Rotation (°)</Label>
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          {([-15, 0, 15, 90] as const).map((preset) => {
-                            const base = effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!;
-                            const current = bodyZoneOverride?.rotation ?? base?.rotation ?? 0;
-                            return (
-                              <Button
-                                key={preset}
-                                type="button"
-                                variant={current === preset ? "secondary" : "outline"}
-                                size="sm"
-                                className="h-7 px-2 text-xs tabular-nums"
-                                onClick={() => setBodyZoneOverride((o) => ({ ...base, ...o, rotation: preset }))}
-                                title={`Set rotation to ${preset}°`}
-                              >
-                                {preset}°
-                              </Button>
-                            );
-                          })}
-                        </div>
-                        <StepperWithLongPress
-                          value={bodyZoneOverride?.rotation ?? (effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!)?.rotation ?? 0}
-                          min={-180}
-                          max={180}
-                          step={5}
-                          onChange={(v) => setBodyZoneOverride((o) => ({ ...(effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!), ...o, rotation: v }))}
-                          label="rotation degrees"
-                          className="w-full max-w-[100px] mt-1"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>,
-        document.body
-      )}
     {highlightModalOpen &&
-      highlightModalRect &&
+      highlightModalPlacement &&
       typeof document !== "undefined" &&
       createPortal(
-        <div
-          className="fixed z-[100] overflow-hidden flex flex-col"
-          style={{
-            top: highlightModalRect.top,
-            left: highlightModalRect.left,
-            width: highlightModalRect.width,
-            height: highlightModalRect.height,
-          }}
-        >
+        <div className="fixed inset-0 z-[100]">
           <div
             className="absolute inset-0 bg-black/50"
             aria-hidden
@@ -6521,8 +6644,17 @@ export function SlideEditForm({
               setBodyHighlightOpen(false);
             }}
           />
-          <div className="absolute inset-0 z-[101] flex items-start justify-center overflow-y-auto p-3" onClick={(e) => e.stopPropagation()}>
-            <div className="my-auto w-full max-w-lg flex justify-center">
+          <div
+            className="fixed z-[101] overflow-y-auto overflow-x-hidden min-h-0 min-w-0 flex justify-center"
+            style={{
+              left: highlightModalPlacement.panelLeft,
+              top: highlightModalPlacement.panelTop,
+              width: highlightModalPlacement.panelWidth,
+              maxHeight: highlightModalPlacement.panelMaxHeight,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-full max-w-lg shrink-0 py-1">
               {headlineHighlightOpen && (
                 <HighlightModal
                   open={headlineHighlightOpen}
