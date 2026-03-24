@@ -1058,7 +1058,7 @@ export function SlideGrid({
         <DialogContent
           showCloseButton={!isApplyingTemplate}
           overlayClassName="z-[100]"
-          className="relative z-[101] flex flex-col min-h-0 overflow-hidden max-w-[calc(100%-2rem)] max-h-[85vh] sm:max-w-2xl md:max-w-[92vw] md:max-h-[92vh] md:w-[92vw] md:h-[92vh] lg:max-w-[94vw] lg:max-h-[94vh] lg:w-[94vw] lg:h-[94vh]"
+          className="z-[101] flex flex-col min-h-0 overflow-hidden max-w-[calc(100%-2rem)] max-h-[85vh] sm:max-w-2xl md:max-w-[92vw] md:max-h-[92vh] md:w-[92vw] md:h-[92vh] lg:max-w-[94vw] lg:max-h-[94vh] lg:w-[94vw] lg:h-[94vh]"
           aria-busy={isApplyingTemplate}
           onPointerDownOutside={(e) => {
             if (isApplyingTemplate) e.preventDefault();
