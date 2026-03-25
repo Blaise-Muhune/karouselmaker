@@ -8,7 +8,7 @@ import type { ExportFormat, ExportSize } from "@/lib/server/db/types";
 
 const updateExportSettingsInputSchema = z.object({
   carousel_id: z.string().uuid(),
-  export_format: z.enum(["png", "jpeg"]).optional(),
+  export_format: z.enum(["png", "jpeg", "pdf"]).optional(),
   export_size: z.enum(["1080x1080", "1080x1350", "1080x1920"]).optional(),
 });
 

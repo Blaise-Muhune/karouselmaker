@@ -8,6 +8,14 @@ import { getTemplatePreviewBackgroundOverride, getLinkedInPreviewOverlayOverride
 import { getTemplatePreviewImageUrls } from "@/lib/renderer/templatePreviewImages";
 import { CheckIcon, LayoutTemplateIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const INSET = 3; // px buffer so watermark/body text at bottom isn't clipped
 const TEMPLATE_PAGE_SIZE = 12;
@@ -21,6 +29,17 @@ const PREVIEW_SIZES = [
   { w: 200, h: 250 },
   { w: 260, h: 325 },
 ] as const;
+
+export type TemplatePlatformFilter = "all" | "linkedin" | "other";
+export type TemplateLayoutFilter = "all" | "withImage" | "noImage";
+
+/** Default platform subset from a template’s category (carousel / slide editor modals). */
+export function defaultPlatformFilterForTemplateCategory(category: string | undefined | null): TemplatePlatformFilter {
+  const c = (category ?? "").toLowerCase().trim();
+  if (c === "linkedin") return "linkedin";
+  if (c.length > 0) return "other";
+  return "all";
+}
 
 function usePreviewSize() {
   const [index, setIndex] = useState(0);
@@ -45,6 +64,18 @@ function usePreviewSize() {
   return { w: size.w, h: size.h, scale };
 }
 
+function filterByPlatform(list: TemplateOption[], f: TemplatePlatformFilter): TemplateOption[] {
+  if (f === "linkedin") return list.filter((t) => (t.category ?? "").toLowerCase() === "linkedin");
+  if (f === "other") return list.filter((t) => (t.category ?? "").toLowerCase() !== "linkedin");
+  return list;
+}
+
+function filterByLayout(list: TemplateOption[], f: TemplateLayoutFilter): TemplateOption[] {
+  if (f === "withImage") return list.filter((t) => t.parsedConfig?.backgroundRules?.allowImage !== false);
+  if (f === "noImage") return list.filter((t) => t.parsedConfig?.backgroundRules?.allowImage === false);
+  return list;
+}
+
 export type TemplateOption = {
   id: string;
   name: string;
@@ -66,9 +97,12 @@ export type TemplateSelectCardsProps = {
   previewImageUrls?: string[] | null;
   /** Category of the default template (e.g. "linkedin"). Use when the default is not in the templates list (e.g. edit flow). */
   defaultTemplateCategory?: string;
-  /** When true, show LinkedIn / Instagram & others / All tabs and open on the tab that contains the current template. Requires full templates list; pagination is internal. */
-  showCategoryTabs?: boolean;
-  /** When false (default when showCategoryTabs), parent controls how many templates to show via slice. When true (with showCategoryTabs), we paginate internally with Load more. */
+  /** Initial platform subset. Users can switch to "All" anytime. Remount the component (e.g. `key` when modal opens) to reset. */
+  initialPlatformFilter?: TemplatePlatformFilter;
+  /** Second filter: image vs no-image layouts (slide editor). */
+  showLayoutFilter?: boolean;
+  initialLayoutFilter?: TemplateLayoutFilter;
+  /** When false (default), parent controls how many templates to show via slice. When true, we paginate internally with Load more. */
   paginateInternally?: boolean;
   /** When true, show delete on system templates (e.g. in Choose template modal). */
   isAdmin?: boolean;
@@ -78,11 +112,9 @@ export type TemplateSelectCardsProps = {
   onTemplateDeleted?: () => void;
   /** When set, use this overlay for the card of the currently selected template (value === t.id) so the card matches the live slide (e.g. gradient/tint saved on slide). */
   selectedTemplateOverlayOverride?: SlideBackgroundOverride | null;
-  /** When true, show a "My templates" section first (user-owned / modified / imported). Default true when showCategoryTabs. */
+  /** When true, show a "My templates" section first (user-owned / modified / imported). */
   showMyTemplatesSection?: boolean;
 };
-
-type TabId = "linkedin" | "other" | "all";
 
 export function TemplateSelectCards({
   templates,
@@ -93,13 +125,15 @@ export function TemplateSelectCards({
   primaryColor = "#0a0a0a",
   previewImageUrls,
   defaultTemplateCategory,
-  showCategoryTabs = false,
+  initialPlatformFilter = "all",
+  showLayoutFilter = false,
+  initialLayoutFilter = "all",
   paginateInternally = false,
   isAdmin = false,
   isPro = false,
   onTemplateDeleted,
   selectedTemplateOverlayOverride,
-  showMyTemplatesSection,
+  showMyTemplatesSection = true,
 }: TemplateSelectCardsProps) {
   const { w: PREVIEW_W, h: PREVIEW_H, scale: SCALE } = usePreviewSize();
   const brandKit = { primary_color: primaryColor };
@@ -116,10 +150,17 @@ export function TemplateSelectCards({
 
   const hasLinkedIn = templates.some((t) => (t.category ?? "").toLowerCase() === "linkedin");
   const hasOther = templates.some((t) => (t.category ?? "").toLowerCase() !== "linkedin");
-  const showTabs = showCategoryTabs && hasLinkedIn && hasOther;
+  const showPlatformFilter = hasLinkedIn || hasOther;
+
+  const [platformFilter, setPlatformFilter] = useState<TemplatePlatformFilter>(initialPlatformFilter);
+  const [layoutFilter, setLayoutFilter] = useState<TemplateLayoutFilter>(initialLayoutFilter);
+  const [visibleCount, setVisibleCount] = useState(TEMPLATE_PAGE_SIZE);
+
   const effectiveDefaultTemplateConfig =
     defaultTemplateConfig ??
-    (defaultTemplateId ? templates.find((t) => t.id === defaultTemplateId)?.parsedConfig ?? null : null) ??
+    (defaultTemplateId
+      ? (templates.find((t) => t.id === defaultTemplateId)?.parsedConfig ?? null)
+      : null) ??
     templates[0]?.parsedConfig ??
     null;
   const defaultTemplateStoredUrls = effectiveDefaultTemplateConfig
@@ -137,35 +178,27 @@ export function TemplateSelectCards({
       : defaultTemplateStoredUrls.length >= 2
         ? defaultTemplateStoredUrls
         : undefined;
-  const currentTemplateIdForTab = value ?? defaultTemplateId;
-  const currentCategoryForTab = currentTemplateIdForTab
-    ? templates.find((t) => t.id === currentTemplateIdForTab)?.category?.toLowerCase()
-    : defaultTemplateCategory?.toLowerCase();
-  const initialTabForMount: TabId = currentCategoryForTab === "linkedin" ? "linkedin" : hasOther ? "other" : "all";
-
-  const [activeTab, setActiveTab] = useState<TabId>(() => (showTabs ? initialTabForMount : "all"));
-  const [visibleCount, setVisibleCount] = useState(TEMPLATE_PAGE_SIZE);
 
   const myTemplates = useMemo(() => templates.filter((t) => !t.isSystemTemplate), [templates]);
-  const showMySection = showMyTemplatesSection ?? showCategoryTabs;
-  const hasMyTemplates = showMySection && myTemplates.length > 0;
+  const hasMyTemplates = showMyTemplatesSection && myTemplates.length > 0;
 
-  const linkedinTemplates = useMemo(() => templates.filter((t) => (t.category ?? "").toLowerCase() === "linkedin"), [templates]);
-  const otherTemplates = useMemo(() => templates.filter((t) => (t.category ?? "").toLowerCase() !== "linkedin"), [templates]);
+  const myTemplatesFiltered = useMemo(
+    () => filterByLayout(filterByPlatform(myTemplates, platformFilter), layoutFilter),
+    [myTemplates, platformFilter, layoutFilter]
+  );
 
-  const filteredByTab =
-    activeTab === "linkedin" ? linkedinTemplates : activeTab === "other" ? otherTemplates : templates;
-  const displayList = paginateInternally ? filteredByTab.slice(0, visibleCount) : filteredByTab;
-  const hasMore = paginateInternally && filteredByTab.length > visibleCount;
+  const catalogFiltered = useMemo(
+    () => filterByLayout(filterByPlatform(templates, platformFilter), layoutFilter),
+    [templates, platformFilter, layoutFilter]
+  );
+
+  const displayList = paginateInternally ? catalogFiltered.slice(0, visibleCount) : catalogFiltered;
+  const hasMore = paginateInternally && catalogFiltered.length > visibleCount;
   const loadMore = () => setVisibleCount((n) => n + TEMPLATE_PAGE_SIZE);
 
   useEffect(() => {
-    if (showTabs) setActiveTab(initialTabForMount);
-  }, [showTabs, initialTabForMount]);
-
-  useEffect(() => {
-    if (showTabs && activeTab) setVisibleCount(TEMPLATE_PAGE_SIZE);
-  }, [showTabs, activeTab]);
+    setVisibleCount(TEMPLATE_PAGE_SIZE);
+  }, [platformFilter, layoutFilter]);
 
   /** Build zone + font overrides from template defaults so user-saved templates display correctly. */
   const getOverridesFromConfig = (config: TemplateConfig) => {
@@ -213,14 +246,6 @@ export function TemplateSelectCards({
     slide_index: 1,
     slide_type: "point" as const,
   };
-
-  const tabButtons: { id: TabId; label: string }[] = showTabs
-    ? [
-        { id: "linkedin", label: "LinkedIn" },
-        { id: "other", label: "Instagram & others" },
-        { id: "all", label: "All" },
-      ]
-    : [];
 
   const renderCard = (t: TemplateOption, idx: number) => {
     const isSystem = t.isSystemTemplate === true;
@@ -299,11 +324,13 @@ export function TemplateSelectCards({
                 backgroundImageUrl={previewBgUrl}
                 backgroundImageUrls={previewBgUrls}
                 backgroundOverride={
-                  useSolidPreviewOverride
-                    ? getTemplatePreviewBackgroundOverride(t.parsedConfig)
-                    : t.category === "linkedin"
-                      ? getLinkedInPreviewOverlayOverride(t.parsedConfig)
-                      : getTemplatePreviewOverlayOverride(t.parsedConfig)
+                  value === t.id && selectedTemplateOverlayOverride
+                    ? selectedTemplateOverlayOverride
+                    : useSolidPreviewOverride
+                      ? getTemplatePreviewBackgroundOverride(t.parsedConfig)
+                      : t.category === "linkedin"
+                        ? getLinkedInPreviewOverlayOverride(t.parsedConfig)
+                        : getTemplatePreviewOverlayOverride(t.parsedConfig)
                 }
                 showCounterOverride={false}
                 showWatermarkOverride={false}
@@ -323,31 +350,51 @@ export function TemplateSelectCards({
 
   return (
     <div className="flex flex-col gap-3 min-w-0 w-full max-w-full">
+      {(showPlatformFilter || showLayoutFilter) && (
+        <div className="flex flex-wrap items-end gap-3 sm:gap-4">
+          {showPlatformFilter && (
+            <div className="space-y-1.5 min-w-[min(100%,200px)]">
+              <Label htmlFor="template-filter-platform" className="text-xs text-muted-foreground">
+                Platform
+              </Label>
+              <Select value={platformFilter} onValueChange={(v) => setPlatformFilter(v as TemplatePlatformFilter)}>
+                <SelectTrigger id="template-filter-platform" className="h-9 w-full sm:w-[200px] text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All templates</SelectItem>
+                  {hasLinkedIn && <SelectItem value="linkedin">LinkedIn</SelectItem>}
+                  {hasOther && <SelectItem value="other">Instagram &amp; others</SelectItem>}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {showLayoutFilter && (
+            <div className="space-y-1.5 min-w-[min(100%,220px)]">
+              <Label htmlFor="template-filter-layout" className="text-xs text-muted-foreground">
+                Layout
+              </Label>
+              <Select value={layoutFilter} onValueChange={(v) => setLayoutFilter(v as TemplateLayoutFilter)}>
+                <SelectTrigger id="template-filter-layout" className="h-9 w-full sm:w-[220px] text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All layouts</SelectItem>
+                  <SelectItem value="withImage">With background image</SelectItem>
+                  <SelectItem value="noImage">Without image (text / pattern)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+        </div>
+      )}
+
       {hasMyTemplates && (
         <div className="space-y-2">
           <p className="text-muted-foreground text-xs font-medium uppercase tracking-wider">My templates</p>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
-            {myTemplates.map((t, idx) => renderCard(t, idx))}
+            {myTemplatesFiltered.map((t, idx) => renderCard(t, idx))}
           </div>
-        </div>
-      )}
-      {tabButtons.length > 0 && (
-        <div className="flex gap-1 p-1 rounded-lg bg-muted/50 border border-border/60 w-fit">
-          {tabButtons.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id)}
-              className={cn(
-                "px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
-                activeTab === tab.id
-                  ? "bg-background text-foreground shadow-sm border border-border/60"
-                  : "text-muted-foreground hover:text-foreground hover:bg-background/50"
-              )}
-            >
-              {tab.label}
-            </button>
-          ))}
         </div>
       )}
 
@@ -365,52 +412,52 @@ export function TemplateSelectCards({
         >
           {value === null && (
             <span className="absolute right-2 top-2 rounded-full bg-primary p-0.5 text-primary-foreground z-10">
-            <CheckIcon className="size-3.5" />
-          </span>
-        )}
-        <div
-          className="mb-2 overflow-hidden rounded-md bg-muted/50 flex items-center justify-center relative shrink-0"
-          style={{ width: PREVIEW_W, height: PREVIEW_H, minWidth: PREVIEW_W, minHeight: PREVIEW_H }}
-        >
-          {effectiveDefaultTemplateConfig ? (
-            <div
-              className="absolute origin-top-left"
-              style={{
-                left: INSET,
-                top: INSET,
-                transform: `scale(${SCALE})`,
-                width: 1080,
-                height: 1350,
-              }}
-            >
-              <SlidePreview
-                slide={sampleSlide}
-                templateConfig={effectiveDefaultTemplateConfig}
-                brandKit={brandKit}
-                totalSlides={8}
-                backgroundImageUrl={defaultTemplateBgUrl}
-                backgroundImageUrls={defaultTemplateBgUrls}
-                backgroundOverride={
-                  effectiveDefaultTemplateConfig.backgroundRules?.allowImage === false
-                    ? getTemplatePreviewBackgroundOverride(effectiveDefaultTemplateConfig)
-                    : isDefaultLinkedIn
-                      ? getLinkedInPreviewOverlayOverride(effectiveDefaultTemplateConfig)
-                      : getTemplatePreviewOverlayOverride(effectiveDefaultTemplateConfig)
-                }
-                showCounterOverride={false}
-                showWatermarkOverride={false}
-                exportSize="1080x1350"
-                imageDisplay={getImageDisplayFromConfig(effectiveDefaultTemplateConfig)}
-                {...getOverridesFromConfig(effectiveDefaultTemplateConfig)}
-              />
-            </div>
-          ) : (
-            <LayoutTemplateIcon className="size-10 text-muted-foreground" />
+              <CheckIcon className="size-3.5" />
+            </span>
           )}
-        </div>
-        <span className="text-xs font-medium text-foreground">Default</span>
-        <span className="text-[10px] text-muted-foreground">Recommended</span>
-      </button>
+          <div
+            className="mb-2 overflow-hidden rounded-md bg-muted/50 flex items-center justify-center relative shrink-0"
+            style={{ width: PREVIEW_W, height: PREVIEW_H, minWidth: PREVIEW_W, minHeight: PREVIEW_H }}
+          >
+            {effectiveDefaultTemplateConfig ? (
+              <div
+                className="absolute origin-top-left"
+                style={{
+                  left: INSET,
+                  top: INSET,
+                  transform: `scale(${SCALE})`,
+                  width: 1080,
+                  height: 1350,
+                }}
+              >
+                <SlidePreview
+                  slide={sampleSlide}
+                  templateConfig={effectiveDefaultTemplateConfig}
+                  brandKit={brandKit}
+                  totalSlides={8}
+                  backgroundImageUrl={defaultTemplateBgUrl}
+                  backgroundImageUrls={defaultTemplateBgUrls}
+                  backgroundOverride={
+                    effectiveDefaultTemplateConfig.backgroundRules?.allowImage === false
+                      ? getTemplatePreviewBackgroundOverride(effectiveDefaultTemplateConfig)
+                      : isDefaultLinkedIn
+                        ? getLinkedInPreviewOverlayOverride(effectiveDefaultTemplateConfig)
+                        : getTemplatePreviewOverlayOverride(effectiveDefaultTemplateConfig)
+                  }
+                  showCounterOverride={false}
+                  showWatermarkOverride={false}
+                  exportSize="1080x1350"
+                  imageDisplay={getImageDisplayFromConfig(effectiveDefaultTemplateConfig)}
+                  {...getOverridesFromConfig(effectiveDefaultTemplateConfig)}
+                />
+              </div>
+            ) : (
+              <LayoutTemplateIcon className="size-10 text-muted-foreground" />
+            )}
+          </div>
+          <span className="text-xs font-medium text-foreground">Default</span>
+          <span className="text-[10px] text-muted-foreground">Recommended</span>
+        </button>
 
         {displayList.map((t, idx) => renderCard(t, idx))}
       </div>

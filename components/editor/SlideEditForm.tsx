@@ -10,7 +10,7 @@ import { HighlightModal } from "@/components/editor/HighlightModal";
 import { AssetPickerModal } from "@/components/assets/AssetPickerModal";
 import { GoogleDriveFilePicker } from "@/components/drive/GoogleDriveFilePicker";
 import { importSingleFileFromGoogleDrive } from "@/app/actions/assets/importFromGoogleDrive";
-import { TemplateSelectCards } from "@/components/carousels/TemplateSelectCards";
+import { TemplateSelectCards, defaultPlatformFilterForTemplateCategory } from "@/components/carousels/TemplateSelectCards";
 import { ImportTemplateButton } from "@/components/templates/ImportTemplateButton";
 import { Button } from "@/components/ui/button";
 import {
@@ -49,7 +49,9 @@ import { isSupabaseSignedUrl } from "@/lib/server/storage/signedUrlUtils";
 import { getTemplatePreviewBackgroundOverride } from "@/lib/renderer/getTemplatePreviewBackground";
 import { getSwipeRightXForFormat, type BrandKit, type ChromeOverrides } from "@/lib/renderer/renderModel";
 import type { TemplateConfig, TextZone } from "@/lib/server/renderer/templateSchema";
-import type { Slide, Template } from "@/lib/server/db/types";
+import type { Slide, Template, ExportFormat, ExportSize } from "@/lib/server/db/types";
+
+export type { ExportFormat, ExportSize } from "@/lib/server/db/types";
 import {
   ArrowLeftIcon,
   Bold,
@@ -94,6 +96,67 @@ const TEXT_BACKDROP_HEX_RE = /^#([0-9A-Fa-f]{3}){1,2}$/;
 /** Default fill when user turns backdrop on (still adjustable). */
 const DEFAULT_TEXT_BACKDROP_HEX = "#000000";
 const DEFAULT_TEXT_BACKDROP_OPACITY = 0.85;
+
+/** Row has something we can save: public https URL or library asset. */
+function slotHasPersistableImage(row: {
+  url: string;
+  asset_id?: string;
+  storage_path?: string;
+}): boolean {
+  const hasHttps = row.url.trim().length > 0 && /^https?:\/\//i.test(row.url.trim());
+  const hasLibrary = !!(row.asset_id && row.storage_path);
+  return hasHttps || hasLibrary;
+}
+
+const DEFAULT_IMAGE_OVERLAY = { gradient: true, darken: 0.5, color: "#000000", textColor: "#ffffff" } as const;
+
+/** Empty slot 0 while primary library image lives on `background.asset_id` (not yet migrated into rows). */
+function isEditorLibraryGhostRow(
+  row: { url: string; asset_id?: string },
+  index: number,
+  bg: { asset_id?: string; storage_path?: string }
+): boolean {
+  return (
+    index === 0 &&
+    !!(bg.asset_id || bg.storage_path) &&
+    !row.asset_id &&
+    !row.url.trim() &&
+    !isSupabaseSignedUrl(row.url)
+  );
+}
+
+function mapImageRowsToImagesPayload(
+  imageUrls: Array<{
+    url: string;
+    asset_id?: string;
+    storage_path?: string;
+    source?: "brave" | "unsplash" | "google" | "pixabay" | "pexels";
+    unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string };
+    pixabay_attribution?: { userName: string; userId: number; pageURL: string; photoURL: string };
+    pexels_attribution?: { photographer: string; photographer_url: string; photo_url: string };
+    alternates?: string[];
+  }>,
+  urlToPersist: (u: string | undefined) => string | undefined
+): Record<string, unknown>[] {
+  return imageUrls.filter(slotHasPersistableImage).map((i) => {
+    const out: Record<string, unknown> = {
+      ...(i.source != null && { source: i.source }),
+      ...(i.unsplash_attribution != null && { unsplash_attribution: i.unsplash_attribution }),
+      ...(i.pixabay_attribution != null && { pixabay_attribution: i.pixabay_attribution }),
+      ...(i.pexels_attribution != null && { pexels_attribution: i.pexels_attribution }),
+      alternates: i.alternates ?? [],
+    };
+    const persistedUrl = urlToPersist(i.url);
+    if (i.asset_id && i.storage_path) {
+      out.asset_id = i.asset_id;
+      out.storage_path = i.storage_path;
+      if (persistedUrl) out.image_url = persistedUrl;
+    } else if (persistedUrl) {
+      out.image_url = persistedUrl;
+    }
+    return out;
+  });
+}
 
 function textBackdropIsOn(zone: { boxBackgroundColor?: string } | null | undefined): boolean {
   const c = zone?.boxBackgroundColor?.trim() ?? "";
@@ -243,19 +306,22 @@ const SECTION_INFO: Record<string, { title: string; body: string }> = {
   },
   preview: {
     title: "Preview",
-    body: "This shows how the frame will look when exported. Choose the export format (PNG or JPEG) and size (square, 4:5, or 9:16). Changes apply to all frames in this carousel. On desktop the preview stays in view when you scroll; on mobile it appears above the form.",
+    body: "This shows how the frame will look when exported. Choose the export format (PNG, JPEG, or PDF for LinkedIn document carousels) and size (square, 4:5, or 9:16). Changes apply to all frames in this carousel. On desktop the preview stays in view when you scroll; on mobile it appears above the form.",
   },
 };
 
 export type TemplateWithConfig = Template & { parsedConfig: TemplateConfig };
 
-export type ExportFormat = "png" | "jpeg";
-export type ExportSize = "1080x1080" | "1080x1350" | "1080x1920";
-
 const EXPORT_SIZE_LABELS: Record<ExportSize, string> = {
   "1080x1080": "1:1",
   "1080x1350": "4:5",
   "1080x1920": "9:16",
+};
+
+const EXPORT_FORMAT_LABELS: Record<ExportFormat, string> = {
+  png: "PNG",
+  jpeg: "JPEG",
+  pdf: "PDF (LinkedIn)",
 };
 
 type SlideEditFormProps = {
@@ -577,9 +643,20 @@ export function SlideEditForm({
   });
   const [backgroundImageUrlForPreview, setBackgroundImageUrlForPreview] = useState<string | null>(() => initialBackgroundImageUrl ?? null);
   const [secondaryBackgroundImageUrlForPreview, setSecondaryBackgroundImageUrlForPreview] = useState<string | null>(() => initialSecondaryBackgroundImageUrl ?? null);
-  type ImageUrlItem = { url: string; source?: "brave" | "unsplash" | "google" | "pixabay" | "pexels"; unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string }; pixabay_attribution?: { userName: string; userId: number; pageURL: string; photoURL: string }; pexels_attribution?: { photographer: string; photographer_url: string; photo_url: string }; alternates?: string[]; _pool?: string[]; _index?: number };
+  type ImageUrlItem = {
+    url: string;
+    asset_id?: string;
+    storage_path?: string;
+    source?: "brave" | "unsplash" | "google" | "pixabay" | "pexels";
+    unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string };
+    pixabay_attribution?: { userName: string; userId: number; pageURL: string; photoURL: string };
+    pexels_attribution?: { photographer: string; photographer_url: string; photo_url: string };
+    alternates?: string[];
+    _pool?: string[];
+    _index?: number;
+  };
   const [imageUrls, setImageUrls] = useState<ImageUrlItem[]>(() => {
-    const bg = slide.background as { asset_id?: string; image_url?: string; image_source?: string; unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string }; pixabay_attribution?: { userName: string; userId: number; pageURL: string; photoURL: string }; pexels_attribution?: { photographer: string; photographer_url: string; photo_url: string }; images?: { image_url?: string; source?: "brave" | "google" | "unsplash" | "pixabay" | "pexels"; unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string }; pixabay_attribution?: { userName: string; userId: number; pageURL: string; photoURL: string }; pexels_attribution?: { photographer: string; photographer_url: string; photo_url: string }; alternates?: string[] }[] } | null;
+    const bg = slide.background as { asset_id?: string; storage_path?: string; image_url?: string; image_source?: string; unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string }; pixabay_attribution?: { userName: string; userId: number; pageURL: string; photoURL: string }; pexels_attribution?: { photographer: string; photographer_url: string; photo_url: string }; images?: { image_url?: string; asset_id?: string; storage_path?: string; source?: "brave" | "google" | "unsplash" | "pixabay" | "pexels"; unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string }; pixabay_attribution?: { userName: string; userId: number; pageURL: string; photoURL: string }; pexels_attribution?: { photographer: string; photographer_url: string; photo_url: string }; alternates?: string[] }[] } | null;
     if (bg?.asset_id) return [{ url: "", source: undefined }];
     // Prefer slide.background.images so we show one input per slot (e.g. 2 pics → 2 rows). Shuffle cycles that slot’s alternates only.
     if (bg?.images?.length) {
@@ -593,9 +670,21 @@ export function SlideEditForm({
       }
       return images.map((img) => {
         const url = img.image_url ?? "";
+        const aid = img.asset_id;
+        const sp = img.storage_path;
         const alts = (img as { alternates?: string[] }).alternates ?? [];
         const pool = [url, ...alts].filter((u) => u.trim() && /^https?:\/\//i.test(u));
-        return { url, source: (img.source === "brave" || img.source === "unsplash" || img.source === "google" || img.source === "pixabay" || img.source === "pexels" ? img.source : undefined) as ImageUrlItem["source"], unsplash_attribution: img.unsplash_attribution, pixabay_attribution: img.pixabay_attribution, pexels_attribution: img.pexels_attribution, alternates: alts, _pool: pool.length > 0 ? pool : undefined, _index: 0 };
+        return {
+          url,
+          ...(aid && sp ? { asset_id: aid, storage_path: sp } : {}),
+          source: (img.source === "brave" || img.source === "unsplash" || img.source === "google" || img.source === "pixabay" || img.source === "pexels" ? img.source : undefined) as ImageUrlItem["source"],
+          unsplash_attribution: img.unsplash_attribution,
+          pixabay_attribution: img.pixabay_attribution,
+          pexels_attribution: img.pexels_attribution,
+          alternates: alts,
+          _pool: pool.length > 0 ? pool : undefined,
+          _index: 0,
+        };
       });
     }
     if (initialBackgroundImageUrls?.length) {
@@ -910,7 +999,6 @@ export function SlideEditForm({
   const [driveError, setDriveError] = useState<string | null>(null);
   const [driveSuccess, setDriveSuccess] = useState<string | null>(null);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
-  const [templateDesignFilter, setTemplateDesignFilter] = useState<"withImage" | "noImage">("withImage");
   const [clearPictureDialogTemplateId, setClearPictureDialogTemplateId] = useState<string | null>(null);
   /** When user selects an image-allowing template but the slide has no image, show confirm modal before applying. */
   const [confirmApplyImageTemplateNoImageId, setConfirmApplyImageTemplateNoImageId] = useState<string | null>(null);
@@ -923,8 +1011,10 @@ export function SlideEditForm({
   const [infoSection, setInfoSection] = useState<string | null>(null);
   const [includeFirstSlide, setIncludeFirstSlide] = useState(initialIncludeFirstSlide);
   const [includeLastSlide, setIncludeLastSlide] = useState(initialIncludeLastSlide);
-  const [exportFormat] = useState<ExportFormat>(() =>
-    (initialExportFormat === "png" || initialExportFormat === "jpeg" ? initialExportFormat : "png") as ExportFormat
+  const [exportFormat, setExportFormat] = useState<ExportFormat>(() =>
+    initialExportFormat === "png" || initialExportFormat === "jpeg" || initialExportFormat === "pdf"
+      ? initialExportFormat
+      : "png"
   );
   const [exportSize, setExportSize] = useState<ExportSize>(() =>
     (initialExportSize && ["1080x1080", "1080x1350", "1080x1920"].includes(initialExportSize) ? initialExportSize : "1080x1350") as ExportSize
@@ -1273,9 +1363,26 @@ export function SlideEditForm({
           body: bodyZoneOverride ?? templateDefaultsOverrides.zoneOverrides?.body,
         }
       : templateDefaultsOverrides.zoneOverrides;
-  const singleImageWithPip =
-    (imageDisplay?.mode === "pip") &&
-    imageUrls.filter((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim())).length === 1;
+  /** https URL rows in the form, plus library/persisted primary when the URL row is empty (Pick from library). */
+  const httpImageSlotCount = imageUrls.filter((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim())).length;
+  const hasPrimaryStoredImage =
+    background.mode === "image" &&
+    (!!background.asset_id ||
+      !!(background.image_url && /^https?:\/\//i.test(String(background.image_url ?? "").trim())) ||
+      imageUrls.some((r) => slotHasPersistableImage(r)));
+  const hasSecondaryImage = !!(
+    background.secondary_asset_id ||
+    background.secondary_storage_path ||
+    (background.secondary_image_url &&
+      /^https?:\/\//i.test(String(background.secondary_image_url ?? "").trim()))
+  );
+  const validImageCount =
+    httpImageSlotCount >= 2
+      ? httpImageSlotCount
+      : httpImageSlotCount === 1
+        ? 1 + (hasSecondaryImage ? 1 : 0)
+        : (hasPrimaryStoredImage ? 1 : 0) + (hasSecondaryImage ? 1 : 0);
+  const singleImageWithPip = (imageDisplay?.mode === "pip") && validImageCount === 1;
   const pipDefaultHeadlineSize = headlineZoneFromTemplate?.fontSize ?? 72;
   const pipDefaultBodySize = bodyZoneFromTemplate?.fontSize ?? 48;
   const pipFontScale = 0.85;
@@ -1431,17 +1538,10 @@ export function SlideEditForm({
     })),
     ...baseModalOptions.filter((t) => !recentlyCreatedTemplates.some((r) => r.id === t.id)),
   ];
-  const templateOptionsFilteredForModal = useMemo(() => {
-    if (templateDesignFilter === "noImage") {
-      return templateOptionsForModal.filter((t) => t.parsedConfig?.backgroundRules?.allowImage === false);
-    }
-    return templateOptionsForModal.filter((t) => t.parsedConfig?.backgroundRules?.allowImage !== false);
-  }, [templateOptionsForModal, templateDesignFilter]);
   const firstTemplate = templates[0];
-  const defaultTemplateInFilteredList =
-    templateOptionsFilteredForModal.length > 0 && firstTemplate
-      ? templateOptionsFilteredForModal.find((t) => t.id === firstTemplate.id)
-      : undefined;
+  const templateModalInitialPlatform = defaultPlatformFilterForTemplateCategory(
+    templates.find((t) => t.id === (slide.template_id ?? firstTemplate?.id))?.category
+  );
   useEffect(() => {
     setOverrideTemplateConfig(null);
   }, [slide.id]);
@@ -1462,7 +1562,6 @@ export function SlideEditForm({
   const applyScope: ApplyScope = { includeFirstSlide, includeLastSlide };
   const defaultBodySize = templateConfig?.textZones?.find((z) => z.id === "body")?.fontSize ?? 48;
 
-  const validImageCount = imageUrls.filter((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim())).length;
   const multiImageDefaults: ImageDisplayState = { position: "top", fit: "cover", frame: "none", frameRadius: 0, frameColor: "#ffffff", frameShape: "squircle", layout: "auto", gap: 0, dividerStyle: "wave", dividerColor: "#ffffff", dividerWidth: 48 };
   const effectiveImageDisplay = validImageCount >= 2 ? { ...multiImageDefaults, ...imageDisplay } : imageDisplay;
   /** Full-bleed image (not PiP): offer checkbox to embed slide image into template defaults. */
@@ -1859,33 +1958,80 @@ export function SlideEditForm({
     }
     const overlayPayload = background.overlay ?? { gradient: true, darken: 0.5, color: "#000000", textColor: "#ffffff" };
     const validUrls = imageUrls.filter((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim()));
+    const persistedSlots = imageUrls.filter(slotHasPersistableImage);
     const imageDisplayPayload = buildImageDisplayPayload();
-    const useImagesArray = validUrls.length >= 2 || (validUrls.length === 1 && (validUrls[0]?.alternates?.length ?? 0) > 0);
+    const useImagesArray =
+      persistedSlots.length >= 2 ||
+      (persistedSlots.length === 1 && (persistedSlots[0]?.alternates?.length ?? 0) > 0);
     const templateBgForSave = getTemplatePreviewBackgroundOverride(templateConfig ?? null);
     const brandKitColor = brandKit?.primary_color?.trim() && /^#[0-9A-Fa-f]{3,6}$/i.test(brandKit.primary_color.trim()) ? brandKit.primary_color.trim() : undefined;
     const effectiveColorForSave = background.color ?? brandKitColor ?? templateBgForSave.color ?? "#0a0a0a";
     const urlToPersist = (u: string | undefined) => (u && !isSupabaseSignedUrl(u) ? u : undefined);
-    const bgPayload =
-      background.mode === "image" || validUrls.length > 0
-        ? useImagesArray
-          ? { mode: "image", color: effectiveColorForSave, images: validUrls.map((i) => ({ image_url: urlToPersist(i.url), source: i.source, unsplash_attribution: i.unsplash_attribution, pixabay_attribution: i.pixabay_attribution, pexels_attribution: i.pexels_attribution, alternates: i.alternates ?? [] })), fit: background.fit ?? "cover", overlay: overlayPayload, ...(imageDisplayPayload && { image_display: imageDisplayPayload }) }
-          : validUrls.length === 1
-            ? {
+    const hasTopLevelLibrary = !!(background.asset_id && background.storage_path);
+    const hasImageForSave =
+      background.mode === "image" ||
+      persistedSlots.length > 0 ||
+      validUrls.length > 0 ||
+      hasTopLevelLibrary ||
+      !!(background.image_url && /^https?:\/\//i.test(String(background.image_url ?? "").trim()));
+    const bgPayload = hasImageForSave
+      ? useImagesArray
+        ? {
+            mode: "image",
+            color: effectiveColorForSave,
+            images: mapImageRowsToImagesPayload(imageUrls, urlToPersist),
+            fit: background.fit ?? "cover",
+            overlay: overlayPayload,
+            ...(imageDisplayPayload && { image_display: imageDisplayPayload }),
+          }
+        : persistedSlots.length === 1
+          ? (() => {
+              const row = persistedSlots[0]!;
+              if (row.asset_id && row.storage_path) {
+                return {
+                  mode: "image",
+                  color: effectiveColorForSave,
+                  asset_id: row.asset_id,
+                  storage_path: row.storage_path,
+                  image_url: urlToPersist(row.url),
+                  fit: background.fit ?? "cover",
+                  overlay: overlayPayload,
+                  ...(imageDisplayPayload && { image_display: imageDisplayPayload }),
+                };
+              }
+              return {
                 mode: "image",
                 color: effectiveColorForSave,
-                image_url: urlToPersist(validUrls[0]!.url),
+                image_url: urlToPersist(row.url),
                 ...(background.asset_id != null && { asset_id: background.asset_id }),
                 ...(background.storage_path != null && background.storage_path !== "" && { storage_path: background.storage_path }),
-                image_source: validUrls[0]!.source,
-                unsplash_attribution: validUrls[0]!.unsplash_attribution,
-                pixabay_attribution: validUrls[0]!.pixabay_attribution,
-                pexels_attribution: validUrls[0]!.pexels_attribution,
+                image_source: row.source,
+                unsplash_attribution: row.unsplash_attribution,
+                pixabay_attribution: row.pixabay_attribution,
+                pexels_attribution: row.pexels_attribution,
                 fit: background.fit ?? "cover",
                 overlay: overlayPayload,
                 ...(imageDisplayPayload && { image_display: imageDisplayPayload }),
-              }
-            : { mode: "image", color: effectiveColorForSave, asset_id: background.asset_id, storage_path: background.storage_path, image_url: urlToPersist(background.image_url ?? undefined), fit: background.fit ?? "cover", overlay: overlayPayload, ...(imageDisplayPayload && { image_display: imageDisplayPayload }) }
-        : { style: background.style, color: background.color, gradientOn: background.gradientOn, overlay: overlayPayload };
+              };
+            })()
+          : {
+              mode: "image",
+              color: effectiveColorForSave,
+              asset_id: background.asset_id,
+              storage_path: background.storage_path,
+              image_url: urlToPersist(background.image_url ?? undefined),
+              fit: background.fit ?? "cover",
+              overlay: overlayPayload,
+              ...(imageDisplayPayload && { image_display: imageDisplayPayload }),
+              ...(isHook && (background.secondary_asset_id ?? background.secondary_storage_path ?? background.secondary_image_url)
+                ? {
+                    secondary_asset_id: background.secondary_asset_id,
+                    secondary_storage_path: background.secondary_storage_path,
+                    secondary_image_url: urlToPersist(background.secondary_image_url ?? undefined),
+                  }
+                : {}),
+            }
+      : { style: background.style, color: background.color, gradientOn: background.gradientOn, overlay: overlayPayload };
     const result = await updateSlide(
       {
         slide_id: slide.id,
@@ -1907,7 +2053,7 @@ export function SlideEditForm({
           ...(swipeSize != null && Number.isFinite(swipeSize) && { swipe_size: Math.round(swipeSize) }),
           ...(swipeColorOverride && /^#([0-9A-Fa-f]{3}){1,2}$/.test(swipeColorOverride) && { swipe_color: swipeColorOverride }),
           ...(counterColorOverride && /^#([0-9A-Fa-f]{3}){1,2}$/.test(counterColorOverride) && { counter_color: counterColorOverride }),
-          ...(background.mode === "image" || validUrls.length > 0
+          ...(hasImageForSave
             ? (() => {
                 const isPip = imageDisplayPayload?.mode === "pip";
                 const tintOpacity = isPip ? 0 : (typeof background.overlay?.tintOpacity === "number" ? background.overlay.tintOpacity : (templateConfig?.defaults?.meta as { overlay_tint_opacity?: number } | undefined)?.overlay_tint_opacity ?? 0);
@@ -1917,9 +2063,7 @@ export function SlideEditForm({
                 };
               })()
             : {}),
-          ...(background.mode === "image" || validUrls.length > 0
-            ? { allow_background_image_override: templateDisallowsImage }
-            : {}),
+          ...(hasImageForSave ? { allow_background_image_override: templateDisallowsImage } : {}),
           ...(headlineFontSize != null && { headline_font_size: headlineFontSize }),
           ...(bodyFontSize != null && { body_font_size: bodyFontSize }),
           ...(headlineZoneOverride && Object.keys(headlineZoneOverride).length > 0 && { headline_zone_override: headlineZoneOverride }),
@@ -1983,11 +2127,12 @@ export function SlideEditForm({
     try {
       const saveResult = await performSave(false);
       if (!saveResult.ok) return;
-      const ext = exportFormat === "jpeg" ? "jpg" : "png";
+      const rasterFormat = exportFormat === "pdf" ? "png" : exportFormat;
+      const ext = rasterFormat === "jpeg" ? "jpg" : "png";
       const filename = downloadSlug
         ? `${downloadSlug}-${String(slide.slide_index).padStart(2, "0")}.${ext}`
         : `slide-${slide.slide_index}.${ext}`;
-      const url = `/api/export/slide/${slide.id}?format=${exportFormat}&size=${exportSize}`;
+      const url = `/api/export/slide/${slide.id}?format=${rasterFormat}&size=${exportSize}`;
       const res = await fetch(url, { credentials: "include" });
       if (!res.ok) return;
       const blob = await res.blob();
@@ -2090,24 +2235,52 @@ export function SlideEditForm({
   const buildBackgroundPayload = (): Record<string, unknown> => {
     const overlayPayload = background.overlay ?? { gradient: true, darken: 0.5, color: "#000000", textColor: "#ffffff" };
     const validUrls = imageUrls.filter((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim()));
-    const useImagesArray = validUrls.length >= 2 || (validUrls.length === 1 && (validUrls[0]?.alternates?.length ?? 0) > 0);
+    const persistedSlots = imageUrls.filter(slotHasPersistableImage);
+    const useImagesArray =
+      persistedSlots.length >= 2 ||
+      (persistedSlots.length === 1 && (persistedSlots[0]?.alternates?.length ?? 0) > 0);
     const urlToPersist = (u: string | undefined) => (u && !isSupabaseSignedUrl(u) ? u : undefined);
-    return background.mode === "image" || validUrls.length > 0
+    const hasTopLevelLibrary = !!(background.asset_id && background.storage_path);
+    const hasImageForSave =
+      background.mode === "image" ||
+      persistedSlots.length > 0 ||
+      validUrls.length > 0 ||
+      hasTopLevelLibrary ||
+      !!(background.image_url && /^https?:\/\//i.test(String(background.image_url ?? "").trim()));
+    return hasImageForSave
       ? useImagesArray
-        ? { mode: "image", images: validUrls.map((i) => ({ image_url: urlToPersist(i.url), source: i.source, unsplash_attribution: i.unsplash_attribution, pixabay_attribution: i.pixabay_attribution, pexels_attribution: i.pexels_attribution, alternates: i.alternates ?? [] })), fit: background.fit ?? "cover", overlay: overlayPayload }
-        : validUrls.length === 1
-          ? {
-              mode: "image",
-              image_url: urlToPersist(validUrls[0]!.url),
-              ...(background.asset_id != null && { asset_id: background.asset_id }),
-              ...(background.storage_path != null && background.storage_path !== "" && { storage_path: background.storage_path }),
-              image_source: validUrls[0]!.source,
-              unsplash_attribution: validUrls[0]!.unsplash_attribution,
-              pixabay_attribution: validUrls[0]!.pixabay_attribution,
-              pexels_attribution: validUrls[0]!.pexels_attribution,
-              fit: background.fit ?? "cover",
-              overlay: overlayPayload,
-            }
+        ? {
+            mode: "image",
+            images: mapImageRowsToImagesPayload(imageUrls, urlToPersist),
+            fit: background.fit ?? "cover",
+            overlay: overlayPayload,
+          }
+        : persistedSlots.length === 1
+          ? (() => {
+              const row = persistedSlots[0]!;
+              if (row.asset_id && row.storage_path) {
+                return {
+                  mode: "image",
+                  asset_id: row.asset_id,
+                  storage_path: row.storage_path,
+                  image_url: urlToPersist(row.url),
+                  fit: background.fit ?? "cover",
+                  overlay: overlayPayload,
+                };
+              }
+              return {
+                mode: "image",
+                image_url: urlToPersist(row.url),
+                ...(background.asset_id != null && { asset_id: background.asset_id }),
+                ...(background.storage_path != null && background.storage_path !== "" && { storage_path: background.storage_path }),
+                image_source: row.source,
+                unsplash_attribution: row.unsplash_attribution,
+                pixabay_attribution: row.pixabay_attribution,
+                pexels_attribution: row.pexels_attribution,
+                fit: background.fit ?? "cover",
+                overlay: overlayPayload,
+              };
+            })()
           : {
               mode: "image",
               asset_id: background.asset_id,
@@ -2116,7 +2289,11 @@ export function SlideEditForm({
               fit: background.fit ?? "cover",
               overlay: overlayPayload,
               ...(isHook && (background.secondary_asset_id ?? background.secondary_storage_path ?? background.secondary_image_url)
-                ? { secondary_asset_id: background.secondary_asset_id, secondary_storage_path: background.secondary_storage_path, secondary_image_url: urlToPersist(background.secondary_image_url ?? undefined) }
+                ? {
+                    secondary_asset_id: background.secondary_asset_id,
+                    secondary_storage_path: background.secondary_storage_path,
+                    secondary_image_url: urlToPersist(background.secondary_image_url ?? undefined),
+                  }
                 : {}),
             }
       : { style: background.style ?? "solid", pattern: background.pattern, color: background.color, gradientOn: background.gradientOn ?? false, overlay: overlayPayload };
@@ -2256,18 +2433,39 @@ export function SlideEditForm({
     if (result.ok) router.refresh();
   };
 
+  const handleExportFormatChange = async (value: ExportFormat) => {
+    setExportFormat(value);
+    setUpdatingExportSettings(true);
+    const result = await updateExportSettings({ carousel_id: carouselId, export_format: value }, editorPath);
+    setUpdatingExportSettings(false);
+    if (result.ok) router.refresh();
+  };
+
   const handleDownloadFullExport = async () => {
     setExportingFull(true);
     setExportFullError(null);
     try {
       const res = await fetch(`/api/export/${carouselId}`, { method: "POST" });
-      const data = await res.json().catch(() => ({}));
+      const contentType = res.headers.get("content-type") ?? "";
       if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
         setExportFullError(data.error ?? "Export failed");
         return;
       }
+      if (contentType.includes("application/zip")) {
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = res.headers.get("X-Suggested-Filename") || `${downloadSlug || "carousel"}.zip`;
+        a.click();
+        URL.revokeObjectURL(url);
+        router.refresh();
+        return;
+      }
+      const data = (await res.json().catch(() => ({}))) as { downloadUrl?: string };
       if (data.downloadUrl) {
-        const url = data.downloadUrl as string;
+        const url = data.downloadUrl;
         const a = document.createElement("a");
         a.href = url;
         a.download = `${downloadSlug || "carousel"}.zip`;
@@ -2694,19 +2892,67 @@ export function SlideEditForm({
       setSecondaryBackgroundImageUrlForPreview(url);
       setPickerForSecondary(false);
     } else {
-      setBackground((b) => ({
-        ...b,
-        mode: "image",
-        asset_id: asset.id,
-        storage_path: asset.storage_path,
-        image_url: undefined,
-        fit: "cover",
-        overlay: b.overlay ?? { gradient: true, darken: 0.5, color: "#000000", textColor: "#ffffff" },
-      }));
-      setBackgroundImageUrlForPreview(url);
-      // Clear URL list so preview uses this asset (otherwise old URL still wins and preview doesn't update)
-      setImageUrls([{ url: "", source: undefined }]);
-      ensureNoImageTemplateImageFallback();
+      const rowsWithHttps = imageUrls.filter((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim()));
+      const shouldAppendLibraryPick = imageUrls.length > 1 || rowsWithHttps.length > 0;
+
+      if (shouldAppendLibraryPick) {
+        const newRow: ImageUrlItem = {
+          url,
+          asset_id: asset.id,
+          storage_path: asset.storage_path,
+        };
+        if (
+          background.asset_id &&
+          background.storage_path &&
+          rowsWithHttps.length === 0 &&
+          imageUrls.length === 1
+        ) {
+          const primaryPreview = backgroundImageUrlForPreview ?? url;
+          setImageUrls([
+            {
+              url: primaryPreview,
+              asset_id: background.asset_id,
+              storage_path: background.storage_path,
+            },
+            newRow,
+          ]);
+        } else {
+          setImageUrls((prev) => {
+            const next = [...prev];
+            const emptyIdx = next.findIndex(
+              (r, idx) => !slotHasPersistableImage(r) && !isEditorLibraryGhostRow(r, idx, background)
+            );
+            if (emptyIdx >= 0) {
+              next[emptyIdx] = { ...next[emptyIdx]!, ...newRow };
+            } else {
+              next.push(newRow);
+            }
+            return next;
+          });
+        }
+        setBackground((b) => ({
+          ...b,
+          mode: "image",
+          ...(b.asset_id || b.storage_path ? { asset_id: undefined, storage_path: undefined, image_url: undefined } : {}),
+          fit: "cover",
+          overlay: b.overlay ?? DEFAULT_IMAGE_OVERLAY,
+        }));
+        setBackgroundImageUrlForPreview(null);
+        ensureNoImageTemplateImageFallback();
+      } else {
+        setBackground((b) => ({
+          ...b,
+          mode: "image",
+          asset_id: asset.id,
+          storage_path: asset.storage_path,
+          image_url: undefined,
+          fit: "cover",
+          overlay: b.overlay ?? DEFAULT_IMAGE_OVERLAY,
+        }));
+        setBackgroundImageUrlForPreview(url);
+        setImageUrls([{ url: "", source: undefined }]);
+        ensureNoImageTemplateImageFallback();
+      }
     }
     setPickerOpen(false);
   };
@@ -2720,17 +2966,65 @@ export function SlideEditForm({
       setDriveImporting(false);
       if (result.ok && result.asset.url) {
         const { asset } = result;
-        setBackground((b) => ({
-          ...b,
-          mode: "image",
-          asset_id: asset.id,
-          storage_path: asset.storage_path,
-          image_url: undefined,
-          fit: b.fit ?? "cover",
-          overlay: b.overlay ?? { gradient: true, darken: 0.5, color: "#000000", textColor: "#ffffff" },
-        }));
-        setBackgroundImageUrlForPreview(asset.url);
-        setImageUrls([{ url: "", source: undefined }]);
+        const rowsWithHttps = imageUrls.filter((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim()));
+        const shouldAppendLibraryPick = imageUrls.length > 1 || rowsWithHttps.length > 0;
+
+        if (shouldAppendLibraryPick) {
+          const newRow: ImageUrlItem = {
+            url: asset.url,
+            asset_id: asset.id,
+            storage_path: asset.storage_path,
+          };
+          if (
+            background.asset_id &&
+            background.storage_path &&
+            rowsWithHttps.length === 0 &&
+            imageUrls.length === 1
+          ) {
+            const primaryPreview = backgroundImageUrlForPreview ?? asset.url;
+            setImageUrls([
+              {
+                url: primaryPreview,
+                asset_id: background.asset_id,
+                storage_path: background.storage_path,
+              },
+              newRow,
+            ]);
+          } else {
+            setImageUrls((prev) => {
+              const next = [...prev];
+              const emptyIdx = next.findIndex(
+                (r, idx) => !slotHasPersistableImage(r) && !isEditorLibraryGhostRow(r, idx, background)
+              );
+              if (emptyIdx >= 0) {
+                next[emptyIdx] = { ...next[emptyIdx]!, ...newRow };
+              } else {
+                next.push(newRow);
+              }
+              return next;
+            });
+          }
+          setBackground((b) => ({
+            ...b,
+            mode: "image",
+            ...(b.asset_id || b.storage_path ? { asset_id: undefined, storage_path: undefined, image_url: undefined } : {}),
+            fit: b.fit ?? "cover",
+            overlay: b.overlay ?? DEFAULT_IMAGE_OVERLAY,
+          }));
+          setBackgroundImageUrlForPreview(null);
+        } else {
+          setBackground((b) => ({
+            ...b,
+            mode: "image",
+            asset_id: asset.id,
+            storage_path: asset.storage_path,
+            image_url: undefined,
+            fit: b.fit ?? "cover",
+            overlay: b.overlay ?? DEFAULT_IMAGE_OVERLAY,
+          }));
+          setBackgroundImageUrlForPreview(asset.url);
+          setImageUrls([{ url: "", source: undefined }]);
+        }
         ensureNoImageTemplateImageFallback();
         setDriveSuccess("Image from Drive applied. Save the frame to keep it.");
         setTimeout(() => setDriveSuccess(null), 4000);
@@ -2738,10 +3032,31 @@ export function SlideEditForm({
         setDriveError(result.error);
       }
     },
-    [projectId, ensureNoImageTemplateImageFallback]
+    [
+      projectId,
+      ensureNoImageTemplateImageFallback,
+      imageUrls,
+      background.asset_id,
+      background.storage_path,
+      backgroundImageUrlForPreview,
+    ]
   );
 
   const validImageUrls = imageUrls.filter((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim()));
+  /** Slot 0 is only a placeholder when the real primary is library `asset_id`; don't duplicate the "From library" row with an empty "Image URL" field. */
+  const isLibraryGhostUrlSlot = (item: (typeof imageUrls)[0], index: number) =>
+    isEditorLibraryGhostRow(item, index, background);
+  const hasVisibleImageUrlSlots = imageUrls.some((item, i) => !isLibraryGhostUrlSlot(item, i));
+  const libraryPrimaryOnlyGhost = imageUrls.length === 1 && isLibraryGhostUrlSlot(imageUrls[0]!, 0);
+  /** Every row must have a link/library image before adding another slot (ghost row 0 = library primary counts). */
+  const allImageSlotsFilledForAddAnother = imageUrls.every((row, idx) =>
+    slotHasPersistableImage(row) || isEditorLibraryGhostRow(row, idx, background)
+  );
+  const addAnotherImageTitle = !allImageSlotsFilledForAddAnother
+    ? imageUrls.length <= 1
+      ? "Add or paste a link in the first field, or pick a library image first"
+      : "Fill the previous image row (link or library) before adding another"
+    : "Add a slot for another image (URL or library)";
   const isImageMode =
     background.mode === "image" ||
     validImageUrls.length > 0 ||
@@ -3177,7 +3492,7 @@ export function SlideEditForm({
               className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
               onClick={handleDownloadSlide}
               disabled={downloading}
-              title={`Download frame (${exportFormat.toUpperCase()}, ${exportSize})`}
+              title={`Download frame (${exportFormat === "pdf" ? "PNG" : exportFormat.toUpperCase()}, ${exportSize})`}
               aria-label="Download this frame"
             >
               {downloading ? <Loader2Icon className="size-4 animate-spin" /> : <DownloadIcon className="size-4" />}
@@ -3807,35 +4122,6 @@ export function SlideEditForm({
               />
             )}
           </DialogHeader>
-          <div className="flex items-center gap-2 shrink-0 py-1">
-            <span className="text-xs text-muted-foreground whitespace-nowrap">Design:</span>
-            <div className="flex rounded-md border border-border bg-muted/30 p-0.5">
-              <button
-                type="button"
-                onClick={() => setTemplateDesignFilter("withImage")}
-                className={cn(
-                  "rounded px-2.5 py-1 text-xs font-medium transition-colors",
-                  templateDesignFilter === "withImage"
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                With image
-              </button>
-              <button
-                type="button"
-                onClick={() => setTemplateDesignFilter("noImage")}
-                className={cn(
-                  "rounded px-2.5 py-1 text-xs font-medium transition-colors",
-                  templateDesignFilter === "noImage"
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                Without image
-              </button>
-            </div>
-          </div>
           <div className="relative flex-1 min-h-0 min-w-0 flex flex-col">
             {applyingTemplate && (
               <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-lg bg-background/95 backdrop-blur-sm">
@@ -3846,10 +4132,13 @@ export function SlideEditForm({
             )}
             <div className="overflow-y-auto overflow-x-hidden flex-1 min-h-0 min-w-0 w-full pr-1">
             <TemplateSelectCards
-              templates={templateOptionsFilteredForModal}
-              defaultTemplateId={defaultTemplateInFilteredList ? firstTemplate?.id ?? null : null}
-              defaultTemplateConfig={defaultTemplateInFilteredList ? firstTemplate?.parsedConfig ?? null : null}
+              key={`${slide.id}-${templateModalOpen}`}
+              templates={templateOptionsForModal}
+              defaultTemplateId={firstTemplate?.id ?? null}
+              defaultTemplateConfig={firstTemplate?.parsedConfig ?? null}
               defaultTemplateCategory={firstTemplate?.category ?? undefined}
+              initialPlatformFilter={templateModalInitialPlatform}
+              showLayoutFilter
               value={templateId === firstTemplate?.id ? null : templateId}
               isAdmin={isAdmin}
               isPro={isPro}
@@ -3865,7 +4154,6 @@ export function SlideEditForm({
                   const config = await getTemplateConfigAction(resolvedId);
                   if (config) setOverrideTemplateConfig(config);
                   else setOverrideTemplateConfig(null);
-                  const newTemplate = templates.find((t) => t.id === resolvedId) ?? recentlyCreatedTemplates.find((t) => t.id === resolvedId);
                   const hasImage =
                     background.mode === "image" ||
                     !!background.asset_id ||
@@ -3891,7 +4179,6 @@ export function SlideEditForm({
                         : undefined;
                     const newColor =
                       (grad?.color && /^#[0-9A-Fa-f]{3,6}$/i.test(grad.color) ? grad.color : defaultBgColor) ?? templateBg.color ?? "#0a0a0a";
-                    const isLinkedIn = newTemplate && "category" in newTemplate && newTemplate.category === "linkedin";
                     const linkedInTintColor = defaultBgColor && /^#[0-9A-Fa-f]{3,6}$/i.test(defaultBgColor) ? defaultBgColor : newColor;
                     const configMeta = config.defaults?.meta && typeof config.defaults.meta === "object" ? (config.defaults.meta as { overlay_tint_opacity?: number; overlay_tint_color?: string; image_overlay_blend_enabled?: boolean }) : undefined;
                     const metaTintOpacity = configMeta?.image_overlay_blend_enabled === false ? 0 : (typeof configMeta?.overlay_tint_opacity === "number" ? configMeta.overlay_tint_opacity : undefined);
@@ -3948,7 +4235,6 @@ export function SlideEditForm({
               primaryColor={brandKit.primary_color ?? undefined}
               previewImageUrls={previewBackgroundImageUrl ? [previewBackgroundImageUrl] : (previewBackgroundImageUrls?.length ? previewBackgroundImageUrls : undefined)}
               selectedTemplateOverlayOverride={selectedTemplateOverlayOverrideForModal}
-              showCategoryTabs
               paginateInternally
             />
             </div>
@@ -6164,6 +6450,7 @@ export function SlideEditForm({
                 <p className="text-muted-foreground text-[11px] font-medium">Background image</p>
                 {background.asset_id && validImageUrls.length === 0 && (
                   <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-background/50 px-3 py-2">
+                    <ImageIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
                     <span className="text-muted-foreground text-xs flex-1">From library (Upload or Google Drive)</span>
                     <Button
                       type="button"
@@ -6188,8 +6475,11 @@ export function SlideEditForm({
                   </div>
                 )}
                 <div className="space-y-2">
-                  <Label className="text-muted-foreground text-xs">Image URL{imageUrls.length > 1 ? "s" : ""}</Label>
+                  {hasVisibleImageUrlSlots && (
+                    <Label className="text-muted-foreground text-xs">Image URL{imageUrls.length > 1 ? "s" : ""}</Label>
+                  )}
                   {imageUrls.map((item, i) => {
+                    if (isLibraryGhostUrlSlot(item, i)) return null;
                     const slotPool = item._pool ?? [item.url, ...(item.alternates ?? [])].filter((u) => u.trim() && /^https?:\/\//i.test(u));
                     const slotHasMultiple = slotPool.length > 1;
                     const currentIndex = item._index ?? (slotPool.length > 0 ? slotPool.findIndex((u) => u === item.url) : -1);
@@ -6338,35 +6628,54 @@ export function SlideEditForm({
                     </div>
                     );
                   })}
-                  {imageUrls.length < 4 && (
+                  {hasVisibleImageUrlSlots && imageUrls.length < 4 && (
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
                       className="h-9 text-xs"
+                      disabled={!allImageSlotsFilledForAddAnother}
+                      title={addAnotherImageTitle}
                       onClick={() => setImageUrls((prev) => [...prev, { url: "", source: undefined }])}
                     >
-                      Add image URL
+                      Add another image
                     </Button>
                   )}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button type="button" variant="outline" size="sm" className="rounded-lg h-9" title="Pick from library" onClick={() => { setPickerForSecondary(false); setPickerOpen(true); }}>
-                    <ImageIcon className="size-4" /> Pick
-                  </Button>
-                  <GoogleDriveFilePicker
-                    onFilePicked={handleDriveFilePicked}
-                    onError={setDriveError}
-                    variant="outline"
-                    size="sm"
-                    className="rounded-lg h-9 text-xs"
-                    disabled={driveImporting}
-                  />
-                  <Button type="button" variant="ghost" size="sm" className="rounded-lg h-9" asChild title="Upload image">
-                    <a href="/assets" target="_blank" rel="noopener noreferrer">
-                      <UploadIcon className="size-4" /> Upload
-                    </a>
-                  </Button>
+                  {libraryPrimaryOnlyGhost && imageUrls.length < 4 && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-9 text-xs"
+                      disabled={!allImageSlotsFilledForAddAnother}
+                      title={addAnotherImageTitle}
+                      onClick={() => setImageUrls((prev) => [...prev, { url: "", source: undefined }])}
+                    >
+                      Add another image
+                    </Button>
+                  )}
+                  {!allImageSlotsFilledForAddAnother && (
+                    <>
+                      <Button type="button" variant="outline" size="sm" className="rounded-lg h-9" title="Pick from library" onClick={() => { setPickerForSecondary(false); setPickerOpen(true); }}>
+                        <ImageIcon className="size-4" /> Pick
+                      </Button>
+                      <GoogleDriveFilePicker
+                        onFilePicked={handleDriveFilePicked}
+                        onError={setDriveError}
+                        variant="outline"
+                        size="sm"
+                        className="rounded-lg h-9 text-xs"
+                        disabled={driveImporting}
+                      />
+                      <Button type="button" variant="ghost" size="sm" className="rounded-lg h-9" asChild title="Upload image">
+                        <a href="/assets" target="_blank" rel="noopener noreferrer">
+                          <UploadIcon className="size-4" /> Upload
+                        </a>
+                      </Button>
+                    </>
+                  )}
                   {totalSlides > 1 && (
                     <Button
                       type="button"
@@ -6517,7 +6826,7 @@ export function SlideEditForm({
                       </Select>
                     </div>
                     {/* Frame, Shape, Corner radius, Frame color: apply to PiP (single image) or multi-image layout; hidden for single full-bleed where they have no effect */}
-                    {(validImageUrls.length >= 2 || (imageDisplay.mode ?? "full") === "pip") && (
+                    {(validImageCount >= 2 || (imageDisplay.mode ?? "full") === "pip") && (
                       <>
                     <div className="space-y-1.5">
                       <span className="text-muted-foreground text-xs">Frame</span>
@@ -6592,7 +6901,7 @@ export function SlideEditForm({
                     </div>
                       </>
                     )}
-                    {validImageUrls.length >= 2 && (
+                    {validImageCount >= 2 && (
                       <>
                         <div className="space-y-1.5">
                           <span className="text-muted-foreground text-xs">Layout</span>
@@ -6608,7 +6917,7 @@ export function SlideEditForm({
                               <SelectItem value="side-by-side">Side by side</SelectItem>
                               <SelectItem value="stacked">Stacked</SelectItem>
                               <SelectItem value="grid">Grid</SelectItem>
-                              {validImageUrls.length >= 2 && validImageUrls.length <= 3 && (
+                              {validImageCount >= 2 && validImageCount <= 3 && (
                                 <SelectItem value="overlay-circles">Overlay circles (2–3 only)</SelectItem>
                               )}
                             </SelectContent>
@@ -6848,17 +7157,36 @@ export function SlideEditForm({
           <section className="space-y-5" aria-label="More">
             <div className="rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3">
               <h3 className="text-xs font-semibold text-foreground">Export</h3>
-              <Select value={exportSize} onValueChange={(v) => handleExportSizeChange(v as ExportSize)} disabled={!isPro || updatingExportSettings}>
-                <SelectTrigger className="h-9 w-full md:max-w-[220px] rounded-md border-input/80 bg-background text-sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1080x1080">{EXPORT_SIZE_LABELS["1080x1080"]}</SelectItem>
-                  <SelectItem value="1080x1350">{EXPORT_SIZE_LABELS["1080x1350"]}</SelectItem>
-                  <SelectItem value="1080x1920">{EXPORT_SIZE_LABELS["1080x1920"]}</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-muted-foreground text-[11px]">Size applies to all frames. ZIP includes images, captions (short/medium/long), and credits.</p>
+              <div className="space-y-2">
+                <Label className="text-[11px] text-muted-foreground">Image format</Label>
+                <Select value={exportFormat} onValueChange={(v) => handleExportFormatChange(v as ExportFormat)} disabled={!isPro || updatingExportSettings}>
+                  <SelectTrigger className="h-9 w-full md:max-w-[220px] rounded-md border-input/80 bg-background text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="png">{EXPORT_FORMAT_LABELS.png}</SelectItem>
+                    <SelectItem value="jpeg">{EXPORT_FORMAT_LABELS.jpeg}</SelectItem>
+                    <SelectItem value="pdf">{EXPORT_FORMAT_LABELS.pdf}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[11px] text-muted-foreground">Size</Label>
+                <Select value={exportSize} onValueChange={(v) => handleExportSizeChange(v as ExportSize)} disabled={!isPro || updatingExportSettings}>
+                  <SelectTrigger className="h-9 w-full md:max-w-[220px] rounded-md border-input/80 bg-background text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1080x1080">{EXPORT_SIZE_LABELS["1080x1080"]}</SelectItem>
+                    <SelectItem value="1080x1350">{EXPORT_SIZE_LABELS["1080x1350"]}</SelectItem>
+                    <SelectItem value="1080x1920">{EXPORT_SIZE_LABELS["1080x1920"]}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <p className="text-muted-foreground text-[11px]">
+                Size applies to all frames. ZIP includes slide images, captions (short/medium/long), and credits.
+                {exportFormat === "pdf" ? " With PDF selected, the ZIP also includes linkedin-carousel.pdf (one page per slide) for LinkedIn document carousels." : ""}
+              </p>
               <Button
                 type="button"
                 variant="default"

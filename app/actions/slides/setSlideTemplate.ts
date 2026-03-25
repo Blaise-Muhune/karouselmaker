@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { getUser } from "@/lib/server/auth/getUser";
 import { requirePro } from "@/lib/server/subscription";
 import { getTemplate, getSlide, updateSlide } from "@/lib/server/db";
-import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
+import { templateConfigSchema, type TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import type { Json } from "@/lib/server/db/types";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
 
@@ -30,6 +30,38 @@ function clearPreviousTemplateOverrides(meta: Record<string, unknown>): Record<s
 }
 
 /** Build overlay object from template gradient so slide applies the template's overlay (e.g. purple) and gradient on/off. */
+/**
+ * Persist template chrome swipe settings on the slide so preview/export match the template.
+ * Without this, old swipe_type (e.g. text) stays in meta while the template uses arrows, etc.
+ * Clears swipe_x/y/size/color when the template omits them so preset position/size apply.
+ */
+function mergeTemplateChromeSwipeIntoSlideMeta(
+  meta: Record<string, unknown>,
+  chrome: TemplateConfig["chrome"]
+): Record<string, unknown> {
+  const out = { ...meta };
+  out.show_swipe = chrome.showSwipe;
+  out.swipe_type = chrome.swipeType ?? "text";
+  if (chrome.swipeText != null && String(chrome.swipeText).trim() !== "") {
+    out.swipe_text = String(chrome.swipeText).trim();
+  } else {
+    delete out.swipe_text;
+  }
+  out.swipe_position = chrome.swipePosition ?? "bottom_center";
+  if (chrome.swipeX != null) out.swipe_x = chrome.swipeX;
+  else delete out.swipe_x;
+  if (chrome.swipeY != null) out.swipe_y = chrome.swipeY;
+  else delete out.swipe_y;
+  if (chrome.swipeSize != null) out.swipe_size = chrome.swipeSize;
+  else delete out.swipe_size;
+  if (chrome.swipeColor != null && /^#([0-9A-Fa-f]{3}){1,2}$/.test(chrome.swipeColor)) {
+    out.swipe_color = chrome.swipeColor;
+  } else {
+    delete out.swipe_color;
+  }
+  return out;
+}
+
 function overlayFromTemplateGradient(grad: { enabled?: boolean; color?: string; direction?: string; strength?: number; extent?: number; solidSize?: number } | undefined): Record<string, unknown> | undefined {
   if (!grad) return undefined;
   const color = (typeof grad.color === "string" && /^#([0-9A-Fa-f]{3}){1,2}$/.test(grad.color)) ? grad.color : "#0a0a0a";
@@ -258,6 +290,14 @@ export async function setSlideTemplate(
       delete next.previous_background_before_clear;
       patch.meta = next as Json;
     }
+
+    if (parsed.success && parsed.data) {
+      patch.meta = mergeTemplateChromeSwipeIntoSlideMeta(
+        { ...(patch.meta as Record<string, unknown>) },
+        parsed.data.chrome
+      ) as Json;
+    }
+
     updated = await updateSlide(user.id, slideId, patch);
   }
 

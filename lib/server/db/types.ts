@@ -54,7 +54,7 @@ export interface Template {
   updated_at: string;
 }
 
-export type ExportFormat = "png" | "jpeg";
+export type ExportFormat = "png" | "jpeg" | "pdf";
 export type ExportSize = "1080x1080" | "1080x1350" | "1080x1920";
 
 export interface Carousel {

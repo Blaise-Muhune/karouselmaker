@@ -21,7 +21,6 @@ type BackgroundImagesPickerModalProps = {
   onOpenChange: (open: boolean) => void;
   selectedIds: string[];
   onConfirm: (ids: string[]) => void;
-  projectId?: string | null;
 };
 
 export function BackgroundImagesPickerModal({
@@ -29,7 +28,6 @@ export function BackgroundImagesPickerModal({
   onOpenChange,
   selectedIds,
   onConfirm,
-  projectId,
 }: BackgroundImagesPickerModalProps) {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [urls, setUrls] = useState<Record<string, string>>({});
@@ -45,7 +43,8 @@ export function BackgroundImagesPickerModal({
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    listAssetsWithUrls(projectId ?? undefined)
+    setLoading(true);
+    listAssetsWithUrls()
       .then((result) => {
         if (cancelled) return;
         if (result.ok) {
@@ -56,12 +55,10 @@ export function BackgroundImagesPickerModal({
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
-    const id = setTimeout(() => setLoading(true), 0);
     return () => {
       cancelled = true;
-      clearTimeout(id);
     };
-  }, [open, projectId]);
+  }, [open]);
 
   const toggle = (id: string) => {
     setSelection((prev) => {

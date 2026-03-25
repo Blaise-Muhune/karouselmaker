@@ -13,14 +13,12 @@ export type ListAssetsWithUrlsResult =
   | { ok: true; assets: Asset[]; urls: Record<string, string> }
   | { ok: false; error: string };
 
-export async function listAssetsWithUrls(
-  projectId?: string | null
-): Promise<ListAssetsWithUrlsResult> {
+/** Lists all images in the user's library with signed URLs (same scope as /assets with no project filter). */
+export async function listAssetsWithUrls(): Promise<ListAssetsWithUrlsResult> {
   const { user } = await getUser();
   if (!user) return { ok: false, error: "Unauthorized" };
 
   const assets = await listAssets(user.id, {
-    projectId: projectId ?? undefined,
     limit: ASSET_PICKER_LIMIT,
   });
 

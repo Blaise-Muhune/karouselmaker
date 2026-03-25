@@ -33,8 +33,8 @@ const textZoneSchema = z.object({
   rotation: z.number().min(-180).max(180).optional(),
   /** Optional solid fill behind the zone text (not per-word highlights). */
   boxBackgroundColor: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
-  /** Opacity of the box fill (0–1). Default 1. */
-  boxBackgroundOpacity: z.number().min(0).max(1).optional(),
+  /** Opacity of the box fill (0–1). Default 1. Coerce strings from stored JSON. */
+  boxBackgroundOpacity: z.coerce.number().min(0).max(1).optional(),
 });
 
 const gradientOverlaySchema = z.object({

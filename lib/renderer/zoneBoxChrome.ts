@@ -16,15 +16,21 @@ export type ZoneBoxChromeStyle = {
 
 export type ZoneBoxChromeInput = {
   boxBackgroundColor?: string;
-  /** 0–1; default 1 when color is set. */
-  boxBackgroundOpacity?: number;
+  /** 0–1; default 1 when color is set. Coerced from string for JSON/DB parity with preview. */
+  boxBackgroundOpacity?: number | string;
 };
+
+function parseBoxBackgroundOpacity(raw: unknown): number {
+  if (raw == null) return 1;
+  const n = typeof raw === "number" ? raw : Number(raw);
+  if (Number.isNaN(n)) return 1;
+  return Math.min(1, Math.max(0, n));
+}
 
 export function parseZoneBoxChrome(zone: ZoneBoxChromeInput): ZoneBoxChromeStyle | null {
   const bg = typeof zone.boxBackgroundColor === "string" ? zone.boxBackgroundColor.trim() : "";
   if (!HEX.test(bg)) return null;
-  let a = typeof zone.boxBackgroundOpacity === "number" && !Number.isNaN(zone.boxBackgroundOpacity) ? zone.boxBackgroundOpacity : 1;
-  a = Math.min(1, Math.max(0, a));
+  const a = parseBoxBackgroundOpacity(zone.boxBackgroundOpacity);
   return {
     backgroundColor: hexToRgba(bg, a),
     borderRadius: 8,

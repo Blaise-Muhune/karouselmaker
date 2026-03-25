@@ -40,6 +40,7 @@ import {
 } from "@/lib/server/export/fetchImageAsDataUrl";
 import type { BrandKit } from "@/lib/renderer/renderModel";
 import { slugifyForFilename } from "@/lib/utils";
+import { buildCarouselPdfFromPngPages } from "@/lib/server/export/buildCarouselPdf";
 import JSZip from "jszip";
 
 const BUCKET = "carousel-assets";
@@ -86,7 +87,9 @@ export async function POST(
 
   const carouselExportFormat = (carousel as { export_format?: string }).export_format ?? "png";
   const carouselExportSize = (carousel as { export_size?: string }).export_size ?? "1080x1350";
-  const format = carouselExportFormat === "jpeg" ? "jpeg" : "png";
+  const exportMode = carouselExportFormat === "pdf" ? "pdf" : carouselExportFormat === "jpeg" ? "jpeg" : "png";
+  /** Raster type for screenshots and ZIP slide files. PDF exports still render slides as PNG for quality + PDF embedding. */
+  const rasterFormat = exportMode === "pdf" ? "png" : exportMode;
   const dimensions =
     carouselExportSize === "1080x1350"
       ? { w: 1080, h: 1350 }
@@ -96,7 +99,7 @@ export async function POST(
 
   let exportId: string;
   try {
-    const exportRow = await createExport(userId, carouselId, format);
+    const exportRow = await createExport(userId, carouselId, exportMode);
     exportId = exportRow.id;
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Failed to create export";
@@ -462,7 +465,7 @@ export async function POST(
           await page.waitForSelector(".slide-wrap", { state: "visible", timeout: SELECTOR_TIMEOUT_MS });
           await waitForImagesInPage(page, CONTENT_TIMEOUT_MS).catch(() => {});
           await new Promise((r) => setTimeout(r, SCREENSHOT_DELAY_MS));
-          const buffer = await page.locator(".slide-wrap").screenshot({ type: format, timeout: SELECTOR_TIMEOUT_MS });
+          const buffer = await page.locator(".slide-wrap").screenshot({ type: rasterFormat, timeout: SELECTOR_TIMEOUT_MS });
           const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
           slideBuffers.push(buf);
           await page.setContent("about:blank", { waitUntil: "domcontentloaded" });
@@ -517,13 +520,21 @@ export async function POST(
     captionSections.push(...creditsLines);
     const captionText = captionSections.filter(Boolean).join("\n\n");
 
+    let pdfBytes: Uint8Array | null = null;
+    if (exportMode === "pdf") {
+      pdfBytes = await buildCarouselPdfFromPngPages(slideBuffers, dimensions.w, dimensions.h);
+    }
+
     const zip = new JSZip();
     for (let i = 0; i < slideBuffers.length; i++) {
       const buf = slideBuffers[i];
       if (buf) {
-        const filename = `${String(i + 1).padStart(2, "0")}.${format === "jpeg" ? "jpg" : "png"}`;
+        const filename = `${String(i + 1).padStart(2, "0")}.${rasterFormat === "jpeg" ? "jpg" : "png"}`;
         zip.file(filename, buf);
       }
+    }
+    if (pdfBytes) {
+      zip.file("linkedin-carousel.pdf", Buffer.from(pdfBytes));
     }
     if (captionText.trim()) zip.file("caption.txt", captionText.trim());
     const hasAnyCredits = unsplashAttributions.size > 0 || pixabayAttributions.size > 0 || pexelsAttributions.size > 0;
@@ -558,7 +569,7 @@ export async function POST(
 
     // Store slide images so Post to Facebook/Instagram can use them
     const paths = getExportStoragePaths(userId, carouselId, exportId);
-    const contentType = format === "jpeg" ? "image/jpeg" : "image/png";
+    const contentType = rasterFormat === "jpeg" ? "image/jpeg" : "image/png";
     for (let i = 0; i < slideBuffers.length; i++) {
       const buf = slideBuffers[i];
       if (buf) {

@@ -33,7 +33,9 @@ import { CarouselGeneratingPage } from "@/components/carousels/CarouselGeneratin
 import { ArrowLeftIcon } from "lucide-react";
 
 function getExportFormat(c: { export_format?: unknown }): ExportFormat {
-  return c.export_format === "jpeg" || c.export_format === "png" ? (c.export_format as ExportFormat) : "png";
+  return c.export_format === "jpeg" || c.export_format === "png" || c.export_format === "pdf"
+    ? (c.export_format as ExportFormat)
+    : "png";
 }
 function getExportSize(c: { export_size?: unknown }): ExportSize {
   return c.export_size === "1080x1080" || c.export_size === "1080x1350" || c.export_size === "1080x1920"
@@ -251,6 +253,7 @@ export default async function CarouselEditorPage({
           exportsUsedThisMonth={exportCount}
           exportFormat={getExportFormat(carousel)}
           exportSize={getExportSize(carousel)}
+          exportSettingsPath={`/p/${projectId}/c/${carouselId}`}
           recentExports={recentExports.map((ex) => ({
             id: ex.id,
             status: ex.status,

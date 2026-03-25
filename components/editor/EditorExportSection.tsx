@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo } from "react";
+import { updateExportSettings } from "@/app/actions/carousels/updateExportFormat";
+import type { ExportFormat, ExportSize } from "@/lib/server/db/types";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useIsStandalonePWA } from "@/lib/hooks/useIsStandalonePWA";
@@ -129,6 +131,18 @@ const VIDEO_POST_LABELS: Record<string, string> = {
   youtube: "YouTube",
 };
 
+const EXPORT_FORMAT_LABELS: Record<ExportFormat, string> = {
+  png: "PNG",
+  jpeg: "JPEG",
+  pdf: "PDF (LinkedIn)",
+};
+
+const EXPORT_SIZE_LABELS: Record<ExportSize, string> = {
+  "1080x1080": "1:1",
+  "1080x1350": "4:5",
+  "1080x1920": "9:16",
+};
+
 type EditorExportSectionProps = {
   carouselId: string;
   isPro?: boolean;
@@ -136,7 +150,7 @@ type EditorExportSectionProps = {
   exportsUsedThisMonth?: number;
   /** Export limit for current plan. */
   exportsLimit?: number;
-  exportFormat?: "png" | "jpeg";
+  exportFormat?: "png" | "jpeg" | "pdf";
   exportSize?: "1080x1080" | "1080x1350" | "1080x1920";
   recentExports: ExportRowDisplay[];
   /** When true, show Video preview button. Admin only. */
@@ -155,6 +169,8 @@ type EditorExportSectionProps = {
   carouselTitle?: string;
   /** Project name for personalized download filenames. */
   projectName?: string;
+  /** Passed to updateExportSettings for cache revalidation (e.g. `/p/{projectId}/c/{carouselId}`). */
+  exportSettingsPath?: string;
 };
 
 export function EditorExportSection({
@@ -173,6 +189,7 @@ export function EditorExportSection({
   disabled = false,
   carouselTitle,
   projectName,
+  exportSettingsPath,
 }: EditorExportSectionProps) {
   const downloadSlug =
     slugifyForFilename([projectName, carouselTitle].filter(Boolean).join(" - ")) || "carousel";
@@ -183,6 +200,55 @@ export function EditorExportSection({
   const limit = exportsLimit ?? (isPro ? PLAN_LIMITS.pro.exportsPerMonth : PLAN_LIMITS.free.exportsPerMonth);
   const canExport = exportsUsedThisMonth < limit;
   const router = useRouter();
+  const [localExportFormat, setLocalExportFormat] = useState<ExportFormat>(exportFormat);
+  const [localExportSize, setLocalExportSize] = useState<ExportSize>(exportSize);
+  const [updatingExportSettings, setUpdatingExportSettings] = useState(false);
+
+  useEffect(() => {
+    setLocalExportFormat(exportFormat);
+  }, [exportFormat]);
+  useEffect(() => {
+    setLocalExportSize(exportSize);
+  }, [exportSize]);
+
+  const handleCarouselExportFormatChange = async (value: ExportFormat) => {
+    if (!isPro || disabled) return;
+    const prev = localExportFormat;
+    setLocalExportFormat(value);
+    setUpdatingExportSettings(true);
+    setError(null);
+    const result = await updateExportSettings(
+      { carousel_id: carouselId, export_format: value },
+      exportSettingsPath
+    );
+    setUpdatingExportSettings(false);
+    if (!result.ok) {
+      setLocalExportFormat(prev);
+      setError(result.error);
+      return;
+    }
+    router.refresh();
+  };
+
+  const handleCarouselExportSizeChange = async (value: ExportSize) => {
+    if (!isPro || disabled) return;
+    const prev = localExportSize;
+    setLocalExportSize(value);
+    setUpdatingExportSettings(true);
+    setError(null);
+    const result = await updateExportSettings(
+      { carousel_id: carouselId, export_size: value },
+      exportSettingsPath
+    );
+    setUpdatingExportSettings(false);
+    if (!result.ok) {
+      setLocalExportSize(prev);
+      setError(result.error);
+      return;
+    }
+    router.refresh();
+  };
+
   const [exporting, setExporting] = useState(false);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [slideUrls, setSlideUrls] = useState<string[]>([]);
@@ -558,6 +624,58 @@ export function EditorExportSection({
       <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
         Export
       </p>
+      <div
+        className={`mb-3 flex flex-wrap items-end gap-4 ${!isPro || disabled ? "opacity-60" : ""}`}
+        aria-disabled={!isPro || disabled}
+      >
+        <div className="space-y-1.5">
+          <Label htmlFor="carousel-export-format" className="text-xs text-muted-foreground">
+            Format
+          </Label>
+          <Select
+            value={localExportFormat}
+            onValueChange={(v) => handleCarouselExportFormatChange(v as ExportFormat)}
+            disabled={!isPro || disabled || updatingExportSettings}
+          >
+            <SelectTrigger id="carousel-export-format" className="h-9 w-[min(100vw-2rem,200px)] sm:w-[200px] text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {(Object.keys(EXPORT_FORMAT_LABELS) as ExportFormat[]).map((key) => (
+                <SelectItem key={key} value={key}>
+                  {EXPORT_FORMAT_LABELS[key]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="carousel-export-size" className="text-xs text-muted-foreground">
+            Size
+          </Label>
+          <Select
+            value={localExportSize}
+            onValueChange={(v) => handleCarouselExportSizeChange(v as ExportSize)}
+            disabled={!isPro || disabled || updatingExportSettings}
+          >
+            <SelectTrigger id="carousel-export-size" className="h-9 w-[min(100vw-2rem,140px)] sm:w-[140px] text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {(Object.keys(EXPORT_SIZE_LABELS) as ExportSize[]).map((key) => (
+                <SelectItem key={key} value={key}>
+                  {EXPORT_SIZE_LABELS[key]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      {localExportFormat === "pdf" && (
+        <p className="text-muted-foreground text-xs mb-3 max-w-xl">
+          Full export ZIP includes linkedin-carousel.pdf (one page per slide for LinkedIn document carousels) and PNG slides for Instagram and other platforms.
+        </p>
+      )}
       {exporting && (
         <div className="mb-4 flex flex-col items-center justify-center gap-4 rounded-lg border bg-muted/30 py-8 px-4 min-h-[180px]">
           <Loader2Icon className="size-14 animate-spin text-primary" aria-hidden />

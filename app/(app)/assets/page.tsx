@@ -14,18 +14,26 @@ export default async function AssetsPage({
 }) {
   const { user } = await getUser();
   const params = await searchParams;
-  const projectIdFilter = params.project_id?.trim() ?? null;
+  const projectIdFromUrl = params.project_id?.trim() ?? null;
   const pickerMode = params.picker === "1";
   const slideId = params.slide_id?.trim() ?? undefined;
   const returnTo = params.return_to?.trim() ?? undefined;
 
   const [assets, projects, limits, assetCount, fullAccess] = await Promise.all([
-    listAssets(user.id, { projectId: projectIdFilter ?? undefined, limit: 200 }),
+    listAssets(user.id, { limit: 200 }),
     listProjects(user.id),
     getEffectivePlanLimits(user.id, user.email),
     countAssets(user.id),
     hasFullProFeatureAccess(user.id, user.email),
   ]);
+
+  const projectIds = new Set(projects.map((p) => p.id));
+  const initialProjectFilter =
+    projectIdFromUrl === "global"
+      ? "global"
+      : projectIdFromUrl && projectIds.has(projectIdFromUrl)
+        ? projectIdFromUrl
+        : "all";
 
   const assetLimit = limits.assets;
 
@@ -53,7 +61,7 @@ export default async function AssetsPage({
           assets={assets}
           imageUrls={urls}
           projects={projects.map((p) => ({ id: p.id, name: p.name }))}
-          projectIdFilter={projectIdFilter}
+          initialProjectFilter={initialProjectFilter}
           pickerMode={pickerMode}
           slideId={slideId}
           returnTo={returnTo}

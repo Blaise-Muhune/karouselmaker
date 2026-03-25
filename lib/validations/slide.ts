@@ -180,7 +180,8 @@ export const textZoneOverrideSchema = z.object({
   rotation: z.number().min(-180).max(180).optional(),
   /** Panel fill behind zone text (export + preview). */
   boxBackgroundColor: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
-  boxBackgroundOpacity: z.number().min(0).max(1).optional(),
+  /** Coerce strings from JSON so export matches editor after save. */
+  boxBackgroundOpacity: z.coerce.number().min(0).max(1).optional(),
 }).optional();
 export type TextZoneOverride = z.output<typeof textZoneOverrideSchema>;
 

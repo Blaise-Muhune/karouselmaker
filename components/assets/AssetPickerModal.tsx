@@ -34,18 +34,22 @@ export function AssetPickerModal({
   const [driveError, setDriveError] = useState<string | null>(null);
 
   const refetchAssets = useCallback(() => {
-    listAssetsWithUrls(projectId ?? undefined).then((result) => {
-      if (result.ok) {
-        setAssets(result.assets);
-        setUrls(result.urls);
-      }
-    });
-  }, [projectId]);
+    setLoading(true);
+    listAssetsWithUrls()
+      .then((result) => {
+        if (result.ok) {
+          setAssets(result.assets);
+          setUrls(result.urls);
+        }
+      })
+      .finally(() => setLoading(false));
+  }, []);
 
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    listAssetsWithUrls(projectId ?? undefined)
+    setLoading(true);
+    listAssetsWithUrls()
       .then((result) => {
         if (cancelled) return;
         if (result.ok) {
@@ -56,12 +60,10 @@ export function AssetPickerModal({
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
-    const id = setTimeout(() => setLoading(true), 0);
     return () => {
       cancelled = true;
-      clearTimeout(id);
     };
-  }, [open, projectId]);
+  }, [open]);
 
   const handleDriveFilePicked = useCallback(
     async (fileId: string, accessToken: string) => {

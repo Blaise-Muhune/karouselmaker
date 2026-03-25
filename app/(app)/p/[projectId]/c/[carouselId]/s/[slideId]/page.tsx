@@ -197,7 +197,11 @@ export default async function EditSlidePage({
           projectName={project.name}
           carouselTitle={carousel.title}
           initialEditorTab={initialTab}
-          initialExportFormat={carouselExportFormat === "png" || carouselExportFormat === "jpeg" ? carouselExportFormat : "png"}
+          initialExportFormat={
+            carouselExportFormat === "png" || carouselExportFormat === "jpeg" || carouselExportFormat === "pdf"
+              ? carouselExportFormat
+              : "png"
+          }
           initialExportSize={carouselExportSize === "1080x1080" || carouselExportSize === "1080x1350" || carouselExportSize === "1080x1920" ? carouselExportSize : "1080x1350"}
           initialIncludeFirstSlide={carouselIncludeFirst !== false}
           initialIncludeLastSlide={carouselIncludeLast !== false}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { generateCarousel } from "@/app/actions/carousels/generateCarousel";
 import { Button } from "@/components/ui/button";
@@ -182,14 +182,6 @@ export function NewCarouselForm({
       else if (carouselFor === "instagram") setSelectedTemplateId(null);
     }
   }, [carouselFor, defaultLinkedInTemplateId]);
-
-  /** Templates available for the current platform: LinkedIn only when carouselFor is linkedin, non-LinkedIn (Instagram) otherwise. */
-  const templateOptionsForPlatform = useMemo(() => {
-    if (carouselFor === "linkedin") {
-      return templateOptions.filter((o) => o.category?.toLowerCase() === "linkedin");
-    }
-    return templateOptions.filter((o) => o.category?.toLowerCase() !== "linkedin");
-  }, [templateOptions, carouselFor]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -666,7 +658,7 @@ export function NewCarouselForm({
           </CardContent>
         </Card>
 
-        {(templateOptionsForPlatform.length > 0 || (carouselFor === "linkedin" ? defaultLinkedInTemplateConfig : defaultTemplateConfig)) && (
+        {(templateOptions.length > 0 || (carouselFor === "linkedin" ? defaultLinkedInTemplateConfig : defaultTemplateConfig)) && (
           <Card className="py-4 gap-4">
             <CardHeader className="pb-0 px-5">
               <CardTitle className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
@@ -690,7 +682,7 @@ export function NewCarouselForm({
             >
               <LayoutTemplateIcon className="size-4" />
               {selectedTemplateId
-                ? templateOptionsForPlatform.find((t) => t.id === selectedTemplateId)?.name ?? "Custom"
+                ? templateOptions.find((t) => t.id === selectedTemplateId)?.name ?? "Custom"
                 : "Default (recommended)"}
             </Button>
             <Dialog open={templateModalOpen} onOpenChange={setTemplateModalOpen}>
@@ -699,7 +691,7 @@ export function NewCarouselForm({
                   <div>
                     <DialogTitle>Choose template</DialogTitle>
                     <p className="text-muted-foreground text-sm mt-1">
-                      {carouselFor === "linkedin" ? "LinkedIn templates." : "Pick a layout for your carousel."} You can load more below.
+                      All templates are available. Use the platform filter to match Instagram or LinkedIn; default matches your carousel type.
                     </p>
                   </div>
                   {hasFullAccess && (
@@ -716,9 +708,11 @@ export function NewCarouselForm({
                 </DialogHeader>
                 <div className="overflow-y-auto overflow-x-hidden flex-1 min-h-0 min-w-0 w-full pr-1">
                   <TemplateSelectCards
-                    templates={templateOptionsForPlatform}
+                    key={`${carouselFor}-${templateModalOpen}`}
+                    templates={templateOptions}
                     defaultTemplateId={carouselFor === "linkedin" ? defaultLinkedInTemplateId : defaultTemplateId}
                     defaultTemplateConfig={carouselFor === "linkedin" ? defaultLinkedInTemplateConfig : defaultTemplateConfig}
+                    initialPlatformFilter={carouselFor === "linkedin" ? "linkedin" : "other"}
                     value={selectedTemplateId}
                     onChange={(id) => {
                       setSelectedTemplateId(id);
@@ -732,9 +726,8 @@ export function NewCarouselForm({
                       setTemplateModalOpen(false);
                       router.refresh();
                     }}
-                    showCategoryTabs={carouselFor !== "linkedin"}
                     paginateInternally
-                    showMyTemplatesSection={true}
+                    showMyTemplatesSection
                   />
                 </div>
               </DialogContent>
@@ -748,7 +741,6 @@ export function NewCarouselForm({
           onOpenChange={setBackgroundPickerOpen}
           selectedIds={backgroundAssetIds}
           onConfirm={setBackgroundAssetIds}
-          projectId={projectId}
         />
 
         <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center">

@@ -10,7 +10,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { TemplateSelectCards, type TemplateOption } from "@/components/carousels/TemplateSelectCards";
+import {
+  TemplateSelectCards,
+  defaultPlatformFilterForTemplateCategory,
+  type TemplateOption,
+} from "@/components/carousels/TemplateSelectCards";
 import { setSlideTemplate } from "@/app/actions/slides/setSlideTemplate";
 import { getTemplateConfigAction } from "@/app/actions/templates/getTemplateConfig";
 import { reorderSlides } from "@/app/actions/slides/reorderSlides";
@@ -55,7 +59,7 @@ type SlideGridProps = {
   carouselId: string;
   slideBackgroundImageUrls?: Record<string, string | string[]>;
   exportSize?: "1080x1080" | "1080x1350" | "1080x1920";
-  exportFormat?: "png" | "jpeg";
+  exportFormat?: "png" | "jpeg" | "pdf";
   isPro?: boolean;
   /** When true, disable editing and navigation (e.g. carousel is generating). */
   disabled?: boolean;
@@ -920,8 +924,9 @@ export function SlideGrid({
                       onClick={async () => {
                         if (downloadingSlideId) return;
                         setDownloadingSlideId(slide.id);
-                        const url = `/api/export/slide/${slide.id}?format=${exportFormat}&size=${exportSize ?? "1080x1350"}`;
-                        const ext = exportFormat === "jpeg" ? "jpg" : "png";
+                        const rasterFormat = exportFormat === "pdf" ? "png" : exportFormat;
+                        const url = `/api/export/slide/${slide.id}?format=${rasterFormat}&size=${exportSize ?? "1080x1350"}`;
+                        const ext = rasterFormat === "jpeg" ? "jpg" : "png";
                         const filename = downloadFilenameSlug
                           ? `${downloadFilenameSlug}-${String(slide.slide_index).padStart(2, "0")}.${ext}`
                           : `slide-${slide.slide_index}.${ext}`;
@@ -1093,11 +1098,16 @@ export function SlideGrid({
             </DialogTitle>
           </DialogHeader>
           <p className="text-muted-foreground text-sm -mt-2">
-            {isBulkTemplateOpen ? "Pick a layout to apply to all selected slides." : "Pick a layout for this slide."}
+            {isBulkTemplateOpen
+              ? "Pick a layout to apply to all selected slides. Filters are optional—choose All templates to see everything."
+              : "Pick a layout for this slide. Filters default to this frame’s template type; switch to All for every template."}
           </p>
           {isBulkTemplateOpen && (() => {
             const ids = bulkApplyTemplateIds!;
             const firstSlide = slidesOrder.find((s) => s.id === ids[0]);
+            const bulkInitialPlatform = defaultPlatformFilterForTemplateCategory(
+              templates.find((t) => t.id === (firstSlide?.template_id ?? templates[0]?.id))?.category
+            );
             const previewImageUrlsForBulk =
               firstSlide && (slideBackgroundImageUrls[firstSlide.id] != null)
                 ? typeof slideBackgroundImageUrls[firstSlide.id] === "string"
@@ -1107,10 +1117,12 @@ export function SlideGrid({
             return (
               <div className="overflow-y-auto overflow-x-hidden flex-1 min-h-[min(50vh,520px)] min-w-0 w-full pr-1 -mb-2">
                 <TemplateSelectCards
+                  key={`bulk-${ids.join("-")}`}
                   templates={templateOptions}
                   defaultTemplateId={templates[0]?.id ?? null}
                   defaultTemplateConfig={templates[0]?.parsedConfig ?? null}
                   defaultTemplateCategory={templates[0]?.category ?? undefined}
+                  initialPlatformFilter={bulkInitialPlatform}
                   value={null}
                   previewImageUrls={previewImageUrlsForBulk}
                   onChange={async (id) => {
@@ -1152,7 +1164,6 @@ export function SlideGrid({
                     });
                   }}
                   primaryColor={brandKit.primary_color ?? undefined}
-                  showCategoryTabs
                   paginateInternally
                 />
               </div>
@@ -1161,6 +1172,9 @@ export function SlideGrid({
           {templateModalSlideId != null && !isBulkTemplateOpen && (() => {
             const slideForModal = slidesOrder.find((s) => s.id === templateModalSlideId);
             const currentTemplateIdForModal = slideForModal?.template_id ?? templates[0]?.id ?? null;
+            const singleInitialPlatform = defaultPlatformFilterForTemplateCategory(
+              templates.find((t) => t.id === currentTemplateIdForModal)?.category
+            );
             if (!slideForModal) return null;
             const slideBgImages = slideBackgroundImageUrls[slideForModal.id];
             const previewImageUrlsForModal =
@@ -1172,10 +1186,12 @@ export function SlideGrid({
             return (
               <div className="overflow-y-auto overflow-x-hidden flex-1 min-h-[min(50vh,520px)] min-w-0 w-full pr-1 -mb-2">
                 <TemplateSelectCards
+                  key={templateModalSlideId}
                   templates={templateOptions}
                   defaultTemplateId={templates[0]?.id ?? null}
                   defaultTemplateConfig={templates[0]?.parsedConfig ?? null}
                   defaultTemplateCategory={templates[0]?.category ?? undefined}
+                  initialPlatformFilter={singleInitialPlatform}
                   value={currentTemplateIdForModal === templates[0]?.id ? null : currentTemplateIdForModal}
                   previewImageUrls={previewImageUrlsForModal}
                   onChange={async (id) => {
@@ -1216,7 +1232,6 @@ export function SlideGrid({
                     });
                   }}
                   primaryColor={brandKit.primary_color ?? undefined}
-                  showCategoryTabs
                   paginateInternally
                 />
               </div>

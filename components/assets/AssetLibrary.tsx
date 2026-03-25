@@ -28,7 +28,8 @@ type AssetLibraryProps = {
   assets: Asset[];
   imageUrls: Record<string, string>;
   projects: { id: string; name: string }[];
-  projectIdFilter: string | null;
+  /** Initial row in the project filter: all assets, global-only, or a project id. */
+  initialProjectFilter?: string;
   pickerMode?: boolean;
   slideId?: string;
   returnTo?: string;
@@ -42,7 +43,7 @@ export function AssetLibrary({
   assets: initialAssets,
   imageUrls: initialUrls,
   projects,
-  projectIdFilter,
+  initialProjectFilter = "all",
   pickerMode,
   slideId,
   returnTo,
@@ -59,7 +60,7 @@ export function AssetLibrary({
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [applyError, setApplyError] = useState<string | null>(null);
-  const [projectFilter, setProjectFilter] = useState<string>(projectIdFilter ?? "all");
+  const [projectFilter, setProjectFilter] = useState<string>(initialProjectFilter);
 
   const atLimit = assetLimit > 0 && assetCount >= assetLimit;
 
