@@ -378,7 +378,7 @@ function getImageCount(slide: Slide): number {
   return count;
 }
 
-/** Merge template default image_display with slide's so grid preview matches export/render. */
+/** Merge template default image_display with slide's so grid preview matches editor / export. */
 function getMergedImageDisplayForPreview(
   templateConfig: TemplateConfig | null,
   slide: Slide
@@ -390,20 +390,25 @@ function getMergedImageDisplayForPreview(
       ? (templateConfig.defaults.meta as { image_display?: unknown }).image_display
       : undefined;
   const bg = slide.background as { image_display?: Record<string, unknown> } | null;
-  const slideD = bg?.image_display;
+  const meta = slide.meta as { image_display?: Record<string, unknown> } | null;
   const fromTemplate =
     templateD != null && typeof templateD === "object" && !Array.isArray(templateD)
       ? (templateD as Record<string, unknown>)
       : {};
-  const fromSlide =
-    slideD != null && typeof slideD === "object" && !Array.isArray(slideD) ? slideD : {};
+  /** Same precedence as SlideEditForm: background.image_display wins over meta.image_display. */
+  let fromSlide: Record<string, unknown> =
+    bg?.image_display != null && typeof bg.image_display === "object" && !Array.isArray(bg.image_display)
+      ? { ...bg.image_display }
+      : meta?.image_display != null && typeof meta.image_display === "object" && !Array.isArray(meta.image_display)
+        ? { ...(meta.image_display as Record<string, unknown>) }
+        : {};
+  if (fromTemplate.mode === "pip" && Object.keys(fromSlide).length > 0) {
+    fromSlide = { ...fromSlide };
+    delete fromSlide.pipX;
+    delete fromSlide.pipY;
+  }
   const merged = { ...fromTemplate, ...fromSlide };
   return (Object.keys(merged).length > 0 ? merged : undefined) as React.ComponentProps<typeof SlidePreview>["imageDisplay"];
-}
-
-function getImageDisplay(slide: Slide): React.ComponentProps<typeof SlidePreview>["imageDisplay"] {
-  const bg = slide.background as { image_display?: Record<string, unknown> } | null;
-  return (bg?.image_display ?? undefined) as React.ComponentProps<typeof SlidePreview>["imageDisplay"];
 }
 
 function slideHasShuffleableImages(slide: Slide): boolean {
@@ -655,10 +660,11 @@ export function SlideGrid({
           const previewZoneOverrides = getZoneOverrides(slide) ?? templateDefaults.zoneOverrides;
           let previewFontOverrides = getFontOverrides(slide) ?? templateDefaults.fontOverrides;
           const imageDisplayForSlide = getMergedImageDisplayForPreview(effectiveTemplateConfig, slide);
+          const bgUrls = slideBackgroundImageUrls[slide.id];
           const singleImageWithPip =
             imageDisplayForSlide?.mode === "pip" &&
-            (typeof slideBackgroundImageUrls[slide.id] === "string" ||
-              (Array.isArray(slideBackgroundImageUrls[slide.id]) && (slideBackgroundImageUrls[slide.id] as string[]).length === 1));
+            (typeof bgUrls === "string" ||
+              (Array.isArray(bgUrls) && (bgUrls as string[]).length >= 1));
           if (singleImageWithPip && effectiveTemplateConfig) {
             const headlineZone = effectiveTemplateConfig.textZones?.find((z) => z.id === "headline");
             const bodyZone = effectiveTemplateConfig.textZones?.find((z) => z.id === "body");
@@ -677,8 +683,8 @@ export function SlideGrid({
           const currentTemplateId = slide.template_id ?? templates[0]?.id;
           const fromSlide = getBackgroundOverride(slide, effectiveTemplateConfig);
           const hasBackgroundImage =
-            typeof slideBackgroundImageUrls[slide.id] === "string" ||
-            (Array.isArray(slideBackgroundImageUrls[slide.id]) && (slideBackgroundImageUrls[slide.id] as string[]).length > 0);
+            (typeof bgUrls === "string" && bgUrls.length > 0) ||
+            (Array.isArray(bgUrls) && (bgUrls as string[]).some((u) => typeof u === "string" && u.length > 0));
           const backgroundOverride =
             fromSlide ?? (!hasBackgroundImage && effectiveTemplateConfig ? getTemplatePreviewBackgroundOverride(effectiveTemplateConfig) : null);
           const isDragging = draggedId === slide.id;

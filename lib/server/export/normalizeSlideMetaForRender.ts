@@ -29,31 +29,52 @@ export type ImageDisplayForRender = {
   imagePositionY?: number;
   pipX?: number;
   pipY?: number;
+  /** When true, PiP image boxes get a drop shadow. Default off. */
+  pipShadow?: boolean;
+  pips?: Array<{
+    pipPosition?: "top_left" | "top_right" | "bottom_left" | "bottom_right";
+    pipSize?: number;
+    pipRotation?: number;
+    pipBorderRadius?: number;
+    pipX?: number;
+    pipY?: number;
+    zIndex?: number;
+  }>;
 };
 
 /**
- * Merge template default image_display with slide background image_display.
- * Slide wins when both set. Use so template can define default (e.g. PIP) and slide can override.
+ * Merge template default image_display with slide data (background first, then slide.meta).
+ * Matches editor / carousel grid: `background.image_display` wins over `meta.image_display`.
  */
 export function getMergedImageDisplay(
   config: TemplateConfig | null,
-  slideBackground: unknown
+  slideBackground: unknown,
+  slideMeta?: unknown
 ): ImageDisplayForRender | undefined {
   const templateD = (config?.defaults?.meta && typeof config.defaults.meta === "object" && "image_display" in config.defaults.meta)
     ? (config.defaults.meta as { image_display?: unknown }).image_display
     : undefined;
-  const slideD =
-    slideBackground != null && typeof slideBackground === "object" && "image_display" in slideBackground
-      ? (slideBackground as { image_display?: unknown }).image_display
-      : undefined;
   const fromTemplate =
     templateD != null && typeof templateD === "object" && !Array.isArray(templateD)
       ? (templateD as Record<string, unknown>)
       : {};
-  const fromSlide =
-    slideD != null && typeof slideD === "object" && !Array.isArray(slideD)
-      ? (slideD as Record<string, unknown>)
-      : {};
+  const bg =
+    slideBackground != null && typeof slideBackground === "object"
+      ? (slideBackground as { image_display?: unknown })
+      : null;
+  const meta =
+    slideMeta != null && typeof slideMeta === "object" ? (slideMeta as { image_display?: unknown }) : null;
+  let fromSlide: Record<string, unknown> =
+    bg?.image_display != null && typeof bg.image_display === "object" && !Array.isArray(bg.image_display)
+      ? { ...(bg.image_display as Record<string, unknown>) }
+      : meta?.image_display != null && typeof meta.image_display === "object" && !Array.isArray(meta.image_display)
+        ? { ...(meta.image_display as Record<string, unknown>) }
+        : {};
+  if (fromTemplate.mode === "pip" && Object.keys(fromSlide).length > 0) {
+    fromSlide = { ...fromSlide };
+    delete fromSlide.pipX;
+    delete fromSlide.pipY;
+  }
   const merged = { ...fromTemplate, ...fromSlide };
   return Object.keys(merged).length > 0 ? (merged as ImageDisplayForRender) : undefined;
 }

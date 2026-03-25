@@ -10,7 +10,7 @@ import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { resolveBrandKitLogo } from "@/lib/server/brandKit";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
-import { isSupabaseSignedUrl } from "@/lib/server/storage/signedUrlUtils";
+import { httpsDisplayImageUrl } from "@/lib/server/storage/signedUrlUtils";
 import { Button } from "@/components/ui/button";
 import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { SlideGrid, type TemplateWithConfig } from "@/components/carousels/SlideGrid";
@@ -31,6 +31,13 @@ import { slugifyForFilename } from "@/lib/utils";
 import { GenerationPartialBanner } from "@/components/carousels/GenerationPartialBanner";
 import { CarouselGeneratingPage } from "@/components/carousels/CarouselGeneratingTrigger";
 import { ArrowLeftIcon } from "lucide-react";
+
+function normalizeStoragePathForBucket(path: string | undefined, bucket: string): string | undefined {
+  const trimmed = path?.trim().replace(/^\/+/, "");
+  if (!trimmed) return undefined;
+  const bucketPrefix = `${bucket}/`;
+  return trimmed.startsWith(bucketPrefix) ? trimmed.slice(bucketPrefix.length) : trimmed;
+}
 
 function getExportFormat(c: { export_format?: unknown }): ExportFormat {
   return c.export_format === "jpeg" || c.export_format === "png" || c.export_format === "pdf"
@@ -102,26 +109,33 @@ export default async function CarouselEditorPage({
       if (bg.images?.length) {
         const urls: string[] = [];
         for (const img of bg.images) {
+          let resolved = "";
           const path =
-            img.storage_path?.replace(/^\/+/, "").trim() ||
-            (img.asset_id ? (await getAsset(user.id, img.asset_id))?.storage_path?.replace(/^\/+/, "").trim() : undefined);
+            normalizeStoragePathForBucket(img.storage_path, "carousel-assets") ||
+            (img.asset_id
+              ? normalizeStoragePathForBucket((await getAsset(user.id, img.asset_id))?.storage_path, "carousel-assets")
+              : undefined);
           if (path) {
             try {
-              urls.push(await getSignedImageUrl("carousel-assets", path, DISPLAY_SIGNED_URL_EXPIRY));
+              resolved = await getSignedImageUrl("carousel-assets", path, DISPLAY_SIGNED_URL_EXPIRY);
             } catch {
-              if (img.image_url && !isSupabaseSignedUrl(img.image_url)) urls.push(img.image_url);
+              resolved = httpsDisplayImageUrl(img.image_url) ?? "";
             }
-          } else if (img.image_url && !isSupabaseSignedUrl(img.image_url)) {
-            urls.push(img.image_url);
+          } else {
+            resolved = httpsDisplayImageUrl(img.image_url) ?? "";
           }
+          urls.push(resolved);
         }
-        if (urls.length) slideBackgroundImageUrls[s.id] = urls.length === 1 ? urls[0]! : urls;
+        const any = urls.some((u) => u.length > 0);
+        if (any) {
+          slideBackgroundImageUrls[s.id] = bg.images.length === 1 ? urls[0]! : urls;
+        }
         return;
       }
-      let pathToUse = bg.storage_path?.replace(/^\/+/, "").trim();
+      let pathToUse = normalizeStoragePathForBucket(bg.storage_path, "carousel-assets");
       if (!pathToUse && bg.asset_id) {
         const asset = await getAsset(user.id, bg.asset_id);
-        if (asset?.storage_path) pathToUse = asset.storage_path.replace(/^\/+/, "").trim();
+        if (asset?.storage_path) pathToUse = normalizeStoragePathForBucket(asset.storage_path, "carousel-assets");
       }
       if (pathToUse) {
         try {
@@ -132,12 +146,11 @@ export default async function CarouselEditorPage({
           );
           return;
         } catch {
-          // fall through to image_url only if not an expired signed URL
+          /* fall through to https image_url fallback */
         }
       }
-      if (bg.image_url && !isSupabaseSignedUrl(bg.image_url)) {
-        slideBackgroundImageUrls[s.id] = bg.image_url;
-      }
+      const singleFb = httpsDisplayImageUrl(bg.image_url);
+      if (singleFb) slideBackgroundImageUrls[s.id] = singleFb;
     })
   );
 

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, Fragment, type ReactNode, typ
 import { applyTemplate } from "@/lib/renderer/applyTemplate";
 import { getTextScaleForDimensions, getSwipeRightXForFormat, normalizeTextZoneOverrides, type BrandKit, type SlideData, type TextZoneOverrides, type ChromeOverrides } from "@/lib/renderer/renderModel";
 import { getRoundedPolygonClipPath } from "@/lib/renderer/shapeClipPath";
+import { resolvePipLayoutsForImageCount } from "@/lib/renderer/resolvePipLayouts";
 import { parseZoneBoxChrome } from "@/lib/renderer/zoneBoxChrome";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { getContrastingTextColor, hexToRgba } from "@/lib/editor/colorUtils";
@@ -311,6 +312,18 @@ export type SlidePreviewProps = {
     pipX?: number;
     /** When mode is "pip": custom position Y (0–100). When set with pipX, overrides pipPosition preset. */
     pipY?: number;
+    /** When mode is "pip": drop shadow on each PiP box. Default off. */
+    pipShadow?: boolean;
+    /** Multi-image PiP: per-slot overrides (partial). */
+    pips?: Partial<{
+      pipPosition: "top_left" | "top_right" | "bottom_left" | "bottom_right";
+      pipSize: number;
+      pipRotation: number;
+      pipBorderRadius: number;
+      pipX: number;
+      pipY: number;
+      zIndex: number;
+    }>[];
     /** Single image: custom focal point X (0–100). Overrides position preset when set with imagePositionY. */
     imagePositionX?: number;
     /** Single image: custom focal point Y (0–100). Overrides position preset when set with imagePositionX. */
@@ -318,10 +331,10 @@ export type SlidePreviewProps = {
   } | null;
   /** When set (editor live preview), user can drag to reposition the background image. */
   onBackgroundImagePositionChange?: (x: number, y: number) => void;
-  /** When set (editor live preview, PiP mode), user can drag to reposition the PiP box. */
-  onPipPositionChange?: (x: number, y: number) => void;
-  /** When set (editor live preview, PiP mode), user can resize the PiP box from corner handles. */
-  onPipSizeChange?: (size: number) => void;
+  /** When set (editor live preview, PiP mode), user can drag to reposition a PiP box. `slotIndex` matches image order (0 = first). */
+  onPipPositionChange?: (x: number, y: number, slotIndex?: number) => void;
+  /** When set (editor live preview, PiP mode), user can resize a PiP box from corner handles. */
+  onPipSizeChange?: (size: number, slotIndex?: number) => void;
   /** When set, headline/body font sizes are scaled so text fits at this export size (4:5, 9:16). */
   exportSize?: "1080x1080" | "1080x1350" | "1080x1920";
   className?: string;
@@ -700,17 +713,26 @@ export function SlidePreview({
   useEffect(() => {
     onPipSizeChangeRef.current = onPipSizeChange;
   }, [onPipSizeChange]);
-  /** When PiP fit is "contain", we size the frame to the image aspect ratio; this is set when the image loads. */
-  const [pipImageAspectRatio, setPipImageAspectRatio] = useState<number | null>(null);
-  const pipImageUrlRef = useRef(backgroundImageUrl);
+  /** When PiP fit is "contain", we size each frame to that image's aspect ratio after load. */
+  const [pipAspectByIndex, setPipAspectByIndex] = useState<Record<number, number>>({});
+  const pipImagesFingerprint = `${backgroundImageUrl ?? ""}\0${(backgroundImageUrls ?? []).join("\0")}`;
+  const pipImagesFingerprintRef = useRef("");
   useEffect(() => {
-    if (pipImageUrlRef.current !== backgroundImageUrl) {
-      pipImageUrlRef.current = backgroundImageUrl;
-      queueMicrotask(() => setPipImageAspectRatio(null));
+    if (pipImagesFingerprintRef.current !== pipImagesFingerprint) {
+      pipImagesFingerprintRef.current = pipImagesFingerprint;
+      queueMicrotask(() => setPipAspectByIndex({}));
     }
-  }, [backgroundImageUrl]);
+  }, [pipImagesFingerprint]);
+
+  type PipDragSlot = {
+    slotIndex?: number;
+    pipPosition: "top_left" | "top_right" | "bottom_left" | "bottom_right";
+    pipX?: number;
+    pipY?: number;
+  };
+
   const handlePipPointerDown = useCallback(
-    (e: React.PointerEvent, pipW: number, pipH: number) => {
+    (e: React.PointerEvent, pipW: number, pipH: number, slot: PipDragSlot) => {
       if (!onPipPositionChangeRef.current) return;
       e.preventDefault();
       e.stopPropagation();
@@ -728,21 +750,20 @@ export function SlidePreview({
             : pipInset;
         return { x: rangeX > 0 ? (100 * left) / rangeX : 50, y: rangeY > 0 ? (100 * top) / rangeY : 50 };
       };
-      const pos = imageDisplay?.pipPosition ?? "bottom_right";
-      const percent = presetToPipPercent(pos);
-      const startX = Math.min(100, Math.max(0, imageDisplay?.pipX ?? percent.x));
-      const startY = Math.min(100, Math.max(0, imageDisplay?.pipY ?? percent.y));
+      const percent = presetToPipPercent(slot.pipPosition);
+      const startX = Math.min(100, Math.max(0, slot.pipX ?? percent.x));
+      const startY = Math.min(100, Math.max(0, slot.pipY ?? percent.y));
       pipDragRef.current = { startClientX: e.clientX, startClientY: e.clientY, startX, startY };
       (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
       const scale = editScale || 1;
-      const onMove = (e: PointerEvent) => {
+      const onMove = (ev: PointerEvent) => {
         const d = pipDragRef.current;
         if (!d) return;
-        const deltaDesignX = (e.clientX - d.startClientX) / scale;
-        const deltaDesignY = (e.clientY - d.startClientY) / scale;
+        const deltaDesignX = (ev.clientX - d.startClientX) / scale;
+        const deltaDesignY = (ev.clientY - d.startClientY) / scale;
         const newX = Math.min(100, Math.max(0, rangeX > 0 ? d.startX + (deltaDesignX / rangeX) * 100 : d.startX));
         const newY = Math.min(100, Math.max(0, rangeY > 0 ? d.startY + (deltaDesignY / rangeY) * 100 : d.startY));
-        onPipPositionChangeRef.current?.(newX, newY);
+        onPipPositionChangeRef.current?.(newX, newY, slot.slotIndex);
       };
       const onUp = () => {
         (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
@@ -753,7 +774,7 @@ export function SlidePreview({
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
     },
-    [imageDisplay?.pipPosition, imageDisplay?.pipX, imageDisplay?.pipY, editScale]
+    [editScale]
   );
   const handlePipResizePointerDown = useCallback(
     (
@@ -761,7 +782,8 @@ export function SlidePreview({
       corner: "top_left" | "top_right" | "bottom_left" | "bottom_right",
       pipW: number,
       pipH: number,
-      baseSize: number
+      baseSize: number,
+      slot: PipDragSlot
     ) => {
       if (!onPipSizeChangeRef.current) return;
       e.preventDefault();
@@ -784,13 +806,13 @@ export function SlidePreview({
       };
       const rangeX = CANVAS_SIZE - pipW;
       const rangeY = CANVAS_SIZE - pipH;
-      const useCustomPipPos = imageDisplay?.pipX != null && imageDisplay?.pipY != null;
-      const preset = imageDisplay?.pipPosition ?? "bottom_right";
+      const useCustomPipPos = slot.pipX != null && slot.pipY != null;
+      const preset = slot.pipPosition;
       const startLeft = useCustomPipPos
-        ? (Math.min(100, Math.max(0, imageDisplay!.pipX!)) / 100) * rangeX
+        ? (Math.min(100, Math.max(0, slot.pipX!)) / 100) * rangeX
         : getPresetLeftTop(preset, pipW, pipH).left;
       const startTop = useCustomPipPos
-        ? (Math.min(100, Math.max(0, imageDisplay!.pipY!)) / 100) * rangeY
+        ? (Math.min(100, Math.max(0, slot.pipY!)) / 100) * rangeY
         : getPresetLeftTop(preset, pipW, pipH).top;
       const startClientX = e.clientX;
       const startClientY = e.clientY;
@@ -809,7 +831,7 @@ export function SlidePreview({
                 : Math.max(-dx, dy);
         const nextBase = Math.max(270, Math.min(CANVAS_SIZE, Math.round(baseSize + growth)));
         const nextSize = Math.min(1, Math.max(0.25, nextBase / CANVAS_SIZE));
-        onPipSizeChangeRef.current?.(nextSize);
+        onPipSizeChangeRef.current?.(nextSize, slot.slotIndex);
         if (!onPipPositionChangeRef.current) return;
         const nextW = pipW * (nextBase / baseSize);
         const nextH = pipH * (nextBase / baseSize);
@@ -827,7 +849,7 @@ export function SlidePreview({
         }
         const nextX = nextRangeX > 0 ? Math.min(100, Math.max(0, (100 * nextLeft) / nextRangeX)) : 0;
         const nextY = nextRangeY > 0 ? Math.min(100, Math.max(0, (100 * nextTop) / nextRangeY)) : 0;
-        onPipPositionChangeRef.current?.(nextX, nextY);
+        onPipPositionChangeRef.current?.(nextX, nextY, slot.slotIndex);
       };
       const onUp = () => {
         (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
@@ -837,7 +859,7 @@ export function SlidePreview({
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
     },
-    [imageDisplay?.pipPosition, imageDisplay?.pipX, imageDisplay?.pipY, editScale]
+    [editScale]
   );
   useEffect(() => {
     chromeDragOffsetRef.current = chromeDragOffset;
@@ -1429,7 +1451,183 @@ export function SlidePreview({
         }
         return null;
       })()}
-      {multiImages ? (
+      {multiImages && imageDisplay?.mode === "pip" ? (
+        (() => {
+          const layoutsMp = resolvePipLayoutsForImageCount(imageDisplay, multiImages.length);
+          if (!layoutsMp) return null;
+          const pipBgColorMp = backgroundOverride?.color ?? model.background.backgroundColor;
+          const pipBgStyleMp =
+            backgroundOverride?.style === "pattern" &&
+            backgroundOverride?.pattern &&
+            ["dots", "ovals", "lines", "circles"].includes(backgroundOverride.pattern)
+              ? getPatternBackgroundStyleObject(pipBgColorMp, backgroundOverride.pattern as "dots" | "ovals" | "lines" | "circles")
+              : { backgroundColor: pipBgColorMp };
+          const pipFitMp = imageDisplay?.fit ?? "cover";
+          const pipFrameMp = imageDisplay?.frame ?? "none";
+          const pipFrameWMp = FRAME_WIDTHS[pipFrameMp] ?? 0;
+          const pipFrameColorMp = imageDisplay?.frameColor ?? "rgba(255,255,255,0.9)";
+          const pipFrameShapeMp = imageDisplay?.frameShape ?? "squircle";
+          const pipInsetMp = 48;
+          const pipShowShadowMp = imageDisplay?.pipShadow === true;
+          /** Isolate PiP subtree so slot z-indices only stack within PiP; gradient/text stay above (z-index ≥ 1). */
+          return (
+            <div className="absolute inset-0" style={{ zIndex: 0, isolation: "isolate" }}>
+              <div className="absolute inset-0" style={{ ...pipBgStyleMp, zIndex: 0 }} />
+              {multiImages.map((url, i) => {
+                const spec = layoutsMp[i]!;
+                const radiusForSlot =
+                  spec.pipBorderRadius ?? imageDisplay?.frameRadius ?? (pipFrameWMp > 0 ? 24 : 0);
+                const baseSizeMp = Math.round(Math.min(CANVAS_SIZE, Math.max(270, spec.pipSize * CANVAS_SIZE)));
+                let pipWMp = baseSizeMp;
+                let pipHMp = baseSizeMp;
+                const ar = pipAspectByIndex[i];
+                if (pipFitMp === "contain" && ar != null && ar > 0) {
+                  if (ar >= 1) {
+                    pipWMp = baseSizeMp;
+                    pipHMp = Math.round(baseSizeMp / ar);
+                  } else {
+                    pipWMp = Math.round(baseSizeMp * ar);
+                    pipHMp = baseSizeMp;
+                  }
+                }
+                const pipShapeStylesMp = getShapeStyles(pipFrameShapeMp, radiusForSlot, pipWMp, pipHMp);
+                const pipInnerWMp = pipWMp - pipFrameWMp * 2;
+                const pipInnerHMp = pipHMp - pipFrameWMp * 2;
+                const pipInnerShapeStylesMp = getShapeStyles(pipFrameShapeMp, radiusForSlot, pipInnerWMp, pipInnerHMp);
+                const rangeXMp = CANVAS_SIZE - pipWMp;
+                const rangeYMp = CANVAS_SIZE - pipHMp;
+                const useCustomPipPosMp = spec.pipX != null && spec.pipY != null;
+                const pipXClampedMp = useCustomPipPosMp ? Math.min(100, Math.max(0, spec.pipX!)) : 0;
+                const pipYClampedMp = useCustomPipPosMp ? Math.min(100, Math.max(0, spec.pipY!)) : 0;
+                const pipPosStyleMp: CSSProperties = useCustomPipPosMp
+                  ? { left: (pipXClampedMp / 100) * rangeXMp, top: (pipYClampedMp / 100) * rangeYMp }
+                  : spec.pipPosition === "bottom_right"
+                    ? { right: pipInsetMp, bottom: pipInsetMp }
+                    : spec.pipPosition === "bottom_left"
+                      ? { left: pipInsetMp, bottom: pipInsetMp }
+                      : spec.pipPosition === "top_right"
+                        ? { right: pipInsetMp, top: pipInsetMp }
+                        : { left: pipInsetMp, top: pipInsetMp };
+                const pipUseClipPathFrameMp = pipFrameWMp > 0 && isClipPathShape(pipFrameShapeMp);
+                const dragSlotMp: PipDragSlot = {
+                  slotIndex: i,
+                  pipPosition: spec.pipPosition,
+                  pipX: spec.pipX,
+                  pipY: spec.pipY,
+                };
+                const onPipImageLoadMp = (e: React.SyntheticEvent<HTMLImageElement>) => {
+                  const img = e.currentTarget;
+                  if (img.naturalWidth > 0 && img.naturalHeight > 0)
+                    setPipAspectByIndex((prev) => ({ ...prev, [i]: img.naturalWidth / img.naturalHeight }));
+                };
+                /* Stack order within isolated PiP layer only (does not compete with gradient z-index 1). */
+                const zMp = 1 + (spec.zIndex ?? i);
+                return (
+                  <div
+                    key={`pip-m-${i}`}
+                    className={`absolute overflow-hidden ${onPipPositionChange ? "cursor-grab active:cursor-grabbing" : ""}`}
+                    style={{
+                      zIndex: zMp,
+                      width: pipWMp,
+                      height: pipHMp,
+                      ...pipPosStyleMp,
+                      ...pipShapeStylesMp,
+                      ...(!pipUseClipPathFrameMp && pipFrameWMp > 0 ? { border: `${pipFrameWMp}px solid ${pipFrameColorMp}` } : {}),
+                      ...(pipShowShadowMp
+                        ? pipFrameWMp > 0 && !pipUseClipPathFrameMp
+                          ? { boxShadow: "0 8px 32px rgba(0,0,0,0.3)" }
+                          : { boxShadow: pipFrameWMp > 0 ? "0 8px 32px rgba(0,0,0,0.3)" : "0 8px 32px rgba(0,0,0,0.25)" }
+                        : {}),
+                      ...(spec.pipRotation !== 0 && { transform: `rotate(${spec.pipRotation}deg)`, transformOrigin: "center" }),
+                    }}
+                    {...(onPipPositionChange
+                      ? {
+                          onPointerDown: (e: React.PointerEvent) => handlePipPointerDown(e, pipWMp, pipHMp, dragSlotMp),
+                          role: "presentation" as const,
+                          "aria-label": "Drag to reposition picture-in-picture",
+                        }
+                      : {})}
+                  >
+                    {pipUseClipPathFrameMp ? (
+                      <>
+                        <div className="absolute inset-0" style={{ ...pipShapeStylesMp, backgroundColor: pipFrameColorMp }} />
+                        <div
+                          className="absolute overflow-hidden pointer-events-none"
+                          style={{
+                            left: pipFrameWMp,
+                            top: pipFrameWMp,
+                            width: pipInnerWMp,
+                            height: pipInnerHMp,
+                            ...pipInnerShapeStylesMp,
+                          }}
+                        >
+                          <img
+                            src={url}
+                            alt=""
+                            referrerPolicy="no-referrer"
+                            className="absolute inset-0 w-full h-full"
+                            style={{
+                              objectFit: pipFitMp,
+                              objectPosition:
+                                imageDisplay?.imagePositionX != null && imageDisplay?.imagePositionY != null
+                                  ? `${imageDisplay.imagePositionX}% ${imageDisplay.imagePositionY}%`
+                                  : POSITION_TO_CSS[imageDisplay?.position ?? "top"],
+                            }}
+                            onLoad={onPipImageLoadMp}
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      <img
+                        src={url}
+                        alt=""
+                        referrerPolicy="no-referrer"
+                        className="absolute inset-0 w-full h-full pointer-events-none"
+                        style={{
+                          objectFit: pipFitMp,
+                          objectPosition:
+                            imageDisplay?.imagePositionX != null && imageDisplay?.imagePositionY != null
+                              ? `${imageDisplay.imagePositionX}% ${imageDisplay.imagePositionY}%`
+                              : POSITION_TO_CSS[imageDisplay?.position ?? "top"],
+                        }}
+                        onLoad={onPipImageLoadMp}
+                      />
+                    )}
+                    {onPipSizeChange && (
+                      <>
+                        <button
+                          type="button"
+                          className="absolute -left-2 -top-2 h-4 w-4 rounded-full border border-white/90 bg-primary/90 shadow cursor-nwse-resize"
+                          onPointerDown={(e) => handlePipResizePointerDown(e, "top_left", pipWMp, pipHMp, baseSizeMp, dragSlotMp)}
+                          aria-label="Resize picture-in-picture from top left"
+                        />
+                        <button
+                          type="button"
+                          className="absolute -right-2 -top-2 h-4 w-4 rounded-full border border-white/90 bg-primary/90 shadow cursor-nesw-resize"
+                          onPointerDown={(e) => handlePipResizePointerDown(e, "top_right", pipWMp, pipHMp, baseSizeMp, dragSlotMp)}
+                          aria-label="Resize picture-in-picture from top right"
+                        />
+                        <button
+                          type="button"
+                          className="absolute -left-2 -bottom-2 h-4 w-4 rounded-full border border-white/90 bg-primary/90 shadow cursor-nesw-resize"
+                          onPointerDown={(e) => handlePipResizePointerDown(e, "bottom_left", pipWMp, pipHMp, baseSizeMp, dragSlotMp)}
+                          aria-label="Resize picture-in-picture from bottom left"
+                        />
+                        <button
+                          type="button"
+                          className="absolute -right-2 -bottom-2 h-4 w-4 rounded-full border border-white/90 bg-primary/90 shadow cursor-nwse-resize"
+                          onPointerDown={(e) => handlePipResizePointerDown(e, "bottom_right", pipWMp, pipHMp, baseSizeMp, dragSlotMp)}
+                          aria-label="Resize picture-in-picture from bottom right"
+                        />
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()
+      ) : multiImages ? (
         (() => {
           const gap = imageDisplay?.gap ?? 0;
           const frame = imageDisplay?.frame ?? "none";
@@ -1724,17 +1922,24 @@ export function SlidePreview({
       ) : bgImageUrl && !useFullCanvasBackground && (
         (() => {
           const isPip = imageDisplay?.mode === "pip";
+          const pipSpecEarly = isPip ? resolvePipLayoutsForImageCount(imageDisplay, 1)?.[0] : undefined;
           const pipPosition = imageDisplay?.pipPosition ?? "bottom_right";
           const pipFit = imageDisplay?.fit ?? "cover";
-          const baseSize = Math.round(Math.min(CANVAS_SIZE, Math.max(270, (imageDisplay?.pipSize ?? 0.4) * CANVAS_SIZE)));
+          const baseSize = Math.round(
+            Math.min(
+              CANVAS_SIZE,
+              Math.max(270, (pipSpecEarly?.pipSize ?? imageDisplay?.pipSize ?? 0.4) * CANVAS_SIZE)
+            )
+          );
           let pipW = baseSize;
           let pipH = baseSize;
-          if (pipFit === "contain" && pipImageAspectRatio != null && pipImageAspectRatio > 0) {
-            if (pipImageAspectRatio >= 1) {
+          const pipAr0 = pipAspectByIndex[0];
+          if (pipFit === "contain" && pipAr0 != null && pipAr0 > 0) {
+            if (pipAr0 >= 1) {
               pipW = baseSize;
-              pipH = Math.round(baseSize / pipImageAspectRatio);
+              pipH = Math.round(baseSize / pipAr0);
             } else {
-              pipW = Math.round(baseSize * pipImageAspectRatio);
+              pipW = Math.round(baseSize * pipAr0);
               pipH = baseSize;
             }
           }
@@ -1742,13 +1947,16 @@ export function SlidePreview({
           /* PiP uses Frame, Shape, Corner radius, Frame color from Display so those controls apply to the PiP box. */
           const pipFrame = imageDisplay?.frame ?? "none";
           const pipFrameW = FRAME_WIDTHS[pipFrame] ?? 0;
-          const pipRadius = imageDisplay?.frameRadius ?? (pipFrameW > 0 ? 24 : 0);
+          const pipRadius =
+            pipSpecEarly?.pipBorderRadius ?? imageDisplay?.frameRadius ?? (pipFrameW > 0 ? 24 : 0);
           const pipFrameColor = imageDisplay?.frameColor ?? "rgba(255,255,255,0.9)";
           const pipFrameShape = imageDisplay?.frameShape ?? "squircle";
           const pipShapeStyles = getShapeStyles(pipFrameShape, pipRadius, pipW, pipH);
           const pipInnerW = pipW - pipFrameW * 2;
           const pipInnerH = pipH - pipFrameW * 2;
           const pipInnerShapeStyles = getShapeStyles(pipFrameShape, pipRadius, pipInnerW, pipInnerH);
+          const pipRotationSingle = pipSpecEarly?.pipRotation ?? imageDisplay?.pipRotation ?? 0;
+          const pipPosForLayout = pipSpecEarly?.pipPosition ?? pipPosition;
 
           if (isPip) {
             const pipBgColor = backgroundOverride?.color ?? model.background.backgroundColor;
@@ -1768,20 +1976,28 @@ export function SlidePreview({
                   left: (pipXClamped / 100) * rangeX,
                   top: (pipYClamped / 100) * rangeY,
                 }
-              : pipPosition === "bottom_right"
+              : pipPosForLayout === "bottom_right"
                 ? { right: pipInset, bottom: pipInset }
-                : pipPosition === "bottom_left"
+                : pipPosForLayout === "bottom_left"
                   ? { left: pipInset, bottom: pipInset }
-                  : pipPosition === "top_right"
+                  : pipPosForLayout === "top_right"
                     ? { right: pipInset, top: pipInset }
                     : { left: pipInset, top: pipInset };
             const pipUseClipPathFrame = pipFrameW > 0 && isClipPathShape(pipFrameShape);
+            const pipShowShadowSingle = imageDisplay?.pipShadow === true;
+            const pipDragSlot: PipDragSlot = {
+              slotIndex: 0,
+              pipPosition: pipPosForLayout,
+              pipX: imageDisplay?.pipX ?? undefined,
+              pipY: imageDisplay?.pipY ?? undefined,
+            };
             const onPipImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
               const img = e.currentTarget;
-              if (img.naturalWidth > 0 && img.naturalHeight > 0) setPipImageAspectRatio(img.naturalWidth / img.naturalHeight);
+              if (img.naturalWidth > 0 && img.naturalHeight > 0)
+                setPipAspectByIndex((prev) => ({ ...prev, 0: img.naturalWidth / img.naturalHeight }));
             };
             return (
-              <>
+              <div className="absolute inset-0" style={{ zIndex: 0, isolation: "isolate" }}>
                 <div className="absolute inset-0" style={{ ...pipBgStyle, zIndex: 0 }} />
                 <div
                   className={`absolute overflow-hidden ${onPipPositionChange ? "cursor-grab active:cursor-grabbing" : ""}`}
@@ -1791,12 +2007,17 @@ export function SlidePreview({
                     height: pipH,
                     ...pipPosStyle,
                     ...pipShapeStyles,
-                    ...(!pipUseClipPathFrame && pipFrameW > 0 ? { border: `${pipFrameW}px solid ${pipFrameColor}`, boxShadow: "0 8px 32px rgba(0,0,0,0.3)" } : { boxShadow: pipFrameW > 0 ? "0 8px 32px rgba(0,0,0,0.3)" : "0 8px 32px rgba(0,0,0,0.25)" }),
-                    ...((imageDisplay?.pipRotation ?? 0) !== 0 && { transform: `rotate(${imageDisplay?.pipRotation ?? 0}deg)`, transformOrigin: "center" }),
+                    ...(!pipUseClipPathFrame && pipFrameW > 0 ? { border: `${pipFrameW}px solid ${pipFrameColor}` } : {}),
+                    ...(pipShowShadowSingle
+                      ? pipFrameW > 0 && !pipUseClipPathFrame
+                        ? { boxShadow: "0 8px 32px rgba(0,0,0,0.3)" }
+                        : { boxShadow: pipFrameW > 0 ? "0 8px 32px rgba(0,0,0,0.3)" : "0 8px 32px rgba(0,0,0,0.25)" }
+                      : {}),
+                    ...(pipRotationSingle !== 0 && { transform: `rotate(${pipRotationSingle}deg)`, transformOrigin: "center" }),
                   }}
                   {...(onPipPositionChange
                     ? {
-                        onPointerDown: (e: React.PointerEvent) => handlePipPointerDown(e, pipW, pipH),
+                        onPointerDown: (e: React.PointerEvent) => handlePipPointerDown(e, pipW, pipH, pipDragSlot),
                         role: "presentation" as const,
                         "aria-label": "Drag to reposition picture-in-picture",
                       }
@@ -1850,31 +2071,31 @@ export function SlidePreview({
                       <button
                         type="button"
                         className="absolute -left-2 -top-2 h-4 w-4 rounded-full border border-white/90 bg-primary/90 shadow cursor-nwse-resize"
-                        onPointerDown={(e) => handlePipResizePointerDown(e, "top_left", pipW, pipH, baseSize)}
+                        onPointerDown={(e) => handlePipResizePointerDown(e, "top_left", pipW, pipH, baseSize, pipDragSlot)}
                         aria-label="Resize picture-in-picture from top left"
                       />
                       <button
                         type="button"
                         className="absolute -right-2 -top-2 h-4 w-4 rounded-full border border-white/90 bg-primary/90 shadow cursor-nesw-resize"
-                        onPointerDown={(e) => handlePipResizePointerDown(e, "top_right", pipW, pipH, baseSize)}
+                        onPointerDown={(e) => handlePipResizePointerDown(e, "top_right", pipW, pipH, baseSize, pipDragSlot)}
                         aria-label="Resize picture-in-picture from top right"
                       />
                       <button
                         type="button"
                         className="absolute -left-2 -bottom-2 h-4 w-4 rounded-full border border-white/90 bg-primary/90 shadow cursor-nesw-resize"
-                        onPointerDown={(e) => handlePipResizePointerDown(e, "bottom_left", pipW, pipH, baseSize)}
+                        onPointerDown={(e) => handlePipResizePointerDown(e, "bottom_left", pipW, pipH, baseSize, pipDragSlot)}
                         aria-label="Resize picture-in-picture from bottom left"
                       />
                       <button
                         type="button"
                         className="absolute -right-2 -bottom-2 h-4 w-4 rounded-full border border-white/90 bg-primary/90 shadow cursor-nwse-resize"
-                        onPointerDown={(e) => handlePipResizePointerDown(e, "bottom_right", pipW, pipH, baseSize)}
+                        onPointerDown={(e) => handlePipResizePointerDown(e, "bottom_right", pipW, pipH, baseSize, pipDragSlot)}
                         aria-label="Resize picture-in-picture from bottom right"
                       />
                     </>
                   )}
                 </div>
-              </>
+              </div>
             );
           }
 

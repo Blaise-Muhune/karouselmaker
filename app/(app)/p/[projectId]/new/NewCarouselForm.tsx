@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { generateCarousel } from "@/app/actions/carousels/generateCarousel";
+import { suggestCarouselTopics } from "@/app/actions/carousels/suggestCarouselTopics";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,10 +16,10 @@ import { TemplateSelectCards } from "@/components/carousels/TemplateSelectCards"
 import type { TemplateOption } from "@/components/carousels/TemplateSelectCards";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { ImportTemplateButton } from "@/components/templates/ImportTemplateButton";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { createCheckoutSession } from "@/app/actions/subscription/createCheckoutSession";
-import { Gem, GlobeIcon, ImageIcon, LayoutTemplateIcon, Loader2Icon, Link2Icon, FileTextIcon, SparklesIcon, ChevronDownIcon, ChevronUpIcon, LinkedinIcon } from "lucide-react";
+import { Gem, GlobeIcon, ImageIcon, LayoutTemplateIcon, Loader2Icon, Link2Icon, FileTextIcon, SparklesIcon, ChevronDownIcon, ChevronUpIcon, LinkedinIcon, LightbulbIcon } from "lucide-react";
 import { WEB_IMAGES_SOURCE_DESCRIPTION, imageSourceDisplayName } from "@/lib/utils/imageSourceDisplay";
 
 /** Carousel for: Instagram (default) or LinkedIn. LinkedIn uses B2B-optimized content and stock/own images only (no AI generate). */
@@ -144,9 +145,27 @@ export function NewCarouselForm({
   const [driveFolderImporting, setDriveFolderImporting] = useState(false);
   const [driveFolderError, setDriveFolderError] = useState<string | null>(null);
   const [showMoreOptions, setShowMoreOptions] = useState(false);
+  const [topicSuggestOpen, setTopicSuggestOpen] = useState(false);
+  const [topicSuggestLoading, setTopicSuggestLoading] = useState(false);
+  const [topicSuggestList, setTopicSuggestList] = useState<string[]>([]);
+  const [topicSuggestError, setTopicSuggestError] = useState<string | null>(null);
 
   /** Matches `handleSubmit`: topic, URL, or pasted text must be non-empty after trim. */
   const hasRequiredInput = inputValue.trim().length > 0;
+
+  async function handleSuggestTopics() {
+    setTopicSuggestError(null);
+    setTopicSuggestLoading(true);
+    setTopicSuggestList([]);
+    setTopicSuggestOpen(true);
+    const result = await suggestCarouselTopics(projectId, { carousel_for: carouselFor });
+    setTopicSuggestLoading(false);
+    if (result.ok) {
+      setTopicSuggestList(result.topics);
+    } else {
+      setTopicSuggestError(result.error);
+    }
+  }
 
   const handleUpgrade = async () => {
     setUpgradeLoading(true);
@@ -334,13 +353,37 @@ export function NewCarouselForm({
               })}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="input_value" className="text-sm font-medium">
-                {inputType === "text"
-                  ? "Paste your text"
-                  : inputType === "url"
-                    ? "URL"
-                    : "Topic"}
-              </Label>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Label htmlFor="input_value" className="text-sm font-medium">
+                  {inputType === "text"
+                    ? "Paste your text"
+                    : inputType === "url"
+                      ? "URL"
+                      : "Topic"}
+                </Label>
+                {inputType === "topic" && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 shrink-0 gap-1.5 text-xs"
+                    disabled={topicSuggestLoading}
+                    onClick={handleSuggestTopics}
+                    title={
+                      hasFullAccess
+                        ? "Get ~10 fresh ideas from your project and past carousels (uses web search for timely angles)"
+                        : "Get ~10 fresh ideas from your project and past carousels (upgrade for web-aware suggestions)"
+                    }
+                  >
+                    {topicSuggestLoading ? (
+                      <Loader2Icon className="size-3.5 animate-spin" />
+                    ) : (
+                      <LightbulbIcon className="size-3.5" />
+                    )}
+                    Suggest topics
+                  </Button>
+                )}
+              </div>
               {inputType === "text" ? (
                 <Textarea
                   id="input_value"
@@ -350,15 +393,21 @@ export function NewCarouselForm({
                   onChange={(e) => setInputValue(e.target.value)}
                   required
                 />
+              ) : inputType === "topic" ? (
+                <Input
+                  id="input_value"
+                  type="text"
+                  className="min-w-0 w-full"
+                  placeholder="e.g. 5 habits of successful creators"
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  required
+                />
               ) : (
                 <Input
                   id="input_value"
-                  type={inputType === "url" ? "url" : "text"}
-                  placeholder={
-                    inputType === "url"
-                      ? "https://..."
-                      : "e.g. 5 habits of successful creators"
-                  }
+                  type="url"
+                  placeholder="https://..."
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
                   required
@@ -735,6 +784,60 @@ export function NewCarouselForm({
             </CardContent>
           </Card>
         )}
+
+        <Dialog
+          open={topicSuggestOpen}
+          onOpenChange={(open) => {
+            setTopicSuggestOpen(open);
+            if (!open) {
+              setTopicSuggestError(null);
+              setTopicSuggestList([]);
+            }
+          }}
+        >
+          <DialogContent className="max-w-md max-h-[min(85vh,520px)] flex flex-col gap-0 p-0 sm:max-w-lg">
+            <DialogHeader className="px-6 pt-6 pb-2">
+              <DialogTitle className="flex items-center gap-2">
+                <LightbulbIcon className="size-5 text-amber-500" aria-hidden />
+                Topic ideas
+              </DialogTitle>
+              <DialogDescription>
+                Based on this project, past carousels here, and{hasFullAccess ? " (when useful) recent web context" : " general knowledge"}
+                . Skips topics you already used.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="px-6 pb-6 overflow-y-auto flex-1 min-h-0 space-y-3">
+              {topicSuggestLoading && (
+                <div className="flex flex-col items-center justify-center gap-3 py-10 text-muted-foreground text-sm">
+                  <Loader2Icon className="size-8 animate-spin" />
+                  Finding varied angles…
+                </div>
+              )}
+              {!topicSuggestLoading && topicSuggestError && (
+                <p className="text-destructive text-sm rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2">{topicSuggestError}</p>
+              )}
+              {!topicSuggestLoading && !topicSuggestError && topicSuggestList.length > 0 && (
+                <ul className="space-y-2">
+                  {topicSuggestList.map((t, i) => (
+                    <li key={`${i}-${t.slice(0, 24)}`}>
+                      <button
+                        type="button"
+                        className="w-full text-left rounded-lg border border-border/80 bg-muted/20 px-3 py-2.5 text-sm transition-colors hover:bg-muted/50 hover:border-primary/30 focus:outline-none focus:ring-2 focus:ring-primary/40"
+                        onClick={() => {
+                          setInputValue(t);
+                          setTopicSuggestOpen(false);
+                          setTopicSuggestList([]);
+                        }}
+                      >
+                        {t}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
 
         <BackgroundImagesPickerModal
           open={backgroundPickerOpen}

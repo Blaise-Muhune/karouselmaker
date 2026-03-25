@@ -223,7 +223,7 @@ export async function POST(
 
         const templateCfg = config.data;
         const slideMetaForBg = (slide.meta ?? null) as Record<string, unknown> | null;
-        const imageDisplayMerged = resolveImageDisplay(config.data, slideBg);
+        const imageDisplayMerged = resolveImageDisplay(config.data, slideBg, slideMetaForBg);
         const isPip = imageDisplayMerged?.mode === "pip";
         const { tintOpacity: effectiveTintOpacity, tintColor: effectiveTintColor } = resolveOverlayTint(
           slideBg,
@@ -424,7 +424,7 @@ export async function POST(
         const zoneOverrides = merged.zoneOverrides;
         const chromeOverrides = merged.chromeOverrides;
         const highlightStyles = merged.highlightStyles;
-        const imageDisplayParam = resolveImageDisplay(config.data, slideBg);
+        const imageDisplayParam = resolveImageDisplay(config.data, slideBg, slideMeta);
 
         const html = renderSlideHtml(
           {

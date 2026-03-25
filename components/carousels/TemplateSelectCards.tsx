@@ -140,6 +140,17 @@ export function TemplateSelectCards({
   const hasPreviewImages = previewImageUrls && previewImageUrls.length > 0;
   const getPreviewImage = (index: number) =>
     hasPreviewImages ? previewImageUrls![index % previewImageUrls!.length] : undefined;
+  /**
+   * For cards without template-stored image URLs, cycle project images so previews stay representative.
+   * This supports both single-image and multi-image templates in the modal.
+   */
+  const getPreviewImageSet = (index: number, maxCount = 4): string[] => {
+    if (!previewImageUrls || previewImageUrls.length === 0) return [];
+    const clean = previewImageUrls.map((u) => u.trim()).filter((u) => /^https?:\/\//i.test(u));
+    if (clean.length === 0) return [];
+    const count = Math.min(maxCount, clean.length);
+    return Array.from({ length: count }, (_, i) => clean[(index + i) % clean.length]!).filter(Boolean);
+  };
   /** For image-allowing templates, use slide image or fallback sample so the card always shows a photo. */
   const getPreviewImageOrFallback = (index: number, templateAllowsImage: boolean) =>
     getPreviewImage(index) ?? (templateAllowsImage ? FALLBACK_SAMPLE_IMAGE_URL : undefined);
@@ -166,18 +177,23 @@ export function TemplateSelectCards({
   const defaultTemplateStoredUrls = effectiveDefaultTemplateConfig
     ? getTemplatePreviewImageUrls(effectiveDefaultTemplateConfig)
     : [];
-  const defaultTemplateBgUrl =
-    effectiveDefaultTemplateConfig?.backgroundRules?.allowImage === false
-      ? undefined
-      : defaultTemplateStoredUrls.length > 0
-        ? defaultTemplateStoredUrls[0]
-        : (previewImageUrl ?? FALLBACK_SAMPLE_IMAGE_URL);
+  const defaultFallbackSet = getPreviewImageSet(0);
   const defaultTemplateBgUrls =
     effectiveDefaultTemplateConfig?.backgroundRules?.allowImage === false
       ? undefined
       : defaultTemplateStoredUrls.length >= 2
         ? defaultTemplateStoredUrls
-        : undefined;
+        : defaultFallbackSet.length >= 2
+          ? defaultFallbackSet
+          : undefined;
+  const defaultTemplateBgUrl =
+    effectiveDefaultTemplateConfig?.backgroundRules?.allowImage === false
+      ? undefined
+      : defaultTemplateBgUrls?.[0]
+        ? defaultTemplateBgUrls[0]
+        : defaultTemplateStoredUrls.length > 0
+          ? defaultTemplateStoredUrls[0]
+          : (previewImageUrl ?? FALLBACK_SAMPLE_IMAGE_URL);
 
   const myTemplates = useMemo(() => templates.filter((t) => !t.isSystemTemplate), [templates]);
   const hasMyTemplates = showMyTemplatesSection && myTemplates.length > 0;
@@ -251,22 +267,27 @@ export function TemplateSelectCards({
     const isSystem = t.isSystemTemplate === true;
     const showDelete = (isAdmin && isSystem) || (!isSystem && isPro);
     const storedPreviewUrls = getTemplatePreviewImageUrls(t.parsedConfig);
+    const fallbackSet = getPreviewImageSet(idx + 1);
     const fallbackPreview = getPreviewImageOrFallback(idx + 1, true);
-    const previewBgUrl =
-      t.parsedConfig.backgroundRules?.allowImage === false
-        ? undefined
-        : storedPreviewUrls.length > 0
-          ? storedPreviewUrls[0]
-          : fallbackPreview;
     const previewBgUrls =
       t.parsedConfig.backgroundRules?.allowImage === false
         ? undefined
         : storedPreviewUrls.length >= 2
           ? storedPreviewUrls
-          : undefined;
+          : fallbackSet.length >= 2
+            ? fallbackSet
+            : undefined;
+    const previewBgUrl =
+      t.parsedConfig.backgroundRules?.allowImage === false
+        ? undefined
+        : previewBgUrls?.[0]
+          ? previewBgUrls[0]
+          : storedPreviewUrls.length > 0
+            ? storedPreviewUrls[0]
+            : fallbackPreview;
     const useSolidPreviewOverride =
       t.parsedConfig.backgroundRules?.allowImage === false ||
-      (storedPreviewUrls.length === 0 && !fallbackPreview);
+      (storedPreviewUrls.length === 0 && fallbackSet.length === 0 && !fallbackPreview);
     return (
       <div
         key={t.id}

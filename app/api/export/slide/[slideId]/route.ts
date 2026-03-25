@@ -130,7 +130,7 @@ export async function GET(
 
   const slideMeta = (slide.meta ?? null) as Record<string, unknown> | null;
   const templateCfg = config.data;
-  const imageDisplayMerged = resolveImageDisplay(templateCfg, slideBg);
+  const imageDisplayMerged = resolveImageDisplay(templateCfg, slideBg, slideMeta);
   const isPip = imageDisplayMerged?.mode === "pip";
   const { tintOpacity: effectiveTintOpacity, tintColor: effectiveTintColor } = resolveOverlayTint(
     slideBg,
@@ -300,7 +300,7 @@ export async function GET(
   const chromeOverrides = merged.chromeOverrides;
   const highlightStyles = merged.highlightStyles;
 
-  const imageDisplayParam = resolveImageDisplay(config.data, slideBg);
+  const imageDisplayParam = resolveImageDisplay(config.data, slideBg, slideMeta);
 
   const dimensions = DIMENSIONS[size];
   const html = renderSlideHtml(

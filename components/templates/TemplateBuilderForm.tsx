@@ -730,6 +730,8 @@ export function TemplateBuilderForm({
                     setBaseId(id);
                     setConfig(opt.config);
                     setCategory(opt.template.category);
+                    const seedUrls = getTemplatePreviewImageUrls(opt.config);
+                    if (seedUrls.length > 0) setPreviewImageUrls(seedUrls);
                   }
                 }}
               >
@@ -1271,6 +1273,7 @@ export function TemplateBuilderForm({
                         updateImageDisplay({
                           mode: v,
                           ...(v === "pip" && d.pipPosition == null ? { pipPosition: "bottom_right", pipSize: 0.4 } : {}),
+                          ...(v === "full" ? { pipShadow: undefined } : {}),
                         });
                       }}
                     >
@@ -1349,6 +1352,15 @@ export function TemplateBuilderForm({
                           className="w-full max-w-[140px]"
                         />
                       </div>
+                      <label className="flex items-center gap-2 sm:col-span-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={d.pipShadow === true}
+                          onChange={(e) => updateImageDisplay({ pipShadow: e.target.checked })}
+                          className="rounded border-input accent-primary"
+                        />
+                        <span className="text-muted-foreground text-xs">PiP drop shadow</span>
+                      </label>
                     </div>
                   )}
                   <div className="grid gap-3 sm:grid-cols-2 pt-1 border-t border-border/50">

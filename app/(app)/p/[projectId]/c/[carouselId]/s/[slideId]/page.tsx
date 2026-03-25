@@ -6,13 +6,19 @@ import { getSlide, getCarousel, getProject, listSlides, listTemplatesForUser, co
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { resolveBrandKitLogo } from "@/lib/server/brandKit";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
-import { isSupabaseSignedUrl } from "@/lib/server/storage/signedUrlUtils";
+import { httpsDisplayImageUrl } from "@/lib/server/storage/signedUrlUtils";
 import { SlideEditForm, type TemplateWithConfig } from "@/components/editor/SlideEditForm";
 import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
 import type { BrandKit } from "@/lib/renderer/renderModel";
 import { FREE_FULL_ACCESS_GENERATIONS } from "@/lib/constants";
 
 const BUCKET = "carousel-assets";
+function normalizeStoragePathForBucket(path: string | undefined, bucket: string): string | undefined {
+  const trimmed = path?.trim().replace(/^\/+/, "");
+  if (!trimmed) return undefined;
+  const bucketPrefix = `${bucket}/`;
+  return trimmed.startsWith(bucketPrefix) ? trimmed.slice(bucketPrefix.length) : trimmed;
+}
 
 const EDIT_TABS = ["text", "layout", "background", "more"] as const;
 type EditTab = (typeof EDIT_TABS)[number];
@@ -88,74 +94,73 @@ export default async function EditSlidePage({
   const DISPLAY_SIGNED_URL_EXPIRY = 3600;
   if (bg?.mode === "image") {
     if (bg.images?.length) {
-      const urls: string[] = [];
-      const sources: ("brave" | "unsplash" | "google" | "pixabay" | "pexels")[] = [];
+      const resolvedSlots: Array<{ url: string; source?: "brave" | "unsplash" | "google" | "pixabay" | "pexels" }> = [];
       for (const img of bg.images) {
         const path =
-          img.storage_path?.replace(/^\/+/, "").trim() ||
-          (img.asset_id ? (await getAsset(user.id, img.asset_id))?.storage_path?.replace(/^\/+/, "").trim() : undefined);
+          normalizeStoragePathForBucket(img.storage_path, BUCKET) ||
+          (img.asset_id ? normalizeStoragePathForBucket((await getAsset(user.id, img.asset_id))?.storage_path, BUCKET) : undefined);
+        const imgSource =
+          img.source === "brave" || img.source === "unsplash" || img.source === "google" || img.source === "pixabay" || img.source === "pexels"
+            ? img.source
+            : undefined;
         if (path) {
           try {
-            urls.push(await getSignedImageUrl(BUCKET, path, DISPLAY_SIGNED_URL_EXPIRY));
-            sources.push(img.source ?? "brave");
-            const alt = (img as { alternates?: string[] }).alternates;
-            if (alt?.length) {
-              const validAlt = alt.filter((u) => u?.trim() && /^https?:\/\//i.test(u));
-              urls.push(...validAlt);
-              validAlt.forEach(() => sources.push(img.source ?? "brave"));
-            }
+            resolvedSlots.push({ url: await getSignedImageUrl(BUCKET, path, DISPLAY_SIGNED_URL_EXPIRY), source: imgSource });
           } catch {
-            if (img.image_url && !isSupabaseSignedUrl(img.image_url)) {
-              urls.push(img.image_url);
-              sources.push(img.source ?? "brave");
-            }
+            const fb = httpsDisplayImageUrl(img.image_url);
+            if (fb) resolvedSlots.push({ url: fb, source: imgSource });
           }
-        } else if (img.image_url && !isSupabaseSignedUrl(img.image_url)) {
-          urls.push(img.image_url);
-          sources.push(img.source ?? "brave");
-          const alt = (img as { alternates?: string[] }).alternates;
-          if (alt?.length) {
-            const validAlt = alt.filter((u) => u?.trim() && /^https?:\/\//i.test(u));
-            urls.push(...validAlt);
-            validAlt.forEach(() => sources.push(img.source ?? "brave"));
-          }
+        } else {
+          const fb = httpsDisplayImageUrl(img.image_url);
+          if (fb) resolvedSlots.push({ url: fb, source: imgSource });
         }
       }
+      const urls = resolvedSlots.map((s) => s.url);
       if (urls.length === 1) {
         initialBackgroundImageUrl = urls[0] ?? null;
-        if (sources[0]) initialImageSource = sources[0];
+        if (resolvedSlots[0]?.source) initialImageSource = resolvedSlots[0].source;
       } else if (urls.length >= 2) {
         initialBackgroundImageUrls = urls;
-        initialImageSources = sources.length === urls.length ? sources : urls.map((_, i) => sources[i] ?? sources[0] ?? "brave");
+        initialImageSources = resolvedSlots.every((s) => s.source != null)
+          ? resolvedSlots.map((s) => s.source!)
+          : null;
       }
     } else {
-      let pathToUse = bg.storage_path?.replace(/^\/+/, "").trim();
+      let pathToUse = normalizeStoragePathForBucket(bg.storage_path, BUCKET);
       if (!pathToUse && bg.asset_id) {
         const asset = await getAsset(user.id, bg.asset_id);
-        if (asset?.storage_path) pathToUse = asset.storage_path.replace(/^\/+/, "").trim();
+        if (asset?.storage_path) pathToUse = normalizeStoragePathForBucket(asset.storage_path, BUCKET);
       }
       if (pathToUse) {
         try {
           initialBackgroundImageUrl = await getSignedImageUrl(BUCKET, pathToUse, DISPLAY_SIGNED_URL_EXPIRY);
         } catch {
-          if (bg.image_url && !isSupabaseSignedUrl(bg.image_url)) {
-            initialBackgroundImageUrl = bg.image_url;
+          const fb = httpsDisplayImageUrl(bg.image_url);
+          if (fb) {
+            initialBackgroundImageUrl = fb;
             if (bg.image_source) initialImageSource = bg.image_source;
           }
         }
-      } else if (bg.image_url && !isSupabaseSignedUrl(bg.image_url)) {
-        initialBackgroundImageUrl = bg.image_url;
-        if (bg.image_source) initialImageSource = bg.image_source;
+      } else {
+        const fb = httpsDisplayImageUrl(bg.image_url);
+        if (fb) {
+          initialBackgroundImageUrl = fb;
+          if (bg.image_source) initialImageSource = bg.image_source;
+        }
       }
       if (slide.slide_type === "hook") {
         if (bg.secondary_storage_path) {
           try {
-            initialSecondaryBackgroundImageUrl = await getSignedImageUrl(BUCKET, bg.secondary_storage_path.replace(/^\/+/, "").trim(), DISPLAY_SIGNED_URL_EXPIRY);
+            const secPath = normalizeStoragePathForBucket(bg.secondary_storage_path, BUCKET);
+            if (!secPath) throw new Error("Invalid secondary storage path");
+            initialSecondaryBackgroundImageUrl = await getSignedImageUrl(BUCKET, secPath, DISPLAY_SIGNED_URL_EXPIRY);
           } catch {
-            if (bg.secondary_image_url && !isSupabaseSignedUrl(bg.secondary_image_url)) initialSecondaryBackgroundImageUrl = bg.secondary_image_url;
+            const sfb = httpsDisplayImageUrl(bg.secondary_image_url);
+            if (sfb) initialSecondaryBackgroundImageUrl = sfb;
           }
-        } else if (bg.secondary_image_url && !isSupabaseSignedUrl(bg.secondary_image_url)) {
-          initialSecondaryBackgroundImageUrl = bg.secondary_image_url;
+        } else {
+          const sfb = httpsDisplayImageUrl(bg.secondary_image_url);
+          if (sfb) initialSecondaryBackgroundImageUrl = sfb;
         }
       }
     }

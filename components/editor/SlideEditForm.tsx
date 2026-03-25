@@ -158,6 +158,64 @@ function mapImageRowsToImagesPayload(
   });
 }
 
+function buildImagesPayloadWithPrimary(
+  imageUrls: Array<{
+    url: string;
+    asset_id?: string;
+    storage_path?: string;
+    source?: "brave" | "unsplash" | "google" | "pixabay" | "pexels";
+    unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string };
+    pixabay_attribution?: { userName: string; userId: number; pageURL: string; photoURL: string };
+    pexels_attribution?: { photographer: string; photographer_url: string; photo_url: string };
+    alternates?: string[];
+  }>,
+  background: {
+    asset_id?: string;
+    storage_path?: string;
+    image_url?: string;
+    image_source?: "brave" | "unsplash" | "google" | "pixabay" | "pexels";
+    unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string };
+    pixabay_attribution?: { userName: string; userId: number; pageURL: string; photoURL: string };
+    pexels_attribution?: { photographer: string; photographer_url: string; photo_url: string };
+  },
+  urlToPersist: (u: string | undefined) => string | undefined
+): Record<string, unknown>[] {
+  const rows = mapImageRowsToImagesPayload(imageUrls, urlToPersist);
+  /** Two+ slots already materialized in the editor — do not prepend top-level asset/url (avoids a third duplicate image on save). */
+  if (rows.length >= 2) return rows;
+  const topLevelUrl = urlToPersist(background.image_url);
+  const topLevelHasAsset = !!(background.asset_id && background.storage_path);
+  const topLevelHasUrl = !!topLevelUrl;
+  if (!topLevelHasAsset && !topLevelHasUrl) return rows;
+
+  const existsAsAsset = topLevelHasAsset
+    ? rows.some(
+        (r) =>
+          r.asset_id != null &&
+          r.storage_path != null &&
+          String(r.asset_id) === String(background.asset_id) &&
+          String(r.storage_path) === String(background.storage_path)
+      )
+    : false;
+  const existsAsUrl = topLevelUrl
+    ? rows.some((r) => r.image_url != null && String(r.image_url) === String(topLevelUrl))
+    : false;
+  if (existsAsAsset || existsAsUrl) return rows;
+
+  const primary: Record<string, unknown> = {};
+  if (topLevelHasAsset) {
+    primary.asset_id = background.asset_id;
+    primary.storage_path = background.storage_path;
+  }
+  if (topLevelUrl) primary.image_url = topLevelUrl;
+  if (background.image_source) primary.source = background.image_source;
+  if (background.unsplash_attribution) primary.unsplash_attribution = background.unsplash_attribution;
+  if (background.pixabay_attribution) primary.pixabay_attribution = background.pixabay_attribution;
+  if (background.pexels_attribution) primary.pexels_attribution = background.pexels_attribution;
+  if (!("alternates" in primary)) primary.alternates = [];
+  return [primary, ...rows];
+}
+
 function textBackdropIsOn(zone: { boxBackgroundColor?: string } | null | undefined): boolean {
   const c = zone?.boxBackgroundColor?.trim() ?? "";
   return c.length > 0 && TEXT_BACKDROP_HEX_RE.test(c);
@@ -207,6 +265,18 @@ export type ImageDisplayState = {
   pipX?: number;
   /** When mode is "pip": custom position Y (0–100). When set with pipX, overrides pipPosition preset. */
   pipY?: number;
+  /** When mode is "pip": drop shadow on each PiP box. Default off. */
+  pipShadow?: boolean;
+  /** Multi-image PiP: optional per-slot overrides (index matches image slot order). */
+  pips?: Partial<{
+    pipPosition: "top_left" | "top_right" | "bottom_left" | "bottom_right";
+    pipSize: number;
+    pipRotation: number;
+    pipBorderRadius: number;
+    pipX: number;
+    pipY: number;
+    zIndex: number;
+  }>[];
   /** Single image: custom focal point X (0–100). When set with imagePositionY, overrides position preset. */
   imagePositionX?: number;
   /** Single image: custom focal point Y (0–100). When set with imagePositionX, overrides position preset. */
@@ -246,6 +316,19 @@ export type SlideBackgroundState = SlideBackgroundOverride & {
 };
 
 /** Max preview size (longest side) so it always fits on screen. Keeps mobile and desktop usable. */
+function upsertImageDisplayPipSlot(
+  d: ImageDisplayState,
+  slotIndex: number,
+  imageCount: number,
+  patch: Partial<NonNullable<ImageDisplayState["pips"]>[number]>
+): ImageDisplayState {
+  const pips = [...(d.pips ?? [])];
+  while (pips.length < imageCount) pips.push({});
+  const next = pips[slotIndex] ?? {};
+  pips[slotIndex] = { ...next, ...patch };
+  return { ...d, pips };
+}
+
 const PREVIEW_MAX = 560;
 const PREVIEW_MAX_LARGE = 780;
 
@@ -662,14 +745,26 @@ export function SlideEditForm({
     if (bg?.images?.length) {
       const images = bg.images;
       const hasAnyAlternates = images.some((img) => ((img as { alternates?: string[] }).alternates?.length ?? 0) > 0);
-      if (!hasAnyAlternates && images.length > 1) {
-        // Legacy: one search stored as flat list [url1, url2, ...]. Coalesce into one slot.
+      const canCoalesceLegacyStockSet =
+        !hasAnyAlternates &&
+        images.length > 1 &&
+        images.every((img) => {
+          const src = img.source;
+          const isKnownStockSource = src === "brave" || src === "unsplash" || src === "google" || src === "pixabay" || src === "pexels";
+          const hasLibraryAsset = !!(img.asset_id && img.storage_path);
+          return isKnownStockSource && !hasLibraryAsset;
+        });
+      if (canCoalesceLegacyStockSet) {
+        // Legacy stock search set stored as flat list [url1, url2, ...]. Coalesce into one slot for shuffle.
         const first = images[0]!;
         const pool = [first.image_url ?? "", ...images.slice(1).map((img) => img.image_url ?? "").filter((u) => u.trim() && /^https?:\/\//i.test(u))];
         return [{ url: pool[0] ?? "", source: (first.source === "brave" || first.source === "unsplash" || first.source === "google" || first.source === "pixabay" || first.source === "pexels" ? first.source : undefined) as ImageUrlItem["source"], unsplash_attribution: first.unsplash_attribution, pixabay_attribution: first.pixabay_attribution, pexels_attribution: first.pexels_attribution, alternates: pool.slice(1), _pool: pool.length > 0 ? pool : undefined, _index: 0 }];
       }
+      let resolvedSlotIdx = 0;
       return images.map((img) => {
-        const url = img.image_url ?? "";
+        const fallbackResolvedUrl = initialBackgroundImageUrls?.[resolvedSlotIdx];
+        const url = img.image_url ?? fallbackResolvedUrl ?? "";
+        if (url.trim() && /^https?:\/\//i.test(url)) resolvedSlotIdx += 1;
         const aid = img.asset_id;
         const sp = img.storage_path;
         const alts = (img as { alternates?: string[] }).alternates ?? [];
@@ -690,7 +785,12 @@ export function SlideEditForm({
     if (initialBackgroundImageUrls?.length) {
       const urls = initialBackgroundImageUrls;
       // Page passed flat URL list (no bg.images): one slot with rest as alternates so Shuffle works.
-      if (urls.length > 1) {
+      const canCoalesceInitialStockSet =
+        urls.length > 1 &&
+        Array.isArray(initialImageSources) &&
+        initialImageSources.length >= urls.length &&
+        initialImageSources.every((src) => src === "brave" || src === "unsplash" || src === "google" || src === "pixabay" || src === "pexels");
+      if (canCoalesceInitialStockSet) {
         const firstSource = initialImageSources?.[0];
         const source = firstSource === "brave" || firstSource === "unsplash" || firstSource === "google" || firstSource === "pixabay" || firstSource === "pexels" ? firstSource : undefined;
         const pool = urls.filter((u) => u.trim() && /^https?:\/\//i.test(u));
@@ -714,6 +814,8 @@ export function SlideEditForm({
     }
     return [{ url: "", source: undefined }];
   });
+  const imageUrlsRef = useRef(imageUrls);
+  imageUrlsRef.current = imageUrls;
   const initialTemplateForChrome = getTemplateConfig(slide.template_id ?? templates[0]?.id ?? null, templates);
   const templateDefaultsMeta = initialTemplateForChrome?.defaults?.meta && typeof initialTemplateForChrome.defaults.meta === "object"
     ? (initialTemplateForChrome.defaults.meta as {
@@ -1921,6 +2023,20 @@ export function SlideEditForm({
     if (source.pipBorderRadius != null) payload.pipBorderRadius = Math.min(72, Math.max(0, source.pipBorderRadius));
     if (source.pipX != null) payload.pipX = Math.min(100, Math.max(0, source.pipX));
     if (source.pipY != null) payload.pipY = Math.min(100, Math.max(0, source.pipY));
+    if (source.mode === "pip" && typeof source.pipShadow === "boolean") payload.pipShadow = source.pipShadow;
+    if (Array.isArray(source.pips) && source.pips.length > 0 && source.mode === "pip") {
+      payload.pips = source.pips.slice(0, 4).map((slot) => {
+        const o: Record<string, unknown> = {};
+        if (slot?.pipPosition != null) o.pipPosition = slot.pipPosition;
+        if (slot?.pipSize != null) o.pipSize = Math.min(1, Math.max(0.25, slot.pipSize));
+        if (slot?.pipRotation != null) o.pipRotation = Math.min(180, Math.max(-180, slot.pipRotation));
+        if (slot?.pipBorderRadius != null) o.pipBorderRadius = Math.min(72, Math.max(0, slot.pipBorderRadius));
+        if (slot?.pipX != null) o.pipX = Math.min(100, Math.max(0, slot.pipX));
+        if (slot?.pipY != null) o.pipY = Math.min(100, Math.max(0, slot.pipY));
+        if (slot?.zIndex != null) o.zIndex = Math.round(slot.zIndex);
+        return o;
+      });
+    }
     if (source.imagePositionX != null) payload.imagePositionX = Math.min(100, Math.max(0, source.imagePositionX));
     if (source.imagePositionY != null) payload.imagePositionY = Math.min(100, Math.max(0, source.imagePositionY));
     return Object.keys(payload).length > 0 ? payload : undefined;
@@ -1960,13 +2076,15 @@ export function SlideEditForm({
     const validUrls = imageUrls.filter((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim()));
     const persistedSlots = imageUrls.filter(slotHasPersistableImage);
     const imageDisplayPayload = buildImageDisplayPayload();
+    const urlToPersist = (u: string | undefined) => (u && !isSupabaseSignedUrl(u) ? u : undefined);
+    const imagesPayload = buildImagesPayloadWithPrimary(imageUrls, background, urlToPersist);
+    const imageSlotsForSaveCount = imagesPayload.length;
     const useImagesArray =
-      persistedSlots.length >= 2 ||
-      (persistedSlots.length === 1 && (persistedSlots[0]?.alternates?.length ?? 0) > 0);
+      imageSlotsForSaveCount >= 2 ||
+      imageUrls.some((slot) => (slot.alternates?.length ?? 0) > 0);
     const templateBgForSave = getTemplatePreviewBackgroundOverride(templateConfig ?? null);
     const brandKitColor = brandKit?.primary_color?.trim() && /^#[0-9A-Fa-f]{3,6}$/i.test(brandKit.primary_color.trim()) ? brandKit.primary_color.trim() : undefined;
     const effectiveColorForSave = background.color ?? brandKitColor ?? templateBgForSave.color ?? "#0a0a0a";
-    const urlToPersist = (u: string | undefined) => (u && !isSupabaseSignedUrl(u) ? u : undefined);
     const hasTopLevelLibrary = !!(background.asset_id && background.storage_path);
     const hasImageForSave =
       background.mode === "image" ||
@@ -1979,7 +2097,7 @@ export function SlideEditForm({
         ? {
             mode: "image",
             color: effectiveColorForSave,
-            images: mapImageRowsToImagesPayload(imageUrls, urlToPersist),
+            images: imagesPayload,
             fit: background.fit ?? "cover",
             overlay: overlayPayload,
             ...(imageDisplayPayload && { image_display: imageDisplayPayload }),
@@ -2236,10 +2354,12 @@ export function SlideEditForm({
     const overlayPayload = background.overlay ?? { gradient: true, darken: 0.5, color: "#000000", textColor: "#ffffff" };
     const validUrls = imageUrls.filter((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim()));
     const persistedSlots = imageUrls.filter(slotHasPersistableImage);
-    const useImagesArray =
-      persistedSlots.length >= 2 ||
-      (persistedSlots.length === 1 && (persistedSlots[0]?.alternates?.length ?? 0) > 0);
     const urlToPersist = (u: string | undefined) => (u && !isSupabaseSignedUrl(u) ? u : undefined);
+    const imagesPayload = buildImagesPayloadWithPrimary(imageUrls, background, urlToPersist);
+    const imageSlotsForSaveCount = imagesPayload.length;
+    const useImagesArray =
+      imageSlotsForSaveCount >= 2 ||
+      imageUrls.some((slot) => (slot.alternates?.length ?? 0) > 0);
     const hasTopLevelLibrary = !!(background.asset_id && background.storage_path);
     const hasImageForSave =
       background.mode === "image" ||
@@ -2251,7 +2371,7 @@ export function SlideEditForm({
       ? useImagesArray
         ? {
             mode: "image",
-            images: mapImageRowsToImagesPayload(imageUrls, urlToPersist),
+            images: imagesPayload,
             fit: background.fit ?? "cover",
             overlay: overlayPayload,
           }
@@ -2417,6 +2537,7 @@ export function SlideEditForm({
       ...(imageDisplay.pipBorderRadius != null && { pipBorderRadius: imageDisplay.pipBorderRadius }),
       ...(imageDisplay.pipX != null && { pipX: imageDisplay.pipX }),
       ...(imageDisplay.pipY != null && { pipY: imageDisplay.pipY }),
+      ...(imageDisplay.mode === "pip" && typeof imageDisplay.pipShadow === "boolean" && { pipShadow: imageDisplay.pipShadow }),
       ...(imageDisplay.imagePositionX != null && { imagePositionX: imageDisplay.imagePositionX }),
       ...(imageDisplay.imagePositionY != null && { imagePositionY: imageDisplay.imagePositionY }),
     };
@@ -2892,8 +3013,9 @@ export function SlideEditForm({
       setSecondaryBackgroundImageUrlForPreview(url);
       setPickerForSecondary(false);
     } else {
-      const rowsWithHttps = imageUrls.filter((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim()));
-      const shouldAppendLibraryPick = imageUrls.length > 1 || rowsWithHttps.length > 0;
+      const latestRows = imageUrlsRef.current;
+      const rowsWithHttps = latestRows.filter((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim()));
+      const shouldAppendLibraryPick = latestRows.length > 1 || rowsWithHttps.length > 0;
 
       if (shouldAppendLibraryPick) {
         const newRow: ImageUrlItem = {
@@ -2905,7 +3027,7 @@ export function SlideEditForm({
           background.asset_id &&
           background.storage_path &&
           rowsWithHttps.length === 0 &&
-          imageUrls.length === 1
+          latestRows.length === 1
         ) {
           const primaryPreview = backgroundImageUrlForPreview ?? url;
           setImageUrls([
@@ -2919,8 +3041,22 @@ export function SlideEditForm({
         } else {
           setImageUrls((prev) => {
             const next = [...prev];
+              // When the current primary lives on `background.asset_id` (hidden "ghost slot 0"),
+              // migrating the next library pick into an additional slot must also migrate
+              // the primary into `imageUrls[0]` before clearing `background.asset_id`,
+              // otherwise the first image "disappears" and the user sees duplicates/shift.
+              const bgForGhost = { asset_id: background.asset_id, storage_path: background.storage_path };
+              if (
+                background.asset_id &&
+                background.storage_path &&
+                next.length > 0 &&
+                isEditorLibraryGhostRow(next[0]!, 0, bgForGhost)
+              ) {
+                const primaryPreview = backgroundImageUrlForPreview ?? background.image_url ?? url;
+                next[0] = { ...next[0]!, url: primaryPreview, asset_id: background.asset_id, storage_path: background.storage_path };
+              }
             const emptyIdx = next.findIndex(
-              (r, idx) => !slotHasPersistableImage(r) && !isEditorLibraryGhostRow(r, idx, background)
+              (r, idx) => !slotHasPersistableImage(r) && !isEditorLibraryGhostRow(r, idx, bgForGhost)
             );
             if (emptyIdx >= 0) {
               next[emptyIdx] = { ...next[emptyIdx]!, ...newRow };
@@ -2966,8 +3102,9 @@ export function SlideEditForm({
       setDriveImporting(false);
       if (result.ok && result.asset.url) {
         const { asset } = result;
-        const rowsWithHttps = imageUrls.filter((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim()));
-        const shouldAppendLibraryPick = imageUrls.length > 1 || rowsWithHttps.length > 0;
+        const latestRows = imageUrlsRef.current;
+        const rowsWithHttps = latestRows.filter((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim()));
+        const shouldAppendLibraryPick = latestRows.length > 1 || rowsWithHttps.length > 0;
 
         if (shouldAppendLibraryPick) {
           const newRow: ImageUrlItem = {
@@ -2979,7 +3116,7 @@ export function SlideEditForm({
             background.asset_id &&
             background.storage_path &&
             rowsWithHttps.length === 0 &&
-            imageUrls.length === 1
+            latestRows.length === 1
           ) {
             const primaryPreview = backgroundImageUrlForPreview ?? asset.url;
             setImageUrls([
@@ -2993,8 +3130,22 @@ export function SlideEditForm({
           } else {
             setImageUrls((prev) => {
               const next = [...prev];
+              // Same migration as in handlePickImage:
+              // if primary currently lives on `background.*` (ghost slot 0),
+              // moving this new pick into an additional slot must also migrate
+              // the primary into `imageUrls[0]`.
+              const bgForGhost = { asset_id: background.asset_id, storage_path: background.storage_path };
+              if (
+                background.asset_id &&
+                background.storage_path &&
+                next.length > 0 &&
+                isEditorLibraryGhostRow(next[0]!, 0, bgForGhost)
+              ) {
+                const primaryPreview = backgroundImageUrlForPreview ?? asset.url;
+                next[0] = { ...next[0]!, url: primaryPreview, asset_id: background.asset_id, storage_path: background.storage_path };
+              }
               const emptyIdx = next.findIndex(
-                (r, idx) => !slotHasPersistableImage(r) && !isEditorLibraryGhostRow(r, idx, background)
+                (r, idx) => !slotHasPersistableImage(r) && !isEditorLibraryGhostRow(r, idx, bgForGhost)
               );
               if (emptyIdx >= 0) {
                 next[emptyIdx] = { ...next[emptyIdx]!, ...newRow };
@@ -3032,14 +3183,7 @@ export function SlideEditForm({
         setDriveError(result.error);
       }
     },
-    [
-      projectId,
-      ensureNoImageTemplateImageFallback,
-      imageUrls,
-      background.asset_id,
-      background.storage_path,
-      backgroundImageUrlForPreview,
-    ]
+    [projectId, ensureNoImageTemplateImageFallback, background.asset_id, background.storage_path, backgroundImageUrlForPreview]
   );
 
   const validImageUrls = imageUrls.filter((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim()));
@@ -3654,13 +3798,21 @@ export function SlideEditForm({
                     : undefined
                 }
                 onPipPositionChange={
-                  isImageMode && validImageCount < 2 && effectiveImageDisplay.mode === "pip"
-                    ? (x, y) => setImageDisplay((d) => ({ ...d, pipX: x, pipY: y }))
+                  isImageMode && effectiveImageDisplay.mode === "pip"
+                    ? (x, y, slotIndex = 0) =>
+                        validImageCount < 2
+                          ? setImageDisplay((d) => ({ ...d, pipX: x, pipY: y }))
+                          : setImageDisplay((d) => upsertImageDisplayPipSlot(d, slotIndex, validImageCount, { pipX: x, pipY: y }))
                     : undefined
                 }
                 onPipSizeChange={
-                  isImageMode && validImageCount < 2 && effectiveImageDisplay.mode === "pip"
-                    ? (size) => setImageDisplay((d) => ({ ...d, pipSize: size }))
+                  isImageMode && effectiveImageDisplay.mode === "pip"
+                    ? (size, slotIndex = 0) =>
+                        validImageCount < 2
+                          ? setImageDisplay((d) => ({ ...d, pipSize: size }))
+                          : slotIndex === 0
+                            ? setImageDisplay((d) => ({ ...d, pipSize: size }))
+                            : setImageDisplay((d) => upsertImageDisplayPipSlot(d, slotIndex, validImageCount, { pipSize: size }))
                     : undefined
                 }
                 positionAndSizeOnly
@@ -4547,13 +4699,21 @@ export function SlideEditForm({
                             : undefined
                         }
                         onPipPositionChange={
-                          isImageMode && validImageCount < 2 && effectiveImageDisplay.mode === "pip"
-                            ? (x, y) => setImageDisplay((d) => ({ ...d, pipX: x, pipY: y }))
+                          isImageMode && effectiveImageDisplay.mode === "pip"
+                            ? (x, y, slotIndex = 0) =>
+                                validImageCount < 2
+                                  ? setImageDisplay((d) => ({ ...d, pipX: x, pipY: y }))
+                                  : setImageDisplay((d) => upsertImageDisplayPipSlot(d, slotIndex, validImageCount, { pipX: x, pipY: y }))
                             : undefined
                         }
                         onPipSizeChange={
-                          isImageMode && validImageCount < 2 && effectiveImageDisplay.mode === "pip"
-                            ? (size) => setImageDisplay((d) => ({ ...d, pipSize: size }))
+                          isImageMode && effectiveImageDisplay.mode === "pip"
+                            ? (size, slotIndex = 0) =>
+                                validImageCount < 2
+                                  ? setImageDisplay((d) => ({ ...d, pipSize: size }))
+                                  : slotIndex === 0
+                                    ? setImageDisplay((d) => ({ ...d, pipSize: size }))
+                                    : setImageDisplay((d) => upsertImageDisplayPipSlot(d, slotIndex, validImageCount, { pipSize: size }))
                             : undefined
                         }
                         editToolbarHeadline={
@@ -6481,11 +6641,17 @@ export function SlideEditForm({
                   {imageUrls.map((item, i) => {
                     if (isLibraryGhostUrlSlot(item, i)) return null;
                     const slotPool = item._pool ?? [item.url, ...(item.alternates ?? [])].filter((u) => u.trim() && /^https?:\/\//i.test(u));
-                    const slotHasMultiple = slotPool.length > 1;
+                    const slotAllowsShuffle = !!item.source;
+                    const slotHasMultiple = slotPool.length > 1 && slotAllowsShuffle;
                     const currentIndex = item._index ?? (slotPool.length > 0 ? slotPool.findIndex((u) => u === item.url) : -1);
                     const oneBased = currentIndex >= 0 ? currentIndex + 1 : 0;
-                    const isPrivateUrl = isSupabaseSignedUrl(item.url) || (i === 0 && imageUrls.length === 1 && !!(background.asset_id || background.storage_path));
-                    const privateLabel = isSupabaseSignedUrl(item.url) ? "AI-generated image" : "Your image";
+                    const isPrimaryLibrarySlot = i === 0 && imageUrls.length === 1 && !!(background.asset_id || background.storage_path);
+                    const isPrivateUrl = isSupabaseSignedUrl(item.url) || isPrimaryLibrarySlot;
+                    const privateLabel = isPrimaryLibrarySlot
+                      ? "Library image"
+                      : isSupabaseSignedUrl(item.url)
+                        ? "AI-generated image"
+                        : "Your image";
                     return (
                     <div key={i} className="space-y-1">
                       <div className="flex gap-2 items-start">
@@ -6541,7 +6707,7 @@ export function SlideEditForm({
                             <ShuffleIcon className="size-4" />
                             <span className="sr-only">Shuffle</span>
                           </Button>
-                        {slotPool.length > 1 && (
+                        {slotHasMultiple && (
                           <span className="shrink-0 self-center text-xs text-muted-foreground" title={`Showing image ${oneBased} of ${slotPool.length}`}>
                             {oneBased} / {slotPool.length}
                           </span>
@@ -6578,7 +6744,7 @@ export function SlideEditForm({
                           <Trash2 className="size-4" />
                         </Button>
                       </div>
-                      {slotPool.length > 1 && (
+                      {slotHasMultiple && (
                         <Button
                           type="button"
                           variant="ghost"
@@ -6706,7 +6872,12 @@ export function SlideEditForm({
                         <Select
                           value={imageDisplay.mode ?? "full"}
                           onValueChange={(v: "full" | "pip") => {
-                            setImageDisplay((d) => ({ ...d, mode: v, ...(v === "pip" && d.pipPosition == null ? { pipPosition: "bottom_right" as const, pipSize: 0.4 } : {}) }));
+                            setImageDisplay((d) => ({
+                              ...d,
+                              mode: v,
+                              ...(v === "pip" && d.pipPosition == null ? { pipPosition: "bottom_right" as const, pipSize: 0.4 } : {}),
+                              ...(v === "full" ? { pips: undefined, pipShadow: undefined } : {}),
+                            }));
                             if (v === "pip") setBackground((b) => ({ ...b, overlay: { ...b.overlay, tintOpacity: 0 } }));
                           }}
                         >
@@ -6766,6 +6937,102 @@ export function SlideEditForm({
                               className="w-full max-w-[140px]"
                             />
                           </div>
+                          <label className="flex items-center gap-2 sm:col-span-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={imageDisplay.pipShadow === true}
+                              onChange={(e) => setImageDisplay((d) => ({ ...d, pipShadow: e.target.checked }))}
+                              className="rounded border-input accent-primary"
+                            />
+                            <span className="text-muted-foreground text-xs">PiP drop shadow</span>
+                          </label>
+                        </div>
+                      )}
+                    </>
+                  )}
+                  {validImageCount >= 2 && (
+                    <>
+                      <div className="space-y-1.5">
+                        <span className="text-muted-foreground text-xs">Image style</span>
+                        <Select
+                          value={imageDisplay.mode ?? "full"}
+                          onValueChange={(v: "full" | "pip") => {
+                            setImageDisplay((d) => ({
+                              ...d,
+                              mode: v,
+                              ...(v === "pip" && d.pipPosition == null ? { pipPosition: "bottom_right" as const, pipSize: 0.4 } : {}),
+                              ...(v === "full" ? { pips: undefined, pipShadow: undefined } : {}),
+                            }));
+                            if (v === "pip") setBackground((b) => ({ ...b, overlay: { ...b.overlay, tintOpacity: 0 } }));
+                          }}
+                        >
+                          <SelectTrigger className="h-9 rounded-lg border-input/80 bg-background text-sm">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="full">Multi layout (grid / side by side)</SelectItem>
+                            <SelectItem value="pip">Picture-in-picture (each image in a box)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {(imageDisplay.mode ?? "full") === "pip" && (
+                        <div className="grid gap-3 sm:grid-cols-2 pt-1">
+                          <div className="space-y-1.5">
+                            <span className="text-muted-foreground text-xs">Primary PiP corner</span>
+                            <Select
+                              value={imageDisplay.pipPosition ?? "bottom_right"}
+                              onValueChange={(v: "top_left" | "top_right" | "bottom_left" | "bottom_right") =>
+                                setImageDisplay((d) => ({ ...d, pipPosition: v }))
+                              }
+                            >
+                              <SelectTrigger className="h-9 rounded-lg border-input/80 bg-background text-sm">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="top_left">Top left</SelectItem>
+                                <SelectItem value="top_right">Top right</SelectItem>
+                                <SelectItem value="bottom_left">Bottom left</SelectItem>
+                                <SelectItem value="bottom_right">Bottom right</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <p className="text-muted-foreground text-[11px]">Extra images default to other corners; drag in preview to customize each.</p>
+                          </div>
+                          <div className="space-y-1.5">
+                            <span className="text-muted-foreground text-xs">PiP size (primary)</span>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="range"
+                                min={25}
+                                max={100}
+                                value={Math.round((imageDisplay.pipSize ?? 0.4) * 100)}
+                                onChange={(e) => setImageDisplay((d) => ({ ...d, pipSize: Number(e.target.value) / 100 }))}
+                                className="h-2 flex-1 cursor-pointer appearance-none rounded-full bg-muted accent-primary"
+                              />
+                              <span className="text-muted-foreground min-w-8 text-xs tabular-nums">{Math.round((imageDisplay.pipSize ?? 0.4) * 100)}%</span>
+                            </div>
+                          </div>
+                          <div className="space-y-1.5">
+                            <span className="text-muted-foreground text-xs">PiP rotation</span>
+                            <StepperWithLongPress
+                              value={imageDisplay.pipRotation ?? 0}
+                              min={-180}
+                              max={180}
+                              step={15}
+                              onChange={(v) => setImageDisplay((d) => ({ ...d, pipRotation: v }))}
+                              formatDisplay={(v) => `${v}°`}
+                              label="PiP rotation"
+                              className="w-full max-w-[140px]"
+                            />
+                          </div>
+                          <label className="flex items-center gap-2 sm:col-span-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={imageDisplay.pipShadow === true}
+                              onChange={(e) => setImageDisplay((d) => ({ ...d, pipShadow: e.target.checked }))}
+                              className="rounded border-input accent-primary"
+                            />
+                            <span className="text-muted-foreground text-xs">PiP drop shadow</span>
+                          </label>
                         </div>
                       )}
                     </>
@@ -6901,7 +7168,7 @@ export function SlideEditForm({
                     </div>
                       </>
                     )}
-                    {validImageCount >= 2 && (
+                    {validImageCount >= 2 && (imageDisplay.mode ?? "full") !== "pip" && (
                       <>
                         <div className="space-y-1.5">
                           <span className="text-muted-foreground text-xs">Layout</span>

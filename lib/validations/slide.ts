@@ -85,6 +85,23 @@ export const imageDisplaySchema = z.object({
   pipX: z.number().min(0).max(100).optional(),
   /** When mode is "pip": custom position Y (0–100). Overrides pipPosition preset when set with pipX. */
   pipY: z.number().min(0).max(100).optional(),
+  /** When mode is "pip": drop shadow around each PiP box. Default off (false). */
+  pipShadow: z.boolean().optional(),
+  /** Multi-image PiP: per-slot geometry (partial overrides). Slot index matches `background.images` order. */
+  pips: z
+    .array(
+      z.object({
+        pipPosition: z.enum(["top_left", "top_right", "bottom_left", "bottom_right"]).optional(),
+        pipSize: z.number().min(0.25).max(1).optional(),
+        pipRotation: z.number().min(-180).max(180).optional(),
+        pipBorderRadius: z.number().min(0).max(72).optional(),
+        pipX: z.number().min(0).max(100).optional(),
+        pipY: z.number().min(0).max(100).optional(),
+        zIndex: z.number().int().optional(),
+      })
+    )
+    .max(4)
+    .optional(),
 }).optional();
 
 export const slideBackgroundSchema = z.object({

@@ -78,6 +78,8 @@ export type TemplatePreviewThumbProps = {
   config: TemplateConfig | null;
   primaryColor?: string;
   previewImageUrl?: string | null;
+  /** Optional project images for fallback (multi-image aware). */
+  previewImageUrls?: string[] | null;
   /** When "linkedin" and previewImageUrl is set, preview uses LinkedIn defaults (tint 75%, gradient off). */
   category?: string;
   className?: string;
@@ -87,13 +89,20 @@ export function TemplatePreviewThumb({
   config,
   primaryColor = "#0a0a0a",
   previewImageUrl,
+  previewImageUrls,
   category,
   className,
 }: TemplatePreviewThumbProps) {
   const brandKit = { primary_color: primaryColor };
   const urlsFromTemplate = getTemplatePreviewImageUrls(config);
-  const firstUrl = previewImageUrl ?? urlsFromTemplate[0];
-  const multiUrls = !previewImageUrl && urlsFromTemplate.length >= 2 ? urlsFromTemplate : undefined;
+  const fallbackSet = (previewImageUrls ?? []).map((u) => u.trim()).filter((u) => /^https?:\/\//i.test(u));
+  const multiUrls =
+    !previewImageUrl && urlsFromTemplate.length >= 2
+      ? urlsFromTemplate
+      : !previewImageUrl && urlsFromTemplate.length < 2 && fallbackSet.length >= 2
+        ? fallbackSet
+        : undefined;
+  const firstUrl = previewImageUrl ?? multiUrls?.[0] ?? urlsFromTemplate[0] ?? fallbackSet[0];
   const hasPreviewPhoto = !!(firstUrl || (multiUrls && multiUrls.length > 0));
 
   if (!config) {

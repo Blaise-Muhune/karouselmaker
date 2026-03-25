@@ -77,7 +77,7 @@ export async function GET(
     | null
     | undefined;
   const slideMeta = (slide.meta ?? null) as Record<string, unknown> | null;
-  const imageDisplayMerged = resolveImageDisplay(templateCfg, slideBg);
+  const imageDisplayMerged = resolveImageDisplay(templateCfg, slideBg, slideMeta);
   const isPip = imageDisplayMerged?.mode === "pip";
   const { tintOpacity: effectiveTintOpacity, tintColor: effectiveTintColor } = resolveOverlayTint(
     slideBg,
@@ -198,7 +198,7 @@ export async function GET(
   const zoneOverrides = merged.zoneOverrides;
   const chromeOverrides = merged.chromeOverrides;
   const highlightStyles = merged.highlightStyles;
-  const imageDisplay = getMergedImageDisplay(config.data, slideBg);
+  const imageDisplay = getMergedImageDisplay(config.data, slideBg, slideMeta);
 
   const carouselExportSize = (carousel as { export_size?: string }).export_size ?? "1080x1350";
   const dimensions =

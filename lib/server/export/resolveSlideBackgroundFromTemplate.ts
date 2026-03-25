@@ -6,7 +6,7 @@
  * Precedence (same in all code paths):
  * - Overlay tint: slide.background.overlay (tintOpacity/tintColor) > slide.meta (overlay_tint_*) > template.defaults.meta > default (pip: 0, else 0.75).
  * - Background color (meta): slide.meta.background_color > template.defaults.meta.background_color.
- * - Image display: getMergedImageDisplay (template defaults + slide overrides, slide wins).
+ * - Image display: getMergedImageDisplay (template + background.image_display or meta.image_display).
  * - Overlay enabled: slide.background.overlay.enabled !== false.
  */
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
@@ -108,9 +108,10 @@ export function resolveBackgroundColorFromMeta(
  */
 export function resolveImageDisplay(
   templateConfig: TemplateConfig | null,
-  slideBackground: unknown
+  slideBackground: unknown,
+  slideMeta?: unknown
 ): ImageDisplayForRender | undefined {
-  return getMergedImageDisplay(templateConfig, slideBackground);
+  return getMergedImageDisplay(templateConfig, slideBackground, slideMeta);
 }
 
 /**

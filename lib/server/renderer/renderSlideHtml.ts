@@ -5,6 +5,7 @@ import { getContrastingTextColor, hexToRgba } from "@/lib/editor/colorUtils";
 import { parseInlineFormatting, stripHighlightMarkers, getFontSizeSegmentsForRange, getLineSubstringByPlainRange } from "@/lib/editor/inlineFormat";
 import { getRoundedPolygonClipPath } from "@/lib/renderer/shapeClipPath";
 import { zoneBoxChromeInlineCss } from "@/lib/renderer/zoneBoxChrome";
+import { resolvePipLayoutsForImageCount } from "@/lib/renderer/resolvePipLayouts";
 
 /** Hook slide second image: circle with thick border (matches SlidePreview). */
 const HOOK_CIRCLE_SIZE = 200;
@@ -285,6 +286,9 @@ export function renderSlideHtml(
     /** PiP custom position 0–100. When set with pipY, overrides pipPosition preset. */
     pipX?: number;
     pipY?: number;
+    /** When true, PiP boxes get a drop shadow. Default off. */
+    pipShadow?: boolean;
+    pips?: unknown;
   } | null,
   /** Export dimensions. Default 1080x1080. */
   dimensions?: { w: number; h: number },
@@ -497,8 +501,11 @@ export function renderSlideHtml(
         })
         .join("");
 
-  const multiUrls = overlayOnly ? null : (backgroundImageUrls?.length ?? 0) >= 2 ? backgroundImageUrls : null;
+  const multiUrlsCandidate = overlayOnly ? null : (backgroundImageUrls?.length ?? 0) >= 2 ? backgroundImageUrls : null;
   const disp = imageDisplay ?? {};
+  const isPipMode = !overlayOnly && disp.mode === "pip";
+  /** Standard multi-image flex/grid layout (not PiP). */
+  const multiUrls = isPipMode ? null : multiUrlsCandidate;
   const isMulti = multiUrls != null;
   const gap = disp.gap ?? 0;
   const frame = disp.frame ?? (isMulti ? "none" : "medium");
@@ -656,11 +663,11 @@ export function renderSlideHtml(
     : "";
 
   const resolvedBgUrl = overlayOnly ? null : (backgroundImageUrl ?? model.background.backgroundImageUrl);
-  const isSingleImage = !!resolvedBgUrl && !multiUrls;
-  const isPip = isSingleImage && disp.mode === "pip";
-  const singleFrame = isSingleImage && !isPip ? "none" : (disp.frame ?? (borderedFrame ? "medium" : "none"));
-  const singleFrameW = isSingleImage && !isPip ? 0 : (FRAME_WIDTHS[singleFrame] ?? 0);
-  const singleRadius = isSingleImage && !isPip ? 0 : (disp.frameRadius ?? (singleFrameW > 0 ? 24 : 0));
+  const hasMultipleBackgroundImages = (multiUrlsCandidate?.length ?? 0) >= 2;
+  const isSingleImage = !!resolvedBgUrl && !hasMultipleBackgroundImages;
+  const singleFrame = isSingleImage && disp.mode !== "pip" ? "none" : (disp.frame ?? (borderedFrame ? "medium" : "none"));
+  const singleFrameW = isSingleImage && disp.mode !== "pip" ? 0 : (FRAME_WIDTHS[singleFrame] ?? 0);
+  const singleRadius = isSingleImage && disp.mode !== "pip" ? 0 : (disp.frameRadius ?? (singleFrameW > 0 ? 24 : 0));
   const singleFrameOuterW = 1080 - 32;
   const singleFrameInnerW = singleFrameOuterW - (singleFrameW > 0 ? singleFrameW * 2 : 0);
   const singleShapeCss = getShapeCss(disp.frameShape ?? "squircle", singleRadius);
@@ -683,34 +690,69 @@ export function renderSlideHtml(
       ? `left:16px;top:16px;width:${1080 - 32}px;height:${1080 - 32}px;${singleShapeCss};border:${singleFrameW}px solid ${escapeHtml(singleFrameColor)};box-shadow:0 8px 32px rgba(0,0,0,0.3);`
       : "left:0;top:0;width:1080px;height:1080px;";
   const pipInset = 48;
-  const pipSizePx = Math.round(Math.min(1080, Math.max(270, (disp.pipSize ?? 0.4) * 1080)));
-  const pipRange = 1080 - pipSizePx;
-  const useCustomPipPos = disp.pipX != null && disp.pipY != null;
-  const pipPos = disp.pipPosition ?? "bottom_right";
-  const pipPosStyle = useCustomPipPos
-    ? `left:${(Math.min(100, Math.max(0, disp.pipX!)) / 100) * pipRange}px;top:${(Math.min(100, Math.max(0, disp.pipY!)) / 100) * pipRange}px`
-    : pipPos === "bottom_right"
-      ? `right:${pipInset}px;bottom:${pipInset}px`
-      : pipPos === "bottom_left"
-        ? `left:${pipInset}px;bottom:${pipInset}px`
-        : pipPos === "top_right"
-          ? `right:${pipInset}px;top:${pipInset}px`
-          : `left:${pipInset}px;top:${pipInset}px`;
-  const pipShapeCss = getShapeCss(disp.frameShape ?? "squircle", singleRadius, pipSizePx, pipSizePx);
-  const pipInnerSize = pipSizePx - singleFrameW * 2;
-  const pipInnerShapeCss = getShapeCss(disp.frameShape ?? "squircle", singleRadius, pipInnerSize, pipInnerSize);
-  const pipRotation = Math.min(180, Math.max(-180, disp.pipRotation ?? 0));
-  const pipTransform = pipRotation !== 0 ? `transform:rotate(${pipRotation}deg);transform-origin:50% 50%;` : "";
-  /* PiP uses Frame, Shape, Corner radius, Frame color from Display so those controls apply to the PiP box. */
-  const singlePipHtml =
-    resolvedBgUrl && isPip
-      ? singleFrameW > 0 && singleUseClipPathFrame
-        ? `<div style="position:absolute;${pipPosStyle};width:${pipSizePx}px;height:${pipSizePx}px;${pipTransform}"><div style="position:absolute;inset:0;${pipShapeCss};background-color:${escapeHtml(singleFrameColor)}"></div><div style="position:absolute;left:${singleFrameW}px;top:${singleFrameW}px;width:${pipInnerSize}px;height:${pipInnerSize}px;${pipInnerShapeCss};overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.3);"><img src="${escapeHtml(resolvedBgUrl)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:${fit};object-position:${singleBgPosition};display:block" /></div></div>`
-        : `<div style="position:absolute;${pipPosStyle};width:${pipSizePx}px;height:${pipSizePx}px;overflow:hidden;${pipShapeCss};${singleFrameW > 0 ? `border:${singleFrameW}px solid ${escapeHtml(singleFrameColor)};box-shadow:0 8px 32px rgba(0,0,0,0.3);` : "box-shadow:0 8px 32px rgba(0,0,0,0.25);"}${pipTransform}"><img src="${escapeHtml(resolvedBgUrl)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:${fit};object-position:${singleBgPosition};display:block" /></div>`
+  const pipUrls: string[] =
+    isPipMode && !overlayOnly
+      ? hasMultipleBackgroundImages && multiUrlsCandidate
+        ? multiUrlsCandidate
+        : resolvedBgUrl
+          ? [resolvedBgUrl]
+          : []
+      : [];
+  const pipLayoutsResolved = pipUrls.length > 0 ? resolvePipLayoutsForImageCount(disp, pipUrls.length) : null;
+  const pipShowShadow = disp.pipShadow === true;
+  /* PiP uses Frame, Shape, Corner radius, Frame color from Display so those controls apply to each PiP box. */
+  const allPipHtml =
+    pipLayoutsResolved && pipLayoutsResolved.length === pipUrls.length
+      ? (() => {
+          const pipLayers = pipUrls
+            .map((url, i) => {
+            const layout = pipLayoutsResolved[i]!;
+            const pipSizePx = Math.round(Math.min(1080, Math.max(270, layout.pipSize * 1080)));
+            const pipRangeX = 1080 - pipSizePx;
+            const pipRangeY = 1080 - pipSizePx;
+            const useCustomPipPos = layout.pipX != null && layout.pipY != null;
+            const pipPos = layout.pipPosition ?? "bottom_right";
+            const pipPosStyle = useCustomPipPos
+              ? `left:${(Math.min(100, Math.max(0, layout.pipX!)) / 100) * pipRangeX}px;top:${(Math.min(100, Math.max(0, layout.pipY!)) / 100) * pipRangeY}px`
+              : pipPos === "bottom_right"
+                ? `right:${pipInset}px;bottom:${pipInset}px`
+                : pipPos === "bottom_left"
+                  ? `left:${pipInset}px;bottom:${pipInset}px`
+                  : pipPos === "top_right"
+                    ? `right:${pipInset}px;top:${pipInset}px`
+                    : `left:${pipInset}px;top:${pipInset}px`;
+            const pipCornerR = layout.pipBorderRadius;
+            const pipShapeCss = getShapeCss(disp.frameShape ?? "squircle", pipCornerR, pipSizePx, pipSizePx);
+            const pipInnerSize = pipSizePx - singleFrameW * 2;
+            const pipInnerShapeCss = getShapeCss(disp.frameShape ?? "squircle", pipCornerR, pipInnerSize, pipInnerSize);
+            const pipRotation = Math.min(180, Math.max(-180, layout.pipRotation ?? 0));
+            const pipTransform = pipRotation !== 0 ? `transform:rotate(${pipRotation}deg);transform-origin:50% 50%;` : "";
+            /* Stack within isolated PiP subtree only; gradient stays at z-index 1 above this wrapper. */
+            const z = 1 + (layout.zIndex ?? i);
+            const innerShadowCss = pipShowShadow ? "box-shadow:0 8px 32px rgba(0,0,0,0.3);" : "";
+            const inner =
+              singleFrameW > 0 && singleUseClipPathFrame
+                ? `<div style="position:absolute;inset:0;${pipShapeCss};background-color:${escapeHtml(singleFrameColor)}"></div><div style="position:absolute;left:${singleFrameW}px;top:${singleFrameW}px;width:${pipInnerSize}px;height:${pipInnerSize}px;${pipInnerShapeCss};overflow:hidden;${innerShadowCss}"><img src="${escapeHtml(url)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:${fit};object-position:${singleBgPosition};display:block" /></div>`
+                : `<img src="${escapeHtml(url)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:${fit};object-position:${singleBgPosition};display:block" />`;
+            const shellBorderOnly = singleFrameW > 0 && !singleUseClipPathFrame ? `border:${singleFrameW}px solid ${escapeHtml(singleFrameColor)};` : "";
+            const shellShadow = pipShowShadow
+              ? singleFrameW > 0 && !singleUseClipPathFrame
+                ? "box-shadow:0 8px 32px rgba(0,0,0,0.3);"
+                : `box-shadow:0 8px 32px rgba(0,0,0,${singleFrameW > 0 ? "0.3" : "0.25"});`
+              : "";
+            const shell =
+              singleFrameW > 0 && singleUseClipPathFrame
+                ? `<div style="position:absolute;${pipPosStyle};width:${pipSizePx}px;height:${pipSizePx}px;z-index:${z};${pipTransform}">${inner}</div>`
+                : `<div style="position:absolute;${pipPosStyle};width:${pipSizePx}px;height:${pipSizePx}px;overflow:hidden;${pipShapeCss};z-index:${z};${shellBorderOnly}${shellShadow}${pipTransform}">${inner}</div>`;
+            return shell;
+          })
+            .join("");
+          return `<div style="position:absolute;inset:0;z-index:0;isolation:isolate">${pipLayers}</div>`;
+        })()
       : "";
   /** Use <img> for single full-bleed so data URLs and large images render reliably (no style-attribute length limits). */
   const singleBgImgHtml =
-    resolvedBgUrl && isSingleImage && !isPip
+    resolvedBgUrl && isSingleImage && disp.mode !== "pip"
       ? singleFrameW > 0
         ? singleUseClipPathFrame
           ? (() => {
@@ -739,7 +781,7 @@ export function renderSlideHtml(
 
   /** When export is not 1:1, render single full-bleed background in a layer that matches dimW x dimH so cover uses the real aspect ratio. */
   const useFullCanvasBackground =
-    dimH !== 1080 && !!resolvedBgUrl && !multiUrls && !isPip;
+    dimH !== 1080 && !!resolvedBgUrl && !hasMultipleBackgroundImages && !isPipMode;
 
   // Scale to cover: template fills the full frame at 4:5 and 9:16 (no letterboxing); centered crop clips overflow.
   // Use a slide container at scaled size so it fills the viewport and no background color shows at edges.
@@ -782,13 +824,13 @@ export function renderSlideHtml(
 </head>
 <body>
   <div class="slide-wrap">
-  ${(() => { const preloadUrls = [resolvedBgUrl, ...(multiUrls ?? []), secondaryBackgroundImageUrl].filter(Boolean) as string[]; return preloadUrls.length ? preloadUrls.map((url) => `<img src="${escapeHtml(url)}" alt="" decoding="async" class="slide-preload-img" style="position:absolute;width:0;height:0;opacity:0;pointer-events:none;visibility:hidden" />`).join("") : ""; })()}
+  ${(() => { const preloadUrls = [resolvedBgUrl, ...(multiUrls ?? []), ...(multiUrlsCandidate ?? []), secondaryBackgroundImageUrl].filter(Boolean) as string[]; const seen = new Set<string>(); const deduped = preloadUrls.filter((u) => (seen.has(u) ? false : (seen.add(u), true))); return deduped.length ? deduped.map((url) => `<img src="${escapeHtml(url)}" alt="" decoding="async" class="slide-preload-img" style="position:absolute;width:0;height:0;opacity:0;pointer-events:none;visibility:hidden" />`).join("") : ""; })()}
   ${useFullCanvasBackground ? `<div class="slide-fullcanvas-bg" style="position:absolute;left:0;top:0;width:${dimW}px;height:${dimH}px;overflow:hidden;z-index:0"><img src="${escapeHtml(resolvedBgUrl!)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:${singleBgPosition};display:block" />${!noTextOrChrome && (backgroundOverride?.tintOpacity ?? 0) > 0 ? `<div style="position:absolute;inset:0;background-color:${escapeHtml(backgroundOverride?.tintColor ?? backgroundColor ?? "#0a0a0a")};opacity:${Math.min(1, Math.max(0, backgroundOverride?.tintOpacity ?? 0))};pointer-events:none"></div>` : ""}${!noTextOrChrome && useGradient ? `<div style="position:absolute;inset:0;background:${gradientStyle};pointer-events:none"></div>` : ""}</div>` : ""}
   <div class="slide">
   <div class="slide-inner">
     ${decorationHtml}
-    ${overlayOnly ? "" : useFullCanvasBackground ? "" : (multiUrls ? multiImagesHtml : isPip ? singlePipHtml : singleBgImgHtml || (isSingleImage ? `<div class="slide-bg-image" style="${bgFrameStyle}${bgImageStyle}"></div>` : ""))}
-    ${!noTextOrChrome && !useFullCanvasBackground && (resolvedBgUrl || multiUrls) && (backgroundOverride?.tintOpacity ?? 0) > 0 ? `<div style="position:absolute;inset:0;background-color:${escapeHtml(backgroundOverride?.tintColor ?? backgroundColor ?? "#0a0a0a")};opacity:${Math.min(1, Math.max(0, backgroundOverride?.tintOpacity ?? 0))};pointer-events:none;z-index:0"></div>` : ""}
+    ${overlayOnly ? "" : useFullCanvasBackground ? "" : (allPipHtml || (multiUrls ? multiImagesHtml : singleBgImgHtml || (isSingleImage && disp.mode !== "pip" ? `<div class="slide-bg-image" style="${bgFrameStyle}${bgImageStyle}"></div>` : "")))}
+    ${!noTextOrChrome && !useFullCanvasBackground && (resolvedBgUrl || multiUrls || multiUrlsCandidate) && (backgroundOverride?.tintOpacity ?? 0) > 0 ? `<div style="position:absolute;inset:0;background-color:${escapeHtml(backgroundOverride?.tintColor ?? backgroundColor ?? "#0a0a0a")};opacity:${Math.min(1, Math.max(0, backgroundOverride?.tintOpacity ?? 0))};pointer-events:none;z-index:0"></div>` : ""}
     ${noTextOrChrome ? "" : useFullCanvasBackground ? "" : "<div class=\"slide-gradient\"></div>"}
     ${hookCircleHtml}
     ${textBlocksHtml}
