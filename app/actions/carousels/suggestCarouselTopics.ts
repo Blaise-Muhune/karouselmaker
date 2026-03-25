@@ -6,19 +6,11 @@ import { getSubscription } from "@/lib/server/subscription";
 import { getProject } from "@/lib/server/db/projects";
 import { listCarousels, countCarouselsLifetime } from "@/lib/server/db/carousels";
 import { FREE_FULL_ACCESS_GENERATIONS } from "@/lib/constants";
+import { normalizeTopicKey } from "@/lib/server/topicSuggestions/normalizeTopicKey";
 
 export type SuggestCarouselTopicsResult =
   | { ok: true; topics: string[] }
   | { ok: false; error: string };
-
-function normalizeTopicKey(s: string): string {
-  return s
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .replace(/[""''`]/g, "")
-    .slice(0, 200);
-}
 
 function isBlockedOrSimilar(candidate: string, blocked: Set<string>): boolean {
   const n = normalizeTopicKey(candidate);
@@ -54,12 +46,12 @@ function parseTopicsJson(raw: string): string[] | null {
 }
 
 /**
- * Suggest ~10 fresh carousel topics from project context + past carousels.
+ * Generate ~10 fresh carousel topics (LLM). Merges `extraBlockedNormalized` with carousel/title history.
  * Uses web search when user has Pro or free full-access (same gate as generate).
  */
-export async function suggestCarouselTopics(
+export async function generateCarouselTopicBatch(
   projectId: string,
-  options?: { carousel_for?: "instagram" | "linkedin" }
+  options?: { carousel_for?: "instagram" | "linkedin"; extraBlockedNormalized?: Set<string> }
 ): Promise<SuggestCarouselTopicsResult> {
   const { user } = await getUser();
   if (!user) return { ok: false, error: "You must be signed in." };
@@ -77,6 +69,9 @@ export async function suggestCarouselTopics(
   const useWebSearch = hasFullAccess;
 
   const blocked = new Set<string>();
+  for (const k of options?.extraBlockedNormalized ?? []) {
+    if (k) blocked.add(k);
+  }
   for (const c of carousels) {
     const title = (c.title ?? "").trim();
     if (title && !/^generating/i.test(title) && title.toLowerCase() !== "untitled") {
@@ -175,4 +170,12 @@ Return exactly 10 strings in the JSON "topics" array.`;
   if (unique.length === 0) return { ok: false, error: "No new topics matched filters. Try again for a fresh batch." };
 
   return { ok: true, topics: unique };
+}
+
+/** @deprecated Prefer project topic queue actions; kept for any direct callers. */
+export async function suggestCarouselTopics(
+  projectId: string,
+  options?: { carousel_for?: "instagram" | "linkedin" }
+): Promise<SuggestCarouselTopicsResult> {
+  return generateCarouselTopicBatch(projectId, options);
 }

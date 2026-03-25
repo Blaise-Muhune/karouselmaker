@@ -38,6 +38,8 @@ export interface Project {
   sources: Json;
   /** Which platforms to post to from this project. YouTube = video only; others = video + carousel. */
   post_to_platforms?: PostToPlatforms | null;
+  /** Saved topic idea queue + daily refresh usage for the new-carousel flow. */
+  topic_suggestions_cache?: Json;
   created_at: string;
   updated_at: string;
 }

@@ -3,7 +3,11 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { generateCarousel } from "@/app/actions/carousels/generateCarousel";
-import { suggestCarouselTopics } from "@/app/actions/carousels/suggestCarouselTopics";
+import {
+  getProjectTopicSuggestions,
+  refreshProjectTopicSuggestions,
+  consumeProjectTopicSuggestion,
+} from "@/app/actions/carousels/projectTopicSuggestions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,7 +23,21 @@ import { ImportTemplateButton } from "@/components/templates/ImportTemplateButto
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { createCheckoutSession } from "@/app/actions/subscription/createCheckoutSession";
-import { Gem, GlobeIcon, ImageIcon, LayoutTemplateIcon, Loader2Icon, Link2Icon, FileTextIcon, SparklesIcon, ChevronDownIcon, ChevronUpIcon, LinkedinIcon, LightbulbIcon } from "lucide-react";
+import {
+  Gem,
+  GlobeIcon,
+  ImageIcon,
+  LayoutTemplateIcon,
+  Loader2Icon,
+  Link2Icon,
+  FileTextIcon,
+  SparklesIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
+  LinkedinIcon,
+  LightbulbIcon,
+  RefreshCwIcon,
+} from "lucide-react";
 import { WEB_IMAGES_SOURCE_DESCRIPTION, imageSourceDisplayName } from "@/lib/utils/imageSourceDisplay";
 
 /** Carousel for: Instagram (default) or LinkedIn. LinkedIn uses B2B-optimized content and stock/own images only (no AI generate). */
@@ -147,24 +165,54 @@ export function NewCarouselForm({
   const [showMoreOptions, setShowMoreOptions] = useState(false);
   const [topicSuggestOpen, setTopicSuggestOpen] = useState(false);
   const [topicSuggestLoading, setTopicSuggestLoading] = useState(false);
+  const [topicSuggestRefreshing, setTopicSuggestRefreshing] = useState(false);
   const [topicSuggestList, setTopicSuggestList] = useState<string[]>([]);
   const [topicSuggestError, setTopicSuggestError] = useState<string | null>(null);
+  const [topicRefreshesUsed, setTopicRefreshesUsed] = useState(0);
+  const [topicRefreshesLimit, setTopicRefreshesLimit] = useState(2);
 
   /** Matches `handleSubmit`: topic, URL, or pasted text must be non-empty after trim. */
   const hasRequiredInput = inputValue.trim().length > 0;
 
-  async function handleSuggestTopics() {
+  async function handleOpenTopicSuggestions() {
     setTopicSuggestError(null);
     setTopicSuggestLoading(true);
-    setTopicSuggestList([]);
     setTopicSuggestOpen(true);
-    const result = await suggestCarouselTopics(projectId, { carousel_for: carouselFor });
+    const result = await getProjectTopicSuggestions(projectId);
     setTopicSuggestLoading(false);
     if (result.ok) {
       setTopicSuggestList(result.topics);
+      setTopicRefreshesUsed(result.refreshesUsedToday);
+      setTopicRefreshesLimit(result.refreshesLimit);
     } else {
       setTopicSuggestError(result.error);
     }
+  }
+
+  async function handleRefreshTopicSuggestions() {
+    setTopicSuggestError(null);
+    setTopicSuggestRefreshing(true);
+    const result = await refreshProjectTopicSuggestions(projectId, carouselFor);
+    setTopicSuggestRefreshing(false);
+    if (result.ok) {
+      setTopicSuggestList(result.topics);
+      setTopicRefreshesUsed(result.refreshesUsedToday);
+      setTopicRefreshesLimit(result.refreshesLimit);
+    } else {
+      setTopicSuggestError(result.error);
+    }
+  }
+
+  async function handlePickSavedTopic(topic: string) {
+    setTopicSuggestError(null);
+    const result = await consumeProjectTopicSuggestion(projectId, topic);
+    if (!result.ok) {
+      setTopicSuggestError(result.error);
+      return;
+    }
+    setTopicSuggestList(result.topics);
+    setInputValue(topic);
+    setTopicSuggestOpen(false);
   }
 
   const handleUpgrade = async () => {
@@ -368,19 +416,15 @@ export function NewCarouselForm({
                     size="sm"
                     className="h-8 shrink-0 gap-1.5 text-xs"
                     disabled={topicSuggestLoading}
-                    onClick={handleSuggestTopics}
-                    title={
-                      hasFullAccess
-                        ? "Get ~10 fresh ideas from your project and past carousels (uses web search for timely angles)"
-                        : "Get ~10 fresh ideas from your project and past carousels (upgrade for web-aware suggestions)"
-                    }
+                    onClick={handleOpenTopicSuggestions}
+                    title="Open your saved topic list for this project (persists across visits)"
                   >
                     {topicSuggestLoading ? (
                       <Loader2Icon className="size-3.5 animate-spin" />
                     ) : (
                       <LightbulbIcon className="size-3.5" />
                     )}
-                    Suggest topics
+                    Topic ideas
                   </Button>
                 )}
               </div>
@@ -789,45 +833,48 @@ export function NewCarouselForm({
           open={topicSuggestOpen}
           onOpenChange={(open) => {
             setTopicSuggestOpen(open);
-            if (!open) {
-              setTopicSuggestError(null);
-              setTopicSuggestList([]);
-            }
+            if (!open) setTopicSuggestError(null);
           }}
         >
-          <DialogContent className="max-w-md max-h-[min(85vh,520px)] flex flex-col gap-0 p-0 sm:max-w-lg">
-            <DialogHeader className="px-6 pt-6 pb-2">
-              <DialogTitle className="flex items-center gap-2">
-                <LightbulbIcon className="size-5 text-amber-500" aria-hidden />
-                Topic ideas
+          <DialogContent className="max-w-md flex flex-col gap-0 p-0 sm:max-w-md">
+            <DialogHeader className="px-4 pt-4 pb-2 space-y-1">
+              <DialogTitle className="flex items-center gap-2 text-base">
+                <LightbulbIcon className="size-4 text-amber-500 shrink-0" aria-hidden />
+                Saved topic ideas
               </DialogTitle>
-              <DialogDescription>
-                Based on this project, past carousels here, and{hasFullAccess ? " (when useful) recent web context" : " general knowledge"}
-                . Skips topics you already used.
+              <DialogDescription className="text-xs leading-snug">
+                Same list for every new carousel in this project. Pick one to fill the field (it drops off the list).{hasFullAccess ? " Refreshes can use web context." : ""}
               </DialogDescription>
             </DialogHeader>
-            <div className="px-6 pb-6 overflow-y-auto flex-1 min-h-0 space-y-3">
+
+            <div className="px-4 pb-3 space-y-2">
               {topicSuggestLoading && (
-                <div className="flex flex-col items-center justify-center gap-3 py-10 text-muted-foreground text-sm">
-                  <Loader2Icon className="size-8 animate-spin" />
-                  Finding varied angles…
+                <div className="flex items-center justify-center gap-2 py-8 text-muted-foreground text-xs">
+                  <Loader2Icon className="size-5 animate-spin shrink-0" />
+                  Loading…
                 </div>
               )}
+
               {!topicSuggestLoading && topicSuggestError && (
-                <p className="text-destructive text-sm rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2">{topicSuggestError}</p>
+                <p className="text-destructive text-xs rounded-md border border-destructive/20 bg-destructive/5 px-2 py-1.5">{topicSuggestError}</p>
               )}
+
+              {!topicSuggestLoading && !topicSuggestError && topicSuggestList.length === 0 && (
+                <p className="text-muted-foreground text-xs py-1 leading-snug">
+                  {topicRefreshesUsed >= topicRefreshesLimit
+                    ? "No ideas in the queue and today’s refreshes are used — come back tomorrow, or type your own topic."
+                    : "Tap “Get ideas” below to add a batch (uses one daily refresh)."}
+                </p>
+              )}
+
               {!topicSuggestLoading && !topicSuggestError && topicSuggestList.length > 0 && (
-                <ul className="space-y-2">
+                <ul className="max-h-[200px] overflow-y-auto overscroll-contain rounded-md border border-border/60 divide-y divide-border/50">
                   {topicSuggestList.map((t, i) => (
-                    <li key={`${i}-${t.slice(0, 24)}`}>
+                    <li key={`${i}-${t.slice(0, 40)}`}>
                       <button
                         type="button"
-                        className="w-full text-left rounded-lg border border-border/80 bg-muted/20 px-3 py-2.5 text-sm transition-colors hover:bg-muted/50 hover:border-primary/30 focus:outline-none focus:ring-2 focus:ring-primary/40"
-                        onClick={() => {
-                          setInputValue(t);
-                          setTopicSuggestOpen(false);
-                          setTopicSuggestList([]);
-                        }}
+                        className="w-full text-left px-2.5 py-2 text-xs leading-snug text-foreground/90 transition-colors hover:bg-muted/60 focus:outline-none focus-visible:bg-muted/60"
+                        onClick={() => void handlePickSavedTopic(t)}
                       >
                         {t}
                       </button>
@@ -835,6 +882,32 @@ export function NewCarouselForm({
                   ))}
                 </ul>
               )}
+
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-border/40">
+                <p className="text-[11px] text-muted-foreground tabular-nums">
+                  Refreshes today: {topicRefreshesUsed}/{topicRefreshesLimit}
+                </p>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="h-7 gap-1 text-xs"
+                  disabled={topicSuggestLoading || topicSuggestRefreshing || topicRefreshesUsed >= topicRefreshesLimit}
+                  onClick={() => void handleRefreshTopicSuggestions()}
+                  title={
+                    topicRefreshesUsed >= topicRefreshesLimit
+                      ? "Daily limit reached — try tomorrow"
+                      : "Add up to 10 new ideas (uses one refresh)"
+                  }
+                >
+                  {topicSuggestRefreshing ? (
+                    <Loader2Icon className="size-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCwIcon className="size-3.5" />
+                  )}
+                  {topicSuggestList.length === 0 ? "Get ideas" : "More ideas"}
+                </Button>
+              </div>
             </div>
           </DialogContent>
         </Dialog>
