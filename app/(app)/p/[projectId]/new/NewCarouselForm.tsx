@@ -39,6 +39,8 @@ import {
   RefreshCwIcon,
 } from "lucide-react";
 import { WEB_IMAGES_SOURCE_DESCRIPTION, imageSourceDisplayName } from "@/lib/utils/imageSourceDisplay";
+import { BackgroundSourceBestForHint } from "@/components/carousels/BackgroundSourcePlatformHints";
+import { cn } from "@/lib/utils";
 
 /** Carousel for: Instagram (default) or LinkedIn. LinkedIn uses B2B-optimized content and stock/own images only (no AI generate). */
 const CAROUSEL_FOR_OPTIONS = [
@@ -417,14 +419,13 @@ export function NewCarouselForm({
                     className="h-8 shrink-0 gap-1.5 text-xs"
                     disabled={topicSuggestLoading}
                     onClick={handleOpenTopicSuggestions}
-                    title="Open your saved topic list for this project (persists across visits)"
                   >
                     {topicSuggestLoading ? (
                       <Loader2Icon className="size-3.5 animate-spin" />
                     ) : (
                       <LightbulbIcon className="size-3.5" />
                     )}
-                    Topic ideas
+                    Suggested topics
                   </Button>
                 )}
               </div>
@@ -620,51 +621,80 @@ export function NewCarouselForm({
               </label>
             </div>
             {useAiBackgrounds && (
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs text-muted-foreground mr-1">Source:</span>
-                {([
-                  "stock",
-                  ...(carouselFor !== "linkedin" && canUseAiGenerate ? (["ai_generate"] as const) : []),
-                  ...(carouselFor !== "linkedin" && canUseWebImages ? (["brave"] as const) : []),
-                ] as const).map((src) => (
-                  <label
-                    key={src}
-                    className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
-                      imageSource === src
-                        ? "border-primary/40 bg-primary/10 text-foreground"
-                        : "border-border/60 bg-muted/30 text-muted-foreground hover:border-border hover:text-foreground/80"
-                    } ${src === "ai_generate" && !canUseAiGenerate ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
-                  >
-                    <input
-                      type="radio"
-                      name="imageSource"
-                      checked={imageSource === src}
-                      onChange={() => (src !== "ai_generate" || canUseAiGenerate) && setImageSource(src as typeof imageSource)}
-                      disabled={src === "ai_generate" && !canUseAiGenerate}
-                      className="sr-only"
-                    />
-                    {src === "brave"
-                      ? (
-                          <span title={WEB_IMAGES_SOURCE_DESCRIPTION}>{imageSourceDisplayName("brave")}</span>
-                        )
-                      : src === "stock"
-                        ? "Stock photos"
-                        : (
+              <div className="space-y-2">
+                <span className="text-xs text-muted-foreground">Image source</span>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  {([
+                    "stock",
+                    ...(carouselFor !== "linkedin" && canUseAiGenerate ? (["ai_generate"] as const) : []),
+                    ...(carouselFor !== "linkedin" && canUseWebImages ? (["brave"] as const) : []),
+                  ] as const).map((src) => {
+                    const disabled = src === "ai_generate" && !canUseAiGenerate;
+                    return (
+                      <label
+                        key={src}
+                        className={cn(
+                          "flex cursor-pointer flex-col rounded-lg border px-3 py-2.5 text-left transition-colors",
+                          imageSource === src
+                            ? "border-primary/45 bg-primary/10 shadow-sm"
+                            : "border-border/60 bg-muted/20 hover:border-border hover:bg-muted/35",
+                          disabled && "cursor-not-allowed opacity-55"
+                        )}
+                      >
+                        <input
+                          type="radio"
+                          name="imageSource"
+                          checked={imageSource === src}
+                          onChange={() => !disabled && setImageSource(src as typeof imageSource)}
+                          disabled={disabled}
+                          className="sr-only"
+                        />
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-sm font-medium text-foreground">
+                            {src === "brave" ? (
+                              <span title={WEB_IMAGES_SOURCE_DESCRIPTION}>{imageSourceDisplayName("brave")}</span>
+                            ) : src === "stock" ? (
+                              "Stock photos"
+                            ) : (
                               <>
-                                AI Generate <span className="rounded bg-amber-500/20 px-1 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400">Beta</span>
+                                AI generate{" "}
+                                <span className="rounded bg-amber-500/20 px-1 py-0.5 text-[10px] font-medium text-amber-800 dark:text-amber-400">
+                                  Beta
+                                </span>
                               </>
                             )}
-                  </label>
-                ))}
-                {canUseAiGenerate && imageSource === "ai_generate" && (
-                  <span className="text-[11px] text-muted-foreground ml-1">
-                    2–5 min
-                    {!isAdminUser && ` · ${aiGenerateUsed}/${aiGenerateLimit} used this month`}
-                  </span>
-                )}
-                {hasFullAccess && !isAdminUser && !canUseAiGenerate && imageSource === "ai_generate" && (
-                  <span className="text-[11px] text-amber-600 dark:text-amber-400 ml-1">{aiGenerateUsed}/{aiGenerateLimit} used — resets next month</span>
-                )}
+                          </span>
+                        </div>
+                        {src === "stock" ? (
+                          <BackgroundSourceBestForHint platform="linkedin">
+                            Best for LinkedIn and polished, professional carousels
+                          </BackgroundSourceBestForHint>
+                        ) : src === "brave" ? (
+                          <BackgroundSourceBestForHint platform="tiktok">
+                            Best for TikTok-style energy and timely, real-world images
+                          </BackgroundSourceBestForHint>
+                        ) : (
+                          <BackgroundSourceBestForHint platform="instagram">
+                            Best for Instagram-style, scroll-stopping visuals
+                          </BackgroundSourceBestForHint>
+                        )}
+                      </label>
+                    );
+                  })}
+                </div>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                  {canUseAiGenerate && imageSource === "ai_generate" && (
+                    <span>
+                      ~2–5 min
+                      {!isAdminUser && ` · ${aiGenerateUsed}/${aiGenerateLimit} this month`}
+                    </span>
+                  )}
+                  {hasFullAccess && !isAdminUser && !canUseAiGenerate && imageSource === "ai_generate" && (
+                    <span className="text-amber-700 dark:text-amber-400">
+                      {aiGenerateUsed}/{aiGenerateLimit} used — resets next month
+                    </span>
+                  )}
+                </div>
               </div>
             )}
             <div className="pt-3 border-t border-border/50">
@@ -837,14 +867,12 @@ export function NewCarouselForm({
           }}
         >
           <DialogContent className="max-w-md flex flex-col gap-0 p-0 sm:max-w-md">
-            <DialogHeader className="px-4 pt-4 pb-2 space-y-1">
+            <DialogHeader className="px-4 pt-4 pb-1">
               <DialogTitle className="flex items-center gap-2 text-base">
                 <LightbulbIcon className="size-4 text-amber-500 shrink-0" aria-hidden />
-                Saved topic ideas
+                Suggested topics
               </DialogTitle>
-              <DialogDescription className="text-xs leading-snug">
-                Same list for every new carousel in this project. Pick one to fill the field (it drops off the list).{hasFullAccess ? " Refreshes can use web context." : ""}
-              </DialogDescription>
+              <DialogDescription className="sr-only">Pick a topic suggestion for your carousel.</DialogDescription>
             </DialogHeader>
 
             <div className="px-4 pb-3 space-y-2">
@@ -860,10 +888,8 @@ export function NewCarouselForm({
               )}
 
               {!topicSuggestLoading && !topicSuggestError && topicSuggestList.length === 0 && (
-                <p className="text-muted-foreground text-xs py-1 leading-snug">
-                  {topicRefreshesUsed >= topicRefreshesLimit
-                    ? "No ideas in the queue and today’s refreshes are used — come back tomorrow, or type your own topic."
-                    : "Tap “Get ideas” below to add a batch (uses one daily refresh)."}
+                <p className="text-muted-foreground text-xs py-2">
+                  {topicRefreshesUsed >= topicRefreshesLimit ? "Nothing queued — try tomorrow." : "Empty — use Refresh below."}
                 </p>
               )}
 
@@ -885,7 +911,7 @@ export function NewCarouselForm({
 
               <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-border/40">
                 <p className="text-[11px] text-muted-foreground tabular-nums">
-                  Refreshes today: {topicRefreshesUsed}/{topicRefreshesLimit}
+                  {topicRefreshesLimit - topicRefreshesUsed}/{topicRefreshesLimit} left today
                 </p>
                 <Button
                   type="button"
@@ -894,18 +920,13 @@ export function NewCarouselForm({
                   className="h-7 gap-1 text-xs"
                   disabled={topicSuggestLoading || topicSuggestRefreshing || topicRefreshesUsed >= topicRefreshesLimit}
                   onClick={() => void handleRefreshTopicSuggestions()}
-                  title={
-                    topicRefreshesUsed >= topicRefreshesLimit
-                      ? "Daily limit reached — try tomorrow"
-                      : "Add up to 10 new ideas (uses one refresh)"
-                  }
                 >
                   {topicSuggestRefreshing ? (
                     <Loader2Icon className="size-3.5 animate-spin" />
                   ) : (
                     <RefreshCwIcon className="size-3.5" />
                   )}
-                  {topicSuggestList.length === 0 ? "Get ideas" : "More ideas"}
+                  Refresh
                 </Button>
               </div>
             </div>

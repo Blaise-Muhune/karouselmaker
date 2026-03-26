@@ -23,7 +23,8 @@ import { searchImage } from "@/lib/server/imageSearch";
 import { searchUnsplashPhotosMultiple, trackUnsplashDownload } from "@/lib/server/unsplash";
 import { searchPixabayPhotos } from "@/lib/server/pixabay";
 import { searchPexelsPhotos } from "@/lib/server/pexels";
-import { generateImageFromPrompt } from "@/lib/server/openaiImageGenerate";
+import { generateImageFromPrompt, parseAspectRatioFromNotes } from "@/lib/server/openaiImageGenerate";
+import { preferRecognizablePublicFiguresForImages } from "@/lib/server/ai/topicFictionHeuristic";
 import { uploadGeneratedImage } from "@/lib/server/storage/uploadGeneratedImage";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
 import { setSlideTemplate } from "@/app/actions/slides/setSlideTemplate";
@@ -681,6 +682,12 @@ export async function generateCarousel(formData: FormData): Promise<
         if (queries.length === 0) continue;
         if (aiSlide) aiGenJobs.push({ slide, aiSlide });
       }
+      const preferPublicFigures = preferRecognizablePublicFiguresForImages(
+        data.input_value?.trim(),
+        validated.title?.trim()
+      );
+      const imageAspectRatio = parseAspectRatioFromNotes(data.notes?.trim());
+
       const processOneAiSlide = async ({
         slide,
         aiSlide,
@@ -698,6 +705,8 @@ export async function generateCarousel(formData: FormData): Promise<
           location: slideContext?.location?.trim() || undefined,
           isHookSlide: isHookSlide || undefined,
           userNotes: data.notes?.trim() || undefined,
+          aspectRatio: imageAspectRatio,
+          preferRecognizablePublicFigures: preferPublicFigures || undefined,
         };
         const genResult = await generateImageFromPrompt(firstQuery, { context: imageContext });
         if (genResult.ok) {
@@ -718,7 +727,9 @@ export async function generateCarousel(formData: FormData): Promise<
         if (!genResult.ok || !slidesWithImage.has(slide.id)) {
           const topicFallback =
             (validated.title?.trim() || data.input_value?.trim() || "").slice(0, 60) || "a compelling scene";
-          const fallbackQuery = `Dramatic atmospheric scene related to: ${topicFallback}. No text.`;
+          const fallbackQuery = preferPublicFigures
+            ? `Photorealistic scene inspired by: ${topicFallback}. If people appear, use invented generic adults only—no specific celebrity or public figure. Atmospheric, no text, no logos.`
+            : `Dramatic atmospheric scene related to: ${topicFallback}. No text.`;
           const fallbackResult = await generateImageFromPrompt(fallbackQuery, {
             context: {
               carouselTitle: validated.title?.trim(),
@@ -726,6 +737,12 @@ export async function generateCarousel(formData: FormData): Promise<
               slideHeadline: aiSlide?.headline?.trim(),
               slideBody: aiSlide?.body?.trim(),
               userNotes: data.notes?.trim() || undefined,
+              year: slideContext?.year?.trim() || undefined,
+              location: slideContext?.location?.trim() || undefined,
+              isHookSlide: isHookSlide || undefined,
+              aspectRatio: imageAspectRatio,
+              preferRecognizablePublicFigures: false,
+              genericFacesOnly: preferPublicFigures || undefined,
             },
           });
           if (fallbackResult.ok) {

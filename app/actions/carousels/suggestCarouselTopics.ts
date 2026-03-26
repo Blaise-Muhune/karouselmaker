@@ -104,12 +104,14 @@ export async function generateCarouselTopicBatch(
           .join("\n")
       : "(none yet — still diversify angles)";
 
-  const system = `You help creators brainstorm carousel topics. Reply with ONLY a JSON object: {"topics":["...","..."]} containing exactly 10 distinct topic strings.
+  const system = `You suggest carousel *input topics* for a creator app: each topic becomes the brief the AI uses to generate a full multi-slide carousel (hook → body slides → CTA). Reply with ONLY a JSON object: {"topics":["...","..."]} containing exactly 10 distinct topic strings.
 
 Rules:
-- Each topic: short hook (max ~12 words), good for a ${carouselFor === "linkedin" ? "LinkedIn professional" : "Instagram"} carousel.
-- Language for topics: match project language (${language}) unless the project is clearly multi-lingual — default English if unsure.
-- Mix angles: how-to, mistakes to avoid, myths, trends, checklist, story frame, contrarian, beginner vs advanced, seasonal when relevant.
+- Each string: short (max ~12 words), written as a topic the creator would type — not a slide headline pack, not a question with no answer to deliver.
+- Every topic must imply a clear *premise* the carousel can fulfill: teach something, debunk myths, list concrete points, tell a tight story, or take a sharp angle — avoid vague buckets ("tips for growth", "about branding") unless you narrow them to a specific promise for this niche.
+- Fit ${carouselFor === "linkedin" ? "LinkedIn: professional, credible, work-relevant angles" : "Instagram: scroll-stopping, share/save-friendly angles"} while staying true to the niche and tone below.
+- Language: match project language (${language}) unless clearly multi-lingual — default English if unsure.
+- Mix angles across the 10: how-to, mistakes, myths, checklist, story frame, contrarian, beginner vs advanced, timely trend when relevant.
 - Do NOT repeat or closely paraphrase anything in the "already used" list.
 - No URLs, no markdown, no numbering inside strings — plain topic phrases only.`;
 
@@ -117,12 +119,12 @@ Rules:
 Niche / audience: ${niche}
 Tone: ${tone}
 Carousel platform focus: ${carouselFor}
-Project rules / structure hints (may be empty): ${rulesSnippet || "—"}
+Project rules / constraints / goals (may be empty — when present, lean topics toward what those rules imply for content and outcomes): ${rulesSnippet || "—"}
 
 Topics and titles already used in this project (do not reuse or trivially rephrase):
 ${blockedList}
 
-${useWebSearch ? "Use web search when helpful to tie ideas to recent news, product launches, or timely trends relevant to the niche (respect the do-not-repeat list). Prefer 1–3 quick searches over many." : "Use your general knowledge only (no live web). Still keep ideas varied and specific."}
+${useWebSearch ? "Use web search when helpful so 2–4 ideas are timely (news, launches, seasonality) for this niche; keep the rest evergreen and specific. Respect the do-not-repeat list. Prefer 1–3 quick searches over many." : "Use your general knowledge only (no live web). Still keep ideas varied, niche-specific, and concrete."}
 
 Return exactly 10 strings in the JSON "topics" array.`;
 

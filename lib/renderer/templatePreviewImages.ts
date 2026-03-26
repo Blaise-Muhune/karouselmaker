@@ -1,5 +1,53 @@
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 
+/** SlidePreview multi-image path supports up to four slots. */
+const MAX_TEMPLATE_PREVIEW_BG_SLOTS = 4;
+
+/**
+ * How many background image slots this template is meant to use (saved layout),
+ * so picker previews don’t fill four images when the template is single-image or two-up.
+ *
+ * Order: `defaults.background.images` length → legacy single `image_url` → `image_display` hints.
+ */
+export function getTemplateIntendedBackgroundImageSlotCount(config: TemplateConfig | null): number {
+  if (!config?.backgroundRules?.allowImage) return 0;
+
+  const bg = config.defaults?.background;
+  if (bg && typeof bg === "object" && !Array.isArray(bg)) {
+    const b = bg as { mode?: string; images?: unknown[]; image_url?: string };
+    if (b.mode === "image") {
+      if (Array.isArray(b.images) && b.images.length > 0) {
+        return Math.min(MAX_TEMPLATE_PREVIEW_BG_SLOTS, Math.max(1, b.images.length));
+      }
+      if (typeof b.image_url === "string" && /^https?:\/\//i.test(b.image_url.trim())) {
+        return 1;
+      }
+    }
+  }
+
+  const raw =
+    config.defaults?.meta &&
+    typeof config.defaults.meta === "object" &&
+    "image_display" in config.defaults.meta
+      ? (config.defaults.meta as { image_display?: Record<string, unknown> }).image_display
+      : undefined;
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    const mode = raw.mode as string | undefined;
+    if (mode === "pip") return 2;
+    const layout = raw.layout as string | undefined;
+    if (layout === "grid") return 4;
+    if (layout === "side-by-side" || layout === "stacked") return 2;
+    if (layout === "overlay-circles") {
+      const n = getTemplatePreviewImageUrls(config).length;
+      if (n === 2) return 2;
+      if (n >= 3) return 3;
+      return 3;
+    }
+  }
+
+  return 1;
+}
+
 /**
  * Extract HTTP(S) image URLs from template defaults.background for card previews.
  * Supports multi-slot backgrounds (shuffle / PiP) and legacy single image_url.

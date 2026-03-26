@@ -4,7 +4,10 @@ import type { ComponentProps } from "react";
 import { SlidePreview } from "@/components/renderer/SlidePreview";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { getTemplatePreviewBackgroundOverride, getLinkedInPreviewOverlayOverride } from "@/lib/renderer/getTemplatePreviewBackground";
-import { getTemplatePreviewImageUrls } from "@/lib/renderer/templatePreviewImages";
+import {
+  getTemplatePreviewImageUrls,
+  getTemplateIntendedBackgroundImageSlotCount,
+} from "@/lib/renderer/templatePreviewImages";
 import { LayoutTemplateIcon } from "lucide-react";
 
 /** Build imageDisplay from template defaults so PIP and full templates render exactly as designed. */
@@ -94,15 +97,29 @@ export function TemplatePreviewThumb({
   className,
 }: TemplatePreviewThumbProps) {
   const brandKit = { primary_color: primaryColor };
+  const slotCount = getTemplateIntendedBackgroundImageSlotCount(config);
   const urlsFromTemplate = getTemplatePreviewImageUrls(config);
-  const fallbackSet = (previewImageUrls ?? []).map((u) => u.trim()).filter((u) => /^https?:\/\//i.test(u));
-  const multiUrls =
-    !previewImageUrl && urlsFromTemplate.length >= 2
-      ? urlsFromTemplate
-      : !previewImageUrl && urlsFromTemplate.length < 2 && fallbackSet.length >= 2
-        ? fallbackSet
-        : undefined;
-  const firstUrl = previewImageUrl ?? multiUrls?.[0] ?? urlsFromTemplate[0] ?? fallbackSet[0];
+  const cleanFallback = (previewImageUrls ?? []).map((u) => u.trim()).filter((u) => /^https?:\/\//i.test(u));
+  const cycleFallback = (n: number, start = 0) =>
+    cleanFallback.length === 0 || n < 1
+      ? []
+      : Array.from({ length: n }, (_, i) => cleanFallback[(start + i) % cleanFallback.length]!);
+
+  let multiUrls: string[] | undefined;
+  let firstUrl: string | undefined;
+  if (previewImageUrl) {
+    firstUrl = previewImageUrl ?? undefined;
+    multiUrls = undefined;
+  } else if (slotCount <= 1) {
+    multiUrls = undefined;
+    firstUrl = urlsFromTemplate[0] ?? cleanFallback[0];
+  } else {
+    const need = Math.min(4, slotCount);
+    const pool = cycleFallback(need, 0);
+    const merged = Array.from({ length: need }, (_, i) => urlsFromTemplate[i] ?? pool[i]).filter(Boolean) as string[];
+    multiUrls = merged.length >= 2 ? merged : undefined;
+    firstUrl = merged[0] ?? cleanFallback[0];
+  }
   const hasPreviewPhoto = !!(firstUrl || (multiUrls && multiUrls.length > 0));
 
   if (!config) {

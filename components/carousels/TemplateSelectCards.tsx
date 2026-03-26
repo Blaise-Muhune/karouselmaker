@@ -5,7 +5,10 @@ import { SlidePreview, type SlideBackgroundOverride } from "@/components/rendere
 import { DeleteTemplateButton } from "@/components/templates/DeleteTemplateButton";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { getTemplatePreviewBackgroundOverride, getLinkedInPreviewOverlayOverride, getTemplatePreviewOverlayOverride } from "@/lib/renderer/getTemplatePreviewBackground";
-import { getTemplatePreviewImageUrls } from "@/lib/renderer/templatePreviewImages";
+import {
+  getTemplatePreviewImageUrls,
+  getTemplateIntendedBackgroundImageSlotCount,
+} from "@/lib/renderer/templatePreviewImages";
 import { CheckIcon, LayoutTemplateIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
@@ -141,15 +144,14 @@ export function TemplateSelectCards({
   const getPreviewImage = (index: number) =>
     hasPreviewImages ? previewImageUrls![index % previewImageUrls!.length] : undefined;
   /**
-   * For cards without template-stored image URLs, cycle project images so previews stay representative.
-   * This supports both single-image and multi-image templates in the modal.
+   * Cycle slide/carousel images to fill exactly `maxCount` slots (repeat if the pool is shorter).
+   * Used so multi-slot templates get the right number of thumbnails, not always four.
    */
-  const getPreviewImageSet = (index: number, maxCount = 4): string[] => {
-    if (!previewImageUrls || previewImageUrls.length === 0) return [];
+  const getPreviewImageSet = (index: number, maxCount: number): string[] => {
+    if (!previewImageUrls || previewImageUrls.length === 0 || maxCount < 1) return [];
     const clean = previewImageUrls.map((u) => u.trim()).filter((u) => /^https?:\/\//i.test(u));
     if (clean.length === 0) return [];
-    const count = Math.min(maxCount, clean.length);
-    return Array.from({ length: count }, (_, i) => clean[(index + i) % clean.length]!).filter(Boolean);
+    return Array.from({ length: maxCount }, (_, i) => clean[(index + i) % clean.length]!);
   };
   /** For image-allowing templates, use slide image or fallback sample so the card always shows a photo. */
   const getPreviewImageOrFallback = (index: number, templateAllowsImage: boolean) =>
@@ -177,23 +179,30 @@ export function TemplateSelectCards({
   const defaultTemplateStoredUrls = effectiveDefaultTemplateConfig
     ? getTemplatePreviewImageUrls(effectiveDefaultTemplateConfig)
     : [];
-  const defaultFallbackSet = getPreviewImageSet(0);
-  const defaultTemplateBgUrls =
-    effectiveDefaultTemplateConfig?.backgroundRules?.allowImage === false
-      ? undefined
-      : defaultTemplateStoredUrls.length >= 2
-        ? defaultTemplateStoredUrls
-        : defaultFallbackSet.length >= 2
-          ? defaultFallbackSet
-          : undefined;
-  const defaultTemplateBgUrl =
-    effectiveDefaultTemplateConfig?.backgroundRules?.allowImage === false
-      ? undefined
-      : defaultTemplateBgUrls?.[0]
-        ? defaultTemplateBgUrls[0]
-        : defaultTemplateStoredUrls.length > 0
-          ? defaultTemplateStoredUrls[0]
-          : (previewImageUrl ?? FALLBACK_SAMPLE_IMAGE_URL);
+  const defaultSlotCount = effectiveDefaultTemplateConfig
+    ? getTemplateIntendedBackgroundImageSlotCount(effectiveDefaultTemplateConfig)
+    : 1;
+  let defaultTemplateBgUrls: string[] | undefined;
+  let defaultTemplateBgUrl: string | undefined;
+  if (effectiveDefaultTemplateConfig?.backgroundRules?.allowImage === false) {
+    defaultTemplateBgUrls = undefined;
+    defaultTemplateBgUrl = undefined;
+  } else if (defaultSlotCount <= 1) {
+    defaultTemplateBgUrls = undefined;
+    const oneFromPool = getPreviewImageSet(0, 1)[0];
+    defaultTemplateBgUrl =
+      defaultTemplateStoredUrls[0] ?? previewImageUrl ?? oneFromPool ?? FALLBACK_SAMPLE_IMAGE_URL;
+  } else {
+    const need = Math.min(4, defaultSlotCount);
+    const defaultPool = getPreviewImageSet(0, need);
+    const merged = Array.from({ length: need }, (_, i) => {
+      return (
+        defaultTemplateStoredUrls[i] ?? defaultPool[i] ?? previewImageUrl ?? FALLBACK_SAMPLE_IMAGE_URL
+      );
+    });
+    defaultTemplateBgUrls = merged;
+    defaultTemplateBgUrl = merged[0];
+  }
 
   const myTemplates = useMemo(() => templates.filter((t) => !t.isSystemTemplate), [templates]);
   const hasMyTemplates = showMyTemplatesSection && myTemplates.length > 0;
@@ -267,27 +276,32 @@ export function TemplateSelectCards({
     const isSystem = t.isSystemTemplate === true;
     const showDelete = (isAdmin && isSystem) || (!isSystem && isPro);
     const storedPreviewUrls = getTemplatePreviewImageUrls(t.parsedConfig);
-    const fallbackSet = getPreviewImageSet(idx + 1);
+    const slotCount = getTemplateIntendedBackgroundImageSlotCount(t.parsedConfig);
     const fallbackPreview = getPreviewImageOrFallback(idx + 1, true);
-    const previewBgUrls =
-      t.parsedConfig.backgroundRules?.allowImage === false
-        ? undefined
-        : storedPreviewUrls.length >= 2
-          ? storedPreviewUrls
-          : fallbackSet.length >= 2
-            ? fallbackSet
-            : undefined;
-    const previewBgUrl =
-      t.parsedConfig.backgroundRules?.allowImage === false
-        ? undefined
-        : previewBgUrls?.[0]
-          ? previewBgUrls[0]
-          : storedPreviewUrls.length > 0
-            ? storedPreviewUrls[0]
-            : fallbackPreview;
+    let previewBgUrls: string[] | undefined;
+    let previewBgUrl: string | undefined;
+    if (t.parsedConfig.backgroundRules?.allowImage === false) {
+      previewBgUrls = undefined;
+      previewBgUrl = undefined;
+    } else if (slotCount <= 1) {
+      previewBgUrls = undefined;
+      previewBgUrl = storedPreviewUrls[0] ?? fallbackPreview;
+    } else {
+      const needMulti = Math.min(4, slotCount);
+      const fallbackSet = getPreviewImageSet(idx + 1, needMulti);
+      const merged = Array.from({ length: needMulti }, (_, i) => {
+        return (
+          storedPreviewUrls[i] ?? fallbackSet[i] ?? fallbackPreview ?? FALLBACK_SAMPLE_IMAGE_URL
+        );
+      });
+      previewBgUrls = merged;
+      previewBgUrl = merged[0];
+    }
+    const hasPreviewPhoto =
+      t.parsedConfig.backgroundRules?.allowImage !== false &&
+      !!(previewBgUrl ?? (previewBgUrls && previewBgUrls.length > 0));
     const useSolidPreviewOverride =
-      t.parsedConfig.backgroundRules?.allowImage === false ||
-      (storedPreviewUrls.length === 0 && fallbackSet.length === 0 && !fallbackPreview);
+      t.parsedConfig.backgroundRules?.allowImage === false || !hasPreviewPhoto;
     return (
       <div
         key={t.id}

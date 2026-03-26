@@ -36,6 +36,13 @@ export type ImagePromptContext = {
   userNotes?: string;
   /** Desired aspect ratio for generated image. Default 4:5; can be overridden from user notes (e.g. "square", "9:16"). */
   aspectRatio?: "1:1" | "4:5" | "9:16" | "2:3" | "16:9";
+  /**
+   * Non-fiction / real-world carousels: first pass nudges recognizable public figures when the slide is about real people.
+   * Second pass (after failure) should set `genericFacesOnly` instead.
+   */
+  preferRecognizablePublicFigures?: boolean;
+  /** Retry / fallback: invented generic people only—no specific real-person or celebrity likeness. */
+  genericFacesOnly?: boolean;
 };
 
 /** Parse user notes for aspect ratio preference. Default 4:5 if no match. */
@@ -103,7 +110,7 @@ function softenForSafety(s: string): string {
  * Reusing the full original prompt on retry re-sends the same risky wording; a short concept (like
  * Replicate's fallback) passes more often while still matching subject, setting, and mood.
  */
-function buildSafeRetryPrompt(query: string): string {
+function buildSafeRetryPrompt(query: string, opts?: { genericFacesOnly?: boolean }): string {
   const q = query
     .replace(/\b(3000x2000|4k|official photo|wallpaper)\b/gi, "")
     .replace(/\s{2,}/g, " ")
@@ -116,7 +123,10 @@ function buildSafeRetryPrompt(query: string): string {
     subjectRaw = lastSpace > 60 ? cut.slice(0, lastSpace).trim() : cut.trim();
   }
   const concept = softenForSafety(subjectRaw);
-  return `Generate a single professional image that closely resembles the following concept. Same subject, setting, and mood—appropriate for a general audience. No text, no logos. Concept: ${concept}. Soft lighting, subtle cinematic feel, suitable as a background.`;
+  const faceLine = opts?.genericFacesOnly
+    ? " If people appear: generic invented adults only—no likeness to any real or famous person."
+    : "";
+  return `Generate a single professional image that closely resembles the following concept. Same subject, setting, and mood—appropriate for a general audience. No text, no logos. Concept: ${concept}. Soft lighting, subtle cinematic feel, suitable as a background.${faceLine}`;
 }
 
 /**
@@ -188,7 +198,18 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
 
   const notesLower = (context?.userNotes ?? "").toLowerCase();
   const notesAskForStyle = /\b(stylized|stylise|artistic|art style|cartoon|illustration|animated|painting|drawing|abstract|creative style|different style)\b/i.test(notesLower);
-  if (!notesAskForStyle) parts.push(GLOBAL_REAL_PEOPLE_LINE);
+  if (context?.genericFacesOnly) {
+    parts.push(
+      "People: use clearly invented, generic-looking adults only—no resemblance to any real individual, public figure, or celebrity. Keep outfit, era, setting, and mood aligned with the slide; photorealistic invented faces."
+    );
+  } else if (!notesAskForStyle) {
+    if (context?.preferRecognizablePublicFigures) {
+      parts.push(
+        "Non-fiction carousel: when the slide is about real public figures (athletes, leaders, artists, etc.), aim for a recognizable portrayal—accurate era, team colors, venue, or role. If a specific likeness is not possible, keep the same person’s context without inventing a different identity."
+      );
+    }
+    parts.push(GLOBAL_REAL_PEOPLE_LINE);
+  }
   if (context?.userNotes?.trim()) parts.push(`User notes: ${truncateForContext(context.userNotes, 80)}`);
 
   if (context?.isHookSlide) {
@@ -285,7 +306,9 @@ export async function generateImageFromPrompt(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (isSafetyRejection(err)) {
-      const retryPrompt = buildSafeRetryPrompt(query);
+      const retryPrompt = buildSafeRetryPrompt(query, {
+        genericFacesOnly: options?.context?.preferRecognizablePublicFigures === true,
+      });
       console.log("[openaiImageGenerate] Safety rejection. Retrying OpenAI with short concept:", retryPrompt, "\n");
       try {
         const retryResult = await openai.images.generate({
