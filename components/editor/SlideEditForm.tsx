@@ -47,6 +47,7 @@ import { cn, slugifyForFilename } from "@/lib/utils";
 import { imageSourceDisplayName } from "@/lib/utils/imageSourceDisplay";
 import { isSupabaseSignedUrl } from "@/lib/server/storage/signedUrlUtils";
 import { getTemplatePreviewBackgroundOverride } from "@/lib/renderer/getTemplatePreviewBackground";
+import { getTemplatePreviewImageUrls } from "@/lib/renderer/templatePreviewImages";
 import { getSwipeRightXForFormat, type BrandKit, type ChromeOverrides } from "@/lib/renderer/renderModel";
 import type { TemplateConfig, TextZone } from "@/lib/server/renderer/templateSchema";
 import type { Slide, Template, ExportFormat, ExportSize } from "@/lib/server/db/types";
@@ -1666,16 +1667,20 @@ export function SlideEditForm({
 
   const multiImageDefaults: ImageDisplayState = { position: "top", fit: "cover", frame: "none", frameRadius: 0, frameColor: "#ffffff", frameShape: "squircle", layout: "auto", gap: 0, dividerStyle: "wave", dividerColor: "#ffffff", dividerWidth: 48 };
   const effectiveImageDisplay = validImageCount >= 2 ? { ...multiImageDefaults, ...imageDisplay } : imageDisplay;
-  /** Full-bleed image (not PiP): offer checkbox to embed slide image into template defaults. */
-  const offerEmbedImageBackgroundInTemplate = useMemo(() => {
+  /**
+   * Show "Include background image in template" whenever the slide has an image to embed OR the template
+   * already stores preview URLs—so users can uncheck on update and strip embedded images (any layout: full, PiP, multi).
+   */
+  const showIncludeImageInTemplateOption = useMemo(() => {
     const valid = imageUrls.filter((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim()));
-    const hasImg =
+    const slideHasImage =
       background.mode === "image" ||
       valid.length > 0 ||
       !!(background.image_url && /^https?:\/\//i.test(String(background.image_url).trim())) ||
       !!background.asset_id;
-    return hasImg && (effectiveImageDisplay.mode ?? "full") === "full";
-  }, [background.mode, background.image_url, background.asset_id, imageUrls, effectiveImageDisplay.mode]);
+    const templateAlreadyEmbeds = templateConfig ? getTemplatePreviewImageUrls(templateConfig).length > 0 : false;
+    return slideHasImage || templateAlreadyEmbeds;
+  }, [background.mode, background.image_url, background.asset_id, imageUrls, templateConfig]);
   const templateDisallowsImage = templateConfig?.backgroundRules?.allowImage === false;
 
   /** Word-style: apply color to selection by storing a span (no brackets in text). Color is preset name or hex. Uses modal textarea ref when modal is open. */
@@ -2776,14 +2781,15 @@ export function SlideEditForm({
   const buildTemplateConfigFromSlide = (options?: { embedSlideImageBackground?: boolean }): TemplateConfig | null => {
     if (!templateConfig) return null;
     const validImageUrlsForTemplate = imageUrls.filter((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim()));
-    const offerFullImageEmbedChoice =
-      (background.mode === "image" ||
-        validImageUrlsForTemplate.length > 0 ||
-        !!(background.image_url && /^https?:\/\//i.test(String(background.image_url ?? "").trim())) ||
-        !!background.asset_id) &&
-      (effectiveImageDisplay.mode ?? "full") === "full";
+    const slideHasBackgroundImageForTemplate =
+      background.mode === "image" ||
+      validImageUrlsForTemplate.length > 0 ||
+      !!(background.image_url && /^https?:\/\//i.test(String(background.image_url ?? "").trim())) ||
+      !!background.asset_id;
+    const templateAlreadyEmbedsImages = getTemplatePreviewImageUrls(templateConfig).length > 0;
+    const canToggleEmbedImage = slideHasBackgroundImageForTemplate || templateAlreadyEmbedsImages;
     const embedSlideImage = options?.embedSlideImageBackground ?? true;
-    const shouldStripEmbeddedImage = offerFullImageEmbedChoice && !embedSlideImage;
+    const shouldStripEmbeddedImage = canToggleEmbedImage && !embedSlideImage;
 
     const overlayColor = background.overlay?.color ?? "#000000";
     const ov = background.overlay;
@@ -2802,7 +2808,19 @@ export function SlideEditForm({
       (templateConfig?.defaults?.meta as { background_color?: string } | undefined)?.background_color ??
       (templateConfig?.defaults?.background as { color?: string } | undefined)?.color ??
       "#0a0a0a";
-    const backgroundPayload = shouldStripEmbeddedImage
+    const builtBackgroundFromSlide = buildBackgroundPayload();
+    const slideDeliversImage = (builtBackgroundFromSlide as { mode?: string }).mode === "image";
+    const prevTemplateBg = templateConfig.defaults?.background;
+    const canReuseEmbeddedTemplateImages =
+      embedSlideImage &&
+      !slideDeliversImage &&
+      templateAlreadyEmbedsImages &&
+      prevTemplateBg &&
+      typeof prevTemplateBg === "object" &&
+      !Array.isArray(prevTemplateBg) &&
+      (prevTemplateBg as { mode?: string }).mode === "image";
+
+    const backgroundPayload: Record<string, unknown> = shouldStripEmbeddedImage
       ? {
           style: background.style ?? "solid",
           pattern: background.pattern,
@@ -2810,7 +2828,9 @@ export function SlideEditForm({
           gradientOn: background.gradientOn ?? false,
           overlay: overlayPayloadForTemplate,
         }
-      : buildBackgroundPayload();
+      : canReuseEmbeddedTemplateImages
+        ? { ...(prevTemplateBg as Record<string, unknown>), overlay: overlayPayloadForTemplate }
+        : builtBackgroundFromSlide;
     const isBackgroundImage = (backgroundPayload as { mode?: string }).mode === "image";
     const hasHeadlineZone = headlineZoneOverride != null && Object.keys(headlineZoneOverride).length > 0;
     const hasBodyZone = bodyZoneOverride != null && Object.keys(bodyZoneOverride).length > 0;
@@ -2913,7 +2933,7 @@ export function SlideEditForm({
       setSavingTemplate(false);
       return;
     }
-    const embedBg = !offerEmbedImageBackgroundInTemplate || saveTemplateIncludeImageBg;
+    const embedBg = !showIncludeImageInTemplateOption || saveTemplateIncludeImageBg;
     const config = buildTemplateConfigFromSlide({ embedSlideImageBackground: embedBg });
     if (!config) {
       setSavingTemplate(false);
@@ -2961,7 +2981,7 @@ export function SlideEditForm({
     if (!saveResult.ok) {
       return;
     }
-    const embedBg = !offerEmbedImageBackgroundInTemplate || updateTemplateIncludeImageBg;
+    const embedBg = !showIncludeImageInTemplateOption || updateTemplateIncludeImageBg;
     const config = buildTemplateConfigFromSlide({ embedSlideImageBackground: embedBg });
     if (!config) return;
     setUpdatingTemplate(true);
@@ -2980,7 +3000,9 @@ export function SlideEditForm({
   const openUpdateTemplateDialog = () => {
     setUpdateTemplateName(currentTemplate?.name ?? "");
     setUpdateMakeAvailableForAll(false);
-    setUpdateTemplateIncludeImageBg(false);
+    setUpdateTemplateIncludeImageBg(
+      templateConfig ? getTemplatePreviewImageUrls(templateConfig).length > 0 : false
+    );
     setUpdateTemplateOpen(true);
   };
 
@@ -4101,7 +4123,7 @@ export function SlideEditForm({
               className="rounded-lg"
               onKeyDown={(e) => e.key === "Enter" && handleSaveTemplate()}
             />
-            {offerEmbedImageBackgroundInTemplate && (
+            {showIncludeImageInTemplateOption && (
               <div className="flex items-start gap-2 pt-1">
                 <input
                   type="checkbox"
@@ -4111,7 +4133,7 @@ export function SlideEditForm({
                   className="rounded border-input mt-0.5 shrink-0"
                 />
                 <Label htmlFor="save-template-include-image-bg" className="font-normal cursor-pointer text-muted-foreground leading-snug">
-                  Include the current background image in the template (URLs or asset refs). Leave off to save layout and colors only; slides keep their own photos.
+                  Include background images in the template (full slide, PiP, or multi-image—URLs or asset refs). Uncheck to save layout and colors only so slides keep their own photos.
                 </Label>
               </div>
             )}
@@ -4145,7 +4167,9 @@ export function SlideEditForm({
       <Dialog
         open={updateTemplateOpen}
         onOpenChange={(open) => {
-          if (open) setUpdateTemplateIncludeImageBg(false);
+          if (open && templateConfig) {
+            setUpdateTemplateIncludeImageBg(getTemplatePreviewImageUrls(templateConfig).length > 0);
+          }
           setUpdateTemplateOpen(open);
           if (!open) {
             setUpdateTemplateName("");
@@ -4170,7 +4194,7 @@ export function SlideEditForm({
               className="rounded-lg"
               onKeyDown={(e) => e.key === "Enter" && handleUpdateTemplate()}
             />
-            {offerEmbedImageBackgroundInTemplate && (
+            {showIncludeImageInTemplateOption && (
               <div className="flex items-start gap-2 pt-1">
                 <input
                   type="checkbox"
@@ -4180,7 +4204,7 @@ export function SlideEditForm({
                   className="rounded border-input mt-0.5 shrink-0"
                 />
                 <Label htmlFor="update-template-include-image-bg" className="font-normal cursor-pointer text-muted-foreground leading-snug">
-                  Include the current background image in the template (URLs or asset refs). Leave off to save layout and colors only; slides keep their own photos.
+                  Include background images in the template (full slide, PiP, or multi-image). Uncheck to remove stored images from the template and keep layout/colors only.
                 </Label>
               </div>
             )}

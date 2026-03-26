@@ -4,24 +4,28 @@ import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 const MAX_TEMPLATE_PREVIEW_BG_SLOTS = 4;
 
 /**
- * How many background image slots this template is meant to use (saved layout),
- * so picker previews don’t fill four images when the template is single-image or two-up.
+ * How many background images the template **picker preview** should show.
  *
- * Order: `defaults.background.images` length → legacy single `image_url` → `image_display` hints.
+ * When the template has at least one saved preview URL in defaults, the count is **exactly the number
+ * of those assets** (not `images.length` with empty slots, and not PiP/grid forcing 2+).
+ * When there are zero saved URLs, we infer from `images` slot count or `image_display` so the pool can fill the right shape.
  */
 export function getTemplateIntendedBackgroundImageSlotCount(config: TemplateConfig | null): number {
   if (!config?.backgroundRules?.allowImage) return 0;
 
+  const savedAssetCount = getTemplatePreviewImageUrls(config).length;
+  if (savedAssetCount >= 1) {
+    return Math.min(MAX_TEMPLATE_PREVIEW_BG_SLOTS, savedAssetCount);
+  }
+
   const bg = config.defaults?.background;
   if (bg && typeof bg === "object" && !Array.isArray(bg)) {
     const b = bg as { mode?: string; images?: unknown[]; image_url?: string };
-    if (b.mode === "image") {
-      if (Array.isArray(b.images) && b.images.length > 0) {
-        return Math.min(MAX_TEMPLATE_PREVIEW_BG_SLOTS, Math.max(1, b.images.length));
-      }
-      if (typeof b.image_url === "string" && /^https?:\/\//i.test(b.image_url.trim())) {
-        return 1;
-      }
+    if (b.mode === "image" && Array.isArray(b.images) && b.images.length > 0) {
+      return Math.min(MAX_TEMPLATE_PREVIEW_BG_SLOTS, Math.max(1, b.images.length));
+    }
+    if (b.mode === "image" && typeof b.image_url === "string" && /^https?:\/\//i.test(b.image_url.trim())) {
+      return 1;
     }
   }
 
