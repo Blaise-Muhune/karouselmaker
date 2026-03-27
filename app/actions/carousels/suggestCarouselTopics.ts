@@ -111,7 +111,7 @@ Rules:
 - Every topic must imply a clear *premise* the carousel can fulfill: teach something, debunk myths, list concrete points, tell a tight story, or take a sharp angle — avoid vague buckets ("tips for growth", "about branding") unless you narrow them to a specific promise for this niche.
 - Fit ${carouselFor === "linkedin" ? "LinkedIn: professional, credible, work-relevant angles" : "Instagram: scroll-stopping, share/save-friendly angles"} while staying true to the niche and tone below.
 - Language: match project language (${language}) unless clearly multi-lingual — default English if unsure.
-- Mix angles across the 10: how-to, mistakes, myths, checklist, story frame, contrarian, beginner vs advanced, timely trend when relevant.
+- Mix angles across the 10 with **format diversity**: include at least one clear how-to, one mistakes/myths angle, one checklist or framework, one story/case angle, one contrarian or hot-take, and one timely/trend angle when relevant—do not output 10 near-identical listicles or generic "tips" strings.
 - Do NOT repeat or closely paraphrase anything in the "already used" list.
 - No URLs, no markdown, no numbering inside strings — plain topic phrases only.`;
 

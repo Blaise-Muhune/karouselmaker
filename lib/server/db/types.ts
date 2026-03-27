@@ -77,7 +77,15 @@ export interface Carousel {
   /** When true, "Apply to all" includes the last slide. Default true. */
   include_last_slide?: boolean;
   /** Options from the generate form (use_ai_backgrounds, use_stock_photos, use_ai_generate, use_web_search, carousel_for). Pre-fill regenerate form. */
-  generation_options?: { use_ai_backgrounds?: boolean; use_stock_photos?: boolean; use_ai_generate?: boolean; use_web_search?: boolean; carousel_for?: "instagram" | "linkedin" };
+  generation_options?: {
+    use_ai_backgrounds?: boolean;
+    use_stock_photos?: boolean;
+    use_ai_generate?: boolean;
+    use_web_search?: boolean;
+    carousel_for?: "instagram" | "linkedin";
+    /** AI-suggested follow-up carousel topics (from generation). */
+    similar_carousel_ideas?: string[];
+  };
   created_at: string;
   updated_at: string;
 }

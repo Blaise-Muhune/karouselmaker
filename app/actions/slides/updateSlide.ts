@@ -25,14 +25,15 @@ export async function updateSlide(
 
   const proCheck = await requirePro(user.id, user.email);
   if (!proCheck.allowed) {
-    // Free users can only update headline, body, and background (color, style, gradientOn, overlay)
-    const freeAllowed = ["slide_id", "headline", "body", "background"];
+    // Free users: headline, body, slide meta (text/layout chrome), and limited background (color, style, gradientOn, overlay)
+    const freeAllowed = ["slide_id", "headline", "body", "background", "meta"];
     const keys = Object.keys(input);
     const hasDisallowed = keys.some((k) => !freeAllowed.includes(k));
     if (hasDisallowed) return { ok: false, error: proCheck.error ?? "Upgrade to Pro" };
     // For background only allow color, style, gradientOn, overlay - must merge into existing
     const bg = input.background as Record<string, unknown> | undefined;
     const hasBgUpdate = bg && (bg.color != null || bg.style != null || bg.gradientOn != null || bg.overlay != null);
+    const metaPatch = input.meta as Record<string, unknown> | undefined;
     if (hasBgUpdate) {
       const existing = await getSlide(user.id, input.slide_id);
       const existingBg = (existing?.background ?? {}) as Record<string, unknown>;
@@ -46,9 +47,15 @@ export async function updateSlide(
         headline: input.headline,
         body: input.body,
         background: merged,
+        ...(metaPatch != null && { meta: metaPatch }),
       };
     } else {
-      input = { slide_id: input.slide_id, headline: input.headline, body: input.body };
+      input = {
+        slide_id: input.slide_id,
+        headline: input.headline,
+        body: input.body,
+        ...(metaPatch != null && { meta: metaPatch }),
+      };
     }
   }
 

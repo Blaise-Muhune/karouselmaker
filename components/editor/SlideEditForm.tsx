@@ -2050,33 +2050,6 @@ export function SlideEditForm({
   const performSave = async (navigateBack = false) => {
     setSaving(true);
     setSaveError(null);
-    if (!isPro) {
-      const overlayPayload = background.overlay ?? { gradient: true, darken: 0.5, color: "#000000", textColor: "#ffffff" };
-      const result = await updateSlide(
-        {
-          slide_id: slide.id,
-          headline,
-          body: body.trim() || null,
-          background: {
-            color: background.color,
-            style: background.style ?? "solid",
-            gradientOn: background.gradientOn ?? true,
-            overlay: overlayPayload,
-          },
-        },
-        editorPath
-      );
-      setSaving(false);
-      if (result.ok) {
-        lastSavedRef.current = buildEditorDirtySnapshotString();
-        setSavedFeedback(true);
-        setTimeout(() => setSavedFeedback(false), 1500);
-        if (navigateBack) router.push(backHref);
-      } else {
-        setSaveError("error" in result ? result.error : "Save failed");
-      }
-      return result;
-    }
     const overlayPayload = background.overlay ?? { gradient: true, darken: 0.5, color: "#000000", textColor: "#ffffff" };
     const validUrls = imageUrls.filter((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim()));
     const persistedSlots = imageUrls.filter(slotHasPersistableImage);
@@ -2097,6 +2070,103 @@ export function SlideEditForm({
       validUrls.length > 0 ||
       hasTopLevelLibrary ||
       !!(background.image_url && /^https?:\/\//i.test(String(background.image_url ?? "").trim()));
+
+    const metaForSave: Record<string, unknown> = {
+      ...(typeof slide.meta === "object" && slide.meta !== null ? (slide.meta as Record<string, unknown>) : {}),
+      show_counter: showCounter,
+      show_watermark: showWatermark,
+      show_made_with: showMadeWith,
+      show_swipe: showSwipe,
+      swipe_type: swipeType,
+      swipe_position: swipePosition,
+      ...(swipeText.trim() !== "" && { swipe_text: swipeText.trim() }),
+      ...(swipeX != null && Number.isFinite(swipeX) && { swipe_x: Math.round(swipeX) }),
+      ...(swipeY != null && Number.isFinite(swipeY) && { swipe_y: Math.round(swipeY) }),
+      ...(swipeSize != null && Number.isFinite(swipeSize) && { swipe_size: Math.round(swipeSize) }),
+      ...(swipeColorOverride && /^#([0-9A-Fa-f]{3}){1,2}$/.test(swipeColorOverride) && { swipe_color: swipeColorOverride }),
+      ...(counterColorOverride && /^#([0-9A-Fa-f]{3}){1,2}$/.test(counterColorOverride) && { counter_color: counterColorOverride }),
+      ...(hasImageForSave
+        ? (() => {
+            const isPip = imageDisplayPayload?.mode === "pip";
+            const tintOpacity = isPip ? 0 : (typeof background.overlay?.tintOpacity === "number" ? background.overlay.tintOpacity : (templateConfig?.defaults?.meta as { overlay_tint_opacity?: number } | undefined)?.overlay_tint_opacity ?? 0);
+            return {
+              overlay_tint_opacity: Math.min(1, Math.max(0, tintOpacity)),
+              overlay_tint_color: background.overlay?.tintColor != null && /^#([0-9A-Fa-f]{3}){1,2}$/.test(background.overlay.tintColor) ? background.overlay.tintColor : effectiveColorForSave,
+            };
+          })()
+        : {}),
+      ...(hasImageForSave ? { allow_background_image_override: templateDisallowsImage } : {}),
+      ...(headlineFontSize != null && { headline_font_size: headlineFontSize }),
+      ...(bodyFontSize != null && { body_font_size: bodyFontSize }),
+      ...(headlineZoneOverride && Object.keys(headlineZoneOverride).length > 0 && { headline_zone_override: headlineZoneOverride }),
+      ...(bodyZoneOverride && Object.keys(bodyZoneOverride).length > 0 && { body_zone_override: bodyZoneOverride }),
+      ...(counterZoneOverride && Object.keys(counterZoneOverride).length > 0 && { counter_zone_override: counterZoneOverride }),
+      ...((watermarkZoneOverride && Object.keys(watermarkZoneOverride).length > 0) || (watermarkColorOverride && /^#([0-9A-Fa-f]{3}){1,2}$/.test(watermarkColorOverride))
+        ? {
+            watermark_zone_override: {
+              ...(watermarkZoneOverride && typeof watermarkZoneOverride === "object" ? watermarkZoneOverride : {}),
+              ...(watermarkColorOverride && /^#([0-9A-Fa-f]{3}){1,2}$/.test(watermarkColorOverride) && { color: watermarkColorOverride }),
+            },
+          }
+        : {}),
+      ...(madeWithZoneOverride && (() => {
+        const o = madeWithZoneOverride;
+        const filtered = {
+          ...(o.fontSize != null && { fontSize: o.fontSize }),
+          ...(o.x != null && { x: o.x }),
+          ...(o.y != null && { y: o.y }),
+          ...(o.color != null && /^#([0-9A-Fa-f]{3}){1,2}$/.test(o.color) && { color: o.color }),
+        };
+        return Object.keys(filtered).length > 0 ? { made_with_zone_override: filtered } : {};
+      })()),
+      ...(madeWithText.trim() !== "" && { made_with_text: madeWithText.trim() }),
+      headline_highlight_style: headlineHighlightStyle,
+      body_highlight_style: bodyHighlightStyle,
+      headline_outline_stroke: headlineOutlineStroke,
+      body_outline_stroke: bodyOutlineStroke,
+      ...(headlineBoldWeight !== 700 && { headline_bold_weight: headlineBoldWeight }),
+      ...(bodyBoldWeight !== 700 && { body_bold_weight: bodyBoldWeight }),
+      ...(() => {
+        const norm = normalizeHighlightSpansToWords(headline, headlineHighlights);
+        return norm.length > 0 ? { headline_highlights: norm } : {};
+      })(),
+      ...(() => {
+        const norm = normalizeHighlightSpansToWords(body, bodyHighlights);
+        return norm.length > 0 ? { body_highlights: norm } : {};
+      })(),
+      ...(headlineFontSizeSpans.length > 0 ? { headline_font_size_spans: headlineFontSizeSpans } : {}),
+      ...(bodyFontSizeSpans.length > 0 ? { body_font_size_spans: bodyFontSizeSpans } : {}),
+    };
+
+    if (!isPro) {
+      const result = await updateSlide(
+        {
+          slide_id: slide.id,
+          headline,
+          body: body.trim() || null,
+          background: {
+            color: background.color,
+            style: background.style ?? "solid",
+            gradientOn: background.gradientOn ?? true,
+            overlay: overlayPayload,
+          },
+          meta: metaForSave,
+        },
+        editorPath
+      );
+      setSaving(false);
+      if (result.ok) {
+        lastSavedRef.current = buildEditorDirtySnapshotString();
+        setSavedFeedback(true);
+        setTimeout(() => setSavedFeedback(false), 1500);
+        router.refresh();
+        if (navigateBack) router.push(backHref);
+      } else {
+        setSaveError("error" in result ? result.error : "Save failed");
+      }
+      return result;
+    }
+
     const bgPayload = hasImageForSave
       ? useImagesArray
         ? {
@@ -2162,72 +2232,7 @@ export function SlideEditForm({
         body: body.trim() || null,
         template_id: templateId,
         background: Object.keys(bgPayload).length ? (bgPayload as Record<string, unknown>) : undefined,
-        meta: {
-          ...(typeof slide.meta === "object" && slide.meta !== null ? (slide.meta as Record<string, unknown>) : {}),
-          show_counter: showCounter,
-          show_watermark: showWatermark,
-          show_made_with: showMadeWith,
-          show_swipe: showSwipe,
-          swipe_type: swipeType,
-          swipe_position: swipePosition,
-          ...(swipeText.trim() !== "" && { swipe_text: swipeText.trim() }),
-          ...(swipeX != null && Number.isFinite(swipeX) && { swipe_x: Math.round(swipeX) }),
-          ...(swipeY != null && Number.isFinite(swipeY) && { swipe_y: Math.round(swipeY) }),
-          ...(swipeSize != null && Number.isFinite(swipeSize) && { swipe_size: Math.round(swipeSize) }),
-          ...(swipeColorOverride && /^#([0-9A-Fa-f]{3}){1,2}$/.test(swipeColorOverride) && { swipe_color: swipeColorOverride }),
-          ...(counterColorOverride && /^#([0-9A-Fa-f]{3}){1,2}$/.test(counterColorOverride) && { counter_color: counterColorOverride }),
-          ...(hasImageForSave
-            ? (() => {
-                const isPip = imageDisplayPayload?.mode === "pip";
-                const tintOpacity = isPip ? 0 : (typeof background.overlay?.tintOpacity === "number" ? background.overlay.tintOpacity : (templateConfig?.defaults?.meta as { overlay_tint_opacity?: number } | undefined)?.overlay_tint_opacity ?? 0);
-                return {
-                  overlay_tint_opacity: Math.min(1, Math.max(0, tintOpacity)),
-                  overlay_tint_color: background.overlay?.tintColor != null && /^#([0-9A-Fa-f]{3}){1,2}$/.test(background.overlay.tintColor) ? background.overlay.tintColor : effectiveColorForSave,
-                };
-              })()
-            : {}),
-          ...(hasImageForSave ? { allow_background_image_override: templateDisallowsImage } : {}),
-          ...(headlineFontSize != null && { headline_font_size: headlineFontSize }),
-          ...(bodyFontSize != null && { body_font_size: bodyFontSize }),
-          ...(headlineZoneOverride && Object.keys(headlineZoneOverride).length > 0 && { headline_zone_override: headlineZoneOverride }),
-          ...(bodyZoneOverride && Object.keys(bodyZoneOverride).length > 0 && { body_zone_override: bodyZoneOverride }),
-          ...(counterZoneOverride && Object.keys(counterZoneOverride).length > 0 && { counter_zone_override: counterZoneOverride }),
-          ...((watermarkZoneOverride && Object.keys(watermarkZoneOverride).length > 0) || (watermarkColorOverride && /^#([0-9A-Fa-f]{3}){1,2}$/.test(watermarkColorOverride))
-            ? {
-                watermark_zone_override: {
-                  ...(watermarkZoneOverride && typeof watermarkZoneOverride === "object" ? watermarkZoneOverride : {}),
-                  ...(watermarkColorOverride && /^#([0-9A-Fa-f]{3}){1,2}$/.test(watermarkColorOverride) && { color: watermarkColorOverride }),
-                },
-              }
-            : {}),
-          ...(madeWithZoneOverride && (() => {
-            const o = madeWithZoneOverride;
-            const filtered = {
-              ...(o.fontSize != null && { fontSize: o.fontSize }),
-              ...(o.x != null && { x: o.x }),
-              ...(o.y != null && { y: o.y }),
-              ...(o.color != null && /^#([0-9A-Fa-f]{3}){1,2}$/.test(o.color) && { color: o.color }),
-            };
-            return Object.keys(filtered).length > 0 ? { made_with_zone_override: filtered } : {};
-          })()),
-          ...(madeWithText.trim() !== "" && { made_with_text: madeWithText.trim() }),
-          headline_highlight_style: headlineHighlightStyle,
-          body_highlight_style: bodyHighlightStyle,
-          headline_outline_stroke: headlineOutlineStroke,
-          body_outline_stroke: bodyOutlineStroke,
-          ...(headlineBoldWeight !== 700 && { headline_bold_weight: headlineBoldWeight }),
-          ...(bodyBoldWeight !== 700 && { body_bold_weight: bodyBoldWeight }),
-          ...(() => {
-            const norm = normalizeHighlightSpansToWords(headline, headlineHighlights);
-            return norm.length > 0 ? { headline_highlights: norm } : {};
-          })(),
-          ...(() => {
-            const norm = normalizeHighlightSpansToWords(body, bodyHighlights);
-            return norm.length > 0 ? { body_highlights: norm } : {};
-          })(),
-          ...(headlineFontSizeSpans.length > 0 ? { headline_font_size_spans: headlineFontSizeSpans } : {}),
-          ...(bodyFontSizeSpans.length > 0 ? { body_font_size_spans: bodyFontSizeSpans } : {}),
-        },
+        meta: metaForSave,
       },
       editorPath
     );
@@ -5384,7 +5389,6 @@ export function SlideEditForm({
                 </span>
               </button>
               <div id="text-section-headline" className={expandedTextSection === "headline" ? "p-3 pt-0 space-y-3" : "hidden"}>
-              {isPro && (
                 <div className="rounded-lg border border-border/50 bg-muted/20 p-3 space-y-4">
                   <div className="space-y-3">
                     <p className="text-xs font-medium text-foreground">Text style</p>
@@ -5556,7 +5560,6 @@ export function SlideEditForm({
                     title="Headline font"
                   />
                 </div>
-              )}
               <Textarea
                 ref={headlineRef}
                 id="headline"
@@ -5581,7 +5584,7 @@ export function SlideEditForm({
                     Rewrite headline
                   </Button>
                 )}
-                {totalSlides > 1 && isPro && (
+                {totalSlides > 1 && (
                   <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={handleApplyHeadlineToAll} disabled={applyingHeadlineZone} title="Apply headline size, position, layout, and text color to all frames">
                     {applyingHeadlineZone ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
                     Apply to all
@@ -5602,7 +5605,7 @@ export function SlideEditForm({
                     <ChevronDownIcon className={`size-3.5 shrink-0 transition-transform ${headlineEditMoreOpen ? "" : "-rotate-90"}`} />
                     {headlineEditMoreOpen ? "Less" : "Advanced — placement, highlights, outline"}
                   </button>
-                  {totalSlides > 1 && isPro && (
+                  {totalSlides > 1 && (
                     <span onClick={(e) => e.stopPropagation()}>
                       <Button type="button" variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground hover:text-foreground" onClick={handleApplyHeadlineHighlightStyleToAll} disabled={applyingHighlightStyle || applyingAutoHighlights} title="Apply auto highlights + current headline highlight style to all slides">
                         {applyingHighlightStyle || applyingAutoHighlights ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
@@ -5613,8 +5616,7 @@ export function SlideEditForm({
                 </div>
                 {headlineEditMoreOpen && (
                   <div className="mt-3 space-y-4">
-                    {isPro && (
-                      <>
+                    <>
                         <div className="space-y-2">
                           <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">On the slide</p>
                           <div className="flex flex-wrap items-center gap-2">
@@ -5877,8 +5879,7 @@ export function SlideEditForm({
                         )}
                         </div>
                       </>
-                    )}
-                    {totalSlides > 1 && isPro && (
+                    {totalSlides > 1 && (
                       <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground gap-1.5" onClick={handleApplyClearHeadlineToAll} disabled={applyingClear} title="Clear headline text on every frame">
                         {applyingClear ? <Loader2Icon className="size-3.5 animate-spin" /> : <Trash2 className="size-3" />}
                         Clear text on all slides
@@ -6011,7 +6012,6 @@ export function SlideEditForm({
                 </span>
               </button>
               <div id="text-section-body" className={expandedTextSection === "body" ? "p-3 pt-0 space-y-3" : "hidden"}>
-              {isPro && (
                 <div className="rounded-lg border border-border/50 bg-muted/20 p-3 space-y-4">
                   <div className="space-y-3">
                     <p className="text-xs font-medium text-foreground">Text style</p>
@@ -6183,7 +6183,6 @@ export function SlideEditForm({
                     title="Body font"
                   />
                 </div>
-              )}
               <Textarea
                 ref={bodyRef}
                 id="body"
@@ -6208,7 +6207,7 @@ export function SlideEditForm({
                     Rewrite body
                   </Button>
                 )}
-                {totalSlides > 1 && isPro && (
+                {totalSlides > 1 && (
                   <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={handleApplyBodyToAll} disabled={applyingBodyZone} title="Apply body size, position, layout, and text color to all frames">
                     {applyingBodyZone ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
                     Apply to all
@@ -6226,7 +6225,7 @@ export function SlideEditForm({
                     <ChevronDownIcon className={`size-3.5 shrink-0 transition-transform ${bodyEditMoreOpen ? "" : "-rotate-90"}`} />
                     {bodyEditMoreOpen ? "Less" : "Advanced — placement, highlights, outline"}
                   </button>
-                  {totalSlides > 1 && isPro && (
+                  {totalSlides > 1 && (
                     <span onClick={(e) => e.stopPropagation()}>
                       <Button type="button" variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground hover:text-foreground" onClick={handleApplyBodyHighlightStyleToAll} disabled={applyingHighlightStyle || applyingAutoHighlights} title="Apply auto highlights + current body highlight style to all slides">
                         {applyingHighlightStyle || applyingAutoHighlights ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
@@ -6237,8 +6236,7 @@ export function SlideEditForm({
                 </div>
                 {bodyEditMoreOpen && (
                   <div className="mt-3 space-y-4">
-                    {isPro && (
-                      <>
+                    <>
                         <div className="space-y-2">
                           <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">On the slide</p>
                           <div className="flex flex-wrap items-center gap-2">
@@ -6501,8 +6499,7 @@ export function SlideEditForm({
                         )}
                         </div>
                       </>
-                    )}
-                    {totalSlides > 1 && isPro && (
+                    {totalSlides > 1 && (
                       <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground gap-1.5" onClick={handleApplyClearBodyToAll} disabled={applyingClear} title="Clear body text on every frame">
                         {applyingClear ? <Loader2Icon className="size-3.5 animate-spin" /> : <Trash2 className="size-3" />}
                         Clear text on all slides

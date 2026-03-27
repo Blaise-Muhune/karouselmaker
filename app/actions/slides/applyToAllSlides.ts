@@ -57,7 +57,14 @@ export async function applyToAllSlides(
   if (!user) return { ok: false, error: "Unauthorized" };
 
   const proCheck = await requirePro(user.id, user.email);
-  if (!proCheck.allowed) return { ok: false, error: proCheck.error ?? "Upgrade to Pro" };
+  const textOnlyBulkApply =
+    payload.template_id === undefined &&
+    payload.background === undefined &&
+    (payload.meta !== undefined || payload.headline !== undefined || payload.body !== undefined);
+
+  if (!proCheck.allowed && !textOnlyBulkApply) {
+    return { ok: false, error: proCheck.error ?? "Upgrade to Pro" };
+  }
 
   const carousel = await getCarousel(user.id, carouselId);
   if (!carousel) return { ok: false, error: "Carousel not found" };
@@ -67,6 +74,7 @@ export async function applyToAllSlides(
 
   // When applying a template to all, use setSlideTemplate per slide so every template property applies (PIP, overlay, tint, gradient, meta defaults).
   if (payload.template_id !== undefined) {
+    if (!proCheck.allowed) return { ok: false, error: proCheck.error ?? "Upgrade to Pro" };
     const templateId = payload.template_id;
     const templateExists = templateId ? await getTemplate(user.id, templateId) : true;
     const resolvedTemplateId = templateExists ? templateId : null;
@@ -388,9 +396,6 @@ export async function applyHighlightColorToAllSlides(
 ): Promise<ApplyToAllResult> {
   const { user } = await getUser();
   if (!user) return { ok: false, error: "Unauthorized" };
-
-  const proCheck = await requirePro(user.id, user.email);
-  if (!proCheck.allowed) return { ok: false, error: proCheck.error ?? "Upgrade to Pro" };
 
   const carousel = await getCarousel(user.id, carouselId);
   if (!carousel) return { ok: false, error: "Carousel not found" };

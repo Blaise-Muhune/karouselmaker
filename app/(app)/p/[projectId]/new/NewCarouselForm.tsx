@@ -81,6 +81,8 @@ function pickTemplateIdForBackgroundMode(
     wantImageTemplate: boolean;
     preferredId?: string | null;
     fallbackDefaultId?: string | null;
+    /** When true, use preferredId even if it does not match wantImageTemplate (user explicitly chose it). */
+    respectUserPreferred?: boolean;
   }
 ): string | null {
   const platformTemplates =
@@ -91,6 +93,9 @@ function pickTemplateIdForBackgroundMode(
   const preferred =
     (options.preferredId ? platformTemplates.find((t) => t.id === options.preferredId) : undefined) ??
     (options.fallbackDefaultId ? platformTemplates.find((t) => t.id === options.fallbackDefaultId) : undefined);
+
+  if (preferred && options.respectUserPreferred) return preferred.id;
+
   if (preferred && templateAllowsImage(preferred) === options.wantImageTemplate) return preferred.id;
 
   const firstMatch = platformTemplates.find((t) => templateAllowsImage(t) === options.wantImageTemplate);
@@ -199,8 +204,11 @@ export function NewCarouselForm({
       wantImageTemplate,
       preferredId: initialPlatform === "linkedin" ? defaultLinkedInTemplateId : defaultTemplateId,
       fallbackDefaultId: initialPlatform === "linkedin" ? defaultLinkedInTemplateId : defaultTemplateId,
+      respectUserPreferred: false,
     });
   });
+  /** After user picks a template in the modal, keep it—do not auto-replace when AI background toggles. */
+  const userLockedTemplateChoiceRef = useRef(false);
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [upgradeLoading, setUpgradeLoading] = useState(false);
@@ -289,18 +297,32 @@ export function NewCarouselForm({
   useEffect(() => {
     if (prevCarouselForRef.current !== carouselFor) {
       prevCarouselForRef.current = carouselFor;
+      const platformTemplates =
+        carouselFor === "linkedin"
+          ? templateOptions.filter((t) => (t.category ?? "").toLowerCase() === "linkedin")
+          : templateOptions.filter((t) => (t.category ?? "").toLowerCase() !== "linkedin");
+      const currentStillValid =
+        selectedTemplateId != null && platformTemplates.some((t) => t.id === selectedTemplateId);
+      const preferredWhenSwitching =
+        currentStillValid && selectedTemplateId
+          ? selectedTemplateId
+          : carouselFor === "linkedin"
+            ? defaultLinkedInTemplateId
+            : defaultTemplateId;
       const next = pickTemplateIdForBackgroundMode(templateOptions, {
         carouselFor,
         wantImageTemplate: useAiBackgrounds,
-        preferredId: carouselFor === "linkedin" ? defaultLinkedInTemplateId : defaultTemplateId,
+        preferredId: preferredWhenSwitching,
         fallbackDefaultId: carouselFor === "linkedin" ? defaultLinkedInTemplateId : defaultTemplateId,
+        respectUserPreferred: currentStillValid,
       });
       setSelectedTemplateId(next);
     }
-  }, [carouselFor, useAiBackgrounds, templateOptions, defaultLinkedInTemplateId, defaultTemplateId]);
+  }, [carouselFor, useAiBackgrounds, templateOptions, defaultLinkedInTemplateId, defaultTemplateId, selectedTemplateId]);
 
-  // Keep selected template aligned with background mode unless it already matches.
+  // Initial default only: when AI backgrounds is toggled, auto-pick a matching template unless the user already chose one in the modal.
   useEffect(() => {
+    if (userLockedTemplateChoiceRef.current) return;
     const current = selectedTemplateId ? templateOptions.find((t) => t.id === selectedTemplateId) : null;
     if (current && templateAllowsImage(current) === useAiBackgrounds) return;
     const next = pickTemplateIdForBackgroundMode(templateOptions, {
@@ -308,6 +330,7 @@ export function NewCarouselForm({
       wantImageTemplate: useAiBackgrounds,
       preferredId: selectedTemplateId,
       fallbackDefaultId: carouselFor === "linkedin" ? defaultLinkedInTemplateId : defaultTemplateId,
+      respectUserPreferred: false,
     });
     if (next !== selectedTemplateId) setSelectedTemplateId(next);
   }, [
@@ -935,6 +958,7 @@ export function NewCarouselForm({
                     initialPlatformFilter={carouselFor === "linkedin" ? "linkedin" : "other"}
                     value={selectedTemplateId}
                     onChange={(id) => {
+                      userLockedTemplateChoiceRef.current = true;
                       setSelectedTemplateId(id);
                       setTemplateModalOpen(false);
                     }}

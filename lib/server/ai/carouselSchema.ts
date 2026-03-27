@@ -1,67 +1,87 @@
 import { z } from "zod";
+import {
+  ABSOLUTE_MAX_BODY_CHARS,
+  ABSOLUTE_MAX_HEADLINE_CHARS,
+} from "@/lib/server/ai/templateContextForPrompt";
 
 const slideTypeEnum = z.enum(["hook", "point", "context", "cta", "generic"]);
 
 /** Words/phrases from the text to highlight (exact substring match). Used by "Auto" in the editor. */
 const highlightWordsSchema = z.array(z.string().min(1).max(60)).max(8).optional();
 
-/** Text variant: short (~40/80 chars), normal (fits template), or long (up to 120/400). */
-export const shortenAlternateSchema = z.object({
-  headline: z.string().max(120),
-  body: z.string().max(600).optional().default(""),
-  /** Words from this alternate's headline to highlight when user clicks Auto. Must appear exactly in headline. */
-  headline_highlight_words: highlightWordsSchema,
-  /** Words from this alternate's body to highlight when user clicks Auto. Must appear exactly in body. */
-  body_highlight_words: highlightWordsSchema,
-  /** Optional: "short" | "normal" | "long" for UI display. Order in array is [short, normal, long]. */
-  variant: z.enum(["short", "normal", "long"]).optional(),
-});
+export type SlideTextLimits = { headlineMax: number; bodyMax: number };
 
-export const aiSlideSchema = z.object({
-  slide_index: z.number().int().min(1),
-  slide_type: slideTypeEnum,
-  headline: z.string().max(120),
-  body: z.string().max(600).optional().default(""),
-  /** Words from headline to highlight when user clicks Auto. Must appear exactly in headline. */
-  headline_highlight_words: highlightWordsSchema,
-  /** Words from body to highlight when user clicks Auto. Must appear exactly in body. */
-  body_highlight_words: highlightWordsSchema,
-  /** Optional image search query for AI-suggested background (legacy, single image). Fetched via Brave or Unsplash. */
-  image_query: z.string().max(80).optional(),
-  /** Optional array of image search phrases (one per image). E.g. ["Elon Musk portrait", "Jeff Bezos portrait"] for 2 images. Max 4 per slide. Fetched via Brave or Unsplash. */
-  image_queries: z.array(z.string().max(80)).max(4).optional(),
-  /** Optional context for AI image generation: era/year and location so images match the right time and setting. Used only when use_ai_generate is true. */
-  image_context: z
-    .object({
-      year: z.string().max(30).optional(),
-      location: z.string().max(60).optional(),
-    })
-    .optional(),
-  /** When using stock photos (Unsplash/Pexels/Pixabay), which provider to use for this slide. AI chooses per slide. */
-  image_provider: z.enum(["unsplash", "pexels", "pixabay"]).optional(),
-  // Legacy: accept old field names from cached or older AI output
-  unsplash_query: z.string().max(80).optional(),
-  unsplash_queries: z.array(z.string().max(80)).max(4).optional(),
-  /** Exactly 3 text variants per slide: [short, normal, long]. Used for "Shorten to fit" / variant cycling. Optional; omit or empty if not needed. */
-  shorten_alternates: z.array(shortenAlternateSchema).min(0).max(3).optional(),
-});
+function clampLimits(limits: SlideTextLimits): { h: number; b: number } {
+  const h = Math.min(
+    ABSOLUTE_MAX_HEADLINE_CHARS,
+    Math.max(1, Math.floor(limits.headlineMax))
+  );
+  const b = Math.min(
+    ABSOLUTE_MAX_BODY_CHARS,
+    Math.max(0, Math.floor(limits.bodyMax))
+  );
+  return { h, b };
+}
 
-export const carouselOutputSchema = z.object({
-  title: z.string().min(1).max(200),
-  slides: z.array(aiSlideSchema),
-  caption_variants: z
-    .object({
-      /** SEO-friendly post title for social (discoverability). */
-      title: z.string().max(120).optional().default(""),
-      /** Engagement-focused caption with more explanation. */
-      medium: z.string().max(400).optional().default(""),
-      /** Longer caption for full context. */
-      long: z.string().max(800).optional().default(""),
-    })
-    .optional()
-    .default({ title: "", medium: "", long: "" }),
-  hashtags: z.array(z.string().max(50)).max(15).optional().default([]),
-});
+/**
+ * Zod schema for carousel LLM output with per-template headline/body max lengths
+ * (from template text zones). Use {@link DEFAULT_CAROUSEL_TEXT_LIMITS} when no template.
+ */
+export function createCarouselOutputSchema(limits: SlideTextLimits) {
+  const { h, b } = clampLimits(limits);
+
+  const shortenAlternateSchema = z.object({
+    headline: z.string().max(h),
+    body: z.string().max(b).optional().default(""),
+    headline_highlight_words: highlightWordsSchema,
+    body_highlight_words: highlightWordsSchema,
+    variant: z.enum(["short", "normal", "long"]).optional(),
+  });
+
+  const aiSlideSchema = z.object({
+    slide_index: z.number().int().min(1),
+    slide_type: slideTypeEnum,
+    headline: z.string().max(h),
+    body: z.string().max(b).optional().default(""),
+    headline_highlight_words: highlightWordsSchema,
+    body_highlight_words: highlightWordsSchema,
+    image_query: z.string().max(80).optional(),
+    image_queries: z.array(z.string().max(80)).max(4).optional(),
+    image_context: z
+      .object({
+        year: z.string().max(30).optional(),
+        location: z.string().max(60).optional(),
+      })
+      .optional(),
+    image_provider: z.enum(["unsplash", "pexels", "pixabay"]).optional(),
+    unsplash_query: z.string().max(80).optional(),
+    unsplash_queries: z.array(z.string().max(80)).max(4).optional(),
+    shorten_alternates: z.array(shortenAlternateSchema).min(0).max(3).optional(),
+  });
+
+  return z.object({
+    title: z.string().min(1).max(200),
+    slides: z.array(aiSlideSchema),
+    caption_variants: z
+      .object({
+        title: z.string().max(120).optional().default(""),
+        medium: z.string().max(400).optional().default(""),
+        long: z.string().max(800).optional().default(""),
+      })
+      .optional()
+      .default({ title: "", medium: "", long: "" }),
+    hashtags: z.array(z.string().max(50)).max(15).optional().default([]),
+    similar_ideas: z.array(z.string().min(1).max(200)).max(8).optional().default([]),
+  });
+}
+
+/** Legacy default when template limits are not applied (narrow caps). */
+export const DEFAULT_CAROUSEL_TEXT_LIMITS: SlideTextLimits = {
+  headlineMax: 120,
+  bodyMax: 600,
+};
+
+export const carouselOutputSchema = createCarouselOutputSchema(DEFAULT_CAROUSEL_TEXT_LIMITS);
 
 export type CarouselOutput = z.output<typeof carouselOutputSchema>;
-export type AISlide = z.output<typeof aiSlideSchema>;
+export type AISlide = CarouselOutput["slides"][number];

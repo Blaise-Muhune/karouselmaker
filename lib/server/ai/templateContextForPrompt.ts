@@ -16,7 +16,8 @@ function maxCharsForZone(zone: { w: number; fontSize: number; maxLines: number }
     return 0;
   const approxCharWidth = fontSize * 0.58;
   const charsPerLine = Math.max(1, Math.floor(w / approxCharWidth));
-  return Math.min(999, charsPerLine * maxLines);
+  /** Allow large body zones (many lines / small font); capped again per-field below. */
+  return Math.min(8000, charsPerLine * maxLines);
 }
 
 type ZoneLike = { id: string; w?: number; h?: number; fontSize?: number; maxLines?: number };
@@ -38,8 +39,12 @@ export type TemplateContextForPrompt = {
   promptSection: string;
 };
 
-const HEADLINE_SCHEMA_MAX = 120;
-const BODY_SCHEMA_MAX = 600;
+/** Hard caps for API / DB safety; template geometry is clamped to these. */
+export const ABSOLUTE_MAX_HEADLINE_CHARS = 2000;
+export const ABSOLUTE_MAX_BODY_CHARS = 8000;
+
+const DEFAULT_FALLBACK_HEADLINE = 120;
+const DEFAULT_FALLBACK_BODY = 600;
 
 /**
  * Build template context for the carousel generation prompt so the AI knows
@@ -53,8 +58,8 @@ export function buildTemplateContextForPrompt(templateConfig: Json | null | unde
     return {
       hasHeadline: true,
       hasBody: true,
-      headlineMaxChars: HEADLINE_SCHEMA_MAX,
-      bodyMaxChars: BODY_SCHEMA_MAX,
+      headlineMaxChars: DEFAULT_FALLBACK_HEADLINE,
+      bodyMaxChars: DEFAULT_FALLBACK_BODY,
       promptSection: "",
     };
   }
@@ -65,18 +70,24 @@ export function buildTemplateContextForPrompt(templateConfig: Json | null | unde
   const hasBody = !!bodyZone;
 
   const headlineMaxChars = headlineZone
-    ? Math.min(HEADLINE_SCHEMA_MAX, maxCharsForZone({
-        w: Number(headlineZone.w) || DESIGN_WIDTH,
-        fontSize: Number(headlineZone.fontSize) || 48,
-        maxLines: Number(headlineZone.maxLines) || 3,
-      }))
+    ? Math.min(
+        ABSOLUTE_MAX_HEADLINE_CHARS,
+        maxCharsForZone({
+          w: Number(headlineZone.w) || DESIGN_WIDTH,
+          fontSize: Number(headlineZone.fontSize) || 48,
+          maxLines: Number(headlineZone.maxLines) || 3,
+        })
+      )
     : 0;
   const bodyMaxChars = bodyZone
-    ? Math.min(BODY_SCHEMA_MAX, maxCharsForZone({
-        w: Number(bodyZone.w) || DESIGN_WIDTH,
-        fontSize: Number(bodyZone.fontSize) || 32,
-        maxLines: Number(bodyZone.maxLines) || 5,
-      }))
+    ? Math.min(
+        ABSOLUTE_MAX_BODY_CHARS,
+        maxCharsForZone({
+          w: Number(bodyZone.w) || DESIGN_WIDTH,
+          fontSize: Number(bodyZone.fontSize) || 32,
+          maxLines: Number(bodyZone.maxLines) || 5,
+        })
+      )
     : 0;
 
   const lines: string[] = [];
@@ -116,4 +127,22 @@ export function buildTemplateContextForPrompt(templateConfig: Json | null | unde
     bodyMaxChars: hasBody ? bodyMaxChars : 0,
     promptSection: lines.join(" "),
   };
+}
+
+/** Limits for Zod + normalization when validating LLM JSON (matches selected template zones). */
+export function getSlideTextLimitsForValidation(templateConfig: Json | null | undefined): {
+  headlineMax: number;
+  bodyMax: number;
+} {
+  const ctx = buildTemplateContextForPrompt(templateConfig);
+  if (!ctx) {
+    return { headlineMax: DEFAULT_FALLBACK_HEADLINE, bodyMax: DEFAULT_FALLBACK_BODY };
+  }
+  const headlineMax = ctx.hasHeadline
+    ? Math.min(ABSOLUTE_MAX_HEADLINE_CHARS, Math.max(1, ctx.headlineMaxChars))
+    : DEFAULT_FALLBACK_HEADLINE;
+  const bodyMax = ctx.hasBody
+    ? Math.min(ABSOLUTE_MAX_BODY_CHARS, Math.max(0, ctx.bodyMaxChars))
+    : DEFAULT_FALLBACK_BODY;
+  return { headlineMax, bodyMax };
 }

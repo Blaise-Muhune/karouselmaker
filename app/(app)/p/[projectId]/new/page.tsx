@@ -20,11 +20,11 @@ export default async function NewCarouselPage({
   searchParams,
 }: Readonly<{
   params: Promise<{ projectId: string }>;
-  searchParams: Promise<{ regenerate?: string }>;
+  searchParams: Promise<{ regenerate?: string; topic?: string }>;
 }>) {
   const { user } = await getUser();
   const { projectId } = await params;
-  const { regenerate: regenerateCarouselId } = await searchParams;
+  const { regenerate: regenerateCarouselId, topic: topicPrefill } = await searchParams;
   const [project, subscription, limits, carouselCount, lifetimeCarouselCount, aiGenerateUsed, regenerateCarousel, templatesRaw, defaultTemplate, defaultLinkedInTemplate] = await Promise.all([
     getProject(user.id, projectId),
     getSubscription(user.id, user.email),
@@ -119,7 +119,7 @@ export default async function NewCarouselPage({
           aiGenerateLimit={AI_GENERATE_LIMIT_PRO}
           regenerateCarouselId={regenerateCarousel?.id}
           initialInputType={regenerateCarousel && (regenerateCarousel.input_type === "url" || regenerateCarousel.input_type === "text") ? regenerateCarousel.input_type : regenerateCarousel ? "topic" : undefined}
-          initialInputValue={regenerateCarousel?.input_value}
+          initialInputValue={regenerateCarousel?.input_value ?? topicPrefill?.trim() ?? undefined}
           initialUseAiBackgrounds={regenerateCarousel?.generation_options?.use_ai_backgrounds}
           initialUseStockPhotos={(() => {
             const opts = regenerateCarousel?.generation_options as { use_stock_photos?: boolean; use_unsplash_only?: boolean; use_pixabay_only?: boolean; use_pexels_only?: boolean } | undefined;

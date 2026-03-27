@@ -235,8 +235,11 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
     contextBlock = contextBlock.slice(0, MAX_CONTEXT_BLOCK_LEN).trim().replace(/\s+[^\s]*$/, "") + ".";
   }
 
-  if (!contextBlock.trim()) return `${base}`;
-  return `${contextBlock}. Generate this image: ${base}`;
+  const colorGradingLine =
+    "Color: natural, true-to-life grading when it fits the subject; avoid default neon magenta/purple gradients unless the topic is explicitly about that look.";
+
+  if (!contextBlock.trim()) return `${colorGradingLine} ${base}`;
+  return `${contextBlock}. ${colorGradingLine} Generate this image: ${base}`;
 }
 
 export type GenerateImageResult =

@@ -30,6 +30,7 @@ import { FREE_FULL_ACCESS_GENERATIONS } from "@/lib/constants";
 import { slugifyForFilename } from "@/lib/utils";
 import { GenerationPartialBanner } from "@/components/carousels/GenerationPartialBanner";
 import { CarouselGeneratingPage } from "@/components/carousels/CarouselGeneratingTrigger";
+import { SimilarCarouselIdeas } from "@/components/carousels/SimilarCarouselIdeas";
 import { ArrowLeftIcon } from "lucide-react";
 
 function normalizeStoragePathForBucket(path: string | undefined, bucket: string): string | undefined {
@@ -347,6 +348,11 @@ export default async function CarouselEditorPage({
             downloadFilenameSlug={slugifyForFilename([project.name, carousel.title].filter(Boolean).join(" - ")) || undefined}
           />
         </section>
+
+        <SimilarCarouselIdeas
+          projectId={projectId}
+          ideas={(carousel.generation_options as { similar_carousel_ideas?: string[] } | undefined)?.similar_carousel_ideas ?? []}
+        />
 
         {/* Caption */}
         <EditorCaptionSection

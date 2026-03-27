@@ -11,14 +11,18 @@ import { replaceSlides, updateSlide } from "@/lib/server/db/slides";
 import type { Json } from "@/lib/server/db/types";
 import { getAsset } from "@/lib/server/db/assets";
 import {
-  carouselOutputSchema,
+  createCarouselOutputSchema,
   type CarouselOutput,
 } from "@/lib/server/ai/carouselSchema";
 import {
   buildCarouselPrompts,
   buildValidationRetryPrompt,
 } from "@/lib/server/ai/prompts";
-import { buildTemplateContextForPrompt } from "@/lib/server/ai/templateContextForPrompt";
+import { postProcessAiGeneratedImageQueries } from "@/lib/server/ai/sanitizeImageQueries";
+import {
+  buildTemplateContextForPrompt,
+  getSlideTextLimitsForValidation,
+} from "@/lib/server/ai/templateContextForPrompt";
 import { searchImage } from "@/lib/server/imageSearch";
 import { searchUnsplashPhotosMultiple, trackUnsplashDownload } from "@/lib/server/unsplash";
 import { searchPixabayPhotos } from "@/lib/server/pixabay";
@@ -151,7 +155,12 @@ const MAX_IMAGE_QUERY_LEN = 80;
 const MAX_IMAGE_QUERIES = 4;
 
 /** Normalize LLM output to schema limits so we don't burn tokens on retries for "too_big". */
-function normalizeCarouselOutput(parsed: unknown): unknown {
+function normalizeCarouselOutput(
+  parsed: unknown,
+  limits?: { headlineMax: number; bodyMax: number }
+): unknown {
+  const hMax = limits?.headlineMax ?? 120;
+  const bMax = limits?.bodyMax ?? 600;
   if (!parsed || typeof parsed !== "object") return parsed;
   const root = parsed as Record<string, unknown>;
   const slides = root.slides;
@@ -173,10 +182,19 @@ function normalizeCarouselOutput(parsed: unknown): unknown {
       .map((s) => s.slice(0, maxLen))
       .slice(0, maxItems);
   };
+  const MAX_SIMILAR_IDEAS = 8;
+  const MAX_SIMILAR_IDEA_LEN = 200;
+  if (root.similar_ideas !== undefined) {
+    root.similar_ideas = normStrArr(root.similar_ideas, MAX_SIMILAR_IDEA_LEN, MAX_SIMILAR_IDEAS).map((s) =>
+      s.trim()
+    ).filter((s) => s.length > 0);
+  }
 
   root.slides = slides.map((slide) => {
     if (!slide || typeof slide !== "object") return slide;
     const s = { ...slide } as Record<string, unknown>;
+    if (s.headline !== undefined) s.headline = normStr(s.headline, hMax);
+    if (s.body !== undefined) s.body = normStr(s.body, bMax);
     if (s.headline_highlight_words !== undefined) s.headline_highlight_words = normHighlight(s.headline_highlight_words);
     if (s.body_highlight_words !== undefined) s.body_highlight_words = normHighlight(s.body_highlight_words);
     if (s.image_query !== undefined) s.image_query = normStr(s.image_query, MAX_IMAGE_QUERY_LEN) || undefined;
@@ -188,6 +206,8 @@ function normalizeCarouselOutput(parsed: unknown): unknown {
       s.shorten_alternates = alternates.map((alt) => {
         if (!alt || typeof alt !== "object") return alt;
         const a = { ...alt } as Record<string, unknown>;
+        if (a.headline !== undefined) a.headline = normStr(a.headline, hMax);
+        if (a.body !== undefined) a.body = normStr(a.body, bMax);
         if (a.headline_highlight_words !== undefined) a.headline_highlight_words = normHighlight(a.headline_highlight_words);
         if (a.body_highlight_words !== undefined) a.body_highlight_words = normHighlight(a.body_highlight_words);
         return a;
@@ -198,7 +218,10 @@ function normalizeCarouselOutput(parsed: unknown): unknown {
   return root;
 }
 
-function parseAndValidate(raw: string): CarouselOutput | { error: string } {
+function parseAndValidate(
+  raw: string,
+  limits: { headlineMax: number; bodyMax: number }
+): CarouselOutput | { error: string } {
   const cleaned = stripJson(raw);
   let parsed: unknown;
   try {
@@ -206,8 +229,8 @@ function parseAndValidate(raw: string): CarouselOutput | { error: string } {
   } catch {
     return { error: "Invalid JSON" };
   }
-  parsed = normalizeCarouselOutput(parsed);
-  const result = carouselOutputSchema.safeParse(parsed);
+  parsed = normalizeCarouselOutput(parsed, limits);
+  const result = createCarouselOutputSchema(limits).safeParse(parsed);
   if (!result.success) {
     const msg = result.error.flatten().formErrors.join("; ") ||
       result.error.message;
@@ -405,6 +428,7 @@ export async function generateCarousel(formData: FormData): Promise<
   }
   const templateContext = buildTemplateContextForPrompt(templateForPrompt?.config ?? null);
   const template_context = templateContext?.promptSection?.trim() ?? undefined;
+  const slideTextLimits = getSlideTextLimitsForValidation(templateForPrompt?.config ?? null);
 
   const ctx = {
     tone_preset: project.tone_preset,
@@ -484,7 +508,7 @@ export async function generateCarousel(formData: FormData): Promise<
     }
 
     lastRaw = content;
-    const result = parseAndValidate(content);
+    const result = parseAndValidate(content, slideTextLimits);
 
     if ("error" in result) {
       lastError = result.error;
@@ -494,7 +518,7 @@ export async function generateCarousel(formData: FormData): Promise<
       return { error: `Generation failed after retries: ${result.error}` };
     }
 
-    validated = result;
+    validated = postProcessAiGeneratedImageQueries(result, useAiGenerate);
     LOG("AI", `validated ${validated.slides.length} slides in ${elapsedMs(llmStart) / 1000}s`);
     break;
   }
@@ -553,6 +577,9 @@ export async function generateCarousel(formData: FormData): Promise<
       use_web_search: useWebSearch,
       ...(carouselFor && { carousel_for: carouselFor }),
       ...(data.notes?.trim() && { notes: data.notes.trim() }),
+      ...(validated.similar_ideas?.length && {
+        similar_carousel_ideas: validated.similar_ideas,
+      }),
     },
   };
   try {
