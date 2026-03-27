@@ -37,14 +37,16 @@ import {
   LinkedinIcon,
   LightbulbIcon,
   RefreshCwIcon,
+  UploadIcon,
 } from "lucide-react";
 import { WEB_IMAGES_SOURCE_DESCRIPTION, imageSourceDisplayName } from "@/lib/utils/imageSourceDisplay";
 import { BackgroundSourceBestForHint } from "@/components/carousels/BackgroundSourcePlatformHints";
+import { InstagramMicroIcon, TikTokMicroIcon } from "@/components/carousels/BackgroundSourcePlatformHints";
 import { cn } from "@/lib/utils";
 
 /** Carousel for: Instagram (default) or LinkedIn. LinkedIn uses B2B-optimized content and stock/own images only (no AI generate). */
 const CAROUSEL_FOR_OPTIONS = [
-  { value: "instagram" as const, label: "Instagram", icon: ImageIcon },
+  { value: "instagram" as const, label: "Instagram / TikTok", icon: ImageIcon },
   { value: "linkedin" as const, label: "LinkedIn", icon: LinkedinIcon },
 ] as const;
 /** Diverse Unsplash sample images for template preview when "Let AI suggest background images" is on. */
@@ -65,7 +67,39 @@ const INPUT_TYPES = [
   { value: "topic", label: "Topic", icon: SparklesIcon },
   { value: "url", label: "URL", icon: Link2Icon },
   { value: "text", label: "Paste text", icon: FileTextIcon },
+  { value: "document", label: "Document/PDF", icon: UploadIcon },
 ] as const;
+
+function templateAllowsImage(t: TemplateOption | undefined | null): boolean {
+  return t?.parsedConfig?.backgroundRules?.allowImage !== false;
+}
+
+function pickTemplateIdForBackgroundMode(
+  templates: TemplateOption[],
+  options: {
+    carouselFor: "instagram" | "linkedin";
+    wantImageTemplate: boolean;
+    preferredId?: string | null;
+    fallbackDefaultId?: string | null;
+  }
+): string | null {
+  const platformTemplates =
+    options.carouselFor === "linkedin"
+      ? templates.filter((t) => (t.category ?? "").toLowerCase() === "linkedin")
+      : templates.filter((t) => (t.category ?? "").toLowerCase() !== "linkedin");
+
+  const preferred =
+    (options.preferredId ? platformTemplates.find((t) => t.id === options.preferredId) : undefined) ??
+    (options.fallbackDefaultId ? platformTemplates.find((t) => t.id === options.fallbackDefaultId) : undefined);
+  if (preferred && templateAllowsImage(preferred) === options.wantImageTemplate) return preferred.id;
+
+  const firstMatch = platformTemplates.find((t) => templateAllowsImage(t) === options.wantImageTemplate);
+  if (firstMatch) return firstMatch.id;
+
+  // Fallback: if no strict match exists for this platform, keep platform default if available.
+  if (preferred) return preferred.id;
+  return platformTemplates[0]?.id ?? null;
+}
 
 export function NewCarouselForm({
   projectId,
@@ -110,7 +144,7 @@ export function NewCarouselForm({
   aiGenerateLimit?: number;
   /** When set, form pre-fills from this carousel and submit regenerates it in place. */
   regenerateCarouselId?: string;
-  initialInputType?: "topic" | "url" | "text";
+  initialInputType?: "topic" | "url" | "text" | "document";
   initialInputValue?: string;
   /** Pre-fill from carousel.generation_options so regenerate matches original checkboxes. */
   initialUseAiBackgrounds?: boolean;
@@ -136,8 +170,9 @@ export function NewCarouselForm({
   /** Web image search (Brave): Pro or first free full-access generations — not admin-only. */
   const canUseWebImages = hasFullAccess;
   const canUseAiGenerate = isAdminUser || (hasFullAccess && aiGenerateUsed < aiGenerateLimit);
-  const [inputType, setInputType] = useState<"topic" | "url" | "text">(initialInputType ?? "topic");
+  const [inputType, setInputType] = useState<"topic" | "url" | "text" | "document">(initialInputType ?? "topic");
   const [inputValue, setInputValue] = useState(initialInputValue ?? "");
+  const [inputDocumentFile, setInputDocumentFile] = useState<File | null>(null);
   const [numberOfSlides, setNumberOfSlides] = useState<string>("");
   const [backgroundAssetIds, setBackgroundAssetIds] = useState<string[]>([]);
   const [useAiBackgrounds, setUseAiBackgrounds] = useState(initialUseAiBackgrounds ?? (!!regenerateCarouselId));
@@ -156,9 +191,16 @@ export function NewCarouselForm({
   const [notes, setNotes] = useState(initialNotes ?? "");
   const [backgroundPickerOpen, setBackgroundPickerOpen] = useState(false);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(() =>
-    initialCarouselFor === "linkedin" && defaultLinkedInTemplateId ? defaultLinkedInTemplateId : null
-  );
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(() => {
+    const initialPlatform = initialCarouselFor ?? "instagram";
+    const wantImageTemplate = initialUseAiBackgrounds ?? (!!regenerateCarouselId);
+    return pickTemplateIdForBackgroundMode(templateOptions, {
+      carouselFor: initialPlatform,
+      wantImageTemplate,
+      preferredId: initialPlatform === "linkedin" ? defaultLinkedInTemplateId : defaultTemplateId,
+      fallbackDefaultId: initialPlatform === "linkedin" ? defaultLinkedInTemplateId : defaultTemplateId,
+    });
+  });
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [upgradeLoading, setUpgradeLoading] = useState(false);
@@ -173,8 +215,8 @@ export function NewCarouselForm({
   const [topicRefreshesUsed, setTopicRefreshesUsed] = useState(0);
   const [topicRefreshesLimit, setTopicRefreshesLimit] = useState(2);
 
-  /** Matches `handleSubmit`: topic, URL, or pasted text must be non-empty after trim. */
-  const hasRequiredInput = inputValue.trim().length > 0;
+  /** Matches `handleSubmit`: topic/URL/text needs value; document needs file. */
+  const hasRequiredInput = inputType === "document" ? !!inputDocumentFile : inputValue.trim().length > 0;
 
   async function handleOpenTopicSuggestions() {
     setTopicSuggestError(null);
@@ -247,16 +289,46 @@ export function NewCarouselForm({
   useEffect(() => {
     if (prevCarouselForRef.current !== carouselFor) {
       prevCarouselForRef.current = carouselFor;
-      if (carouselFor === "linkedin" && defaultLinkedInTemplateId) setSelectedTemplateId(defaultLinkedInTemplateId);
-      else if (carouselFor === "instagram") setSelectedTemplateId(null);
+      const next = pickTemplateIdForBackgroundMode(templateOptions, {
+        carouselFor,
+        wantImageTemplate: useAiBackgrounds,
+        preferredId: carouselFor === "linkedin" ? defaultLinkedInTemplateId : defaultTemplateId,
+        fallbackDefaultId: carouselFor === "linkedin" ? defaultLinkedInTemplateId : defaultTemplateId,
+      });
+      setSelectedTemplateId(next);
     }
-  }, [carouselFor, defaultLinkedInTemplateId]);
+  }, [carouselFor, useAiBackgrounds, templateOptions, defaultLinkedInTemplateId, defaultTemplateId]);
+
+  // Keep selected template aligned with background mode unless it already matches.
+  useEffect(() => {
+    const current = selectedTemplateId ? templateOptions.find((t) => t.id === selectedTemplateId) : null;
+    if (current && templateAllowsImage(current) === useAiBackgrounds) return;
+    const next = pickTemplateIdForBackgroundMode(templateOptions, {
+      carouselFor,
+      wantImageTemplate: useAiBackgrounds,
+      preferredId: selectedTemplateId,
+      fallbackDefaultId: carouselFor === "linkedin" ? defaultLinkedInTemplateId : defaultTemplateId,
+    });
+    if (next !== selectedTemplateId) setSelectedTemplateId(next);
+  }, [
+    useAiBackgrounds,
+    carouselFor,
+    selectedTemplateId,
+    templateOptions,
+    defaultLinkedInTemplateId,
+    defaultTemplateId,
+  ]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     const trimmed = inputValue.trim();
-    if (!trimmed) {
+    if (inputType === "document") {
+      if (!inputDocumentFile) {
+        setError("Please upload a document (PDF, DOCX, TXT, MD, CSV, or JSON).");
+        return;
+      }
+    } else if (!trimmed) {
       setError("Topic, URL, or text is required.");
       return;
     }
@@ -266,7 +338,10 @@ export function NewCarouselForm({
       formData.set("project_id", projectId);
       if (regenerateCarouselId) formData.set("carousel_id", regenerateCarouselId);
       formData.set("input_type", inputType);
-      formData.set("input_value", trimmed);
+      formData.set("input_value", inputType === "document" ? (inputDocumentFile?.name ?? "document") : trimmed);
+      if (inputType === "document" && inputDocumentFile) {
+        formData.set("input_document", inputDocumentFile);
+      }
       const numSlides = numberOfSlides.trim() ? parseInt(numberOfSlides, 10) : NaN;
       if (!isNaN(numSlides) && numSlides >= 3 && numSlides <= 12) {
         formData.set("number_of_slides", String(numSlides));
@@ -348,7 +423,7 @@ export function NewCarouselForm({
             <CardTitle className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
               Carousel for
             </CardTitle>
-            <CardDescription>Instagram or LinkedIn. LinkedIn uses B2B-optimized content and stock or your own images only.</CardDescription>
+            <CardDescription>Pick platform style.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4 px-5 pt-0">
             <div className="flex rounded-lg border border-input p-0.5 bg-muted/30">
@@ -365,7 +440,14 @@ export function NewCarouselForm({
                         : "text-muted-foreground hover:text-foreground"
                     }`}
                   >
-                    <Icon className="size-3.5 shrink-0" />
+                    {o.value === "instagram" ? (
+                      <span className="inline-flex items-center gap-1 shrink-0" aria-hidden>
+                        <InstagramMicroIcon className="size-4 opacity-100" />
+                        <TikTokMicroIcon className="size-4 opacity-100" />
+                      </span>
+                    ) : (
+                      <Icon className="size-3.5 shrink-0" />
+                    )}
                     {o.label}
                   </button>
                 );
@@ -379,7 +461,7 @@ export function NewCarouselForm({
             <CardTitle className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
               What&apos;s it about?
             </CardTitle>
-            <CardDescription>Topic, a URL to pull from, or paste your own text.</CardDescription>
+            <CardDescription>Topic, URL, pasted text, or upload a document/PDF.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4 px-5 pt-0">
             <div className="flex rounded-lg border border-input p-0.5 bg-muted/30">
@@ -409,7 +491,9 @@ export function NewCarouselForm({
                     ? "Paste your text"
                     : inputType === "url"
                       ? "URL"
-                      : "Topic"}
+                      : inputType === "document"
+                        ? "Document"
+                        : "Topic"}
                 </Label>
                 {inputType === "topic" && (
                   <Button
@@ -448,7 +532,7 @@ export function NewCarouselForm({
                   onChange={(e) => setInputValue(e.target.value)}
                   required
                 />
-              ) : (
+              ) : inputType === "url" ? (
                 <Input
                   id="input_value"
                   type="url"
@@ -457,6 +541,19 @@ export function NewCarouselForm({
                   onChange={(e) => setInputValue(e.target.value)}
                   required
                 />
+              ) : (
+                <div className="space-y-2">
+                  <Input
+                    id="input_document"
+                    type="file"
+                    accept=".pdf,.docx,.txt,.md,.markdown,.csv,.json,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown,text/csv,application/json"
+                    onChange={(e) => setInputDocumentFile(e.target.files?.[0] ?? null)}
+                    required={inputType === "document"}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Supports PDF, DOCX, TXT, MD, CSV, JSON up to 10MB. We extract text and use it as the carousel input.
+                  </p>
+                </div>
               )}
             </div>
           </CardContent>

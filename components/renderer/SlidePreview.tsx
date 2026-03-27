@@ -335,6 +335,8 @@ export type SlidePreviewProps = {
   onPipPositionChange?: (x: number, y: number, slotIndex?: number) => void;
   /** When set (editor live preview, PiP mode), user can resize a PiP box from corner handles. */
   onPipSizeChange?: (size: number, slotIndex?: number) => void;
+  /** When set, clicking a PiP image notifies parent (e.g. switch to Background tab). */
+  onPipImageClick?: () => void;
   /** When set, headline/body font sizes are scaled so text fits at this export size (4:5, 9:16). */
   exportSize?: "1080x1080" | "1080x1350" | "1080x1920";
   className?: string;
@@ -616,6 +618,7 @@ export function SlidePreview({
   onBackgroundImagePositionChange,
   onPipPositionChange,
   onPipSizeChange,
+  onPipImageClick,
 }: SlidePreviewProps) {
   const canvasH = exportSize === "1080x1920" ? 1920 : exportSize === "1080x1350" ? 1350 : 1080;
   const textScale = getTextScaleForDimensions(CANVAS_SIZE, canvasH);
@@ -1547,6 +1550,7 @@ export function SlidePreview({
                           "aria-label": "Drag to reposition picture-in-picture",
                         }
                       : {})}
+                    onClick={() => onPipImageClick?.()}
                   >
                     {pipUseClipPathFrameMp ? (
                       <>
@@ -2022,6 +2026,7 @@ export function SlidePreview({
                         "aria-label": "Drag to reposition picture-in-picture",
                       }
                     : {})}
+                  onClick={() => onPipImageClick?.()}
                 >
                   {pipUseClipPathFrame ? (
                     <>

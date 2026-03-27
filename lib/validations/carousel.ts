@@ -4,7 +4,7 @@ export const generateCarouselInputSchema = z.object({
   project_id: z.string().uuid(),
   /** When set, regenerate in place instead of creating a new carousel. */
   carousel_id: z.string().uuid().optional(),
-  input_type: z.enum(["topic", "url", "text"]),
+  input_type: z.enum(["topic", "url", "text", "document"]),
   input_value: z.string().min(1, "Input is required").max(10000),
   title: z.string().max(200).optional(),
   /** Optional. If set, AI generates exactly this many slides. If omitted, AI decides the best number. */

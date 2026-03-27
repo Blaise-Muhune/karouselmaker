@@ -91,19 +91,6 @@ export function HighlightModal({
                 <CopyIcon className="size-3.5" /> Apply color to all
               </Button>
             )}
-            {totalSlides > 1 && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs shrink-0"
-                onClick={onApplyAutoToAll}
-                disabled={applyingAutoHighlights}
-                title={target === "headline" ? "Run Auto on headlines for every frame" : "Run Auto on body for every frame"}
-              >
-                {applyingAutoHighlights ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />} Auto all slides
-              </Button>
-            )}
             <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0" onClick={() => onOpenChange(false)} aria-label="Close">
               <XIcon className="size-4" />
             </Button>
@@ -219,19 +206,6 @@ export function HighlightModal({
                 title="Apply current color to all highlights in this field"
               >
                 <CopyIcon className="size-3.5" /> Apply color to all
-              </Button>
-            )}
-            {totalSlides > 1 && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs shrink-0"
-                onClick={onApplyAutoToAll}
-                disabled={applyingAutoHighlights}
-                title={target === "headline" ? "Run Auto on headlines for every frame" : "Run Auto on body for every frame"}
-              >
-                {applyingAutoHighlights ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />} Auto all slides
               </Button>
             )}
           </div>

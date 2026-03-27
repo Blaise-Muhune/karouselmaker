@@ -25,6 +25,7 @@ import { searchPixabayPhotos } from "@/lib/server/pixabay";
 import { searchPexelsPhotos } from "@/lib/server/pexels";
 import { generateImageFromPrompt, parseAspectRatioFromNotes } from "@/lib/server/openaiImageGenerate";
 import { preferRecognizablePublicFiguresForImages } from "@/lib/server/ai/topicFictionHeuristic";
+import { extractInputTextFromDocument } from "@/lib/server/documents/extractInputText";
 import { uploadGeneratedImage } from "@/lib/server/storage/uploadGeneratedImage";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
 import { setSlideTemplate } from "@/app/actions/slides/setSlideTemplate";
@@ -253,6 +254,33 @@ export async function generateCarousel(formData: FormData): Promise<
     carousel_for: (formData.get("carousel_for") as string | null)?.trim() || undefined,
   };
 
+  if (raw.input_type === "document") {
+    const file = formData.get("input_document");
+    const docFile = file instanceof File ? file : null;
+    const extracted = await extractInputTextFromDocument(docFile);
+    if (!extracted.ok) return { error: extracted.error };
+    raw.input_value = extracted.text;
+    if (!raw.title?.trim()) {
+      raw.title = extracted.sourceName.replace(/\.[^.]+$/, "").slice(0, 200).trim() || "Document carousel";
+    }
+  }
+
+  if (raw.input_type === "document") {
+    const file = formData.get("input_document");
+    const docFile = file instanceof File ? file : null;
+    const extracted = await extractInputTextFromDocument(docFile);
+    if (!extracted.ok) {
+      return { error: extracted.error };
+    }
+    raw.input_value = extracted.text;
+    if (!raw.title?.trim()) {
+      raw.title = extracted.sourceName.replace(/\.[^.]+$/, "").slice(0, 200).trim() || "Document carousel";
+    }
+    if (extracted.truncated) {
+      LOG("input", "document text truncated for model safety");
+    }
+  }
+
   LOG("input", `type=${raw.input_type} slides=${raw.number_of_slides ?? "auto"} stock=${!!raw.use_stock_photos} aiImages=${!!raw.use_ai_generate} webSearch=${!!raw.use_web_search}`);
 
   const parsed = generateCarouselInputSchema.safeParse(raw);
@@ -265,6 +293,7 @@ export async function generateCarousel(formData: FormData): Promise<
     return { error: msg };
   }
   const data = parsed.data;
+  const inputTypeForPrompt = data.input_type === "document" ? "text" : data.input_type;
 
   const project = await getProject(user.id, data.project_id);
   if (!project) {
@@ -381,7 +410,7 @@ export async function generateCarousel(formData: FormData): Promise<
     tone_preset: project.tone_preset,
     rules: projectRules,
     number_of_slides,
-    input_type: data.input_type as "topic" | "url" | "text",
+    input_type: inputTypeForPrompt as "topic" | "url" | "text",
     input_value: data.input_value,
     use_ai_backgrounds: requestedUseAiBackgrounds,
     use_stock_photos: effectiveUseStockPhotos,

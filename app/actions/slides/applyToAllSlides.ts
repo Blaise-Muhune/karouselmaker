@@ -17,6 +17,13 @@ export type ApplyScope = {
   includeLastSlide?: boolean;
 };
 
+/** Revalidate carousel page + all slide editor routes for this carousel. */
+function revalidateCarouselEditorPaths(projectId: string | undefined, carouselId: string) {
+  if (!projectId) return;
+  revalidatePath(`/p/${projectId}/c/${carouselId}`);
+  revalidatePath(`/p/${projectId}/c/${carouselId}/s/[slideId]`, "page");
+}
+
 function filterSlidesByScope(slides: Slide[], scope?: ApplyScope): Slide[] {
   if (slides.length <= 1) return slides;
   const includeFirst = scope?.includeFirstSlide ?? false;
@@ -367,6 +374,7 @@ export async function applyAutoHighlightsToAllSlides(
       : [revalidatePathname]
     : [];
   for (const p of paths) revalidatePath(p);
+  revalidateCarouselEditorPaths((carousel as { project_id?: string }).project_id, carouselId);
   return { ok: true, updated: slides.length };
 }
 
@@ -411,5 +419,6 @@ export async function applyHighlightColorToAllSlides(
       : [revalidatePathname]
     : [];
   for (const p of paths) revalidatePath(p);
+  revalidateCarouselEditorPaths((carousel as { project_id?: string }).project_id, carouselId);
   return { ok: true, updated };
 }

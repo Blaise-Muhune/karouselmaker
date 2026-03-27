@@ -2702,25 +2702,76 @@ export function SlideEditForm({
     setApplyingAutoHighlights(true);
     const colorForField = field === "headline" ? headlineHighlightColor : bodyHighlightColor;
     const color = colorForField.startsWith("#") ? colorForField : (HIGHLIGHT_COLORS[colorForField] ?? "#facc15");
-    const result = await applyAutoHighlightsToAllSlides(slide.carousel_id, editorPath, applyScope, color, field);
+    const result = await applyAutoHighlightsToAllSlides(
+      slide.carousel_id,
+      editorPath,
+      { includeFirstSlide: true, includeLastSlide: true },
+      color,
+      field
+    );
     setApplyingAutoHighlights(false);
     if (result.ok) router.refresh();
+    else alert(result.error ?? "Couldn't apply auto highlights to all slides.");
   };
 
-  /** Apply current headline highlight style (Text/Bg/Outline) to all slides. */
+  /** Apply auto highlights + current headline highlight style to all slides. */
   const handleApplyHeadlineHighlightStyleToAll = async () => {
+    setApplyingAutoHighlights(true);
+    const colorForField = headlineHighlightColor;
+    const color = colorForField.startsWith("#") ? colorForField : (HIGHLIGHT_COLORS[colorForField] ?? "#facc15");
+    const autoResult = await applyAutoHighlightsToAllSlides(
+      slide.carousel_id,
+      editorPath,
+      { includeFirstSlide: true, includeLastSlide: true },
+      color,
+      "headline"
+    );
+    if (!autoResult.ok) {
+      setApplyingAutoHighlights(false);
+      alert(autoResult.error ?? "Couldn't apply auto highlights to all slides.");
+      return;
+    }
     setApplyingHighlightStyle(true);
-    const result = await applyToAllSlides(slide.carousel_id, { meta: { headline_highlight_style: headlineHighlightStyle } }, editorPath, applyScope);
+    const styleResult = await applyToAllSlides(
+      slide.carousel_id,
+      { meta: { headline_highlight_style: headlineHighlightStyle } },
+      editorPath,
+      { includeFirstSlide: true, includeLastSlide: true }
+    );
     setApplyingHighlightStyle(false);
-    if (result.ok) router.refresh();
+    setApplyingAutoHighlights(false);
+    if (styleResult.ok) router.refresh();
+    else alert(styleResult.error ?? "Couldn't apply headline highlight style to all slides.");
   };
 
-  /** Apply current body highlight style (Text/Bg/Outline) to all slides. */
+  /** Apply auto highlights + current body highlight style to all slides. */
   const handleApplyBodyHighlightStyleToAll = async () => {
+    setApplyingAutoHighlights(true);
+    const colorForField = bodyHighlightColor;
+    const color = colorForField.startsWith("#") ? colorForField : (HIGHLIGHT_COLORS[colorForField] ?? "#facc15");
+    const autoResult = await applyAutoHighlightsToAllSlides(
+      slide.carousel_id,
+      editorPath,
+      { includeFirstSlide: true, includeLastSlide: true },
+      color,
+      "body"
+    );
+    if (!autoResult.ok) {
+      setApplyingAutoHighlights(false);
+      alert(autoResult.error ?? "Couldn't apply auto highlights to all slides.");
+      return;
+    }
     setApplyingHighlightStyle(true);
-    const result = await applyToAllSlides(slide.carousel_id, { meta: { body_highlight_style: bodyHighlightStyle } }, editorPath, applyScope);
+    const styleResult = await applyToAllSlides(
+      slide.carousel_id,
+      { meta: { body_highlight_style: bodyHighlightStyle } },
+      editorPath,
+      { includeFirstSlide: true, includeLastSlide: true }
+    );
     setApplyingHighlightStyle(false);
-    if (result.ok) router.refresh();
+    setApplyingAutoHighlights(false);
+    if (styleResult.ok) router.refresh();
+    else alert(styleResult.error ?? "Couldn't apply body highlight style to all slides.");
   };
 
   /** Recolor existing highlights for this field across all selected slides. */
@@ -2730,9 +2781,16 @@ export function SlideEditForm({
     setApplyingAutoHighlights(true);
     const colorForField = field === "headline" ? headlineHighlightColor : bodyHighlightColor;
     const color = colorForField.startsWith("#") ? colorForField : (HIGHLIGHT_COLORS[colorForField] ?? "#facc15");
-    const result = await applyHighlightColorToAllSlides(slide.carousel_id, field, color, editorPath, applyScope);
+    const result = await applyHighlightColorToAllSlides(
+      slide.carousel_id,
+      field,
+      color,
+      editorPath,
+      { includeFirstSlide: true, includeLastSlide: true }
+    );
     setApplyingAutoHighlights(false);
     if (result.ok) router.refresh();
+    else alert(result.error ?? "Couldn't apply highlight color to all slides.");
   };
 
   const handleApplyClearHeadlineToAll = async () => {
@@ -3837,6 +3895,9 @@ export function SlideEditForm({
                             : setImageDisplay((d) => upsertImageDisplayPipSlot(d, slotIndex, validImageCount, { pipSize: size }))
                     : undefined
                 }
+                onPipImageClick={() => {
+                  if (editorTab !== "background") setEditorTab("background");
+                }}
                 positionAndSizeOnly
                 editToolbarHeadline={
                   templateConfig
@@ -4740,6 +4801,9 @@ export function SlideEditForm({
                                     : setImageDisplay((d) => upsertImageDisplayPipSlot(d, slotIndex, validImageCount, { pipSize: size }))
                             : undefined
                         }
+                        onPipImageClick={() => {
+                          if (editorTab !== "background") setEditorTab("background");
+                        }}
                         editToolbarHeadline={
                           templateConfig
                             ? {
@@ -5540,8 +5604,8 @@ export function SlideEditForm({
                   </button>
                   {totalSlides > 1 && isPro && (
                     <span onClick={(e) => e.stopPropagation()}>
-                      <Button type="button" variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground hover:text-foreground" onClick={handleApplyHeadlineHighlightStyleToAll} disabled={applyingHighlightStyle} title="Apply headline highlight style (Text/Bg) to all slides">
-                        {applyingHighlightStyle ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
+                      <Button type="button" variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground hover:text-foreground" onClick={handleApplyHeadlineHighlightStyleToAll} disabled={applyingHighlightStyle || applyingAutoHighlights} title="Apply auto highlights + current headline highlight style to all slides">
+                        {applyingHighlightStyle || applyingAutoHighlights ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
                         Apply to all
                       </Button>
                     </span>
@@ -5826,7 +5890,7 @@ export function SlideEditForm({
               {editorTab === "text" && (
               <div className="border-t border-border/40 pt-3 mt-3 hidden">
                   <div className="space-y-2">
-                    <p className="text-[11px] text-muted-foreground">Select a word (or drag to select), then click a color. Or click Auto to highlight key words. Use “Apply color to all” to recolor all current highlights; use “Auto all slides” to regenerate highlights on every frame.</p>
+                    <p className="text-[11px] text-muted-foreground">Select a word (or drag to select), then click a color. Or click Auto to highlight key words. Use “Apply color to all” to recolor all current highlights. Use the “Apply to all” button next to Less to run Auto + style on every frame.</p>
                     <div className="flex flex-wrap items-center gap-1.5">
                       <Button
                         type="button"
@@ -5906,20 +5970,6 @@ export function SlideEditForm({
                             Clear all
                           </Button>
                         </>
-                      )}
-                      {totalSlides > 1 && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="h-6 text-[11px] px-2"
-                          onClick={() => handleApplyAutoHighlightsToAll("headline")}
-                          disabled={applyingAutoHighlights}
-                          title="Run Auto highlight on headlines only, on every frame (uses headline color)"
-                        >
-                          {applyingAutoHighlights ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
-                          Auto all slides
-                        </Button>
                       )}
                       <Button type="button" variant={headlineHighlightStyle === "text" ? "secondary" : "ghost"} size="sm" className="h-6 text-[11px]" onClick={() => setHeadlineHighlightStyle("text")} title="Highlight style: text color only">
                         Text
@@ -6178,8 +6228,8 @@ export function SlideEditForm({
                   </button>
                   {totalSlides > 1 && isPro && (
                     <span onClick={(e) => e.stopPropagation()}>
-                      <Button type="button" variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground hover:text-foreground" onClick={handleApplyBodyHighlightStyleToAll} disabled={applyingHighlightStyle} title="Apply body highlight style (Text/Bg) to all slides">
-                        {applyingHighlightStyle ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
+                      <Button type="button" variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground hover:text-foreground" onClick={handleApplyBodyHighlightStyleToAll} disabled={applyingHighlightStyle || applyingAutoHighlights} title="Apply auto highlights + current body highlight style to all slides">
+                        {applyingHighlightStyle || applyingAutoHighlights ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
                         Apply to all
                       </Button>
                     </span>
@@ -6464,7 +6514,7 @@ export function SlideEditForm({
               {editorTab === "text" && (
               <div className="border-t border-border/40 pt-3 mt-3 hidden">
                   <div className="space-y-2">
-                    <p className="text-[11px] text-muted-foreground">Select a word (or drag to select), then click a color. Or click Auto to highlight key words. Use “Apply color to all” to recolor all current highlights; use “Auto all slides” to regenerate highlights on every frame.</p>
+                    <p className="text-[11px] text-muted-foreground">Select a word (or drag to select), then click a color. Or click Auto to highlight key words. Use “Apply color to all” to recolor all current highlights. Use the “Apply to all” button next to Less to run Auto + style on every frame.</p>
                     <div className="flex flex-wrap items-center gap-1.5">
                       <Button
                         type="button"
@@ -6539,20 +6589,6 @@ export function SlideEditForm({
                             Clear all
                           </Button>
                         </>
-                      )}
-                      {totalSlides > 1 && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="h-6 text-[11px] px-2"
-                          onClick={() => handleApplyAutoHighlightsToAll("body")}
-                          disabled={applyingAutoHighlights}
-                          title="Run Auto highlight on body only, on every frame (uses body color)"
-                        >
-                          {applyingAutoHighlights ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
-                          Auto all slides
-                        </Button>
                       )}
                       <Button type="button" variant={bodyHighlightStyle === "text" ? "secondary" : "ghost"} size="sm" className="h-6 text-[11px]" onClick={() => setBodyHighlightStyle("text")} title="Highlight style: text color only">
                         Text
