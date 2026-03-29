@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getUser } from "@/lib/server/auth/getUser";
 import { getCarousel, deleteCarousel as dbDeleteCarousel, updateCarousel } from "@/lib/server/db/carousels";
-import { generateCarousel } from "./generateCarousel";
+import { startCarouselGeneration } from "./generateCarousel";
 
 export type CarouselActionResult = { ok: true } | { ok: false; error: string };
 
@@ -59,5 +59,5 @@ export async function regenerateCarousel(
   if (opts?.use_ai_generate) formData.set("use_ai_generate", "true");
   if (opts?.carousel_for === "linkedin" || opts?.carousel_for === "instagram") formData.set("carousel_for", opts.carousel_for);
   if (opts?.notes && typeof opts.notes === "string" && opts.notes.trim()) formData.set("notes", opts.notes.trim());
-  return generateCarousel(formData);
+  return startCarouselGeneration(formData);
 }

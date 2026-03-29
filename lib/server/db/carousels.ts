@@ -150,6 +150,8 @@ export async function updateCarousel(
   carouselId: string,
   patch: {
     title?: string;
+    input_type?: string;
+    input_value?: string;
     status?: string;
     caption_variants?: Record<string, unknown>;
     hashtags?: string[];

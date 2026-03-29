@@ -61,7 +61,9 @@ export function CarouselGeneratingBanner() {
     <div className="flex items-center gap-3 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 text-sm">
       <Loader2Icon className="size-5 shrink-0 animate-spin text-primary" aria-hidden />
       <p className="font-medium">Generating your carousel…</p>
-      <p className="text-muted-foreground">Results will appear here as they’re ready. Usually 1–3 minutes. Don&apos;t leave the page.</p>
+      <p className="text-muted-foreground">
+        Usually 1–3 minutes. You can leave this tab or lock your phone—open the project again if you don&apos;t land here automatically.
+      </p>
     </div>
   );
 }

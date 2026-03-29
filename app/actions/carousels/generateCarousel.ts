@@ -240,6 +240,7 @@ export async function generateCarousel(formData: FormData): Promise<
 
   const raw = {
     project_id: (formData.get("project_id") as string | null) ?? "",
+    carousel_id: (formData.get("carousel_id") as string | null)?.trim() || undefined,
     input_type: (formData.get("input_type") as string | null) ?? "",
     input_value: ((formData.get("input_value") as string | null) ?? "").trim(),
     title: ((formData.get("title") as string | null) ?? "").trim() || undefined,
@@ -1064,6 +1065,7 @@ export async function startCarouselGeneration(formData: FormData): Promise<
 
   const raw = {
     project_id: (formData.get("project_id") as string | null) ?? "",
+    carousel_id: (formData.get("carousel_id") as string | null)?.trim() || undefined,
     input_type: (formData.get("input_type") as string | null) ?? "",
     input_value: ((formData.get("input_value") as string | null) ?? "").trim(),
     title: ((formData.get("title") as string | null) ?? "").trim() || undefined,
@@ -1092,6 +1094,20 @@ export async function startCarouselGeneration(formData: FormData): Promise<
     viral_shorts_style: formData.get("viral_shorts_style") ?? undefined,
     carousel_for: (formData.get("carousel_for") as string | null)?.trim() || undefined,
   };
+
+  if (raw.input_type === "document") {
+    const file = formData.get("input_document");
+    const docFile = file instanceof File ? file : null;
+    const extracted = await extractInputTextFromDocument(docFile);
+    if (!extracted.ok) return { error: extracted.error };
+    raw.input_value = extracted.text;
+    if (!raw.title?.trim()) {
+      raw.title = extracted.sourceName.replace(/\.[^.]+$/, "").slice(0, 200).trim() || "Document carousel";
+    }
+    if (extracted.truncated) {
+      LOG("start", "document text truncated for model safety");
+    }
+  }
 
   const parsed = generateCarouselInputSchema.safeParse(raw);
   if (!parsed.success) {
@@ -1132,13 +1148,6 @@ export async function startCarouselGeneration(formData: FormData): Promise<
     }
   }
 
-  const carousel = await createCarousel(
-    user.id,
-    data.project_id,
-    data.input_type,
-    data.input_value,
-    "Generating…"
-  );
   const useAiBg = !!data.use_ai_backgrounds;
   const useStockRaw = !!parsed.data.use_stock_photos;
   const useAiGenStored = parsed.data.carousel_for !== "linkedin" && !!data.use_ai_generate;
@@ -1156,10 +1165,37 @@ export async function startCarouselGeneration(formData: FormData): Promise<
     number_of_slides: data.number_of_slides,
     notes: data.notes,
     template_id: data.template_id,
-    viral_shorts_style: !!parsed.data.viral_shorts_style,
+    viral_shorts_style: !!parsed.data.viral_shorts_style && userIsAdmin,
     background_asset_ids: data.background_asset_ids,
     ...(parsed.data.carousel_for && { carousel_for: parsed.data.carousel_for }),
   };
+
+  if (data.carousel_id) {
+    const existing = await getCarousel(user.id, data.carousel_id);
+    if (!existing || existing.project_id !== data.project_id) {
+      return { error: "Carousel not found" };
+    }
+    const prevOpts = (existing.generation_options ?? {}) as Record<string, unknown>;
+    if (existing.status === "generating" && prevOpts.generation_started === true) {
+      return { carouselId: existing.id };
+    }
+    await updateCarousel(user.id, existing.id, {
+      input_type: data.input_type,
+      input_value: data.input_value,
+      title: "Generating…",
+      status: "generating",
+      generation_options: generationOptions,
+    });
+    return { carouselId: existing.id };
+  }
+
+  const carousel = await createCarousel(
+    user.id,
+    data.project_id,
+    data.input_type,
+    data.input_value,
+    "Generating…"
+  );
   await updateCarousel(user.id, carousel.id, {
     status: "generating",
     generation_options: generationOptions,

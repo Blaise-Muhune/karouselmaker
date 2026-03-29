@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { generateCarousel } from "@/app/actions/carousels/generateCarousel";
+import { startCarouselGeneration } from "@/app/actions/carousels/generateCarousel";
 import {
   getProjectTopicSuggestions,
   refreshProjectTopicSuggestions,
@@ -379,15 +379,14 @@ export function NewCarouselForm({
       if (notes.trim()) formData.set("notes", notes.trim());
       if (selectedTemplateId) formData.set("template_id", selectedTemplateId);
       else if (carouselFor === "linkedin" && defaultLinkedInTemplateId) formData.set("template_id", defaultLinkedInTemplateId);
-      const result = await generateCarousel(formData);
+      const result = await startCarouselGeneration(formData);
       if ("error" in result && !("carouselId" in result)) {
         setError(result.error);
         return;
       }
       const carouselId = "carouselId" in result ? result.carouselId : undefined;
       if (carouselId) {
-        const hasPartialError = "partialError" in result && result.partialError;
-        router.push(hasPartialError ? `/p/${projectId}/c/${carouselId}?generation=partial` : `/p/${projectId}/c/${carouselId}`);
+        router.push(`/p/${projectId}/c/${carouselId}`);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Something went wrong. Please try again.";
