@@ -9,26 +9,14 @@ const slideTypeEnum = z.enum(["hook", "point", "context", "cta", "generic"]);
 /** Words/phrases from the text to highlight (exact substring match). Used by "Auto" in the editor. */
 const highlightWordsSchema = z.array(z.string().min(1).max(60)).max(8).optional();
 
-export type SlideTextLimits = { headlineMax: number; bodyMax: number };
-
-function clampLimits(limits: SlideTextLimits): { h: number; b: number } {
-  const h = Math.min(
-    ABSOLUTE_MAX_HEADLINE_CHARS,
-    Math.max(1, Math.floor(limits.headlineMax))
-  );
-  const b = Math.min(
-    ABSOLUTE_MAX_BODY_CHARS,
-    Math.max(0, Math.floor(limits.bodyMax))
-  );
-  return { h, b };
-}
-
 /**
- * Zod schema for carousel LLM output with per-template headline/body max lengths
- * (from template text zones). Use {@link DEFAULT_CAROUSEL_TEXT_LIMITS} when no template.
+ * Zod schema for carousel LLM output.
+ * Headline/body use absolute safety caps only. Template zone sizes are communicated in the prompt;
+ * we do not enforce template character limits in validation so copy is never truncated mid-word by the server.
  */
-export function createCarouselOutputSchema(limits: SlideTextLimits) {
-  const { h, b } = clampLimits(limits);
+export function createCarouselOutputSchema() {
+  const h = ABSOLUTE_MAX_HEADLINE_CHARS;
+  const b = ABSOLUTE_MAX_BODY_CHARS;
 
   const shortenAlternateSchema = z.object({
     headline: z.string().max(h),
@@ -75,13 +63,7 @@ export function createCarouselOutputSchema(limits: SlideTextLimits) {
   });
 }
 
-/** Legacy default when template limits are not applied (narrow caps). */
-export const DEFAULT_CAROUSEL_TEXT_LIMITS: SlideTextLimits = {
-  headlineMax: 120,
-  bodyMax: 600,
-};
-
-export const carouselOutputSchema = createCarouselOutputSchema(DEFAULT_CAROUSEL_TEXT_LIMITS);
+export const carouselOutputSchema = createCarouselOutputSchema();
 
 export type CarouselOutput = z.output<typeof carouselOutputSchema>;
 export type AISlide = CarouselOutput["slides"][number];

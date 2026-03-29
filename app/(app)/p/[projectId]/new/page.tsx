@@ -107,6 +107,7 @@ export default async function NewCarouselPage({
           </span>
         </div>
         <NewCarouselForm
+          key={`${regenerateCarousel?.id ?? "new"}:${topicPrefill?.trim() ?? ""}`}
           projectId={projectId}
           isPro={subscription.isPro}
           isAdmin={isAdmin(user.email ?? null)}

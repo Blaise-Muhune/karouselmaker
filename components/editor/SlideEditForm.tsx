@@ -390,7 +390,7 @@ const SECTION_INFO: Record<string, { title: string; body: string }> = {
   },
   preview: {
     title: "Preview",
-    body: "This shows how the frame will look when exported. Choose the export format (PNG, JPEG, or PDF for LinkedIn document carousels) and size (square, 4:5, or 9:16). Changes apply to all frames in this carousel. On desktop the preview stays in view when you scroll; on mobile it appears above the form.",
+    body: "This shows how the frame will look when exported. Choose the export format (PNG, JPEG, or PDF for LinkedIn document carousels) and size (square, 4:5, or 9:16). Changes apply to all frames in this carousel. On desktop the preview stays in the column beside the editor; on phone it stays pinned at the top while you scroll the controls below.",
   },
 };
 
@@ -3791,6 +3791,7 @@ export function SlideEditForm({
           {templateConfig ? (
             <div
               key={templateId ?? "default"}
+              className={isMobile ? "touch-none" : undefined}
               style={{
                 position: "absolute",
                 left: 0,
@@ -3835,7 +3836,7 @@ export function SlideEditForm({
                 allowBackgroundImageOverride={allowBackgroundImageOverrideForPreview}
                 imageDisplay={isImageMode ? effectiveImageDisplay : undefined}
                 exportSize={exportSize}
-                viewportFit={isMobile ? "contain" : "cover"}
+                viewportFit="cover"
                 onHeadlineChange={setHeadline}
                 onBodyChange={(v) => setBody(v)}
                 focusedZone={activeEditZone}
@@ -3843,14 +3844,12 @@ export function SlideEditForm({
                   setActiveEditZone("headline");
                   setEditorTab("text");
                   setExpandedTextSection("headline");
-                  setTimeout(() => headlineRef.current?.focus(), 120);
                 }}
                 onHeadlineBlur={() => setActiveEditZone(null)}
                 onBodyFocus={() => {
                   setActiveEditZone("body");
                   setEditorTab("text");
                   setExpandedTextSection("body");
-                  setTimeout(() => bodyRef.current?.focus(), 120);
                 }}
                 onBodyBlur={() => setActiveEditZone(null)}
                 onHeadlinePositionChange={(x, y) => {
@@ -4749,14 +4748,12 @@ export function SlideEditForm({
                           setActiveEditZone("headline");
                           setEditorTab("text");
                           setExpandedTextSection("headline");
-                          setTimeout(() => headlineRef.current?.focus(), 120);
                         }}
                         onHeadlineBlur={() => setActiveEditZone(null)}
                         onBodyFocus={() => {
                           setActiveEditZone("body");
                           setEditorTab("text");
                           setExpandedTextSection("body");
-                          setTimeout(() => bodyRef.current?.focus(), 120);
                         }}
                         onBodyBlur={() => setActiveEditZone(null)}
                         onHeadlinePositionChange={(x, y) => {
@@ -4932,12 +4929,12 @@ export function SlideEditForm({
       <div className="lg:flex lg:flex-1 lg:min-h-0 lg:overflow-hidden">
       <main
         ref={mainScrollRef}
-        className="relative z-10 flex-1 min-h-[min(36vh,320px)] lg:min-h-0 flex items-start justify-center p-4 lg:px-10 lg:py-8 bg-muted/20 overflow-auto order-2 lg:overflow-hidden lg:order-2"
+        className="relative z-10 flex-1 min-h-[min(36vh,320px)] lg:min-h-0 flex items-start justify-center p-4 lg:px-10 lg:py-8 bg-muted/20 overflow-visible order-1 max-lg:sticky max-lg:top-0 max-lg:z-30 max-lg:self-start max-lg:border-b max-lg:border-border/60 max-lg:bg-background max-lg:shadow-sm lg:overflow-hidden lg:order-2"
       >
         <div className="w-full max-w-[760px] shrink-0">{previewContent}</div>
       </main>
 
-      <section ref={editorSectionRef} className="relative z-0 shrink-0 border-t border-border order-1 lg:border-t-0 lg:border-r lg:w-[500px] lg:min-w-[470px] lg:max-w-[560px] lg:bg-card lg:flex lg:flex-col lg:order-1 lg:h-full lg:overflow-y-auto">
+      <section ref={editorSectionRef} className="relative z-0 shrink-0 border-t-0 border-border order-2 lg:border-t-0 lg:border-r lg:w-[500px] lg:min-w-[470px] lg:max-w-[560px] lg:bg-card lg:flex lg:flex-col lg:order-1 lg:h-full lg:overflow-y-auto">
         <div className="w-full lg:h-full flex flex-col lg:items-stretch">
           <div
             className={`shrink-0 ${isMobile ? "flex border-b border-border bg-muted/20" : "sticky top-0 z-10 grid grid-cols-4 border-b border-border bg-card/95 backdrop-blur p-2 gap-1.5"}`}

@@ -128,21 +128,3 @@ export function buildTemplateContextForPrompt(templateConfig: Json | null | unde
     promptSection: lines.join(" "),
   };
 }
-
-/** Limits for Zod + normalization when validating LLM JSON (matches selected template zones). */
-export function getSlideTextLimitsForValidation(templateConfig: Json | null | undefined): {
-  headlineMax: number;
-  bodyMax: number;
-} {
-  const ctx = buildTemplateContextForPrompt(templateConfig);
-  if (!ctx) {
-    return { headlineMax: DEFAULT_FALLBACK_HEADLINE, bodyMax: DEFAULT_FALLBACK_BODY };
-  }
-  const headlineMax = ctx.hasHeadline
-    ? Math.min(ABSOLUTE_MAX_HEADLINE_CHARS, Math.max(1, ctx.headlineMaxChars))
-    : DEFAULT_FALLBACK_HEADLINE;
-  const bodyMax = ctx.hasBody
-    ? Math.min(ABSOLUTE_MAX_BODY_CHARS, Math.max(0, ctx.bodyMaxChars))
-    : DEFAULT_FALLBACK_BODY;
-  return { headlineMax, bodyMax };
-}

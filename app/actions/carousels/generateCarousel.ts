@@ -21,7 +21,6 @@ import {
 import { postProcessAiGeneratedImageQueries } from "@/lib/server/ai/sanitizeImageQueries";
 import {
   buildTemplateContextForPrompt,
-  getSlideTextLimitsForValidation,
 } from "@/lib/server/ai/templateContextForPrompt";
 import { searchImage } from "@/lib/server/imageSearch";
 import { searchUnsplashPhotosMultiple, trackUnsplashDownload } from "@/lib/server/unsplash";
@@ -154,13 +153,8 @@ const MAX_HIGHLIGHT_WORD_LEN = 60;
 const MAX_IMAGE_QUERY_LEN = 80;
 const MAX_IMAGE_QUERIES = 4;
 
-/** Normalize LLM output to schema limits so we don't burn tokens on retries for "too_big". */
-function normalizeCarouselOutput(
-  parsed: unknown,
-  limits?: { headlineMax: number; bodyMax: number }
-): unknown {
-  const hMax = limits?.headlineMax ?? 120;
-  const bMax = limits?.bodyMax ?? 600;
+/** Normalize LLM output (highlights, image queries, similar_ideas). Headline/body are not truncated—template limits are prompt-only. */
+function normalizeCarouselOutput(parsed: unknown): unknown {
   if (!parsed || typeof parsed !== "object") return parsed;
   const root = parsed as Record<string, unknown>;
   const slides = root.slides;
@@ -175,6 +169,7 @@ function normalizeCarouselOutput(
   };
   const normStr = (s: unknown, max: number): string =>
     typeof s === "string" ? s.slice(0, max) : "";
+  const slideText = (s: unknown): string => (typeof s === "string" ? s : "");
   const normStrArr = (arr: unknown, maxLen: number, maxItems: number): string[] => {
     if (!Array.isArray(arr)) return [];
     return arr
@@ -193,8 +188,8 @@ function normalizeCarouselOutput(
   root.slides = slides.map((slide) => {
     if (!slide || typeof slide !== "object") return slide;
     const s = { ...slide } as Record<string, unknown>;
-    if (s.headline !== undefined) s.headline = normStr(s.headline, hMax);
-    if (s.body !== undefined) s.body = normStr(s.body, bMax);
+    if (s.headline !== undefined) s.headline = slideText(s.headline);
+    if (s.body !== undefined) s.body = slideText(s.body);
     if (s.headline_highlight_words !== undefined) s.headline_highlight_words = normHighlight(s.headline_highlight_words);
     if (s.body_highlight_words !== undefined) s.body_highlight_words = normHighlight(s.body_highlight_words);
     if (s.image_query !== undefined) s.image_query = normStr(s.image_query, MAX_IMAGE_QUERY_LEN) || undefined;
@@ -206,8 +201,8 @@ function normalizeCarouselOutput(
       s.shorten_alternates = alternates.map((alt) => {
         if (!alt || typeof alt !== "object") return alt;
         const a = { ...alt } as Record<string, unknown>;
-        if (a.headline !== undefined) a.headline = normStr(a.headline, hMax);
-        if (a.body !== undefined) a.body = normStr(a.body, bMax);
+        if (a.headline !== undefined) a.headline = slideText(a.headline);
+        if (a.body !== undefined) a.body = slideText(a.body);
         if (a.headline_highlight_words !== undefined) a.headline_highlight_words = normHighlight(a.headline_highlight_words);
         if (a.body_highlight_words !== undefined) a.body_highlight_words = normHighlight(a.body_highlight_words);
         return a;
@@ -218,10 +213,7 @@ function normalizeCarouselOutput(
   return root;
 }
 
-function parseAndValidate(
-  raw: string,
-  limits: { headlineMax: number; bodyMax: number }
-): CarouselOutput | { error: string } {
+function parseAndValidate(raw: string): CarouselOutput | { error: string } {
   const cleaned = stripJson(raw);
   let parsed: unknown;
   try {
@@ -229,8 +221,8 @@ function parseAndValidate(
   } catch {
     return { error: "Invalid JSON" };
   }
-  parsed = normalizeCarouselOutput(parsed, limits);
-  const result = createCarouselOutputSchema(limits).safeParse(parsed);
+  parsed = normalizeCarouselOutput(parsed);
+  const result = createCarouselOutputSchema().safeParse(parsed);
   if (!result.success) {
     const msg = result.error.flatten().formErrors.join("; ") ||
       result.error.message;
@@ -428,7 +420,6 @@ export async function generateCarousel(formData: FormData): Promise<
   }
   const templateContext = buildTemplateContextForPrompt(templateForPrompt?.config ?? null);
   const template_context = templateContext?.promptSection?.trim() ?? undefined;
-  const slideTextLimits = getSlideTextLimitsForValidation(templateForPrompt?.config ?? null);
 
   const ctx = {
     tone_preset: project.tone_preset,
@@ -508,7 +499,7 @@ export async function generateCarousel(formData: FormData): Promise<
     }
 
     lastRaw = content;
-    const result = parseAndValidate(content, slideTextLimits);
+    const result = parseAndValidate(content);
 
     if ("error" in result) {
       lastError = result.error;
