@@ -190,6 +190,7 @@ export default async function EditSlidePage({
       )}
       <div className="min-h-0 flex flex-col w-full flex-1 lg:overflow-hidden">
         <SlideEditForm
+          key={slide.id}
           isPro={hasFullAccess}
           slide={slide}
           slides={slides}

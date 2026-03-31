@@ -6,12 +6,18 @@ export type BreadcrumbItem = {
   href?: string;
 };
 
+const linkClass =
+  "font-inherit text-inherit font-normal hover:text-foreground transition-colors truncate max-w-[140px] sm:max-w-[200px]";
+
 export function Breadcrumbs({
   items,
   className = "",
+  interceptNavigate,
 }: {
   items: BreadcrumbItem[];
   className?: string;
+  /** When set, breadcrumb links call this instead of client navigation (e.g. save then router.push). */
+  interceptNavigate?: (href: string) => void | Promise<void>;
 }) {
   return (
     <nav aria-label="Breadcrumb" className={className}>
@@ -22,12 +28,19 @@ export function Breadcrumbs({
               <ChevronRightIcon className="size-3.5 shrink-0 opacity-50" aria-hidden />
             )}
             {item.href ? (
-              <Link
-                href={item.href}
-                className="hover:text-foreground transition-colors truncate max-w-[140px] sm:max-w-[200px]"
-              >
-                {item.label}
-              </Link>
+              interceptNavigate ? (
+                <button
+                  type="button"
+                  className={linkClass}
+                  onClick={() => void interceptNavigate(item.href!)}
+                >
+                  {item.label}
+                </button>
+              ) : (
+                <Link href={item.href} className={linkClass}>
+                  {item.label}
+                </Link>
+              )
             ) : (
               <span className="truncate max-w-[140px] sm:max-w-[200px] font-medium text-foreground">
                 {item.label}

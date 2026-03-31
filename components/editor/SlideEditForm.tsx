@@ -2,7 +2,6 @@
 
 import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { SlidePreview, PREVIEW_FONTS, type SlideBackgroundOverride } from "@/components/renderer/SlidePreview";
 import { FontPickerModal, getFontStack } from "@/components/FontPickerModal";
@@ -1146,23 +1145,6 @@ export function SlideEditForm({
     setPendingDownload(null);
   }, []);
   const [savedFeedback, setSavedFeedback] = useState(false);
-  const lastSavedRef = useRef<string>(
-    JSON.stringify({
-      headline: slide.headline,
-      body: slide.body ?? "",
-      templateId: slide.template_id ?? null,
-      showCounter: (slide.meta as { show_counter?: boolean } | null)?.show_counter ?? templateDefaultsMeta?.show_counter ?? initialTemplateForSwipe?.chrome?.showCounter ?? false,
-      showWatermark: (slide.meta as { show_watermark?: boolean } | null)?.show_watermark ?? templateDefaultsMeta?.show_watermark ?? initialTemplateForSwipe?.chrome?.watermark?.enabled ?? false,
-      showMadeWith: (slide.meta as { show_made_with?: boolean } | null)?.show_made_with ?? templateDefaultsMeta?.show_made_with ?? !isPro,
-      showSwipe: (slide.meta as { show_swipe?: boolean } | null)?.show_swipe ?? initialTemplateForSwipe?.chrome?.showSwipe ?? true,
-      swipeType: (slide.meta as { swipe_type?: string } | null)?.swipe_type ?? initialTemplateForSwipe?.chrome?.swipeType ?? "text",
-      swipePosition: (slide.meta as { swipe_position?: string } | null)?.swipe_position ?? initialTemplateForSwipe?.chrome?.swipePosition ?? "bottom_center",
-      swipeText: (slide.meta as { swipe_text?: string } | null)?.swipe_text ?? (initialTemplateForSwipe?.chrome as { swipeText?: string } | undefined)?.swipeText ?? "swipe",
-      swipeX: (slide.meta as { swipe_x?: number } | null)?.swipe_x ?? (initialTemplateForSwipe?.chrome as { swipeX?: number } | undefined)?.swipeX,
-      swipeY: (slide.meta as { swipe_y?: number } | null)?.swipe_y ?? (initialTemplateForSwipe?.chrome as { swipeY?: number } | undefined)?.swipeY,
-      swipeSize: (slide.meta as { swipe_size?: number } | null)?.swipe_size ?? (initialTemplateForSwipe?.chrome as { swipeSize?: number } | undefined)?.swipeSize,
-    })
-  );
   const previewWrapRef = useRef<HTMLDivElement>(null);
   const [previewWrapSize, setPreviewWrapSize] = useState<{ w: number; h: number } | null>(null);
   const [activeEditZone, setActiveEditZone] = useState<"headline" | "body" | null>(null);
@@ -1184,7 +1166,7 @@ export function SlideEditForm({
   const [rewriteHookVariants, setRewriteHookVariants] = useState<string[]>([]);
   const [rewritingHook, setRewritingHook] = useState(false);
 
-  /** Must match every `lastSavedRef` update — otherwise "Unsaved" stays after save (e.g. swipe text/position). */
+  /** Must match every `lastSavedRef` update — otherwise "Unsaved" stays after save. Include everything `performSave` persists (background, images, meta, zones, etc.). */
   const buildEditorDirtySnapshotString = useCallback(
     (templateIdForSnapshot?: string | null) => {
       const tid = templateIdForSnapshot !== undefined ? templateIdForSnapshot : templateId;
@@ -1202,6 +1184,29 @@ export function SlideEditForm({
         swipeX,
         swipeY,
         swipeSize,
+        swipeColorOverride,
+        counterColorOverride,
+        background,
+        imageUrls,
+        imageDisplay,
+        headlineHighlights,
+        bodyHighlights,
+        headlineFontSize,
+        bodyFontSize,
+        headlineFontSizeSpans,
+        bodyFontSizeSpans,
+        headlineHighlightStyle,
+        bodyHighlightStyle,
+        headlineOutlineStroke,
+        bodyOutlineStroke,
+        headlineBoldWeight,
+        bodyBoldWeight,
+        headlineZoneOverride,
+        bodyZoneOverride,
+        counterZoneOverride,
+        watermarkZoneOverride,
+        madeWithZoneOverride,
+        madeWithText,
       });
     },
     [
@@ -1218,8 +1223,32 @@ export function SlideEditForm({
       swipeX,
       swipeY,
       swipeSize,
+      swipeColorOverride,
+      counterColorOverride,
+      background,
+      imageUrls,
+      imageDisplay,
+      headlineHighlights,
+      bodyHighlights,
+      headlineFontSize,
+      bodyFontSize,
+      headlineFontSizeSpans,
+      bodyFontSizeSpans,
+      headlineHighlightStyle,
+      bodyHighlightStyle,
+      headlineOutlineStroke,
+      bodyOutlineStroke,
+      headlineBoldWeight,
+      bodyBoldWeight,
+      headlineZoneOverride,
+      bodyZoneOverride,
+      counterZoneOverride,
+      watermarkZoneOverride,
+      madeWithZoneOverride,
+      madeWithText,
     ]
   );
+  const lastSavedRef = useRef<string>(buildEditorDirtySnapshotString());
   const hasUnsavedChanges = buildEditorDirtySnapshotString() !== lastSavedRef.current;
 
   useEffect(() => {
@@ -2249,6 +2278,12 @@ export function SlideEditForm({
     return result;
   };
 
+  /** Save current edits, then go in-app (avoids losing work on `<Link>` navigation). */
+  const navigateAfterSave = async (href: string) => {
+    const r = await performSave(false);
+    if (r.ok) router.push(href);
+  };
+
   const handleDownloadSlide = async () => {
     setDownloading(true);
     clearPendingDownload();
@@ -2332,7 +2367,10 @@ export function SlideEditForm({
     setCyclingHook(true);
     const result = await updateSlide({ slide_id: slide.id, headline: next }, editorPath);
     setCyclingHook(false);
-    if (result.ok) router.refresh();
+    if (result.ok) {
+      lastSavedRef.current = buildEditorDirtySnapshotString();
+      router.refresh();
+    }
   };
 
   const handleRewriteHookClick = async () => {
@@ -2357,7 +2395,10 @@ export function SlideEditForm({
     setCyclingShorten(true);
     const result = await updateSlide({ slide_id: slide.id, headline, body: (next.body ?? "").trim() || null }, editorPath);
     setCyclingShorten(false);
-    if (result.ok) router.refresh();
+    if (result.ok) {
+      lastSavedRef.current = buildEditorDirtySnapshotString();
+      router.refresh();
+    }
   };
 
   const buildBackgroundPayload = (): Record<string, unknown> => {
@@ -4101,11 +4142,15 @@ export function SlideEditForm({
             ref={headerRef}
             className={`relative z-0 w-fit min-w-0 flex flex-row items-center gap-2 border-b border-border/60 bg-card/50 px-3 py-1.5 transition-transform duration-200 ease-out ${!headerVisible ? "-translate-y-full" : "translate-y-0"}`}
           >
-              <Button variant="ghost" size="icon-sm" className="shrink-0 h-8 w-8" asChild>
-                <Link href={backHref}>
-                  <ArrowLeftIcon className="size-4" />
-                  <span className="sr-only">Back to carousel</span>
-                </Link>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="shrink-0 h-8 w-8"
+                aria-label="Back to carousel"
+                onClick={() => void navigateAfterSave(backHref)}
+              >
+                <ArrowLeftIcon className="size-4" />
               </Button>
               {projectName != null && carouselTitle != null ? (
                 <Breadcrumbs
@@ -4113,6 +4158,7 @@ export function SlideEditForm({
                     { label: projectName, href: backHref.replace(/\/c\/[^/]+$/, "") },
                     { label: carouselTitle, href: backHref },
                   ]}
+                  interceptNavigate={navigateAfterSave}
                   className="text-xs min-w-0 truncate"
                 />
               ) : null}
@@ -4120,11 +4166,15 @@ export function SlideEditForm({
         </div>
       ) : (
         <header ref={headerRef} className="relative z-0 w-fit min-w-0 shrink-0 flex flex-row items-center gap-2 border-b border-border/60 bg-card/50 px-3 py-1.5">
-            <Button variant="ghost" size="icon-sm" className="shrink-0 h-8 w-8" asChild>
-              <Link href={backHref}>
-                <ArrowLeftIcon className="size-4" />
-                <span className="sr-only">Back to carousel</span>
-              </Link>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="shrink-0 h-8 w-8"
+              aria-label="Back to carousel"
+              onClick={() => void navigateAfterSave(backHref)}
+            >
+              <ArrowLeftIcon className="size-4" />
             </Button>
             {projectName != null && carouselTitle != null ? (
               <Breadcrumbs
@@ -4132,6 +4182,7 @@ export function SlideEditForm({
                   { label: projectName, href: backHref.replace(/\/c\/[^/]+$/, "") },
                   { label: carouselTitle, href: backHref },
                 ]}
+                interceptNavigate={navigateAfterSave}
                 className="text-xs min-w-0 truncate"
               />
             ) : null}

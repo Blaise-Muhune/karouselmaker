@@ -75,7 +75,12 @@ export async function updateSlide(
   if (patch.background !== undefined) payload.background = patch.background as Json;
   if (patch.meta !== undefined) payload.meta = patch.meta as Json;
 
-  await dbUpdateSlide(user.id, slide_id, payload);
+  try {
+    await dbUpdateSlide(user.id, slide_id, payload);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Save failed";
+    return { ok: false, error: msg };
+  }
   if (revalidatePathname) revalidatePath(revalidatePathname);
   return { ok: true };
 }
