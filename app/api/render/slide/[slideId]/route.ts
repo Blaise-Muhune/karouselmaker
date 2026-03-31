@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { getSlide, getTemplate, getCarousel, getProject, listSlides } from "@/lib/server/db";
+import { getSlide, getTemplate, getCarousel, getProject, listSlides, getAsset } from "@/lib/server/db";
 import { hasFullProFeatureAccess } from "@/lib/server/subscription";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { renderSlideHtml } from "@/lib/server/renderer/renderSlideHtml";
@@ -14,9 +14,19 @@ import {
   resolveOverlayEnabled,
 } from "@/lib/server/export/resolveSlideBackgroundFromTemplate";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
+import { httpsDisplayImageUrl } from "@/lib/server/storage/signedUrlUtils";
 import type { BrandKit } from "@/lib/renderer/renderModel";
 
 const BUCKET = "carousel-assets";
+/** Match carousel page / slide editor: long enough that list iframe thumbnails stay valid. */
+const DISPLAY_SIGNED_URL_EXPIRY = 3600;
+
+function normalizeStoragePathForBucket(path: string | undefined, bucket: string): string | undefined {
+  const trimmed = path?.trim().replace(/^\/+/, "");
+  if (!trimmed) return undefined;
+  const bucketPrefix = `${bucket}/`;
+  return trimmed.startsWith(bucketPrefix) ? trimmed.slice(bucketPrefix.length) : trimmed;
+}
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -73,7 +83,32 @@ export async function GET(
 
   const templateCfg = config.data;
   const slideBg = slide.background as
-    | { style?: "solid" | "gradient" | "pattern"; pattern?: "dots" | "ovals" | "lines" | "circles"; color?: string; gradientOn?: boolean; mode?: string; storage_path?: string; image_url?: string; image_display?: { mode?: string }; secondary_storage_path?: string; secondary_image_url?: string; images?: { image_url?: string; storage_path?: string }[]; overlay?: { enabled?: boolean; gradient?: boolean; darken?: number; color?: string; textColor?: string; direction?: "top" | "bottom" | "left" | "right"; extent?: number; solidSize?: number; tintColor?: string; tintOpacity?: number } }
+    | {
+        style?: "solid" | "gradient" | "pattern";
+        pattern?: "dots" | "ovals" | "lines" | "circles";
+        color?: string;
+        gradientOn?: boolean;
+        mode?: string;
+        storage_path?: string;
+        asset_id?: string;
+        image_url?: string;
+        image_display?: { mode?: string };
+        secondary_storage_path?: string;
+        secondary_image_url?: string;
+        images?: { image_url?: string; storage_path?: string; asset_id?: string }[];
+        overlay?: {
+          enabled?: boolean;
+          gradient?: boolean;
+          darken?: number;
+          color?: string;
+          textColor?: string;
+          direction?: "top" | "bottom" | "left" | "right";
+          extent?: number;
+          solidSize?: number;
+          tintColor?: string;
+          tintOpacity?: number;
+        };
+      }
     | null
     | undefined;
   const slideMeta = (slide.meta ?? null) as Record<string, unknown> | null;
@@ -147,35 +182,57 @@ export async function GET(
     if (slideBg.images?.length) {
       const urls: string[] = [];
       for (const img of slideBg.images) {
-        if (img.image_url) urls.push(img.image_url);
-        else if (img.storage_path) {
+        let resolved = "";
+        const path =
+          normalizeStoragePathForBucket(img.storage_path, BUCKET) ||
+          (img.asset_id
+            ? normalizeStoragePathForBucket((await getAsset(userId, img.asset_id))?.storage_path, BUCKET)
+            : undefined);
+        if (path) {
           try {
-            urls.push(await getSignedImageUrl(BUCKET, img.storage_path, 600));
+            resolved = await getSignedImageUrl(BUCKET, path, DISPLAY_SIGNED_URL_EXPIRY);
           } catch {
-            // skip
+            resolved = httpsDisplayImageUrl(img.image_url) ?? "";
           }
+        } else {
+          resolved = httpsDisplayImageUrl(img.image_url) ?? "";
         }
+        urls.push(resolved);
       }
-      if (urls.length === 1) backgroundImageUrl = urls[0] ?? null;
-      else if (urls.length >= 2) backgroundImageUrls = urls;
-    } else if (slideBg.image_url) {
-      backgroundImageUrl = slideBg.image_url;
-    } else if (slideBg.storage_path) {
-      try {
-        backgroundImageUrl = await getSignedImageUrl(BUCKET, slideBg.storage_path, 600);
-      } catch {
-        // skip
+      const any = urls.some((u) => u.length > 0);
+      if (any) {
+        if (slideBg.images.length === 1) backgroundImageUrl = urls[0] ?? null;
+        else backgroundImageUrls = urls;
+      }
+      /* `images[]` present but no slot resolved — fall through to top-level asset_id / image_url */
+    }
+    if (!backgroundImageUrl && !backgroundImageUrls?.length) {
+      let pathToUse = normalizeStoragePathForBucket(slideBg.storage_path, BUCKET);
+      if (!pathToUse && slideBg.asset_id) {
+        const asset = await getAsset(userId, slideBg.asset_id);
+        if (asset?.storage_path) pathToUse = normalizeStoragePathForBucket(asset.storage_path, BUCKET);
+      }
+      if (pathToUse) {
+        try {
+          backgroundImageUrl = await getSignedImageUrl(BUCKET, pathToUse, DISPLAY_SIGNED_URL_EXPIRY);
+        } catch {
+          backgroundImageUrl = httpsDisplayImageUrl(slideBg.image_url) ?? null;
+        }
+      } else {
+        backgroundImageUrl = httpsDisplayImageUrl(slideBg.image_url) ?? null;
       }
     }
     if (slide.slide_type === "hook" && !backgroundImageUrls) {
-      if (slideBg.secondary_image_url) {
-        secondaryBackgroundImageUrl = slideBg.secondary_image_url;
-      } else if (slideBg.secondary_storage_path) {
+      if (slideBg.secondary_storage_path) {
         try {
-          secondaryBackgroundImageUrl = await getSignedImageUrl(BUCKET, slideBg.secondary_storage_path, 600);
+          const secPath = normalizeStoragePathForBucket(slideBg.secondary_storage_path, BUCKET);
+          if (!secPath) throw new Error("Invalid secondary storage path");
+          secondaryBackgroundImageUrl = await getSignedImageUrl(BUCKET, secPath, DISPLAY_SIGNED_URL_EXPIRY);
         } catch {
-          // skip
+          secondaryBackgroundImageUrl = httpsDisplayImageUrl(slideBg.secondary_image_url) ?? null;
         }
+      } else {
+        secondaryBackgroundImageUrl = httpsDisplayImageUrl(slideBg.secondary_image_url) ?? null;
       }
     }
   }

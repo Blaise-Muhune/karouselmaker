@@ -69,6 +69,8 @@ export const imageDisplaySchema = z.object({
   overlayCircleY: z.number().min(0).max(100).optional(),
   /** "full" = image fills slide (default). "pip" = picture-in-picture in a corner. */
   mode: z.enum(["full", "pip"]).optional(),
+  /** When mode is "full" (or default): rotate the background image in 90° steps. */
+  fullImageRotation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]).optional(),
   /** When mode is "pip": corner for the image box. */
   pipPosition: z.enum(["top_left", "top_right", "bottom_left", "bottom_right"]).optional(),
   /** When mode is "pip": size as fraction of canvas (0.25–1). */

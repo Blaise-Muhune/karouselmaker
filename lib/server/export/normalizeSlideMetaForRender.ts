@@ -21,6 +21,8 @@ export type ImageDisplayForRender = {
   dividerColor?: string;
   dividerWidth?: number;
   mode?: "full" | "pip";
+  /** Full-bleed only: 0° / 90° / 180° / 270° clockwise. */
+  fullImageRotation?: 0 | 90 | 180 | 270;
   pipPosition?: "top_left" | "top_right" | "bottom_left" | "bottom_right";
   pipSize?: number;
   pipRotation?: number;

@@ -240,6 +240,10 @@ type SlideMeta = {
   show_swipe?: boolean;
   swipe_type?: string;
   swipe_position?: string;
+  swipe_x?: number;
+  swipe_y?: number;
+  swipe_size?: number;
+  swipe_color?: string;
   headline_bold_weight?: number;
   body_bold_weight?: number;
 };
@@ -263,7 +267,17 @@ function getZoneOverrides(slide: Slide): { headline?: Record<string, unknown>; b
   };
 }
 
-const SWIPE_POSITIONS = ["bottom_left", "bottom_center", "bottom_right", "top_left", "top_center", "top_right", "center_left", "center_right"] as const;
+const SWIPE_POSITIONS = [
+  "bottom_left",
+  "bottom_center",
+  "bottom_right",
+  "top_left",
+  "top_center",
+  "top_right",
+  "center_left",
+  "center_right",
+  "custom",
+] as const;
 const SWIPE_TYPES = ["text", "arrow-left", "arrow-right", "arrows", "hand-left", "hand-right", "chevrons", "dots", "finger-swipe", "finger-left", "finger-right", "circle-arrows", "line-dots", "custom"] as const;
 
 function getChromeOverrides(slide: Slide): import("@/lib/renderer/renderModel").ChromeOverrides | undefined {
@@ -292,7 +306,19 @@ function getChromeOverrides(slide: Slide): import("@/lib/renderer/renderModel").
   const showSwipe = typeof m.show_swipe === "boolean" ? m.show_swipe : undefined;
   const swipeType = typeof m.swipe_type === "string" && SWIPE_TYPES.includes(m.swipe_type as (typeof SWIPE_TYPES)[number]) ? (m.swipe_type as (typeof SWIPE_TYPES)[number]) : undefined;
   const swipePosition = typeof m.swipe_position === "string" && SWIPE_POSITIONS.includes(m.swipe_position as (typeof SWIPE_POSITIONS)[number]) ? (m.swipe_position as (typeof SWIPE_POSITIONS)[number]) : undefined;
-  const hasSwipeOverrides = showSwipe !== undefined || swipeType != null || swipePosition != null;
+  const swipeX = m.swipe_x != null && Number.isFinite(Number(m.swipe_x)) ? Math.round(Number(m.swipe_x)) : undefined;
+  const swipeY = m.swipe_y != null && Number.isFinite(Number(m.swipe_y)) ? Math.round(Number(m.swipe_y)) : undefined;
+  const swipeSize = m.swipe_size != null && Number.isFinite(Number(m.swipe_size)) ? Math.round(Number(m.swipe_size)) : undefined;
+  const swipeColor =
+    typeof m.swipe_color === "string" && /^#([0-9A-Fa-f]{3}){1,2}$/.test(m.swipe_color) ? m.swipe_color : undefined;
+  const hasSwipeOverrides =
+    showSwipe !== undefined ||
+    swipeType != null ||
+    swipePosition != null ||
+    swipeX != null ||
+    swipeY != null ||
+    swipeSize != null ||
+    swipeColor != null;
   if (!counter && !watermark && !madeWith && !hasSwipeOverrides) return undefined;
   return {
     ...(counter && { counter }),
@@ -301,6 +327,10 @@ function getChromeOverrides(slide: Slide): import("@/lib/renderer/renderModel").
     ...(showSwipe !== undefined && { showSwipe }),
     ...(swipeType != null && { swipeType }),
     ...(swipePosition != null && { swipePosition }),
+    ...(swipeX != null && { swipeX }),
+    ...(swipeY != null && { swipeY }),
+    ...(swipeSize != null && { swipeSize }),
+    ...(swipeColor && { swipeColor }),
   };
 }
 
@@ -680,6 +710,10 @@ export function SlideGrid({
           const hasBackgroundImage =
             (typeof bgUrls === "string" && bgUrls.length > 0) ||
             (Array.isArray(bgUrls) && (bgUrls as string[]).some((u) => typeof u === "string" && u.length > 0));
+          /** Match SlideEditForm / SlidePreview: show user images when template has allowImage false (LinkedIn-style, etc.). */
+          const allowBackgroundImageOverride =
+            (slide.meta as { allow_background_image_override?: boolean } | null)?.allow_background_image_override === true ||
+            (effectiveTemplateConfig?.backgroundRules?.allowImage === false && hasBackgroundImage);
           const backgroundOverride =
             fromSlide ?? (!hasBackgroundImage && effectiveTemplateConfig ? getTemplatePreviewBackgroundOverride(effectiveTemplateConfig) : null);
           const isDragging = draggedId === slide.id;
@@ -785,6 +819,7 @@ export function SlideGrid({
                             headline_highlights={getHighlightSpans(slide).headline_highlights}
                             body_highlights={getHighlightSpans(slide).body_highlights}
                             borderedFrame={hasBackgroundImage}
+                            allowBackgroundImageOverride={allowBackgroundImageOverride}
                             imageDisplay={imageDisplayForSlide}
                             exportSize={exportSize}
                             {...getBoldWeights(slide)}
@@ -877,6 +912,7 @@ export function SlideGrid({
                             headline_highlights={getHighlightSpans(slide).headline_highlights}
                             body_highlights={getHighlightSpans(slide).body_highlights}
                             borderedFrame={hasBackgroundImage}
+                            allowBackgroundImageOverride={allowBackgroundImageOverride}
                             imageDisplay={imageDisplayForSlide}
                             exportSize={exportSize}
                             {...getBoldWeights(slide)}

@@ -6,6 +6,7 @@ import { parseInlineFormatting, stripHighlightMarkers, getFontSizeSegmentsForRan
 import { getRoundedPolygonClipPath } from "@/lib/renderer/shapeClipPath";
 import { zoneBoxChromeInlineCss } from "@/lib/renderer/zoneBoxChrome";
 import { resolvePipLayoutsForImageCount } from "@/lib/renderer/resolvePipLayouts";
+import { normalizeFullImageRotation } from "@/lib/renderer/fullImageRotation";
 
 /** Hook slide second image: circle with thick border (matches SlidePreview). */
 const HOOK_CIRCLE_SIZE = 200;
@@ -289,6 +290,8 @@ export function renderSlideHtml(
     /** When true, PiP boxes get a drop shadow. Default off. */
     pipShadow?: boolean;
     pips?: unknown;
+    /** Full-bleed only: 0 / 90 / 180 / 270. */
+    fullImageRotation?: number;
   } | null,
   /** Export dimensions. Default 1080x1080. */
   dimensions?: { w: number; h: number },
@@ -503,6 +506,13 @@ export function renderSlideHtml(
 
   const multiUrlsCandidate = overlayOnly ? null : (backgroundImageUrls?.length ?? 0) >= 2 ? backgroundImageUrls : null;
   const disp = imageDisplay ?? {};
+  const fullImageRotationDeg =
+    disp.mode !== "pip" ? normalizeFullImageRotation((disp as { fullImageRotation?: unknown }).fullImageRotation) : 0;
+  const fullImgRotateCss =
+    fullImageRotationDeg !== 0
+      ? `transform:rotate(${fullImageRotationDeg}deg);transform-origin:center center;`
+      : "";
+  const fullImgRotateSuffix = fullImgRotateCss ? `;${fullImgRotateCss}` : "";
   const isPipMode = !overlayOnly && disp.mode === "pip";
   /** Standard multi-image flex/grid layout (not PiP). */
   const multiUrls = isPipMode ? null : multiUrlsCandidate;
@@ -756,10 +766,10 @@ export function renderSlideHtml(
       ? singleFrameW > 0
         ? singleUseClipPathFrame
           ? (() => {
-              return `<div style="position:absolute;left:16px;top:16px;width:${singleFrameOuterW}px;height:${singleFrameOuterW}px;"><div style="position:absolute;inset:0;${singleFrameShapeCss};background-color:${escapeHtml(singleFrameColor)}"></div><div style="position:absolute;left:${singleFrameW}px;top:${singleFrameW}px;width:${singleFrameInnerW}px;height:${singleFrameInnerW}px;${singleFrameInnerShapeCss};overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.3);"><img src="${escapeHtml(resolvedBgUrl)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:${fit};object-position:${singleBgPosition};display:block" /></div></div>`;
+              return `<div style="position:absolute;left:16px;top:16px;width:${singleFrameOuterW}px;height:${singleFrameOuterW}px;"><div style="position:absolute;inset:0;${singleFrameShapeCss};background-color:${escapeHtml(singleFrameColor)}"></div><div style="position:absolute;left:${singleFrameW}px;top:${singleFrameW}px;width:${singleFrameInnerW}px;height:${singleFrameInnerW}px;${singleFrameInnerShapeCss};overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.3);"><img src="${escapeHtml(resolvedBgUrl)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:${fit};object-position:${singleBgPosition};display:block${fullImgRotateSuffix}" /></div></div>`;
             })()
-          : `<div style="${bgFrameStyle}"><img src="${escapeHtml(resolvedBgUrl)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:${fit};object-position:${singleBgPosition};display:block" /></div>`
-        : `<img src="${escapeHtml(resolvedBgUrl)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:${fit};object-position:${singleBgPosition};z-index:0;display:block" />`
+          : `<div style="${bgFrameStyle}"><img src="${escapeHtml(resolvedBgUrl)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:${fit};object-position:${singleBgPosition};display:block${fullImgRotateSuffix}" /></div>`
+        : `<img src="${escapeHtml(resolvedBgUrl)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:${fit};object-position:${singleBgPosition};z-index:0;display:block${fullImgRotateSuffix}" />`
       : "";
   const hookCircleHtml =
     overlayOnly
@@ -825,11 +835,11 @@ export function renderSlideHtml(
 <body>
   <div class="slide-wrap">
   ${(() => { const preloadUrls = [resolvedBgUrl, ...(multiUrls ?? []), ...(multiUrlsCandidate ?? []), secondaryBackgroundImageUrl].filter(Boolean) as string[]; const seen = new Set<string>(); const deduped = preloadUrls.filter((u) => (seen.has(u) ? false : (seen.add(u), true))); return deduped.length ? deduped.map((url) => `<img src="${escapeHtml(url)}" alt="" decoding="async" class="slide-preload-img" style="position:absolute;width:0;height:0;opacity:0;pointer-events:none;visibility:hidden" />`).join("") : ""; })()}
-  ${useFullCanvasBackground ? `<div class="slide-fullcanvas-bg" style="position:absolute;left:0;top:0;width:${dimW}px;height:${dimH}px;overflow:hidden;z-index:0"><img src="${escapeHtml(resolvedBgUrl!)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:${singleBgPosition};display:block" />${!noTextOrChrome && (backgroundOverride?.tintOpacity ?? 0) > 0 ? `<div style="position:absolute;inset:0;background-color:${escapeHtml(backgroundOverride?.tintColor ?? backgroundColor ?? "#0a0a0a")};opacity:${Math.min(1, Math.max(0, backgroundOverride?.tintOpacity ?? 0))};pointer-events:none"></div>` : ""}${!noTextOrChrome && useGradient ? `<div style="position:absolute;inset:0;background:${gradientStyle};pointer-events:none"></div>` : ""}</div>` : ""}
+  ${useFullCanvasBackground ? `<div class="slide-fullcanvas-bg" style="position:absolute;left:0;top:0;width:${dimW}px;height:${dimH}px;overflow:hidden;z-index:0"><img src="${escapeHtml(resolvedBgUrl!)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:${singleBgPosition};display:block${fullImgRotateSuffix}" />${!noTextOrChrome && (backgroundOverride?.tintOpacity ?? 0) > 0 ? `<div style="position:absolute;inset:0;background-color:${escapeHtml(backgroundOverride?.tintColor ?? backgroundColor ?? "#0a0a0a")};opacity:${Math.min(1, Math.max(0, backgroundOverride?.tintOpacity ?? 0))};pointer-events:none"></div>` : ""}${!noTextOrChrome && useGradient ? `<div style="position:absolute;inset:0;background:${gradientStyle};pointer-events:none"></div>` : ""}</div>` : ""}
   <div class="slide">
   <div class="slide-inner">
     ${decorationHtml}
-    ${overlayOnly ? "" : useFullCanvasBackground ? "" : (allPipHtml || (multiUrls ? multiImagesHtml : singleBgImgHtml || (isSingleImage && disp.mode !== "pip" ? `<div class="slide-bg-image" style="${bgFrameStyle}${bgImageStyle}"></div>` : "")))}
+    ${overlayOnly ? "" : useFullCanvasBackground ? "" : (allPipHtml || (multiUrls ? multiImagesHtml : singleBgImgHtml || (isSingleImage && disp.mode !== "pip" ? `<div class="slide-bg-image" style="${bgFrameStyle}${bgImageStyle}${fullImgRotateSuffix}"></div>` : "")))}
     ${!noTextOrChrome && !useFullCanvasBackground && (resolvedBgUrl || multiUrls || multiUrlsCandidate) && (backgroundOverride?.tintOpacity ?? 0) > 0 ? `<div style="position:absolute;inset:0;background-color:${escapeHtml(backgroundOverride?.tintColor ?? backgroundColor ?? "#0a0a0a")};opacity:${Math.min(1, Math.max(0, backgroundOverride?.tintOpacity ?? 0))};pointer-events:none;z-index:0"></div>` : ""}
     ${noTextOrChrome ? "" : useFullCanvasBackground ? "" : "<div class=\"slide-gradient\"></div>"}
     ${hookCircleHtml}
@@ -840,7 +850,9 @@ export function renderSlideHtml(
       const t = model.chrome.swipeType ?? "text";
       const pos = model.chrome.swipePosition ?? "bottom_center";
       const isRightPreset = pos === "bottom_right" || pos === "top_right" || pos === "center_right";
-      const useCustomPos = (model.chrome.swipeX != null && model.chrome.swipeY != null) && !isRightPreset;
+      /** Match SlidePreview: overlay uses raw 0–1080 × 0–dimH (not inner 1080×1080 design space). */
+      const useCustomPos =
+        (pos === "custom" || (model.chrome.swipeX != null && model.chrome.swipeY != null)) && !isRightPreset;
       const cs = chromeScale;
       /** Bottom presets: 100px from bottom in 1080 design (Y=980) so swipe stays visible. */
       const bottomPx = Math.round(100 * cs);
@@ -858,18 +870,15 @@ export function renderSlideHtml(
         center_left: `top:50%;left:${edgePx}px;transform:translateY(-50%)`,
         center_right: `top:50%;left:${swipeRightX}px;transform:translateY(-50%)`,
       };
-      const posStyle = useCustomPos ? (() => {
-        const dx = model.chrome.swipeX!;
-        const dy = model.chrome.swipeY!;
-        const isViewportTall = dimH > 1080;
-        const designVisibleLeft = isViewportTall ? (1080 - 1080 / scale) / 2 : 0;
-        const visibleDesignWidth = isViewportTall ? 1080 / scale : 1080;
-        const vx = isViewportTall ? (dx - designVisibleLeft) * (dimW / visibleDesignWidth) : dx;
-        const vy = dy * (dimH / 1080);
-        const vxClamp = Math.max(0, Math.min(dimW, vx));
-        const vyClamp = Math.max(0, Math.min(dimH, vy));
-        return `left:${Math.round(vxClamp)}px;top:${Math.round(vyClamp)}px`;
-      })() : (posStyles[pos] ?? posStyles.bottom_center);
+      const posStyle = useCustomPos
+        ? (() => {
+            const dx = model.chrome.swipeX!;
+            const dy = model.chrome.swipeY!;
+            const vxClamp = Math.max(0, Math.min(dimW, dx));
+            const vyClamp = Math.max(0, Math.min(dimH, dy));
+            return `left:${Math.round(vxClamp)}px;top:${Math.round(vyClamp)}px`;
+          })()
+        : (posStyles[pos] ?? posStyles.bottom_center);
       const fontSizeBase = model.chrome.swipeSize ?? 24;
       const fontSize = Math.round(fontSizeBase * cs);
       const swipeColor = model.chrome.swipeColor ?? textColor;

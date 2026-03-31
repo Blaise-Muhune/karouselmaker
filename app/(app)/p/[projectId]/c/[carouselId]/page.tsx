@@ -130,8 +130,9 @@ export default async function CarouselEditorPage({
         const any = urls.some((u) => u.length > 0);
         if (any) {
           slideBackgroundImageUrls[s.id] = bg.images.length === 1 ? urls[0]! : urls;
+          return;
         }
-        return;
+        /* `images[]` present but no slot resolved — fall through to top-level asset_id / image_url */
       }
       let pathToUse = normalizeStoragePathForBucket(bg.storage_path, "carousel-assets");
       if (!pathToUse && bg.asset_id) {

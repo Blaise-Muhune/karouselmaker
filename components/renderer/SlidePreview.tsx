@@ -5,6 +5,7 @@ import { applyTemplate } from "@/lib/renderer/applyTemplate";
 import { getTextScaleForDimensions, getSwipeRightXForFormat, normalizeTextZoneOverrides, type BrandKit, type SlideData, type TextZoneOverrides, type ChromeOverrides } from "@/lib/renderer/renderModel";
 import { getRoundedPolygonClipPath } from "@/lib/renderer/shapeClipPath";
 import { resolvePipLayoutsForImageCount } from "@/lib/renderer/resolvePipLayouts";
+import { fullImageRotationStyle, normalizeFullImageRotation } from "@/lib/renderer/fullImageRotation";
 import { parseZoneBoxChrome } from "@/lib/renderer/zoneBoxChrome";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { getContrastingTextColor, hexToRgba } from "@/lib/editor/colorUtils";
@@ -328,6 +329,8 @@ export type SlidePreviewProps = {
     imagePositionX?: number;
     /** Single image: custom focal point Y (0–100). Overrides position preset when set with imagePositionX. */
     imagePositionY?: number;
+    /** Full slide only: rotate background in 90° steps (0, 90, 180, 270). */
+    fullImageRotation?: number;
   } | null;
   /** When set (editor live preview), user can drag to reposition the background image. */
   onBackgroundImagePositionChange?: (x: number, y: number) => void;
@@ -1322,6 +1325,7 @@ export function SlidePreview({
                 imageDisplay?.imagePositionX != null && imageDisplay?.imagePositionY != null
                   ? `${imageDisplay.imagePositionX}% ${imageDisplay.imagePositionY}%`
                   : POSITION_TO_CSS[imageDisplay?.position ?? "top"],
+              ...fullImageRotationStyle(normalizeFullImageRotation(imageDisplay?.fullImageRotation)),
             }}
           />
           {(backgroundOverride?.tintOpacity ?? 0) > 0 && (
@@ -2117,6 +2121,7 @@ export function SlidePreview({
           const frameShape = imageDisplay?.frameShape ?? "squircle";
           const pos = imageDisplay?.position ?? "top";
           const fit = imageDisplay?.fit ?? "cover";
+          const fullSlideRotStyle = fullImageRotationStyle(normalizeFullImageRotation(imageDisplay?.fullImageRotation));
           const inset = frameW > 0 ? 16 : 0;
           const objectPosition =
             imageDisplay?.imagePositionX != null && imageDisplay?.imagePositionY != null
@@ -2158,7 +2163,7 @@ export function SlidePreview({
                       alt=""
                       referrerPolicy="no-referrer"
                       className="absolute inset-0 w-full h-full"
-                      style={{ objectFit: fit, objectPosition }}
+                      style={{ objectFit: fit, objectPosition, ...fullSlideRotStyle }}
                     />
                     {onBackgroundImagePositionChange && (
                       <div
@@ -2181,6 +2186,7 @@ export function SlidePreview({
                     style={{
                       objectFit: fit,
                       objectPosition,
+                      ...fullSlideRotStyle,
                     }}
                   />
                   {onBackgroundImagePositionChange && (

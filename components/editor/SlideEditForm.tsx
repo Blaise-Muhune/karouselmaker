@@ -77,6 +77,8 @@ import {
   MoreHorizontal,
   PlusIcon,
   PaletteIcon,
+  RotateCcw,
+  RotateCw,
   AlignJustify,
   ShuffleIcon,
   SparklesIcon,
@@ -89,6 +91,7 @@ import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { ColorPicker } from "@/components/ui/color-picker";
 import { StepperWithLongPress } from "@/components/ui/stepper-with-long-press";
 import { HIGHLIGHT_COLORS, expandSelectionToWordBoundaries, normalizeHighlightSpansToWords, clampHighlightSpansToText, buildAutoHighlightSpans, shiftHighlightSpansForBoldInsert, shiftHighlightSpansForBoldRemove, type HighlightSpan } from "@/lib/editor/inlineFormat";
+import { normalizeFullImageRotation, type FullImageRotation } from "@/lib/renderer/fullImageRotation";
 
 /** Rainbow gradient for custom highlight color picker (circle, same size as preset swatches). */
 const HIGHLIGHT_RAINBOW = "conic-gradient(from 0deg, #ef4444, #f97316, #eab308, #84cc16, #22c55e, #06b6d4, #3b82f6, #8b5cf6, #ec4899, #ef4444)";
@@ -282,6 +285,8 @@ export type ImageDisplayState = {
   imagePositionX?: number;
   /** Single image: custom focal point Y (0–100). When set with imagePositionX, overrides position preset. */
   imagePositionY?: number;
+  /** Full slide only: 0, 90, 180, 270 clockwise. */
+  fullImageRotation?: FullImageRotation;
 };
 
 export type SlideBackgroundState = SlideBackgroundOverride & {
@@ -328,6 +333,52 @@ function upsertImageDisplayPipSlot(
   const next = pips[slotIndex] ?? {};
   pips[slotIndex] = { ...next, ...patch };
   return { ...d, pips };
+}
+
+/** Default PiP box rotation (degrees) when a photo is uploaded or picked from library / Drive. */
+const DEFAULT_PIP_ROTATION_AFTER_UPLOAD = 90;
+
+/**
+ * Which slot receives a library/Drive append pick — mirrors `handlePickImage` / `handleDriveFilePicked`
+ * append branches so we can set per-slot `pipRotation` for multi-image PiP.
+ */
+function computePipSlotIndexAfterAppendPick(
+  latestRows: { url: string; asset_id?: string; storage_path?: string }[],
+  background: { asset_id?: string; storage_path?: string },
+  newRow: { url: string; asset_id?: string; storage_path?: string },
+  backgroundImageUrlForPreview: string | null
+): { slotIndex: number; totalSlots: number } | null {
+  const rowsWithHttps = latestRows.filter((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim()));
+  const shouldAppendLibraryPick = latestRows.length > 1 || rowsWithHttps.length > 0;
+  if (!shouldAppendLibraryPick) return null;
+
+  if (
+    background.asset_id &&
+    background.storage_path &&
+    rowsWithHttps.length === 0 &&
+    latestRows.length === 1
+  ) {
+    return { slotIndex: 1, totalSlots: 2 };
+  }
+
+  const next = [...latestRows];
+  const bgForGhost = { asset_id: background.asset_id, storage_path: background.storage_path };
+  if (
+    background.asset_id &&
+    background.storage_path &&
+    next.length > 0 &&
+    isEditorLibraryGhostRow(next[0]!, 0, bgForGhost)
+  ) {
+    const primaryPreview = backgroundImageUrlForPreview ?? newRow.url;
+    next[0] = { ...next[0]!, url: primaryPreview, asset_id: background.asset_id, storage_path: background.storage_path };
+  }
+  const emptyIdx = next.findIndex(
+    (r, idx) => !slotHasPersistableImage(r) && !isEditorLibraryGhostRow(r, idx, bgForGhost)
+  );
+  if (emptyIdx >= 0) {
+    return { slotIndex: emptyIdx, totalSlots: next.length };
+  }
+  return { slotIndex: next.length, totalSlots: next.length + 1 };
 }
 
 const PREVIEW_MAX = 560;
@@ -2065,6 +2116,9 @@ export function SlideEditForm({
     }
     if (source.imagePositionX != null) payload.imagePositionX = Math.min(100, Math.max(0, source.imagePositionX));
     if (source.imagePositionY != null) payload.imagePositionY = Math.min(100, Math.max(0, source.imagePositionY));
+    if ((source.mode ?? "full") !== "pip" && source.fullImageRotation != null) {
+      payload.fullImageRotation = normalizeFullImageRotation(source.fullImageRotation);
+    }
     return Object.keys(payload).length > 0 ? payload : undefined;
   };
 
@@ -2586,6 +2640,10 @@ export function SlideEditForm({
       ...(imageDisplay.mode === "pip" && typeof imageDisplay.pipShadow === "boolean" && { pipShadow: imageDisplay.pipShadow }),
       ...(imageDisplay.imagePositionX != null && { imagePositionX: imageDisplay.imagePositionX }),
       ...(imageDisplay.imagePositionY != null && { imagePositionY: imageDisplay.imagePositionY }),
+      ...(imageDisplay.mode !== "pip" &&
+        imageDisplay.fullImageRotation != null && {
+          fullImageRotation: normalizeFullImageRotation(imageDisplay.fullImageRotation),
+        }),
     };
     const result = await applyImageDisplayToAllSlides(slide.carousel_id, fullPayload, editorPath, applyScope);
     setApplyingImageDisplay(false);
@@ -3119,6 +3177,7 @@ export function SlideEditForm({
       mode: "pip",
       pipPosition: prev.pipPosition ?? "bottom_right",
       pipSize: prev.pipSize ?? 0.4,
+      pipRotation: DEFAULT_PIP_ROTATION_AFTER_UPLOAD,
     }));
   }, [templateDisallowsImage]);
 
@@ -3210,6 +3269,23 @@ export function SlideEditForm({
         setImageUrls([{ url: "", source: undefined }]);
         ensureNoImageTemplateImageFallback();
       }
+      const newRowForPipRotation = { url, asset_id: asset.id, storage_path: asset.storage_path };
+      const appendPickForRotation = computePipSlotIndexAfterAppendPick(
+        latestRows,
+        background,
+        newRowForPipRotation,
+        backgroundImageUrlForPreview
+      );
+      setImageDisplay((d) => {
+        const willBePip = d.mode === "pip" || templateDisallowsImage;
+        if (!willBePip) return d;
+        if (shouldAppendLibraryPick && appendPickForRotation && appendPickForRotation.totalSlots >= 2) {
+          return upsertImageDisplayPipSlot(d, appendPickForRotation.slotIndex, appendPickForRotation.totalSlots, {
+            pipRotation: DEFAULT_PIP_ROTATION_AFTER_UPLOAD,
+          });
+        }
+        return { ...d, pipRotation: DEFAULT_PIP_ROTATION_AFTER_UPLOAD };
+      });
     }
     setPickerOpen(false);
   };
@@ -3298,13 +3374,36 @@ export function SlideEditForm({
           setImageUrls([{ url: "", source: undefined }]);
         }
         ensureNoImageTemplateImageFallback();
+        const newRowForPipRotation = { url: asset.url, asset_id: asset.id, storage_path: asset.storage_path };
+        const appendPickForRotation = computePipSlotIndexAfterAppendPick(
+          latestRows,
+          background,
+          newRowForPipRotation,
+          backgroundImageUrlForPreview
+        );
+        setImageDisplay((d) => {
+          const willBePip = d.mode === "pip" || templateDisallowsImage;
+          if (!willBePip) return d;
+          if (shouldAppendLibraryPick && appendPickForRotation && appendPickForRotation.totalSlots >= 2) {
+            return upsertImageDisplayPipSlot(d, appendPickForRotation.slotIndex, appendPickForRotation.totalSlots, {
+              pipRotation: DEFAULT_PIP_ROTATION_AFTER_UPLOAD,
+            });
+          }
+          return { ...d, pipRotation: DEFAULT_PIP_ROTATION_AFTER_UPLOAD };
+        });
         setDriveSuccess("Image from Drive applied. Save the frame to keep it.");
         setTimeout(() => setDriveSuccess(null), 4000);
       } else if (!result.ok) {
         setDriveError(result.error);
       }
     },
-    [projectId, ensureNoImageTemplateImageFallback, background.asset_id, background.storage_path, backgroundImageUrlForPreview]
+    [
+      projectId,
+      ensureNoImageTemplateImageFallback,
+      background,
+      backgroundImageUrlForPreview,
+      templateDisallowsImage,
+    ]
   );
 
   const validImageUrls = imageUrls.filter((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim()));
@@ -6993,6 +7092,52 @@ export function SlideEditForm({
                         </Select>
                         <p className="text-muted-foreground text-[11px]">PiP keeps text clear by placing the image in a corner.</p>
                       </div>
+                      {(imageDisplay.mode ?? "full") === "full" && (
+                        <div className="flex flex-wrap items-center gap-2 pt-1">
+                          <span className="text-muted-foreground text-xs shrink-0">Rotate image</span>
+                          <div className="flex gap-1">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-9 gap-1"
+                              title="Rotate 90° counterclockwise"
+                              onClick={() =>
+                                setImageDisplay((d) => {
+                                  if ((d.mode ?? "full") === "pip") return d;
+                                  const cur = normalizeFullImageRotation(d.fullImageRotation ?? 0);
+                                  const next = (((cur - 90) % 360) + 360) % 360 as FullImageRotation;
+                                  return { ...d, fullImageRotation: next };
+                                })
+                              }
+                            >
+                              <RotateCcw className="size-4" />
+                              <span className="text-xs">Left</span>
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-9 gap-1"
+                              title="Rotate 90° clockwise"
+                              onClick={() =>
+                                setImageDisplay((d) => {
+                                  if ((d.mode ?? "full") === "pip") return d;
+                                  const cur = normalizeFullImageRotation(d.fullImageRotation ?? 0);
+                                  const next = (((cur + 90) % 360) + 360) % 360 as FullImageRotation;
+                                  return { ...d, fullImageRotation: next };
+                                })
+                              }
+                            >
+                              <RotateCw className="size-4" />
+                              <span className="text-xs">Right</span>
+                            </Button>
+                          </div>
+                          <span className="text-muted-foreground text-xs tabular-nums">
+                            {normalizeFullImageRotation(imageDisplay.fullImageRotation ?? 0)}°
+                          </span>
+                        </div>
+                      )}
                       {(imageDisplay.mode ?? "full") === "pip" && (
                         <div className="grid gap-3 sm:grid-cols-2 pt-1">
                           <div className="space-y-1.5">
