@@ -168,15 +168,26 @@ function wrapParagraph(paragraph: string, zone: TextZone, maxLines: number): str
   return lines;
 }
 
+export type FitTextToZoneOptions = {
+  /**
+   * Cap wrapped line count (default: from zone.maxLines, max 30).
+   * Editor live preview passes a higher cap so overflow past the box is visible instead of truncating.
+   */
+  maxLinesOverride?: number;
+};
+
 /**
  * Fit text to zone: return lines that fit within maxLines and approximate width.
  * User newlines (Enter) are preserved as line breaks. Auto wrap within each paragraph.
  * Never splits inside {{color}}...{{/}} so highlights render correctly.
  */
-export function fitTextToZone(text: string, zone: TextZone): string[] {
+export function fitTextToZone(text: string, zone: TextZone, options?: FitTextToZoneOptions): string[] {
   if (!text.trim()) return [];
 
-  const maxLines = Math.max(1, Math.min(30, Math.round(Number(zone.maxLines)) || 1));
+  const maxLines =
+    options?.maxLinesOverride != null
+      ? Math.max(1, Math.min(500, Math.round(options.maxLinesOverride)))
+      : Math.max(1, Math.min(30, Math.round(Number(zone.maxLines)) || 1));
   const paragraphs = text.split(/\n/);
   const allLines: string[] = [];
   let remainingLines = maxLines;

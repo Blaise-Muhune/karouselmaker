@@ -64,17 +64,12 @@ export function getMergedImageDisplay(
       : null;
   const meta =
     slideMeta != null && typeof slideMeta === "object" ? (slideMeta as { image_display?: unknown }) : null;
-  let fromSlide: Record<string, unknown> =
+  const fromSlide: Record<string, unknown> =
     bg?.image_display != null && typeof bg.image_display === "object" && !Array.isArray(bg.image_display)
       ? { ...(bg.image_display as Record<string, unknown>) }
       : meta?.image_display != null && typeof meta.image_display === "object" && !Array.isArray(meta.image_display)
         ? { ...(meta.image_display as Record<string, unknown>) }
         : {};
-  if (fromTemplate.mode === "pip" && Object.keys(fromSlide).length > 0) {
-    fromSlide = { ...fromSlide };
-    delete fromSlide.pipX;
-    delete fromSlide.pipY;
-  }
   const merged = { ...fromTemplate, ...fromSlide };
   return Object.keys(merged).length > 0 ? (merged as ImageDisplayForRender) : undefined;
 }

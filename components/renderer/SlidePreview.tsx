@@ -406,7 +406,7 @@ export type SlidePreviewProps = {
     onTextColorChange?: (color: string) => void;
     fontFamily?: string;
     onFontFamilyChange?: (fontFamily: string) => void;
-    /** Optional: rewrite body (shorten / cycle variants) from preview */
+    /** Optional: cycle body text (main → short → long) from preview; independent of headline rewrite */
     onRewrite?: () => void;
     rewriteDisabled?: boolean;
     rewriteLoading?: boolean;
@@ -951,8 +951,9 @@ export function SlidePreview({
       const dy = (e.clientY - rs.startPtrY) / scale;
       const MIN_W = 200;
       const MIN_H = 60;
-      const MAX_W = 1080;
-      const MAX_H = 600;
+      /** Full slide in design space (width 1080; height matches export aspect). */
+      const MAX_W = CANVAS_SIZE;
+      const MAX_H = canvasH;
       let x = rs.startX;
       let y = rs.startY;
       let w = rs.startW;
@@ -990,6 +991,10 @@ export function SlidePreview({
           h = MIN_H;
         }
       }
+      w = Math.max(MIN_W, Math.min(w, MAX_W - x));
+      h = Math.max(MIN_H, Math.min(h, MAX_H - y));
+      x = Math.max(0, Math.min(x, MAX_W - w));
+      y = Math.max(0, Math.min(y, MAX_H - h));
       if (rs.zone === "headline") {
         onHeadlinePositionChange?.(Math.round(Math.max(0, x)), Math.round(Math.max(0, y)));
         editToolbarHeadline?.onWidthChange(Math.round(w));
@@ -1000,7 +1005,7 @@ export function SlidePreview({
         editToolbarBody?.onHeightChange(Math.round(h));
       }
     },
-    [editScale, onHeadlinePositionChange, onBodyPositionChange, editToolbarHeadline, editToolbarBody]
+    [editScale, onHeadlinePositionChange, onBodyPositionChange, editToolbarHeadline, editToolbarBody, canvasH]
   );
   const handleResizeUp = useCallback(() => {
     setResizeState(null);
@@ -1149,7 +1154,10 @@ export function SlidePreview({
   const hasZoneOverrides =
     mergedZoneOverrides &&
     (Object.keys(mergedZoneOverrides.headline ?? {}).length > 0 || Object.keys(mergedZoneOverrides.body ?? {}).length > 0);
-  /** When we have zone/font overrides, use them for line wrapping too so text reflows when font size changes (no overflow). */
+  const isEditablePreview = onHeadlineChange != null || onBodyChange != null;
+  const renderModelOptions = hasZoneOverrides
+    ? { zoneOverridesForWrap: mergedZoneOverrides }
+    : undefined;
   const model = applyTemplate(
     templateConfig,
     slideData,
@@ -1159,7 +1167,7 @@ export function SlidePreview({
     hasZoneOverrides ? mergedZoneOverrides : undefined,
     textScale,
     chromeOverrides ?? undefined,
-    hasZoneOverrides ? { zoneOverridesForWrap: mergedZoneOverrides } : undefined
+    renderModelOptions
   );
 
   const backgroundColor =
@@ -1221,8 +1229,6 @@ export function SlidePreview({
     canvasH > CANVAS_SIZE && !useFullCanvasBackground
       ? (backgroundColor ?? "#0a0a0a")
       : undefined;
-
-  const isEditablePreview = onHeadlineChange != null || onBodyChange != null;
 
   // When parent opens expand with a zone focused (e.g. clicked headline in small preview), show chrome and focus that zone.
   useEffect(() => {

@@ -224,8 +224,8 @@ export type ChromeOverrides = {
  * @param textScale When set (e.g. for 4:5 or 9:16), line wrapping uses zone.fontSize * textScale so breaks match rendered font size.
  */
 /**
- * When set, line wrapping uses zoneOverridesForWrap (e.g. design-space only) so preview and export
- * produce the same line breaks. Used when preview applies scaled position/width for the visible band.
+ * Optional wrap-only overrides: line breaking uses `zoneOverridesForWrap` (e.g. design-space) so
+ * preview and export share the same breaks when the visible band scales position/width.
  */
 export type BuildSlideRenderModelOptions = {
   zoneOverridesForWrap?: TextZoneOverrides | null;
@@ -274,7 +274,8 @@ export function buildSlideRenderModel(
       textScale != null && textScale !== 1
         ? { ...mergedZoneForWrap, fontSize: Math.round(mergedZoneForWrap.fontSize * textScale) }
         : mergedZoneForWrap;
-    const lines = fitTextToZone(text, zoneForWrap);
+    /** Same high cap everywhere (editor, carousel, export) so line breaks and overflow match. */
+    const lines = fitTextToZone(text, zoneForWrap, { maxLinesOverride: 200 });
     textBlocks.push({ zone: mergedZone, lines });
   }
 

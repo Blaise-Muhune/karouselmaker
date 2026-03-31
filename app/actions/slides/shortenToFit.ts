@@ -52,7 +52,7 @@ export async function shortenToFit(
   return { ok: true, headline, body };
 }
 
-/** Return shortened headline/body for the slide (no save). Used to pre-fill shorten_variants in meta. */
+/** Return shortened headline/body for the slide (no save). Used by shorten-to-fit actions. */
 export type GetShortenedPreviewResult =
   | { ok: true; headline: string; body: string }
   | { ok: false; error: string };

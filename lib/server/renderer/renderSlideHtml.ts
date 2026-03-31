@@ -497,7 +497,7 @@ export function renderSlideHtml(
           const boxChrome = zoneBoxChromeInlineCss(
             block.zone as { boxBackgroundColor?: string; boxBackgroundOpacity?: number }
           );
-          return `<div class="text-block" style="left:${block.zone.x}px;top:${block.zone.y}px;width:${block.zone.w}px;height:${block.zone.h}px;font-size:${fontSize}px;font-weight:${block.zone.fontWeight};line-height:${lineHeight};text-align:${zoneAlign};${justifyCss}color:${escapeHtml(zoneColor)};font-family:${fontStack};z-index:5;${transformCss}${boxChrome}">${linesHtml}</div>`;
+          return `<div class="text-block" style="left:${block.zone.x}px;top:${block.zone.y}px;width:${block.zone.w}px;height:${block.zone.h}px;overflow:visible;font-size:${fontSize}px;font-weight:${block.zone.fontWeight};line-height:${lineHeight};text-align:${zoneAlign};${justifyCss}color:${escapeHtml(zoneColor)};font-family:${fontStack};z-index:5;${transformCss}${boxChrome}">${linesHtml}</div>`;
         })
         .join("");
 
@@ -817,7 +817,7 @@ export function renderSlideHtml(
     .slide-inner { position: absolute; left: 0; top: 0; width: 1080px; height: 1080px; transform: scale(${scale}); transform-origin: top left; }
     .slide-bg-image { position: absolute; inset: 0; ${bgImageStyle} }
     .slide-gradient { position: absolute; inset: 0; background: ${gradientStyle}; pointer-events: none; z-index: 1; }
-    .text-block { position: absolute; display: flex; flex-direction: column; justify-content: center; z-index: 5; box-sizing: border-box; }
+    .text-block { position: absolute; display: flex; flex-direction: column; justify-content: center; z-index: 5; box-sizing: border-box; overflow: visible; }
     .text-block > span { display: block; white-space: nowrap; }
     .chrome-swipe { position: absolute; display: flex; align-items: center; justify-content: center; padding: 12px 0; opacity: 0.9; font-size: 24px; font-weight: 600; letter-spacing: 0.1em; z-index: 5; }
   </style>

@@ -42,6 +42,7 @@ import { createTemplateAction } from "@/app/actions/templates/createTemplate";
 import { updateTemplateAction } from "@/app/actions/templates/updateTemplate";
 import { getTemplateConfigAction } from "@/app/actions/templates/getTemplateConfig";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
+import { buildBodyRewriteVariants } from "@/lib/renderer/bodyRewriteVariants";
 import { cn, slugifyForFilename } from "@/lib/utils";
 import { imageSourceDisplayName } from "@/lib/utils/imageSourceDisplay";
 import { isSupabaseSignedUrl } from "@/lib/server/storage/signedUrlUtils";
@@ -76,7 +77,7 @@ import {
   MoreHorizontal,
   PlusIcon,
   PaletteIcon,
-  ScissorsIcon,
+  AlignJustify,
   ShuffleIcon,
   SparklesIcon,
   Trash2,
@@ -690,15 +691,10 @@ export function SlideEditForm({
       templateImageDisplay != null && typeof templateImageDisplay === "object" && !Array.isArray(templateImageDisplay)
         ? (templateImageDisplay as Record<string, unknown>)
         : {};
-    let slideOverrides: Record<string, unknown> =
+    const slideOverrides: Record<string, unknown> =
       bg?.image_display && typeof bg.image_display === "object"
         ? { ...bg.image_display }
         : (meta?.image_display && typeof meta.image_display === "object" ? { ...meta.image_display } as Record<string, unknown> : {});
-    if (templateBase.mode === "pip" && Object.keys(slideOverrides).length > 0) {
-      slideOverrides = { ...slideOverrides };
-      delete slideOverrides.pipX;
-      delete slideOverrides.pipY;
-    }
     const hasMultiImages = (bg?.images?.length ?? 0) >= 2 || (initialBackgroundImageUrls?.length ?? 0) >= 2;
     if (hasMultiImages && Object.keys(templateBase).length === 0 && Object.keys(slideOverrides).length === 0) {
       const fc = brandKit.primary_color?.trim() || "#ffffff";
@@ -1085,7 +1081,6 @@ export function SlideEditForm({
   const autoBoldRangesHeadlineRef = useRef<{ start: number; end: number }[]>([]);
   const autoBoldRangesBodyRef = useRef<{ start: number; end: number }[]>([]);
   const [headlineVariants, setHeadlineVariants] = useState<string[]>(() => (slide.meta as { headline_variants?: string[] } | null)?.headline_variants ?? []);
-  const [shortenVariants, setShortenVariants] = useState<{ headline: string; body: string }[]>(() => (slide.meta as { shorten_variants?: { headline: string; body: string }[] } | null)?.shorten_variants ?? []);
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
   const [templateName, setTemplateName] = useState("");
   const [saveAsSystemTemplate, setSaveAsSystemTemplate] = useState(false);
@@ -1487,6 +1482,19 @@ export function SlideEditForm({
     bodyZoneFromTemplate && templateDefaultsOverrides.zoneOverrides?.body
       ? ({ ...bodyZoneFromTemplate, ...templateDefaultsOverrides.zoneOverrides.body } as TextZone)
       : bodyZoneFromTemplate;
+
+  /** Merged body zone for deterministic main / short / long body rewrites (headline-independent). */
+  const bodyZoneForRewrite = useMemo((): TextZone | null => {
+    const base = effectiveBodyZoneBase ?? bodyZoneFromTemplate;
+    if (!base) return null;
+    return { ...base, ...bodyZoneOverride } as TextZone;
+  }, [effectiveBodyZoneBase, bodyZoneFromTemplate, bodyZoneOverride]);
+
+  const bodyRewriteVariants = useMemo((): [string, string, string] => {
+    if (!bodyZoneForRewrite) return ["", "", ""];
+    return buildBodyRewriteVariants(body, bodyZoneForRewrite);
+  }, [body, bodyZoneForRewrite]);
+
   /** When user edits one zone, keep the other zone using template defaults so the layout doesn’t revert to the base template (e.g. CTA when using a saved template like AAA). */
   const previewZoneOverrides =
     headlineZoneOverride || bodyZoneOverride
@@ -1794,23 +1802,15 @@ export function SlideEditForm({
       const meta = (slide.meta ?? {}) as {
         headline_highlight_words?: string[];
         body_highlight_words?: string[];
-        shorten_variants?: { headline: string; body: string; headline_highlight_words?: string[]; body_highlight_words?: string[] }[];
       };
       const mainHeadline = slide.headline ?? "";
       const mainBody = slide.body ?? "";
-      const variants = meta.shorten_variants ?? [];
-      // Resolve which variant we're on: main (index 0) or a shorten alternate
+      // AI highlight seed words are stored for the main slide text only (body rewrite cycles are independent of headline).
       let headlineWords: string[] | undefined;
       let bodyWords: string[] | undefined;
       if (headline === mainHeadline && body === mainBody) {
         headlineWords = meta.headline_highlight_words?.length ? meta.headline_highlight_words : undefined;
         bodyWords = meta.body_highlight_words?.length ? meta.body_highlight_words : undefined;
-      } else {
-        const idx = variants.findIndex((v) => v.headline === headline && v.body === body);
-        if (idx >= 0) {
-          headlineWords = variants[idx]?.headline_highlight_words?.length ? variants[idx]!.headline_highlight_words : undefined;
-          bodyWords = variants[idx]?.body_highlight_words?.length ? variants[idx]!.body_highlight_words : undefined;
-        }
       }
       const wordsToUse = target === "headline" ? headlineWords : bodyWords;
       const normalized = buildAutoHighlightSpans(text, { style: target, defaultColor: color }, wordsToUse);
@@ -1966,22 +1966,14 @@ export function SlideEditForm({
       const meta = (slide.meta ?? {}) as {
         headline_highlight_words?: string[];
         body_highlight_words?: string[];
-        shorten_variants?: { headline: string; body: string; headline_highlight_words?: string[]; body_highlight_words?: string[] }[];
       };
       const mainHeadline = slide.headline ?? "";
       const mainBody = slide.body ?? "";
-      const variants = meta.shorten_variants ?? [];
       let headlineWords: string[] | undefined;
       let bodyWords: string[] | undefined;
       if (headline === mainHeadline && body === mainBody) {
         headlineWords = meta.headline_highlight_words?.length ? meta.headline_highlight_words : undefined;
         bodyWords = meta.body_highlight_words?.length ? meta.body_highlight_words : undefined;
-      } else {
-        const idx = variants.findIndex((v) => v.headline === headline && v.body === body);
-        if (idx >= 0) {
-          headlineWords = variants[idx]?.headline_highlight_words?.length ? variants[idx]!.headline_highlight_words : undefined;
-          bodyWords = variants[idx]?.body_highlight_words?.length ? variants[idx]!.body_highlight_words : undefined;
-        }
       }
       const wordsToUse = target === "headline" ? headlineWords : bodyWords;
       const color = target === "headline" ? headlineHighlightColor : bodyHighlightColor;
@@ -2165,6 +2157,9 @@ export function SlideEditForm({
       })(),
       ...(headlineFontSizeSpans.length > 0 ? { headline_font_size_spans: headlineFontSizeSpans } : {}),
       ...(bodyFontSizeSpans.length > 0 ? { body_font_size_spans: bodyFontSizeSpans } : {}),
+      ...(bodyZoneForRewrite && bodyRewriteVariants.length === 3 && {
+        body_rewrite_variants: [...bodyRewriteVariants],
+      }),
     };
 
     if (!isPro) {
@@ -2338,11 +2333,10 @@ export function SlideEditForm({
     }
   };
 
-  /** Ensure headline_variants (hook) and shorten_variants are in meta so we can cycle. */
+  /** Ensure headline_variants (hook) are in meta so we can cycle. Body rewrites (main / short / long) are computed in the editor from the body zone — not tied to headline rewrite. */
   useEffect(() => {
     const needHook = isPro && isHook && headlineVariants.length === 0;
-    const needShorten = templateId && shortenVariants.length === 0;
-    if (!needHook && !needShorten) return;
+    if (!needHook) return;
     let cancelled = false;
     setEnsuringVariants(true);
     ensureSlideTextVariants(slide.id, editorPath).then((result) => {
@@ -2350,12 +2344,11 @@ export function SlideEditForm({
       setEnsuringVariants(false);
       if (result.ok) {
         if (result.headline_variants?.length) setHeadlineVariants(result.headline_variants);
-        if (result.shorten_variants?.length) setShortenVariants(result.shorten_variants);
         router.refresh();
       }
     });
     return () => { cancelled = true; };
-  }, [slide.id, editorPath, isPro, isHook, templateId, headlineVariants.length, shortenVariants.length]);
+  }, [slide.id, editorPath, isPro, isHook, headlineVariants.length]);
 
   const handleCycleHook = async () => {
     if (headlineVariants.length === 0) return;
@@ -2386,14 +2379,16 @@ export function SlideEditForm({
   };
 
   const handleCycleShorten = async () => {
-    if (shortenVariants.length === 0) return;
-    const idx = shortenVariants.findIndex((v) => (v.body ?? "") === (body ?? ""));
+    if (!bodyZoneForRewrite) return;
+    const triple = bodyRewriteVariants;
+    if (!triple.some((s) => (s ?? "").trim())) return;
+    const norm = (s: string) => s.trim();
+    const idx = triple.findIndex((v) => norm(v) === norm(body ?? ""));
     const currentIndex = idx >= 0 ? idx : 0;
-    const nextIndex = (currentIndex + 1) % shortenVariants.length;
-    const next = shortenVariants[nextIndex]!;
-    setBody(next.body ?? "");
+    const next = triple[(currentIndex + 1) % 3]!;
+    setBody(next);
     setCyclingShorten(true);
-    const result = await updateSlide({ slide_id: slide.id, headline, body: (next.body ?? "").trim() || null }, editorPath);
+    const result = await updateSlide({ slide_id: slide.id, body: next.trim() || null }, editorPath);
     setCyclingShorten(false);
     if (result.ok) {
       lastSavedRef.current = buildEditorDirtySnapshotString();
@@ -3967,7 +3962,7 @@ export function SlideEditForm({
                         onFontWeightChange: (v) => setHeadlineZoneOverride((prev) => ({ ...headlineZoneFromTemplate, ...prev, fontWeight: v })),
                         onWidthChange: (v) => setHeadlineZoneOverride((prev) => ({ ...headlineZoneFromTemplate, ...prev, w: Math.min(1080, Math.max(200, v)) })),
                         onHeightChange: (v) => {
-                          const h = Math.min(600, Math.max(60, v));
+                          const h = Math.min(exportCanvasHeight, Math.max(60, v));
                           setHeadlineZoneOverride((prev) => {
                             const base = headlineZoneFromTemplate;
                             const fs = prev?.fontSize ?? base?.fontSize ?? 48;
@@ -4014,7 +4009,7 @@ export function SlideEditForm({
                         onFontWeightChange: (v) => setBodyZoneOverride((prev) => ({ ...bodyZoneFromTemplate, ...prev, fontWeight: v })),
                         onWidthChange: (v) => setBodyZoneOverride((prev) => ({ ...bodyZoneFromTemplate, ...prev, w: Math.min(1080, Math.max(200, v)) })),
                         onHeightChange: (v) => {
-                          const h = Math.min(600, Math.max(60, v));
+                          const h = Math.min(exportCanvasHeight, Math.max(60, v));
                           setBodyZoneOverride((prev) => {
                             const base = bodyZoneFromTemplate;
                             const fs = prev?.fontSize ?? base?.fontSize ?? 36;
@@ -4032,7 +4027,7 @@ export function SlideEditForm({
                         fontFamily: bodyZoneOverride?.fontFamily ?? bodyZoneFromTemplate?.fontFamily ?? "system",
                         onFontFamilyChange: (v) => setBodyZoneOverride((o) => ({ ...bodyZoneFromTemplate, ...o, fontFamily: v || undefined })),
                         onRewrite: isPro && templateId ? handleCycleShorten : undefined,
-                        rewriteDisabled: cyclingShorten || ensuringVariants || shortenVariants.length === 0,
+                        rewriteDisabled: cyclingShorten || !bodyZoneForRewrite || !(body ?? "").trim(),
                         rewriteLoading: cyclingShorten,
                         onClear: () => setBody(""),
                       }
@@ -4880,7 +4875,7 @@ export function SlideEditForm({
                                 onFontWeightChange: (v) => setHeadlineZoneOverride((prev) => ({ ...headlineZoneFromTemplate, ...prev, fontWeight: v })),
                                 onWidthChange: (v) => setHeadlineZoneOverride((prev) => ({ ...headlineZoneFromTemplate, ...prev, w: Math.min(1080, Math.max(200, v)) })),
                                 onHeightChange: (v) => {
-                                  const h = Math.min(600, Math.max(60, v));
+                                  const h = Math.min(exportCanvasHeight, Math.max(60, v));
                                   setHeadlineZoneOverride((prev) => {
                                     const base = headlineZoneFromTemplate;
                                     const fs = prev?.fontSize ?? base?.fontSize ?? 48;
@@ -4927,7 +4922,7 @@ export function SlideEditForm({
                                 onFontWeightChange: (v) => setBodyZoneOverride((prev) => ({ ...bodyZoneFromTemplate, ...prev, fontWeight: v })),
                                 onWidthChange: (v) => setBodyZoneOverride((prev) => ({ ...bodyZoneFromTemplate, ...prev, w: Math.min(1080, Math.max(200, v)) })),
                                 onHeightChange: (v) => {
-                                  const h = Math.min(600, Math.max(60, v));
+                                  const h = Math.min(exportCanvasHeight, Math.max(60, v));
                                   setBodyZoneOverride((prev) => {
                                     const base = bodyZoneFromTemplate;
                                     const fs = prev?.fontSize ?? base?.fontSize ?? 36;
@@ -4945,7 +4940,7 @@ export function SlideEditForm({
                                 fontFamily: bodyZoneOverride?.fontFamily ?? bodyZoneFromTemplate?.fontFamily ?? "system",
                                 onFontFamilyChange: (v) => setBodyZoneOverride((o) => ({ ...bodyZoneFromTemplate, ...o, fontFamily: v || undefined })),
                                 onRewrite: isPro && templateId ? handleCycleShorten : undefined,
-                                rewriteDisabled: cyclingShorten || ensuringVariants || shortenVariants.length === 0,
+                                rewriteDisabled: cyclingShorten || !bodyZoneForRewrite || !(body ?? "").trim(),
                                 rewriteLoading: cyclingShorten,
                                 onClear: () => setBody(""),
                               }
@@ -5472,7 +5467,7 @@ export function SlideEditForm({
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="h-8 w-full max-w-[280px] justify-start text-xs font-normal"
+                        className="h-8 w-full justify-start text-xs font-normal"
                         onClick={() => setHeadlineFontModalOpen(true)}
                       >
                         <span
@@ -5622,7 +5617,7 @@ export function SlideEditForm({
                 }}
                 onBlur={() => { if (headlineHighlightOpen) saveHighlightSelectionForPicker("headline"); }}
                 placeholder="Enter your headline..."
-                className="min-h-[72px] w-full md:max-w-[360px] resize-none rounded-md border-input/80 text-sm field-sizing-content px-3 py-2"
+                className="min-h-[72px] w-full resize-none rounded-md border-input/80 text-sm field-sizing-content px-3 py-2"
                 rows={2}
               />
               <div className="flex flex-wrap items-center gap-2">
@@ -5717,13 +5712,14 @@ export function SlideEditForm({
                                           const minVal = key === "w" || key === "h" ? 1 : 0;
                                           const step = 8;
                                           const label = key === "x" ? "X" : key === "y" ? "Y" : key === "w" ? "Width" : "Height";
+                                          const maxVal = key === "y" || key === "h" ? exportCanvasHeight : 1080;
                                           return (
                                             <div key={key} className="space-y-1 sm:space-y-1.5 min-w-0">
                                               <Label className="text-xs">{label}</Label>
                                               <StepperWithLongPress
                                                 value={val}
                                                 min={minVal}
-                                                max={1080}
+                                                max={maxVal}
                                                 step={step}
                                                 onChange={(v) => {
                                                   const baseZone = effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!;
@@ -6095,7 +6091,7 @@ export function SlideEditForm({
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="h-8 w-full max-w-[280px] justify-start text-xs font-normal"
+                        className="h-8 w-full justify-start text-xs font-normal"
                         onClick={() => setBodyFontModalOpen(true)}
                       >
                         <span
@@ -6245,13 +6241,13 @@ export function SlideEditForm({
                 }}
                 onBlur={() => { if (bodyHighlightOpen) saveHighlightSelectionForPicker("body"); }}
                 placeholder="Optional body text..."
-                className="min-h-[60px] w-full md:max-w-[360px] resize-none rounded-md border-input/80 text-sm field-sizing-content px-3 py-2"
+                className="min-h-[72px] w-full resize-none rounded-md border-input/80 text-sm field-sizing-content px-3 py-2"
                 rows={2}
               />
               <div className="flex flex-wrap items-center gap-2">
                 {isPro && templateId && (
-                  <Button type="button" variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={handleCycleShorten} disabled={cyclingShorten || ensuringVariants || shortenVariants.length === 0} title="Cycle to next body variant (original / shortened)">
-                    {cyclingShorten || (ensuringVariants && shortenVariants.length === 0) ? <Loader2Icon className="size-3.5 animate-spin" /> : <ScissorsIcon className="size-3.5" />}
+                  <Button type="button" variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={handleCycleShorten} disabled={cyclingShorten || !bodyZoneForRewrite || !(body ?? "").trim()} title="Cycle body: main → short → long (independent of headline)">
+                    {cyclingShorten ? <Loader2Icon className="size-3.5 animate-spin" /> : <AlignJustify className="size-3.5" />}
                     Rewrite body
                   </Button>
                 )}
@@ -6337,13 +6333,14 @@ export function SlideEditForm({
                                           const minVal = key === "w" || key === "h" ? 1 : 0;
                                           const step = 8;
                                           const label = key === "x" ? "X" : key === "y" ? "Y" : key === "w" ? "Width" : "Height";
+                                          const maxVal = key === "y" || key === "h" ? exportCanvasHeight : 1080;
                                           return (
                                             <div key={key} className="space-y-1 sm:space-y-1.5 min-w-0">
                                               <Label className="text-xs">{label}</Label>
                                               <StepperWithLongPress
                                                 value={val}
                                                 min={minVal}
-                                                max={1080}
+                                                max={maxVal}
                                                 step={step}
                                                 onChange={(v) => {
                                                   const baseZone = effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!;

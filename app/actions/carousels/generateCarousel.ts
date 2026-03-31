@@ -34,6 +34,8 @@ import { getContrastingTextColor } from "@/lib/editor/colorUtils";
 import { setSlideTemplate } from "@/app/actions/slides/setSlideTemplate";
 import { generateCarouselInputSchema } from "@/lib/validations/carousel";
 import { FREE_FULL_ACCESS_GENERATIONS, AI_GENERATE_LIMIT_PRO } from "@/lib/constants";
+import { buildBodyRewriteVariants } from "@/lib/renderer/bodyRewriteVariants";
+import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 
 const MAX_RETRIES = 2;
 /** Max concurrent AI image generations to cut total time without hitting rate limits. */
@@ -617,33 +619,32 @@ export async function generateCarousel(formData: FormData): Promise<
     const rawBody = s.body ? stripLinksFromText(s.body) : "";
     const fullHeadline = ensureListNewlines(rawHeadline);
     const fullBody = ensureListNewlines(rawBody);
-    type VariantEntry = { headline: string; body: string; headline_highlight_words?: string[]; body_highlight_words?: string[] };
     const mainHeadlineWords = sanitizeHighlightWordsForText(fullHeadline, s.headline_highlight_words);
     const mainBodyWords = sanitizeHighlightWordsForText(fullBody, s.body_highlight_words);
-    const shortenVariants: VariantEntry[] = [{
-      headline: fullHeadline,
-      body: fullBody,
-      ...(mainHeadlineWords.length && { headline_highlight_words: mainHeadlineWords }),
-      ...(mainBodyWords.length && { body_highlight_words: mainBodyWords }),
-    }];
     const alternates = (s as { shorten_alternates?: { headline: string; body?: string; headline_highlight_words?: string[]; body_highlight_words?: string[] }[] }).shorten_alternates;
-    if (alternates?.length) {
-      for (const a of alternates) {
-        const altHeadline = ensureListNewlines(stripLinksFromText(a.headline));
-        const altBody = a.body ? ensureListNewlines(stripLinksFromText(a.body)) : "";
-        const altHeadlineWords = sanitizeHighlightWordsForText(altHeadline, a.headline_highlight_words);
-        const altBodyWords = sanitizeHighlightWordsForText(altBody, a.body_highlight_words);
-        shortenVariants.push({
-          headline: altHeadline,
-          body: altBody,
-          ...(altHeadlineWords.length && { headline_highlight_words: altHeadlineWords }),
-          ...(altBodyWords.length && { body_highlight_words: altBodyWords }),
-        });
+    const templateConfigParsed = selectedTemplate ? templateConfigSchema.safeParse(selectedTemplate.config) : null;
+    const bodyZoneForRewrite =
+      templateConfigParsed?.success ? templateConfigParsed.data.textZones.find((z) => z.id === "body") : undefined;
+
+    let body_rewrite_variants: [string, string, string] = ["", "", ""];
+    if (bodyZoneForRewrite && fullBody.trim()) {
+      if (alternates && alternates.length >= 3) {
+        const bShort = alternates[0]?.body ? ensureListNewlines(stripLinksFromText(alternates[0].body)) : "";
+        const bLong = alternates[2]?.body ? ensureListNewlines(stripLinksFromText(alternates[2].body)) : "";
+        const fallback = buildBodyRewriteVariants(fullBody, bodyZoneForRewrite);
+        body_rewrite_variants = [
+          fullBody,
+          bShort.trim() || fallback[1],
+          bLong.trim() || fallback[2],
+        ];
+      } else {
+        body_rewrite_variants = buildBodyRewriteVariants(fullBody, bodyZoneForRewrite);
       }
     }
+
     const meta: Record<string, unknown> = {
       show_counter: false,
-      ...(shortenVariants.length > 1 && { shorten_variants: shortenVariants }),
+      body_rewrite_variants,
       ...(mainHeadlineWords.length && { headline_highlight_words: mainHeadlineWords }),
       ...(mainBodyWords.length && { body_highlight_words: mainBodyWords }),
     };
