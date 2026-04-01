@@ -13,6 +13,7 @@ import { parseInlineFormatting, HIGHLIGHT_COLORS, stripHighlightMarkers, getFont
 import { Hand, ChevronsLeft, ChevronsRight, MoveHorizontal, Minus, Plus, ChevronDownIcon, SparklesIcon, Loader2Icon } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { FontPickerModal } from "@/components/FontPickerModal";
+import { OverlayShapesLayer } from "@/components/renderer/OverlayShapesLayer";
 
 /** Base design size (slide content is laid out in 1080x1080, then scaled to cover export dimensions). */
 const CANVAS_SIZE = 1080;
@@ -2255,6 +2256,8 @@ export function SlidePreview({
           />
         );
       })()}
+
+      <OverlayShapesLayer shapes={templateConfig.overlayShapes} />
 
       {/* Text zones (positioned in 1080x1080 space). When onHeadlineChange/onBodyChange provided, render editable textareas. */}
       {model.textBlocks.map((block) => {

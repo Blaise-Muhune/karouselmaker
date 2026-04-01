@@ -18,6 +18,7 @@ export const DEFAULT_TEMPLATE_CONFIG: TemplateConfig = {
     watermark: { enabled: true, position: "custom", logoX: 24, logoY: 24 },
   },
   backgroundRules: { allowImage: true, defaultStyle: "darken" },
+  overlayShapes: [],
 };
 
 /** Layout presets for quick switching. */

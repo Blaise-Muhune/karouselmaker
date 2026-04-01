@@ -134,6 +134,39 @@ const backgroundRulesSchema = z.object({
   defaultStyle: z.enum(["darken", "blur", "none"]),
 });
 
+/** Straight line in 1080×1080 design space (stroke only). */
+const overlayShapeLineSchema = z.object({
+  id: z.string().max(64).optional(),
+  type: z.literal("line"),
+  x: z.number(),
+  y: z.number(),
+  x2: z.number(),
+  y2: z.number(),
+  stroke: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
+  strokeWidth: z.number().min(0).max(64).optional(),
+  opacity: z.number().min(0).max(1).optional(),
+});
+
+/** Filled/stroked box shapes in 1080×1080 design space (same coordinate system as text zones). */
+const overlayShapeBoxSchema = z.object({
+  id: z.string().max(64).optional(),
+  type: z.enum(["rect", "rounded_rect", "circle", "ellipse"]),
+  x: z.number(),
+  y: z.number(),
+  w: z.number().positive(),
+  h: z.number().positive(),
+  fill: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
+  stroke: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
+  strokeWidth: z.number().min(0).max(64).optional(),
+  rotation: z.number().min(-180).max(180).optional(),
+  opacity: z.number().min(0).max(1).optional(),
+  /** Pixels; used when type is rounded_rect. */
+  borderRadius: z.number().min(0).max(800).optional(),
+});
+
+export const overlayShapeSchema = z.union([overlayShapeLineSchema, overlayShapeBoxSchema]);
+export type OverlayShape = z.infer<typeof overlayShapeSchema>;
+
 /** Optional preset content/background/meta saved with the template (e.g. from "Save as template"). */
 const templateDefaultsSchema = z
   .object({
@@ -188,6 +221,8 @@ export const templateConfigSchema = z.object({
   overlays: overlaysSchema,
   chrome: chromeSchema,
   backgroundRules: backgroundRulesSchema,
+  /** Optional vector-style overlays (lines, rectangles, circles) in design space; saved with the template. */
+  overlayShapes: z.array(overlayShapeSchema).optional(),
   defaults: templateDefaultsSchema,
 });
 

@@ -32,6 +32,7 @@ import { getTemplatePreviewBackgroundOverride } from "@/lib/renderer/getTemplate
 import { getTemplatePreviewImageUrls } from "@/lib/renderer/templatePreviewImages";
 import { getSwipeRightXForFormat } from "@/lib/renderer/renderModel";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
+import { TemplateOverlayShapesEditor } from "@/components/templates/TemplateOverlayShapesEditor";
 import type { Template } from "@/lib/server/db/types";
 import { ArrowLeftIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, LayoutTemplateIcon, Loader2Icon, Maximize2Icon, MinusIcon, MoreHorizontal, PaletteIcon, PlusIcon, Type } from "lucide-react";
 
@@ -1254,6 +1255,16 @@ export function TemplateBuilderForm({
             </div>
           </div>
         </div>
+
+        <TemplateOverlayShapesEditor
+          shapes={config.overlayShapes}
+          onChange={(next) =>
+            updateConfig((prev) => ({
+              ...prev,
+              overlayShapes: next,
+            }))
+          }
+        />
 
         {config.backgroundRules.allowImage && (
           <div className="rounded-lg border border-border/50 bg-muted/5 p-3">

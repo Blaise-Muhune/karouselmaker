@@ -1,6 +1,7 @@
 import { GOOGLE_FONT_IDS_SET } from "@/lib/constants/googleFonts";
 import { buildSlideRenderModel, getTextScaleForDimensions, getSwipeRightXForFormat, type BrandKit, type SlideData, type TextZoneOverrides, type ChromeOverrides } from "@/lib/renderer/renderModel";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
+import { getOverlayShapesHtml } from "@/lib/renderer/overlayShapesHtml";
 import { getContrastingTextColor, hexToRgba } from "@/lib/editor/colorUtils";
 import { parseInlineFormatting, stripHighlightMarkers, getFontSizeSegmentsForRange, getLineSubstringByPlainRange } from "@/lib/editor/inlineFormat";
 import { getRoundedPolygonClipPath } from "@/lib/renderer/shapeClipPath";
@@ -366,6 +367,9 @@ export function renderSlideHtml(
         escapeHtml
       )
     : "";
+  const overlayShapesList = templateConfig.overlayShapes ?? [];
+  const overlayShapesHtml =
+    !overlayOnly && overlayShapesList.length > 0 ? getOverlayShapesHtml(overlayShapesList, escapeHtml) : "";
   const hasImageForOverlay = !!(backgroundImageUrl ?? model.background.backgroundImageUrl) || (backgroundImageUrls?.length ?? 0) >= 2;
   /** Only when there is a background image: gate gradient/tint on top of the picture. */
   const overlayEnabled = backgroundOverride?.overlayEnabled !== false;
@@ -843,6 +847,7 @@ export function renderSlideHtml(
     ${!noTextOrChrome && !useFullCanvasBackground && (resolvedBgUrl || multiUrls || multiUrlsCandidate) && (backgroundOverride?.tintOpacity ?? 0) > 0 ? `<div style="position:absolute;inset:0;background-color:${escapeHtml(backgroundOverride?.tintColor ?? backgroundColor ?? "#0a0a0a")};opacity:${Math.min(1, Math.max(0, backgroundOverride?.tintOpacity ?? 0))};pointer-events:none;z-index:0"></div>` : ""}
     ${noTextOrChrome ? "" : useFullCanvasBackground ? "" : "<div class=\"slide-gradient\"></div>"}
     ${hookCircleHtml}
+    ${overlayShapesHtml}
     ${textBlocksHtml}
   </div>
   </div>

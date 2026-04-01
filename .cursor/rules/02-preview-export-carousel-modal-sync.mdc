@@ -17,7 +17,7 @@ Examples (not exhaustive):
 - Fonts, sizes, highlights, outlines, bold weights, spans
 - Background: solid/gradient/pattern/image, multi-image, PiP, focal point, frame, rotation
 - Chrome: counter, watermark, **swipe hint**, “Made with”, positions/sizes/colors
-- Overlays, tints, safe areas, bordered frame
+- Overlays, tints, safe areas, bordered frame, **template overlay shapes** (`templateConfig.overlayShapes`: lines, rects, circles, etc.)
 - Normalization of `slide.meta` / template defaults / `background` JSON
 - Anything that changes **pixels** or **meaningful positioning** on the canvas
 
