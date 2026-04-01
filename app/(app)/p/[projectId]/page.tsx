@@ -92,7 +92,7 @@ export default async function ProjectDashboardPage({
                   carouselId={c.id}
                   title={c.title}
                   slideCount={slideCounts[c.id] ?? 0}
-                  createdAt={c.created_at}
+                  updatedAt={c.updated_at}
                   firstSlideId={firstSlideIds[c.id] ?? null}
                 />
               ))}

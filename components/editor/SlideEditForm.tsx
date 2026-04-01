@@ -2147,70 +2147,70 @@ export function SlideEditForm({
       !!(background.image_url && /^https?:\/\//i.test(String(background.image_url ?? "").trim()));
 
     const metaForSave: Record<string, unknown> = {
-      ...(typeof slide.meta === "object" && slide.meta !== null ? (slide.meta as Record<string, unknown>) : {}),
-      show_counter: showCounter,
-      show_watermark: showWatermark,
-      show_made_with: showMadeWith,
-      show_swipe: showSwipe,
-      swipe_type: swipeType,
-      swipe_position: swipePosition,
-      ...(swipeText.trim() !== "" && { swipe_text: swipeText.trim() }),
-      ...(swipeX != null && Number.isFinite(swipeX) && { swipe_x: Math.round(swipeX) }),
-      ...(swipeY != null && Number.isFinite(swipeY) && { swipe_y: Math.round(swipeY) }),
-      ...(swipeSize != null && Number.isFinite(swipeSize) && { swipe_size: Math.round(swipeSize) }),
-      ...(swipeColorOverride && /^#([0-9A-Fa-f]{3}){1,2}$/.test(swipeColorOverride) && { swipe_color: swipeColorOverride }),
-      ...(counterColorOverride && /^#([0-9A-Fa-f]{3}){1,2}$/.test(counterColorOverride) && { counter_color: counterColorOverride }),
+          ...(typeof slide.meta === "object" && slide.meta !== null ? (slide.meta as Record<string, unknown>) : {}),
+          show_counter: showCounter,
+          show_watermark: showWatermark,
+          show_made_with: showMadeWith,
+          show_swipe: showSwipe,
+          swipe_type: swipeType,
+          swipe_position: swipePosition,
+          ...(swipeText.trim() !== "" && { swipe_text: swipeText.trim() }),
+          ...(swipeX != null && Number.isFinite(swipeX) && { swipe_x: Math.round(swipeX) }),
+          ...(swipeY != null && Number.isFinite(swipeY) && { swipe_y: Math.round(swipeY) }),
+          ...(swipeSize != null && Number.isFinite(swipeSize) && { swipe_size: Math.round(swipeSize) }),
+          ...(swipeColorOverride && /^#([0-9A-Fa-f]{3}){1,2}$/.test(swipeColorOverride) && { swipe_color: swipeColorOverride }),
+          ...(counterColorOverride && /^#([0-9A-Fa-f]{3}){1,2}$/.test(counterColorOverride) && { counter_color: counterColorOverride }),
       ...(hasImageForSave
-        ? (() => {
-            const isPip = imageDisplayPayload?.mode === "pip";
-            const tintOpacity = isPip ? 0 : (typeof background.overlay?.tintOpacity === "number" ? background.overlay.tintOpacity : (templateConfig?.defaults?.meta as { overlay_tint_opacity?: number } | undefined)?.overlay_tint_opacity ?? 0);
-            return {
-              overlay_tint_opacity: Math.min(1, Math.max(0, tintOpacity)),
-              overlay_tint_color: background.overlay?.tintColor != null && /^#([0-9A-Fa-f]{3}){1,2}$/.test(background.overlay.tintColor) ? background.overlay.tintColor : effectiveColorForSave,
-            };
-          })()
-        : {}),
+            ? (() => {
+                const isPip = imageDisplayPayload?.mode === "pip";
+                const tintOpacity = isPip ? 0 : (typeof background.overlay?.tintOpacity === "number" ? background.overlay.tintOpacity : (templateConfig?.defaults?.meta as { overlay_tint_opacity?: number } | undefined)?.overlay_tint_opacity ?? 0);
+                return {
+                  overlay_tint_opacity: Math.min(1, Math.max(0, tintOpacity)),
+                  overlay_tint_color: background.overlay?.tintColor != null && /^#([0-9A-Fa-f]{3}){1,2}$/.test(background.overlay.tintColor) ? background.overlay.tintColor : effectiveColorForSave,
+                };
+              })()
+            : {}),
       ...(hasImageForSave ? { allow_background_image_override: templateDisallowsImage } : {}),
-      ...(headlineFontSize != null && { headline_font_size: headlineFontSize }),
-      ...(bodyFontSize != null && { body_font_size: bodyFontSize }),
-      ...(headlineZoneOverride && Object.keys(headlineZoneOverride).length > 0 && { headline_zone_override: headlineZoneOverride }),
-      ...(bodyZoneOverride && Object.keys(bodyZoneOverride).length > 0 && { body_zone_override: bodyZoneOverride }),
-      ...(counterZoneOverride && Object.keys(counterZoneOverride).length > 0 && { counter_zone_override: counterZoneOverride }),
-      ...((watermarkZoneOverride && Object.keys(watermarkZoneOverride).length > 0) || (watermarkColorOverride && /^#([0-9A-Fa-f]{3}){1,2}$/.test(watermarkColorOverride))
-        ? {
-            watermark_zone_override: {
-              ...(watermarkZoneOverride && typeof watermarkZoneOverride === "object" ? watermarkZoneOverride : {}),
-              ...(watermarkColorOverride && /^#([0-9A-Fa-f]{3}){1,2}$/.test(watermarkColorOverride) && { color: watermarkColorOverride }),
-            },
-          }
-        : {}),
-      ...(madeWithZoneOverride && (() => {
-        const o = madeWithZoneOverride;
-        const filtered = {
-          ...(o.fontSize != null && { fontSize: o.fontSize }),
-          ...(o.x != null && { x: o.x }),
-          ...(o.y != null && { y: o.y }),
-          ...(o.color != null && /^#([0-9A-Fa-f]{3}){1,2}$/.test(o.color) && { color: o.color }),
-        };
-        return Object.keys(filtered).length > 0 ? { made_with_zone_override: filtered } : {};
-      })()),
-      ...(madeWithText.trim() !== "" && { made_with_text: madeWithText.trim() }),
-      headline_highlight_style: headlineHighlightStyle,
-      body_highlight_style: bodyHighlightStyle,
-      headline_outline_stroke: headlineOutlineStroke,
-      body_outline_stroke: bodyOutlineStroke,
-      ...(headlineBoldWeight !== 700 && { headline_bold_weight: headlineBoldWeight }),
-      ...(bodyBoldWeight !== 700 && { body_bold_weight: bodyBoldWeight }),
-      ...(() => {
-        const norm = normalizeHighlightSpansToWords(headline, headlineHighlights);
-        return norm.length > 0 ? { headline_highlights: norm } : {};
-      })(),
-      ...(() => {
-        const norm = normalizeHighlightSpansToWords(body, bodyHighlights);
-        return norm.length > 0 ? { body_highlights: norm } : {};
-      })(),
-      ...(headlineFontSizeSpans.length > 0 ? { headline_font_size_spans: headlineFontSizeSpans } : {}),
-      ...(bodyFontSizeSpans.length > 0 ? { body_font_size_spans: bodyFontSizeSpans } : {}),
+          ...(headlineFontSize != null && { headline_font_size: headlineFontSize }),
+          ...(bodyFontSize != null && { body_font_size: bodyFontSize }),
+          ...(headlineZoneOverride && Object.keys(headlineZoneOverride).length > 0 && { headline_zone_override: headlineZoneOverride }),
+          ...(bodyZoneOverride && Object.keys(bodyZoneOverride).length > 0 && { body_zone_override: bodyZoneOverride }),
+          ...(counterZoneOverride && Object.keys(counterZoneOverride).length > 0 && { counter_zone_override: counterZoneOverride }),
+          ...((watermarkZoneOverride && Object.keys(watermarkZoneOverride).length > 0) || (watermarkColorOverride && /^#([0-9A-Fa-f]{3}){1,2}$/.test(watermarkColorOverride))
+            ? {
+                watermark_zone_override: {
+                  ...(watermarkZoneOverride && typeof watermarkZoneOverride === "object" ? watermarkZoneOverride : {}),
+                  ...(watermarkColorOverride && /^#([0-9A-Fa-f]{3}){1,2}$/.test(watermarkColorOverride) && { color: watermarkColorOverride }),
+                },
+              }
+            : {}),
+          ...(madeWithZoneOverride && (() => {
+            const o = madeWithZoneOverride;
+            const filtered = {
+              ...(o.fontSize != null && { fontSize: o.fontSize }),
+              ...(o.x != null && { x: o.x }),
+              ...(o.y != null && { y: o.y }),
+              ...(o.color != null && /^#([0-9A-Fa-f]{3}){1,2}$/.test(o.color) && { color: o.color }),
+            };
+            return Object.keys(filtered).length > 0 ? { made_with_zone_override: filtered } : {};
+          })()),
+          ...(madeWithText.trim() !== "" && { made_with_text: madeWithText.trim() }),
+          headline_highlight_style: headlineHighlightStyle,
+          body_highlight_style: bodyHighlightStyle,
+          headline_outline_stroke: headlineOutlineStroke,
+          body_outline_stroke: bodyOutlineStroke,
+          ...(headlineBoldWeight !== 700 && { headline_bold_weight: headlineBoldWeight }),
+          ...(bodyBoldWeight !== 700 && { body_bold_weight: bodyBoldWeight }),
+          ...(() => {
+            const norm = normalizeHighlightSpansToWords(headline, headlineHighlights);
+            return norm.length > 0 ? { headline_highlights: norm } : {};
+          })(),
+          ...(() => {
+            const norm = normalizeHighlightSpansToWords(body, bodyHighlights);
+            return norm.length > 0 ? { body_highlights: norm } : {};
+          })(),
+          ...(headlineFontSizeSpans.length > 0 ? { headline_font_size_spans: headlineFontSizeSpans } : {}),
+          ...(bodyFontSizeSpans.length > 0 ? { body_font_size_spans: bodyFontSizeSpans } : {}),
       ...(bodyZoneForRewrite && bodyRewriteVariants.length === 3 && {
         body_rewrite_variants: [...bodyRewriteVariants],
       }),
@@ -2229,20 +2229,20 @@ export function SlideEditForm({
             overlay: overlayPayload,
           },
           meta: metaForSave,
-        },
-        editorPath
-      );
-      setSaving(false);
-      if (result.ok) {
-        lastSavedRef.current = buildEditorDirtySnapshotString();
-        setSavedFeedback(true);
-        setTimeout(() => setSavedFeedback(false), 1500);
-        router.refresh();
-        if (navigateBack) router.push(backHref);
-      } else {
-        setSaveError("error" in result ? result.error : "Save failed");
-      }
-      return result;
+      },
+      editorPath
+    );
+    setSaving(false);
+    if (result.ok) {
+      lastSavedRef.current = buildEditorDirtySnapshotString();
+      setSavedFeedback(true);
+      setTimeout(() => setSavedFeedback(false), 1500);
+      router.refresh();
+      if (navigateBack) router.push(backHref);
+    } else {
+      setSaveError("error" in result ? result.error : "Save failed");
+    }
+    return result;
     }
 
     const bgPayload = hasImageForSave
@@ -2469,8 +2469,8 @@ export function SlideEditForm({
       !!(background.image_url && /^https?:\/\//i.test(String(background.image_url ?? "").trim()));
     return hasImageForSave
       ? useImagesArray
-        ? {
-            mode: "image",
+          ? {
+              mode: "image",
             images: imagesPayload,
             fit: background.fit ?? "cover",
             overlay: overlayPayload,
@@ -2491,14 +2491,14 @@ export function SlideEditForm({
               return {
                 mode: "image",
                 image_url: urlToPersist(row.url),
-                ...(background.asset_id != null && { asset_id: background.asset_id }),
-                ...(background.storage_path != null && background.storage_path !== "" && { storage_path: background.storage_path }),
+              ...(background.asset_id != null && { asset_id: background.asset_id }),
+              ...(background.storage_path != null && background.storage_path !== "" && { storage_path: background.storage_path }),
                 image_source: row.source,
                 unsplash_attribution: row.unsplash_attribution,
                 pixabay_attribution: row.pixabay_attribution,
                 pexels_attribution: row.pexels_attribution,
-                fit: background.fit ?? "cover",
-                overlay: overlayPayload,
+              fit: background.fit ?? "cover",
+              overlay: overlayPayload,
               };
             })()
           : {
@@ -3053,8 +3053,8 @@ export function SlideEditForm({
     const backgroundRules = shouldStripEmbeddedImage
       ? (templateConfig.backgroundRules ?? { allowImage: true, defaultStyle: "darken" })
       : isBackgroundImage
-        ? (templateConfig.backgroundRules ?? { allowImage: true, defaultStyle: "darken" })
-        : { allowImage: false as const, defaultStyle: "none" as const };
+      ? (templateConfig.backgroundRules ?? { allowImage: true, defaultStyle: "darken" })
+      : { allowImage: false as const, defaultStyle: "none" as const };
     return {
       ...templateConfig,
       backgroundRules,
@@ -3255,19 +3255,19 @@ export function SlideEditForm({
         }));
         setBackgroundImageUrlForPreview(null);
         ensureNoImageTemplateImageFallback();
-      } else {
-        setBackground((b) => ({
-          ...b,
-          mode: "image",
-          asset_id: asset.id,
-          storage_path: asset.storage_path,
-          image_url: undefined,
-          fit: "cover",
+    } else {
+      setBackground((b) => ({
+        ...b,
+        mode: "image",
+        asset_id: asset.id,
+        storage_path: asset.storage_path,
+        image_url: undefined,
+        fit: "cover",
           overlay: b.overlay ?? DEFAULT_IMAGE_OVERLAY,
-        }));
-        setBackgroundImageUrlForPreview(url);
-        setImageUrls([{ url: "", source: undefined }]);
-        ensureNoImageTemplateImageFallback();
+      }));
+      setBackgroundImageUrlForPreview(url);
+      setImageUrls([{ url: "", source: undefined }]);
+      ensureNoImageTemplateImageFallback();
       }
       const newRowForPipRotation = { url, asset_id: asset.id, storage_path: asset.storage_path };
       const appendPickForRotation = computePipSlotIndexAfterAppendPick(
@@ -3361,17 +3361,17 @@ export function SlideEditForm({
           }));
           setBackgroundImageUrlForPreview(null);
         } else {
-          setBackground((b) => ({
-            ...b,
-            mode: "image",
-            asset_id: asset.id,
-            storage_path: asset.storage_path,
-            image_url: undefined,
-            fit: b.fit ?? "cover",
+        setBackground((b) => ({
+          ...b,
+          mode: "image",
+          asset_id: asset.id,
+          storage_path: asset.storage_path,
+          image_url: undefined,
+          fit: b.fit ?? "cover",
             overlay: b.overlay ?? DEFAULT_IMAGE_OVERLAY,
-          }));
-          setBackgroundImageUrlForPreview(asset.url);
-          setImageUrls([{ url: "", source: undefined }]);
+        }));
+        setBackgroundImageUrlForPreview(asset.url);
+        setImageUrls([{ url: "", source: undefined }]);
         }
         ensureNoImageTemplateImageFallback();
         const newRowForPipRotation = { url: asset.url, asset_id: asset.id, storage_path: asset.storage_path };
@@ -4244,7 +4244,7 @@ export function SlideEditForm({
                 aria-label="Back to carousel"
                 onClick={() => void navigateAfterSave(backHref)}
               >
-                <ArrowLeftIcon className="size-4" />
+                  <ArrowLeftIcon className="size-4" />
               </Button>
               {projectName != null && carouselTitle != null ? (
                 <Breadcrumbs
@@ -4268,7 +4268,7 @@ export function SlideEditForm({
               aria-label="Back to carousel"
               onClick={() => void navigateAfterSave(backHref)}
             >
-              <ArrowLeftIcon className="size-4" />
+                <ArrowLeftIcon className="size-4" />
             </Button>
             {projectName != null && carouselTitle != null ? (
               <Breadcrumbs
@@ -5535,40 +5535,40 @@ export function SlideEditForm({
                   <div className="space-y-3">
                     <p className="text-xs font-medium text-foreground">Text style</p>
                     <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
-                      <div className="space-y-1.5">
+                <div className="space-y-1.5">
                         <Label className="text-[11px] text-muted-foreground font-normal">Size</Label>
-                        <StepperWithLongPress
-                          value={headlineFontSize ?? defaultHeadlineSize}
-                          min={24}
-                          max={160}
-                          step={4}
-                          onChange={(v) => setHeadlineFontSize(v)}
-                          label="Size"
-                          className="shrink-0 max-w-[90px]"
-                        />
+                  <StepperWithLongPress
+                    value={headlineFontSize ?? defaultHeadlineSize}
+                    min={24}
+                    max={160}
+                    step={4}
+                    onChange={(v) => setHeadlineFontSize(v)}
+                    label="Size"
+                    className="shrink-0 max-w-[90px]"
+                  />
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-[11px] text-muted-foreground font-normal">Text color</Label>
                         <div className="flex h-8 items-center rounded-md border border-input/80 bg-background px-1.5">
-                          <ColorPicker
-                            value={headlineZoneOverride?.color ?? ""}
-                            onChange={(v) => setHeadlineZoneOverride((o) => ({ ...o, color: v.trim() || undefined }))}
-                            placeholder="Auto"
-                            compact
-                            swatchOnly
-                          />
-                        </div>
+                    <ColorPicker
+                      value={headlineZoneOverride?.color ?? ""}
+                      onChange={(v) => setHeadlineZoneOverride((o) => ({ ...o, color: v.trim() || undefined }))}
+                      placeholder="Auto"
+                      compact
+                      swatchOnly
+                    />
+                  </div>
                       </div>
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-[11px] text-muted-foreground font-normal">Font</Label>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
                         className="h-8 w-full justify-start text-xs font-normal"
-                        onClick={() => setHeadlineFontModalOpen(true)}
-                      >
+                    onClick={() => setHeadlineFontModalOpen(true)}
+                  >
                         <span
                           style={
                             (headlineZoneOverride?.fontFamily ?? headlineZoneFromTemplate?.fontFamily ?? "system") !== "system"
@@ -5576,9 +5576,9 @@ export function SlideEditForm({
                               : undefined
                           }
                         >
-                          {PREVIEW_FONTS.find((f) => f.id === (headlineZoneOverride?.fontFamily ?? headlineZoneFromTemplate?.fontFamily ?? "system"))?.label ?? "System"}
-                        </span>
-                      </Button>
+                      {PREVIEW_FONTS.find((f) => f.id === (headlineZoneOverride?.fontFamily ?? headlineZoneFromTemplate?.fontFamily ?? "system"))?.label ?? "System"}
+                    </span>
+                  </Button>
                     </div>
                   </div>
 
@@ -5758,7 +5758,7 @@ export function SlideEditForm({
                 </div>
                 {headlineEditMoreOpen && (
                   <div className="mt-3 space-y-4">
-                    <>
+                      <>
                         <div className="space-y-2">
                           <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">On the slide</p>
                           <div className="flex flex-wrap items-center gap-2">
@@ -5774,8 +5774,8 @@ export function SlideEditForm({
                           >
                             <PopoverTrigger asChild>
                               <Button type="button" variant="secondary" size="sm" className="h-7 text-xs" title="Position & size in preview">
-                                <LayoutTemplateIcon className="size-3" /> Layout
-                              </Button>
+                            <LayoutTemplateIcon className="size-3" /> Layout
+                          </Button>
                             </PopoverTrigger>
                             <PopoverContent
                               align="start"
@@ -6159,40 +6159,40 @@ export function SlideEditForm({
                   <div className="space-y-3">
                     <p className="text-xs font-medium text-foreground">Text style</p>
                     <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
-                      <div className="space-y-1.5">
+                <div className="space-y-1.5">
                         <Label className="text-[11px] text-muted-foreground font-normal">Size</Label>
-                        <StepperWithLongPress
-                          value={bodyFontSize ?? defaultBodySize}
-                          min={18}
-                          max={120}
-                          step={4}
-                          onChange={(v) => setBodyFontSize(v)}
-                          label="Size"
-                          className="shrink-0 max-w-[90px]"
-                        />
+                  <StepperWithLongPress
+                    value={bodyFontSize ?? defaultBodySize}
+                    min={18}
+                    max={120}
+                    step={4}
+                    onChange={(v) => setBodyFontSize(v)}
+                    label="Size"
+                    className="shrink-0 max-w-[90px]"
+                  />
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-[11px] text-muted-foreground font-normal">Text color</Label>
                         <div className="flex h-8 items-center rounded-md border border-input/80 bg-background px-1.5">
-                          <ColorPicker
-                            value={bodyZoneOverride?.color ?? ""}
-                            onChange={(v) => setBodyZoneOverride((o) => ({ ...o, color: v.trim() || undefined }))}
-                            placeholder="Auto"
-                            compact
-                            swatchOnly
-                          />
-                        </div>
+                    <ColorPicker
+                      value={bodyZoneOverride?.color ?? ""}
+                      onChange={(v) => setBodyZoneOverride((o) => ({ ...o, color: v.trim() || undefined }))}
+                      placeholder="Auto"
+                      compact
+                      swatchOnly
+                    />
+                  </div>
                       </div>
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-[11px] text-muted-foreground font-normal">Font</Label>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
                         className="h-8 w-full justify-start text-xs font-normal"
-                        onClick={() => setBodyFontModalOpen(true)}
-                      >
+                    onClick={() => setBodyFontModalOpen(true)}
+                  >
                         <span
                           style={
                             (bodyZoneOverride?.fontFamily ?? bodyZoneFromTemplate?.fontFamily ?? "system") !== "system"
@@ -6200,9 +6200,9 @@ export function SlideEditForm({
                               : undefined
                           }
                         >
-                          {PREVIEW_FONTS.find((f) => f.id === (bodyZoneOverride?.fontFamily ?? bodyZoneFromTemplate?.fontFamily ?? "system"))?.label ?? "System"}
-                        </span>
-                      </Button>
+                      {PREVIEW_FONTS.find((f) => f.id === (bodyZoneOverride?.fontFamily ?? bodyZoneFromTemplate?.fontFamily ?? "system"))?.label ?? "System"}
+                    </span>
+                  </Button>
                     </div>
                   </div>
 
@@ -6379,7 +6379,7 @@ export function SlideEditForm({
                 </div>
                 {bodyEditMoreOpen && (
                   <div className="mt-3 space-y-4">
-                    <>
+                      <>
                         <div className="space-y-2">
                           <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">On the slide</p>
                           <div className="flex flex-wrap items-center gap-2">
@@ -6395,8 +6395,8 @@ export function SlideEditForm({
                           >
                             <PopoverTrigger asChild>
                               <Button type="button" variant="secondary" size="sm" className="h-7 text-xs" title="Position & size in preview">
-                                <LayoutTemplateIcon className="size-3" /> Layout
-                              </Button>
+                            <LayoutTemplateIcon className="size-3" /> Layout
+                          </Button>
                             </PopoverTrigger>
                             <PopoverContent
                               align="start"
@@ -6837,7 +6837,7 @@ export function SlideEditForm({
                 )}
                 <div className="space-y-2">
                   {hasVisibleImageUrlSlots && (
-                    <Label className="text-muted-foreground text-xs">Image URL{imageUrls.length > 1 ? "s" : ""}</Label>
+                  <Label className="text-muted-foreground text-xs">Image URL{imageUrls.length > 1 ? "s" : ""}</Label>
                   )}
                   {imageUrls.map((item, i) => {
                     if (isLibraryGhostUrlSlot(item, i)) return null;
@@ -7025,22 +7025,22 @@ export function SlideEditForm({
                   )}
                   {!allImageSlotsFilledForAddAnother && (
                     <>
-                      <Button type="button" variant="outline" size="sm" className="rounded-lg h-9" title="Pick from library" onClick={() => { setPickerForSecondary(false); setPickerOpen(true); }}>
-                        <ImageIcon className="size-4" /> Pick
-                      </Button>
-                      <GoogleDriveFilePicker
-                        onFilePicked={handleDriveFilePicked}
-                        onError={setDriveError}
-                        variant="outline"
-                        size="sm"
-                        className="rounded-lg h-9 text-xs"
-                        disabled={driveImporting}
-                      />
-                      <Button type="button" variant="ghost" size="sm" className="rounded-lg h-9" asChild title="Upload image">
-                        <a href="/assets" target="_blank" rel="noopener noreferrer">
-                          <UploadIcon className="size-4" /> Upload
-                        </a>
-                      </Button>
+                  <Button type="button" variant="outline" size="sm" className="rounded-lg h-9" title="Pick from library" onClick={() => { setPickerForSecondary(false); setPickerOpen(true); }}>
+                    <ImageIcon className="size-4" /> Pick
+                  </Button>
+                  <GoogleDriveFilePicker
+                    onFilePicked={handleDriveFilePicked}
+                    onError={setDriveError}
+                    variant="outline"
+                    size="sm"
+                    className="rounded-lg h-9 text-xs"
+                    disabled={driveImporting}
+                  />
+                  <Button type="button" variant="ghost" size="sm" className="rounded-lg h-9" asChild title="Upload image">
+                    <a href="/assets" target="_blank" rel="noopener noreferrer">
+                      <UploadIcon className="size-4" /> Upload
+                    </a>
+                  </Button>
                     </>
                   )}
                   {totalSlides > 1 && (
@@ -7686,16 +7686,16 @@ export function SlideEditForm({
               </div>
               <div className="space-y-2">
                 <Label className="text-[11px] text-muted-foreground">Size</Label>
-                <Select value={exportSize} onValueChange={(v) => handleExportSizeChange(v as ExportSize)} disabled={!isPro || updatingExportSettings}>
-                  <SelectTrigger className="h-9 w-full md:max-w-[220px] rounded-md border-input/80 bg-background text-sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="1080x1080">{EXPORT_SIZE_LABELS["1080x1080"]}</SelectItem>
-                    <SelectItem value="1080x1350">{EXPORT_SIZE_LABELS["1080x1350"]}</SelectItem>
-                    <SelectItem value="1080x1920">{EXPORT_SIZE_LABELS["1080x1920"]}</SelectItem>
-                  </SelectContent>
-                </Select>
+              <Select value={exportSize} onValueChange={(v) => handleExportSizeChange(v as ExportSize)} disabled={!isPro || updatingExportSettings}>
+                <SelectTrigger className="h-9 w-full md:max-w-[220px] rounded-md border-input/80 bg-background text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1080x1080">{EXPORT_SIZE_LABELS["1080x1080"]}</SelectItem>
+                  <SelectItem value="1080x1350">{EXPORT_SIZE_LABELS["1080x1350"]}</SelectItem>
+                  <SelectItem value="1080x1920">{EXPORT_SIZE_LABELS["1080x1920"]}</SelectItem>
+                </SelectContent>
+              </Select>
               </div>
               <p className="text-muted-foreground text-[11px]">
                 Size applies to all frames. ZIP includes slide images, captions (short/medium/long), and credits.
@@ -7773,7 +7773,7 @@ export function SlideEditForm({
           />
           <div
             className="fixed z-[101] overflow-y-auto overflow-x-hidden min-h-0 min-w-0 flex justify-center"
-            style={{
+          style={{
               left: highlightModalPlacement.panelLeft,
               top: highlightModalPlacement.panelTop,
               width: highlightModalPlacement.panelWidth,

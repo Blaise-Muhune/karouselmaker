@@ -12,3 +12,5 @@ pnpm run build
 ```
 
 Run it from the project root (`karouselmaker`). If the build fails, fix any reported errors before considering the task done.
+
+If the change affects **live preview or slide rendering**, also follow **`.cursor/rules/02-preview-export-carousel-modal-sync.mdc`** so export, downloads, carousel views, and modals stay aligned.

@@ -1,15 +1,16 @@
 ---
-description: Carousel Creator SaaS rules
+description: Product context, stack, architecture, and coding norms for KarouselMaker
 alwaysApply: true
 ---
 
 # Product
-AI-powered carousel generator organized by Projects.
 
-Users:
-Project → Input → AI slides → Templates render → Export.
+AI-powered carousel generator organized by **Projects**.
+
+Flow: **Project → Input → AI slides → Templates render → Export.**
 
 # Stack
+
 - Next.js App Router
 - TypeScript
 - Tailwind CSS
@@ -20,39 +21,40 @@ Project → Input → AI slides → Templates render → Export.
 Do not change stack.
 
 # Architecture
+
 Backend logic must be reusable by future mobile apps.
 
-Rules:
-- Business logic must live server-side.
-- Avoid UI-only logic.
+- Business logic should live **server-side** where practical.
+- Avoid UI-only logic for behavior that must match exports.
 - Data access via server helpers.
 - Prepare for API exposure later.
 
 # Templates
-Templates are stored in database, not code.
 
-Template defines:
-- layout type
-- text zones
-- overlays
-- safe areas
-- fonts
-- default styles
+Templates are stored in the **database**, not only in code.
+
+A template defines: layout type, text zones, overlays, safe areas, fonts, default styles.
 
 AI never designs templates.
 
 # AI output
-AI generates structured slide JSON.
-Slides validated before saving.
+
+AI generates structured slide JSON. Slides are validated before saving.
 
 # UI principles
+
 - Creator-first workflow
 - Fast generation
 - Minimal clicks
 - Editor must be quick, not complex
 
+# Preview and export parity
+
+Any change that affects **how the live preview displays** a slide must be reflected everywhere that slide is rendered (export, downloads, carousel grid, render APIs, template modals). See **`02-preview-export-carousel-modal-sync.mdc`** for the full checklist.
+
 # Coding rules
+
 - Strict TypeScript
 - No unnecessary dependencies
 - Reusable components
-- Incremental changes only
+- Incremental changes only; keep diffs focused on the task

@@ -25,19 +25,26 @@ export type CarouselListCardProps = {
   carouselId: string;
   title: string;
   slideCount: number;
-  createdAt: string;
+  /** Last activity time (regenerate, edits that touch the row, etc.) — used for “Today / Yesterday” and matches list sort. */
+  updatedAt: string;
   firstSlideId: string | null;
 };
 
-/** Detect if the iframe loaded an error response (JSON or error page) instead of the slide HTML. */
+/**
+ * Detect JSON/API errors in the iframe. Do not use a short innerText threshold alone: many valid slides
+ * have little visible text (image-heavy, short headline) but still render full HTML from `/api/render/slide`.
+ */
 function iframeLooksLikeError(iframe: HTMLIFrameElement | null): boolean {
   try {
     const doc = iframe?.contentDocument;
     if (!doc?.body) return true;
-    const text = doc.body.innerText ?? "";
-    if (text.length < 100) return true;
-    if (/\b(not found|unauthorized|error|invalid)\b/i.test(text)) return true;
-    return false;
+    const html = doc.documentElement?.innerHTML ?? "";
+    if (html.includes("slide-wrap")) return false;
+    const text = (doc.body.innerText ?? "").trim();
+    if (text.startsWith("{") && /"error"\s*:/.test(text)) return true;
+    if (/\b(not found|unauthorized|invalid template|slide not found)\b/i.test(text)) return true;
+    if (text.length < 30 && !html.includes("<div")) return true;
+    return true;
   } catch {
     return true;
   }
@@ -48,7 +55,7 @@ export function CarouselListCard({
   carouselId,
   title,
   slideCount,
-  createdAt,
+  updatedAt,
   firstSlideId,
 }: CarouselListCardProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -129,7 +136,7 @@ export function CarouselListCard({
             {slideCount != null && (
               <span>{slideCount} frame{slideCount !== 1 ? "s" : ""}</span>
             )}
-            {formatDate(new Date(createdAt))}
+            {formatDate(new Date(updatedAt))}
             <ChevronRightIcon className="size-3.5 opacity-40 group-hover:opacity-70 transition-opacity" />
           </span>
         </div>

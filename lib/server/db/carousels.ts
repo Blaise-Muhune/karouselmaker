@@ -118,6 +118,8 @@ export async function listCarousels(
     .select("*")
     .eq("user_id", userId)
     .eq("project_id", projectId)
+    /** Most recently touched first (regenerate, settings, title) so list matches “recent” expectations. */
+    .order("updated_at", { ascending: false })
     .order("created_at", { ascending: false });
 
   if (options?.limit != null) {

@@ -63,6 +63,14 @@ export async function updateSlide(
     .single();
 
   if (error) throw new Error(error.message);
+
+  /** Keep project dashboard “recent” order aligned with last edit, not only AI regenerate. */
+  await supabase
+    .from("carousels")
+    .update({ updated_at: new Date().toISOString() })
+    .eq("id", slide.carousel_id)
+    .eq("user_id", userId);
+
   return data as Slide;
 }
 
