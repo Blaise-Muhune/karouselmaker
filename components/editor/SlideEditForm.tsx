@@ -35,7 +35,7 @@ import { updateSlide } from "@/app/actions/slides/updateSlide";
 import { updateExportSettings } from "@/app/actions/carousels/updateExportFormat";
 import { updateApplyScope } from "@/app/actions/carousels/updateApplyScope";
 import { applyToAllSlides, applyOverlayToAllSlides, applyImageDisplayToAllSlides, applyImageCountToAllSlides, applyFontSizeToAllSlides, clearTextFromSlides, applyAutoHighlightsToAllSlides, applyHighlightColorToAllSlides, type ApplyScope } from "@/app/actions/slides/applyToAllSlides";
-import { setSlideTemplate } from "@/app/actions/slides/setSlideTemplate";
+import { clearSlideOverlayShapesAction, setSlideTemplate } from "@/app/actions/slides/setSlideTemplate";
 import { ensureSlideTextVariants } from "@/app/actions/slides/ensureSlideTextVariants";
 import { rewriteHook } from "@/app/actions/slides/rewriteHook";
 import { createTemplateAction } from "@/app/actions/templates/createTemplate";
@@ -49,7 +49,14 @@ import { isSupabaseSignedUrl } from "@/lib/server/storage/signedUrlUtils";
 import { getTemplatePreviewBackgroundOverride } from "@/lib/renderer/getTemplatePreviewBackground";
 import { getTemplatePreviewImageUrls } from "@/lib/renderer/templatePreviewImages";
 import { getSwipeRightXForFormat, type BrandKit, type ChromeOverrides } from "@/lib/renderer/renderModel";
-import type { TemplateConfig, TextZone } from "@/lib/server/renderer/templateSchema";
+import type { OverlayShape, TemplateConfig, TextZone } from "@/lib/server/renderer/templateSchema";
+import {
+  mergeTemplateAndSlideOverlayShapes,
+  overlayShapeListsEqual,
+  parseSlideOverlayShapes,
+  resolveOverlayShapesForRender,
+} from "@/lib/editor/slideOverlayShapes";
+import { TemplateOverlayShapesEditor } from "@/components/templates/TemplateOverlayShapesEditor";
 import type { Slide, Template, ExportFormat, ExportSize } from "@/lib/server/db/types";
 
 export type { ExportFormat, ExportSize } from "@/lib/server/db/types";
@@ -1095,8 +1102,11 @@ export function SlideEditForm({
   const [bodyFontModalOpen, setBodyFontModalOpen] = useState(false);
   const [chromeLayoutOpen, setChromeLayoutOpen] = useState(false);
   /** When set, scroll the Layout tab to this chrome section (from preview click/drag). */
-  const [scrollToChromeSection, setScrollToChromeSection] = useState<"counter" | "watermark" | "swipe" | "madeWith" | null>(null);
+  const [scrollToChromeSection, setScrollToChromeSection] = useState<
+    "counter" | "watermark" | "swipe" | "madeWith" | "shapes" | null
+  >(null);
   const layoutCounterRef = useRef<HTMLDivElement>(null);
+  const layoutSlideShapesRef = useRef<HTMLDivElement>(null);
   const layoutLogoRef = useRef<HTMLDivElement>(null);
   const layoutSwipeRef = useRef<HTMLDivElement>(null);
   const layoutWatermarkRef = useRef<HTMLDivElement>(null);
@@ -1125,13 +1135,18 @@ export function SlideEditForm({
   const [applyingBodyZone, setApplyingBodyZone] = useState(false);
   const [applyingAutoHighlights, setApplyingAutoHighlights] = useState(false);
   const [applyingHighlightStyle, setApplyingHighlightStyle] = useState(false);
-  const [applyingChromeSection, setApplyingChromeSection] = useState<null | "show" | "counter" | "logo" | "swipe" | "watermark">(null);
-  const [, setLastHeadlineHighlightAction] = useState<"auto" | "manual">("manual");
-  const [, setLastBodyHighlightAction] = useState<"auto" | "manual">("manual");
+  const [applyingChromeSection, setApplyingChromeSection] = useState<null | "show" | "counter" | "logo" | "swipe" | "watermark" | "shapes">(null);
+  const [lastHeadlineHighlightAction, setLastHeadlineHighlightAction] = useState<"auto" | "manual">("manual");
+  const [lastBodyHighlightAction, setLastBodyHighlightAction] = useState<"auto" | "manual">("manual");
   /** Ranges of "**word**" in current text from Auto bold (for toggle-off). Refs so second click always sees them. */
   const autoBoldRangesHeadlineRef = useRef<{ start: number; end: number }[]>([]);
   const autoBoldRangesBodyRef = useRef<{ start: number; end: number }[]>([]);
   const [headlineVariants, setHeadlineVariants] = useState<string[]>(() => (slide.meta as { headline_variants?: string[] } | null)?.headline_variants ?? []);
+  const [overlayShapesReplaceTemplate, setOverlayShapesReplaceTemplate] = useState(
+    () => (slide.meta as Record<string, unknown> | null)?.overlay_shapes_replace_template === true
+  );
+  const [slideOverlayShapes, setSlideOverlayShapes] = useState<OverlayShape[]>(() => parseSlideOverlayShapes(slide.meta));
+  const [slideShapesSelectedIndex, setSlideShapesSelectedIndex] = useState<number | null>(null);
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
   const [templateName, setTemplateName] = useState("");
   const [saveAsSystemTemplate, setSaveAsSystemTemplate] = useState(false);
@@ -1253,6 +1268,8 @@ export function SlideEditForm({
         watermarkZoneOverride,
         madeWithZoneOverride,
         madeWithText,
+        slideOverlayShapes,
+        overlayShapesReplaceTemplate,
       });
     },
     [
@@ -1292,6 +1309,8 @@ export function SlideEditForm({
       watermarkZoneOverride,
       madeWithZoneOverride,
       madeWithText,
+      slideOverlayShapes,
+      overlayShapesReplaceTemplate,
     ]
   );
   const lastSavedRef = useRef<string>(buildEditorDirtySnapshotString());
@@ -1357,7 +1376,9 @@ export function SlideEditForm({
           ? layoutLogoRef.current
           : scrollToChromeSection === "swipe"
             ? layoutSwipeRef.current
-            : layoutWatermarkRef.current;
+            : scrollToChromeSection === "shapes"
+              ? layoutSlideShapesRef.current
+              : layoutWatermarkRef.current;
     if (ref) {
       const t = setTimeout(() => {
         ref.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -1521,6 +1542,46 @@ export function SlideEditForm({
 
   const templateConfigFromList = getTemplateConfig(templateId, templates);
   const templateConfig = overrideTemplateConfig ?? templateConfigFromList;
+
+  const previewShapesMeta = useMemo(
+    () =>
+      ({
+        overlay_shapes: slideOverlayShapes,
+        ...(overlayShapesReplaceTemplate ? { overlay_shapes_replace_template: true as const } : {}),
+      }) as Record<string, unknown>,
+    [slideOverlayShapes, overlayShapesReplaceTemplate]
+  );
+
+  const resolvedOverlayShapesForPreview = useMemo((): OverlayShape[] => {
+    if (!templateConfig) return [];
+    return resolveOverlayShapesForRender(templateConfig.overlayShapes, previewShapesMeta);
+  }, [templateConfig, previewShapesMeta]);
+
+  const handleOverlayShapesEditorChange = useCallback(
+    (next: OverlayShape[]) => {
+      const templateShapes = templateConfig?.overlayShapes ?? [];
+      const tLen = templateShapes.length;
+      if (overlayShapesReplaceTemplate) {
+        setSlideOverlayShapes(next);
+        return;
+      }
+      if (tLen === 0) {
+        setSlideOverlayShapes(next);
+        return;
+      }
+      const prefixMatches =
+        next.length >= tLen && overlayShapeListsEqual(next.slice(0, tLen), templateShapes);
+      if (prefixMatches) {
+        setSlideOverlayShapes(next.slice(tLen));
+        setOverlayShapesReplaceTemplate(false);
+      } else {
+        setSlideOverlayShapes(next);
+        setOverlayShapesReplaceTemplate(true);
+      }
+    },
+    [overlayShapesReplaceTemplate, templateConfig?.overlayShapes]
+  );
+
   const templateDefaultsOverrides = getZoneAndFontOverridesFromTemplate(templateConfig);
   /** Effective zone base for form: template zone + template defaults.meta overrides. So "Save as template" layout shows in inputs when slide has no overrides. */
   const headlineZoneFromTemplate = templateConfig?.textZones?.find((z) => z.id === "headline");
@@ -1735,6 +1796,11 @@ export function SlideEditForm({
   );
   useEffect(() => {
     setOverrideTemplateConfig(null);
+    setLastHeadlineHighlightAction("manual");
+    setLastBodyHighlightAction("manual");
+    setSlideOverlayShapes(parseSlideOverlayShapes(slide.meta));
+    setOverlayShapesReplaceTemplate((slide.meta as Record<string, unknown> | null)?.overlay_shapes_replace_template === true);
+    setSlideShapesSelectedIndex(null);
   }, [slide.id]);
 
   const effectiveTemplateId = slide.template_id ?? templates[0]?.id ?? null;
@@ -1935,6 +2001,20 @@ export function SlideEditForm({
       setLastBodyHighlightAction("manual");
     }
   }, []);
+
+  /** Turn auto highlights on for this field, or off (clear) if already on from Auto. */
+  const toggleAutoHighlight = useCallback(
+    (target: "headline" | "body") => {
+      if (target === "headline") {
+        if (lastHeadlineHighlightAction === "auto") clearAllHighlights("headline");
+        else applyAutoHighlight("headline");
+      } else {
+        if (lastBodyHighlightAction === "auto") clearAllHighlights("body");
+        else applyAutoHighlight("body");
+      }
+    },
+    [lastHeadlineHighlightAction, lastBodyHighlightAction, clearAllHighlights, applyAutoHighlight]
+  );
 
   /** Bold the current selection (or saved selection): wrap with ** and shift highlight spans. */
   const applyBoldToSelection = useCallback(
@@ -2211,10 +2291,16 @@ export function SlideEditForm({
           })(),
           ...(headlineFontSizeSpans.length > 0 ? { headline_font_size_spans: headlineFontSizeSpans } : {}),
           ...(bodyFontSizeSpans.length > 0 ? { body_font_size_spans: bodyFontSizeSpans } : {}),
+      overlay_shapes: slideOverlayShapes,
       ...(bodyZoneForRewrite && bodyRewriteVariants.length === 3 && {
         body_rewrite_variants: [...bodyRewriteVariants],
       }),
     };
+    if (overlayShapesReplaceTemplate) {
+      metaForSave.overlay_shapes_replace_template = true;
+    } else {
+      delete metaForSave.overlay_shapes_replace_template;
+    }
 
     if (!isPro) {
       const result = await updateSlide(
@@ -2797,7 +2883,23 @@ export function SlideEditForm({
     if (result.ok) router.refresh();
   };
 
+  const handleApplyOverlayShapesToAll = async () => {
+    setApplyingChromeSection("shapes");
+    const meta: Record<string, unknown> = {
+      overlay_shapes: slideOverlayShapes,
+      overlay_shapes_replace_template: overlayShapesReplaceTemplate ? true : false,
+    };
+    const result = await applyToAllSlides(slide.carousel_id, { meta }, editorPath, applyScope);
+    setApplyingChromeSection(null);
+    if (result.ok) router.refresh();
+  };
+
   const handleApplyAutoHighlightsToAll = async (field: "headline" | "body") => {
+    const last = field === "headline" ? lastHeadlineHighlightAction : lastBodyHighlightAction;
+    if (last !== "auto") {
+      alert("Turn Auto highlight on for this slide first, then you can apply the same auto highlights to all slides.");
+      return;
+    }
     setApplyingAutoHighlights(true);
     const colorForField = field === "headline" ? headlineHighlightColor : bodyHighlightColor;
     const color = colorForField.startsWith("#") ? colorForField : (HIGHLIGHT_COLORS[colorForField] ?? "#facc15");
@@ -2813,22 +2915,24 @@ export function SlideEditForm({
     else alert(result.error ?? "Couldn't apply auto highlights to all slides.");
   };
 
-  /** Apply auto highlights + current headline highlight style to all slides. */
+  /** Apply auto highlights (only if Auto is on for this slide) + current headline highlight style to all slides. */
   const handleApplyHeadlineHighlightStyleToAll = async () => {
-    setApplyingAutoHighlights(true);
-    const colorForField = headlineHighlightColor;
-    const color = colorForField.startsWith("#") ? colorForField : (HIGHLIGHT_COLORS[colorForField] ?? "#facc15");
-    const autoResult = await applyAutoHighlightsToAllSlides(
-      slide.carousel_id,
-      editorPath,
-      { includeFirstSlide: true, includeLastSlide: true },
-      color,
-      "headline"
-    );
-    if (!autoResult.ok) {
+    if (lastHeadlineHighlightAction === "auto") {
+      setApplyingAutoHighlights(true);
+      const colorForField = headlineHighlightColor;
+      const color = colorForField.startsWith("#") ? colorForField : (HIGHLIGHT_COLORS[colorForField] ?? "#facc15");
+      const autoResult = await applyAutoHighlightsToAllSlides(
+        slide.carousel_id,
+        editorPath,
+        { includeFirstSlide: true, includeLastSlide: true },
+        color,
+        "headline"
+      );
       setApplyingAutoHighlights(false);
-      alert(autoResult.error ?? "Couldn't apply auto highlights to all slides.");
-      return;
+      if (!autoResult.ok) {
+        alert(autoResult.error ?? "Couldn't apply auto highlights to all slides.");
+        return;
+      }
     }
     setApplyingHighlightStyle(true);
     const styleResult = await applyToAllSlides(
@@ -2838,27 +2942,28 @@ export function SlideEditForm({
       { includeFirstSlide: true, includeLastSlide: true }
     );
     setApplyingHighlightStyle(false);
-    setApplyingAutoHighlights(false);
     if (styleResult.ok) router.refresh();
     else alert(styleResult.error ?? "Couldn't apply headline highlight style to all slides.");
   };
 
-  /** Apply auto highlights + current body highlight style to all slides. */
+  /** Apply auto highlights (only if Auto is on for this slide) + current body highlight style to all slides. */
   const handleApplyBodyHighlightStyleToAll = async () => {
-    setApplyingAutoHighlights(true);
-    const colorForField = bodyHighlightColor;
-    const color = colorForField.startsWith("#") ? colorForField : (HIGHLIGHT_COLORS[colorForField] ?? "#facc15");
-    const autoResult = await applyAutoHighlightsToAllSlides(
-      slide.carousel_id,
-      editorPath,
-      { includeFirstSlide: true, includeLastSlide: true },
-      color,
-      "body"
-    );
-    if (!autoResult.ok) {
+    if (lastBodyHighlightAction === "auto") {
+      setApplyingAutoHighlights(true);
+      const colorForField = bodyHighlightColor;
+      const color = colorForField.startsWith("#") ? colorForField : (HIGHLIGHT_COLORS[colorForField] ?? "#facc15");
+      const autoResult = await applyAutoHighlightsToAllSlides(
+        slide.carousel_id,
+        editorPath,
+        { includeFirstSlide: true, includeLastSlide: true },
+        color,
+        "body"
+      );
       setApplyingAutoHighlights(false);
-      alert(autoResult.error ?? "Couldn't apply auto highlights to all slides.");
-      return;
+      if (!autoResult.ok) {
+        alert(autoResult.error ?? "Couldn't apply auto highlights to all slides.");
+        return;
+      }
     }
     setApplyingHighlightStyle(true);
     const styleResult = await applyToAllSlides(
@@ -2868,7 +2973,6 @@ export function SlideEditForm({
       { includeFirstSlide: true, includeLastSlide: true }
     );
     setApplyingHighlightStyle(false);
-    setApplyingAutoHighlights(false);
     if (styleResult.ok) router.refresh();
     else alert(styleResult.error ?? "Couldn't apply body highlight style to all slides.");
   };
@@ -3039,8 +3143,13 @@ export function SlideEditForm({
           },
         }),
         ...(hasMadeWithZone && { made_with_zone_override: { ...madeWithZoneOverride } }),
+        ...(madeWithText.trim() !== "" && { made_with_text: madeWithText.trim() }),
         headline_highlight_style: headlineHighlightStyle,
         body_highlight_style: bodyHighlightStyle,
+        headline_outline_stroke: headlineOutlineStroke,
+        body_outline_stroke: bodyOutlineStroke,
+        ...(headlineBoldWeight !== 700 && { headline_bold_weight: headlineBoldWeight }),
+        ...(bodyBoldWeight !== 700 && { body_bold_weight: bodyBoldWeight }),
         ...(imageDisplayPayload != null && Object.keys(imageDisplayPayload).length > 0 && { image_display: imageDisplayPayload }),
         overlay_tint_opacity: Math.min(1, Math.max(0, effectiveTintOpacity)),
         overlay_tint_color: /^#([0-9A-Fa-f]{3}){1,2}$/.test(effectiveTintColor) ? effectiveTintColor : effectiveBgColor,
@@ -3055,6 +3164,10 @@ export function SlideEditForm({
       : isBackgroundImage
       ? (templateConfig.backgroundRules ?? { allowImage: true, defaultStyle: "darken" })
       : { allowImage: false as const, defaultStyle: "none" as const };
+    /** Baked template shapes: full slide stack when replace flag is on, else template + slide-only additions. */
+    const overlayShapesForTemplate = overlayShapesReplaceTemplate
+      ? [...slideOverlayShapes]
+      : mergeTemplateAndSlideOverlayShapes(templateConfig.overlayShapes, slideOverlayShapes);
     return {
       ...templateConfig,
       backgroundRules,
@@ -3078,6 +3191,7 @@ export function SlideEditForm({
         },
       },
       defaults,
+      overlayShapes: overlayShapesForTemplate,
     };
   };
 
@@ -3121,8 +3235,11 @@ export function SlideEditForm({
         ...prev.filter((t) => t.id !== newTemplateId),
         { id: newTemplateId, name, parsedConfig: config, isSystemTemplate: isAdmin && saveAsSystemTemplate },
       ]);
-      // Apply the new template only to the current slide (not to other slides in the carousel)
-      await setSlideTemplate(slide.id, newTemplateId, editorPath);
+      // Apply the new template only to the current slide (not to other slides in the carousel).
+      // Per-slide shapes are merged into template.overlayShapes above; clear meta so they are not drawn twice.
+      await setSlideTemplate(slide.id, newTemplateId, editorPath, { clearSlideOverlayShapes: true });
+      setSlideOverlayShapes([]);
+      setOverlayShapesReplaceTemplate(false);
       router.refresh();
     }
   };
@@ -3148,6 +3265,9 @@ export function SlideEditForm({
       setUpdatedTemplateOverrides((prev) => ({ ...prev, [templateId]: { name, parsedConfig: config } }));
       setOverrideTemplateConfig(config);
       setUpdateTemplateOpen(false);
+      await clearSlideOverlayShapesAction(slide.id, editorPath);
+      setSlideOverlayShapes([]);
+      setOverlayShapesReplaceTemplate(false);
       router.refresh();
     } else {
       alert(result.error ?? "Failed to update template");
@@ -3789,6 +3909,35 @@ export function SlideEditForm({
       ? Math.min(previewWrapSize.w / 1080, previewWrapSize.h / exportCanvasHeight)
       : getPreviewDimensions(exportSize).scale;
 
+  const handleSlideShapeSelectIndexChange = useCallback((idx: number | null) => {
+    setSlideShapesSelectedIndex(idx);
+    if (idx != null) {
+      setEditorTab("layout");
+      setScrollToChromeSection("shapes");
+    }
+  }, []);
+
+  const slideOverlayShapesEditable = useMemo(
+    () =>
+      isPro && templateConfig
+        ? {
+            shapes: resolvedOverlayShapesForPreview,
+            onShapesChange: handleOverlayShapesEditorChange,
+            selectedIndex: slideShapesSelectedIndex,
+            onSelectIndex: handleSlideShapeSelectIndexChange,
+            enabled: true,
+          }
+        : null,
+    [
+      isPro,
+      templateConfig,
+      resolvedOverlayShapesForPreview,
+      handleOverlayShapesEditorChange,
+      slideShapesSelectedIndex,
+      handleSlideShapeSelectIndexChange,
+    ]
+  );
+
   const previewContent = (
     <div className="flex flex-col rounded-xl border border-border/50 bg-muted/5 overflow-hidden">
       {/* Top bar: Download (icon) + Save + Expand, and Slide/Size */}
@@ -3972,6 +4121,8 @@ export function SlideEditForm({
                 imageDisplay={isImageMode ? effectiveImageDisplay : undefined}
                 exportSize={exportSize}
                 viewportFit="cover"
+                slideOverlayShapesResolved={resolvedOverlayShapesForPreview}
+                slideOverlayShapesEditable={slideOverlayShapesEditable}
                 onHeadlineChange={setHeadline}
                 onBodyChange={(v) => setBody(v)}
                 focusedZone={activeEditZone}
@@ -4072,7 +4223,8 @@ export function SlideEditForm({
                         highlight: {
                           color: headlineHighlightColor,
                           onApply: (start, end, color) => applyHighlightToRange("headline", start, end, color),
-                          onAuto: () => applyAutoHighlight("headline"),
+                          onAuto: () => toggleAutoHighlight("headline"),
+                          autoHighlightActive: lastHeadlineHighlightAction === "auto",
                         },
                         textColor: headlineZoneOverride?.color ?? headlineZoneFromTemplate?.color ?? "",
                         onTextColorChange: (v) => setHeadlineZoneOverride((o) => ({ ...headlineZoneFromTemplate, ...o, color: v || undefined })),
@@ -4119,7 +4271,8 @@ export function SlideEditForm({
                         highlight: {
                           color: bodyHighlightColor,
                           onApply: (start, end, color) => applyHighlightToRange("body", start, end, color),
-                          onAuto: () => applyAutoHighlight("body"),
+                          onAuto: () => toggleAutoHighlight("body"),
+                          autoHighlightActive: lastBodyHighlightAction === "auto",
                         },
                         textColor: bodyZoneOverride?.color ?? bodyZoneFromTemplate?.color ?? "",
                         onTextColorChange: (v) => setBodyZoneOverride((o) => ({ ...bodyZoneFromTemplate, ...o, color: v || undefined })),
@@ -4885,6 +5038,8 @@ export function SlideEditForm({
                         allowBackgroundImageOverride={allowBackgroundImageOverrideForPreview}
                         imageDisplay={isImageMode ? effectiveImageDisplay : undefined}
                         exportSize={exportSize}
+                        slideOverlayShapesResolved={resolvedOverlayShapesForPreview}
+                        slideOverlayShapesEditable={slideOverlayShapesEditable}
                         positionAndSizeOnly
                         onHeadlineChange={setHeadline}
                         onBodyChange={(v) => setBody(v)}
@@ -4985,7 +5140,8 @@ export function SlideEditForm({
                                 highlight: {
                                   color: headlineHighlightColor,
                                   onApply: (start, end, color) => applyHighlightToRange("headline", start, end, color),
-                                  onAuto: () => applyAutoHighlight("headline"),
+                                  onAuto: () => toggleAutoHighlight("headline"),
+                                  autoHighlightActive: lastHeadlineHighlightAction === "auto",
                                 },
                                 textColor: headlineZoneOverride?.color ?? headlineZoneFromTemplate?.color ?? "",
                                 onTextColorChange: (v) => setHeadlineZoneOverride((o) => ({ ...headlineZoneFromTemplate, ...o, color: v || undefined })),
@@ -5032,7 +5188,8 @@ export function SlideEditForm({
                                 highlight: {
                                   color: bodyHighlightColor,
                                   onApply: (start, end, color) => applyHighlightToRange("body", start, end, color),
-                                  onAuto: () => applyAutoHighlight("body"),
+                                  onAuto: () => toggleAutoHighlight("body"),
+                                  autoHighlightActive: lastBodyHighlightAction === "auto",
                                 },
                                 textColor: bodyZoneOverride?.color ?? bodyZoneFromTemplate?.color ?? "",
                                 onTextColorChange: (v) => setBodyZoneOverride((o) => ({ ...bodyZoneFromTemplate, ...o, color: v || undefined })),
@@ -5456,6 +5613,41 @@ export function SlideEditForm({
                 </>
               )}
             </div>
+            {isPro && (
+              <div
+                ref={layoutSlideShapesRef}
+                className={cn(
+                  "rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3 transition-[box-shadow,border-color] duration-200",
+                  slideShapesSelectedIndex != null && "border-primary/45 shadow-[0_0_0_1px_hsl(var(--primary)_/_0.22)]"
+                )}
+              >
+                <h3 className="text-xs font-semibold text-foreground">Shapes on this slide</h3>
+                <p className="text-muted-foreground text-[11px] leading-relaxed">
+                  Lists template shapes plus any added on this frame. Editing a template shape here replaces template shapes for this slide only (saved in slide meta). Click a shape in the live preview to jump here, then drag to move; use the top handle to rotate boxes and the bottom-right to resize when rotation is near 0°. Click elsewhere on the slide to deselect. Save to persist.
+                </p>
+                <TemplateOverlayShapesEditor
+                  embedded
+                  shapes={resolvedOverlayShapesForPreview}
+                  onChange={handleOverlayShapesEditorChange}
+                  selectedShapeIndex={slideShapesSelectedIndex}
+                  onSelectShapeIndex={handleSlideShapeSelectIndexChange}
+                />
+                {totalSlides > 1 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs text-muted-foreground hover:text-foreground"
+                    onClick={handleApplyOverlayShapesToAll}
+                    disabled={!!applyingChromeSection}
+                    title="Apply this frame’s overlay shapes (and replace-template mode) to all slides in scope"
+                  >
+                    {applyingChromeSection === "shapes" ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
+                    Apply to all
+                  </Button>
+                )}
+              </div>
+            )}
             {totalSlides >= 2 && (
               <>
                 <div className="rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3">
@@ -5749,7 +5941,7 @@ export function SlideEditForm({
                   </button>
                   {totalSlides > 1 && (
                     <span onClick={(e) => e.stopPropagation()}>
-                      <Button type="button" variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground hover:text-foreground" onClick={handleApplyHeadlineHighlightStyleToAll} disabled={applyingHighlightStyle || applyingAutoHighlights} title="Apply auto highlights + current headline highlight style to all slides">
+                      <Button type="button" variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground hover:text-foreground" onClick={handleApplyHeadlineHighlightStyleToAll} disabled={applyingHighlightStyle || applyingAutoHighlights} title="Apply Text/Bg highlight style to all slides. Auto highlights run on every slide only if Auto is on for this slide.">
                         {applyingHighlightStyle || applyingAutoHighlights ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
                         Apply to all
                       </Button>
@@ -5946,13 +6138,29 @@ export function SlideEditForm({
                         <div className="space-y-2">
                           <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Highlights & bold</p>
                         <div className="flex flex-wrap items-center gap-1.5">
-                          <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 shrink-0" onClick={() => applyAutoHighlight("headline")} title="Auto highlight key words">
+                          <Button
+                            type="button"
+                            variant={lastHeadlineHighlightAction === "auto" ? "secondary" : "outline"}
+                            size="sm"
+                            className="h-6 text-[11px] px-2 shrink-0"
+                            aria-pressed={lastHeadlineHighlightAction === "auto"}
+                            onClick={() => toggleAutoHighlight("headline")}
+                            title={lastHeadlineHighlightAction === "auto" ? "Remove auto highlights" : "Auto highlight key words"}
+                          >
                             Auto
                           </Button>
                           <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 shrink-0 gap-1" onClick={() => applyBoldToSelection("headline", true)} onMouseDown={() => saveHighlightSelectionForPicker("headline")} title="Bold selected word(s)">
                             <Bold className="size-3" /> Bold
                           </Button>
-                          <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 shrink-0" onClick={() => applyAutoBold("headline")} title="Toggle auto bold (add or remove)">
+                          <Button
+                            type="button"
+                            variant={(headline ?? "").includes("*") ? "secondary" : "outline"}
+                            size="sm"
+                            className="h-6 text-[11px] px-2 shrink-0"
+                            aria-pressed={(headline ?? "").includes("*")}
+                            onClick={() => applyAutoBold("headline")}
+                            title={(headline ?? "").includes("*") ? "Remove auto bold" : "Auto bold key words"}
+                          >
                             Auto bold
                           </Button>
                           {(["yellow", "amber", "orange", "lime", "cyan", "white"] as const).map((preset) => (
@@ -6038,11 +6246,12 @@ export function SlideEditForm({
                     <div className="flex flex-wrap items-center gap-1.5">
                       <Button
                         type="button"
-                        variant="outline"
+                        variant={lastHeadlineHighlightAction === "auto" ? "secondary" : "outline"}
                         size="sm"
                         className="h-6 text-[11px] px-2"
-                        onClick={() => applyAutoHighlight("headline")}
-                        title="Highlight first/last words automatically"
+                        aria-pressed={lastHeadlineHighlightAction === "auto"}
+                        onClick={() => toggleAutoHighlight("headline")}
+                        title={lastHeadlineHighlightAction === "auto" ? "Remove auto highlights" : "Highlight key words automatically"}
                       >
                         Auto
                       </Button>
@@ -6370,7 +6579,7 @@ export function SlideEditForm({
                   </button>
                   {totalSlides > 1 && (
                     <span onClick={(e) => e.stopPropagation()}>
-                      <Button type="button" variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground hover:text-foreground" onClick={handleApplyBodyHighlightStyleToAll} disabled={applyingHighlightStyle || applyingAutoHighlights} title="Apply auto highlights + current body highlight style to all slides">
+                      <Button type="button" variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground hover:text-foreground" onClick={handleApplyBodyHighlightStyleToAll} disabled={applyingHighlightStyle || applyingAutoHighlights} title="Apply Text/Bg highlight style to all slides. Auto highlights run on every slide only if Auto is on for this slide.">
                         {applyingHighlightStyle || applyingAutoHighlights ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
                         Apply to all
                       </Button>
@@ -6567,13 +6776,29 @@ export function SlideEditForm({
                         <div className="space-y-2">
                           <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Highlights & bold</p>
                         <div className="flex flex-wrap items-center gap-1.5">
-                          <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 shrink-0" onClick={() => applyAutoHighlight("body")} title="Auto highlight key words">
+                          <Button
+                            type="button"
+                            variant={lastBodyHighlightAction === "auto" ? "secondary" : "outline"}
+                            size="sm"
+                            className="h-6 text-[11px] px-2 shrink-0"
+                            aria-pressed={lastBodyHighlightAction === "auto"}
+                            onClick={() => toggleAutoHighlight("body")}
+                            title={lastBodyHighlightAction === "auto" ? "Remove auto highlights" : "Auto highlight key words"}
+                          >
                             Auto
                           </Button>
                           <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 shrink-0 gap-1" onClick={() => applyBoldToSelection("body", true)} onMouseDown={() => saveHighlightSelectionForPicker("body")} title="Bold selected word(s)">
                             <Bold className="size-3" /> Bold
                           </Button>
-                          <Button type="button" variant="outline" size="sm" className="h-6 text-[11px] px-2 shrink-0" onClick={() => applyAutoBold("body")} title="Toggle auto bold (add or remove)">
+                          <Button
+                            type="button"
+                            variant={(body ?? "").includes("*") ? "secondary" : "outline"}
+                            size="sm"
+                            className="h-6 text-[11px] px-2 shrink-0"
+                            aria-pressed={(body ?? "").includes("*")}
+                            onClick={() => applyAutoBold("body")}
+                            title={(body ?? "").includes("*") ? "Remove auto bold" : "Auto bold key words"}
+                          >
                             Auto bold
                           </Button>
                           {(["yellow", "amber", "orange", "lime", "cyan", "white"] as const).map((preset) => (
@@ -6659,11 +6884,12 @@ export function SlideEditForm({
                     <div className="flex flex-wrap items-center gap-1.5">
                       <Button
                         type="button"
-                        variant="outline"
+                        variant={lastBodyHighlightAction === "auto" ? "secondary" : "outline"}
                         size="sm"
                         className="h-6 text-[11px] px-2"
-                        onClick={() => applyAutoHighlight("body")}
-                        title="Highlight first + key words automatically"
+                        aria-pressed={lastBodyHighlightAction === "auto"}
+                        onClick={() => toggleAutoHighlight("body")}
+                        title={lastBodyHighlightAction === "auto" ? "Remove auto highlights" : "Highlight key words automatically"}
                       >
                         Auto
                       </Button>
@@ -7799,7 +8025,9 @@ export function SlideEditForm({
                   onSaveSelection={() => saveHighlightSelectionForPicker("headline")}
                   onApplyToSelection={(color, useSaved) => applyHighlightToSelection(color, "headline", useSaved)}
                   onRemoveFromSelection={(useSaved) => removeHighlightFromSelection("headline", useSaved)}
-                  onAuto={() => applyAutoHighlight("headline")}
+                  onAuto={() => toggleAutoHighlight("headline")}
+                  autoHighlightActive={lastHeadlineHighlightAction === "auto"}
+                  canApplyAutoToAll={lastHeadlineHighlightAction === "auto"}
                   onApplyColorToAll={() => handleApplyHighlightColorToAll("headline")}
                   onApplyAutoToAll={() => handleApplyAutoHighlightsToAll("headline")}
                   onClearAll={() => clearAllHighlights("headline")}
@@ -7825,7 +8053,9 @@ export function SlideEditForm({
                   onSaveSelection={() => saveHighlightSelectionForPicker("body")}
                   onApplyToSelection={(color, useSaved) => applyHighlightToSelection(color, "body", useSaved)}
                   onRemoveFromSelection={(useSaved) => removeHighlightFromSelection("body", useSaved)}
-                  onAuto={() => applyAutoHighlight("body")}
+                  onAuto={() => toggleAutoHighlight("body")}
+                  autoHighlightActive={lastBodyHighlightAction === "auto"}
+                  canApplyAutoToAll={lastBodyHighlightAction === "auto"}
                   onApplyColorToAll={() => handleApplyHighlightColorToAll("body")}
                   onApplyAutoToAll={() => handleApplyAutoHighlightsToAll("body")}
                   onClearAll={() => clearAllHighlights("body")}

@@ -2,6 +2,8 @@ import { GOOGLE_FONT_IDS_SET } from "@/lib/constants/googleFonts";
 import { buildSlideRenderModel, getTextScaleForDimensions, getSwipeRightXForFormat, type BrandKit, type SlideData, type TextZoneOverrides, type ChromeOverrides } from "@/lib/renderer/renderModel";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { getOverlayShapesHtml } from "@/lib/renderer/overlayShapesHtml";
+import type { OverlayShape } from "@/lib/server/renderer/templateSchema";
+import { mergeTemplateAndSlideOverlayShapes, resolveOverlayShapesForRender } from "@/lib/editor/slideOverlayShapes";
 import { getContrastingTextColor, hexToRgba } from "@/lib/editor/colorUtils";
 import { parseInlineFormatting, stripHighlightMarkers, getFontSizeSegmentsForRange, getLineSubstringByPlainRange } from "@/lib/editor/inlineFormat";
 import { getRoundedPolygonClipPath } from "@/lib/renderer/shapeClipPath";
@@ -299,7 +301,11 @@ export function renderSlideHtml(
   /** When true, render only overlay (gradient + text + chrome) on transparent background for video compositing. */
   transparentBackground?: boolean,
   /** When true, render only background (no text, no counter, no watermark). For video voiceover so captions can be burned in separately. */
-  backgroundOnly?: boolean
+  backgroundOnly?: boolean,
+  /** Per-slide shapes from slide meta; merged after template overlayShapes when `slideMeta` is not passed. */
+  slideOverlayShapes?: OverlayShape[] | null,
+  /** When set, resolves overlay shapes from meta (supports `overlay_shapes_replace_template`). Overrides merge with `slideOverlayShapes`. */
+  slideMeta?: unknown | null
 ): string {
   const { w: dimW, h: dimH } = dimensions ?? { w: 1080, h: 1080 };
   const overlayOnly = !!transparentBackground;
@@ -367,7 +373,10 @@ export function renderSlideHtml(
         escapeHtml
       )
     : "";
-  const overlayShapesList = templateConfig.overlayShapes ?? [];
+  const overlayShapesList =
+    slideMeta != null && typeof slideMeta === "object"
+      ? resolveOverlayShapesForRender(templateConfig.overlayShapes, slideMeta)
+      : mergeTemplateAndSlideOverlayShapes(templateConfig.overlayShapes, slideOverlayShapes ?? undefined);
   const overlayShapesHtml =
     !overlayOnly && overlayShapesList.length > 0 ? getOverlayShapesHtml(overlayShapesList, escapeHtml) : "";
   const hasImageForOverlay = !!(backgroundImageUrl ?? model.background.backgroundImageUrl) || (backgroundImageUrls?.length ?? 0) >= 2;

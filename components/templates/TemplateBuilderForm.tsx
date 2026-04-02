@@ -137,6 +137,8 @@ type TemplateBuilderFormProps = {
   baseOptions?: BaseOption[];
   /** When true, do not render the form header (back + title). Used when the page provides its own header. */
   hideHeader?: boolean;
+  /** After import-from-image: signed URL of the uploaded reference (shown beside live preview for comparison). */
+  importReferenceImageUrl?: string | null;
 };
 
 export function TemplateBuilderForm({
@@ -147,6 +149,7 @@ export function TemplateBuilderForm({
   templateId,
   baseOptions = [],
   hideHeader = false,
+  importReferenceImageUrl = null,
 }: TemplateBuilderFormProps) {
   const router = useRouter();
   const [name, setName] = useState(initialName);
@@ -592,8 +595,27 @@ export function TemplateBuilderForm({
         </div>
       )}
 
-      <main className="flex-1 min-h-0 flex items-center justify-center p-4 bg-muted/20 overflow-auto">
-        <div className="w-full max-w-[560px]">{templatePreviewWithDialog}</div>
+      <main className="flex-1 min-h-0 flex flex-col lg:flex-row items-stretch justify-center gap-4 lg:gap-6 p-4 bg-muted/20 overflow-auto">
+        {importReferenceImageUrl ? (
+          <aside className="w-full lg:w-[min(240px,32vw)] shrink-0 flex flex-col gap-2 order-2 lg:order-1">
+            <p className="text-xs font-medium text-muted-foreground px-0.5">Your import</p>
+            <div className="rounded-xl border border-border/60 bg-card overflow-hidden shadow-sm">
+              {/* Signed Supabase URL; short-lived — next/image remotePatterns would be brittle */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={importReferenceImageUrl}
+                alt="Reference image from template import"
+                className="w-full h-auto max-h-[min(52vh,560px)] object-contain bg-muted/30"
+              />
+            </div>
+            <p className="text-[11px] text-muted-foreground leading-snug px-0.5">
+              Compare while you adjust zones and chrome. This panel only appears right after import.
+            </p>
+          </aside>
+        ) : null}
+        <div className={`w-full max-w-[560px] flex-1 min-w-0 ${importReferenceImageUrl ? "order-1 lg:order-2" : ""}`}>
+          {templatePreviewWithDialog}
+        </div>
       </main>
 
       <section className="shrink-0 border-t border-border md:flex md:flex-col md:items-center md:px-4">

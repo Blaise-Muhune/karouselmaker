@@ -134,6 +134,8 @@ const backgroundRulesSchema = z.object({
   defaultStyle: z.enum(["darken", "blur", "none"]),
 });
 
+const overlayHex = z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/);
+
 /** Straight line in 1080×1080 design space (stroke only). */
 const overlayShapeLineSchema = z.object({
   id: z.string().max(64).optional(),
@@ -142,29 +144,104 @@ const overlayShapeLineSchema = z.object({
   y: z.number(),
   x2: z.number(),
   y2: z.number(),
-  stroke: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
+  stroke: overlayHex.optional(),
   strokeWidth: z.number().min(0).max(64).optional(),
   opacity: z.number().min(0).max(1).optional(),
 });
 
-/** Filled/stroked box shapes in 1080×1080 design space (same coordinate system as text zones). */
-const overlayShapeBoxSchema = z.object({
+/** Straight line with arrowhead at (x2,y2). */
+const overlayShapeArrowSchema = z.object({
   id: z.string().max(64).optional(),
-  type: z.enum(["rect", "rounded_rect", "circle", "ellipse"]),
+  type: z.literal("arrow"),
+  x: z.number(),
+  y: z.number(),
+  x2: z.number(),
+  y2: z.number(),
+  stroke: overlayHex.optional(),
+  strokeWidth: z.number().min(0).max(64).optional(),
+  opacity: z.number().min(0).max(1).optional(),
+  headLength: z.number().min(6).max(120).optional(),
+  headWidth: z.number().min(4).max(100).optional(),
+});
+
+/** Quadratic Bézier from (x,y) to (x2,y2) with control (cx,cy); arrowhead at end. */
+const overlayShapeCurvedArrowSchema = z.object({
+  id: z.string().max(64).optional(),
+  type: z.literal("curved_arrow"),
+  x: z.number(),
+  y: z.number(),
+  x2: z.number(),
+  y2: z.number(),
+  cx: z.number(),
+  cy: z.number(),
+  stroke: overlayHex.optional(),
+  strokeWidth: z.number().min(0).max(64).optional(),
+  opacity: z.number().min(0).max(1).optional(),
+  headLength: z.number().min(6).max(120).optional(),
+  headWidth: z.number().min(4).max(100).optional(),
+});
+
+const overlayShapeBoxCommonSchema = z.object({
+  id: z.string().max(64).optional(),
   x: z.number(),
   y: z.number(),
   w: z.number().positive(),
   h: z.number().positive(),
-  fill: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
-  stroke: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
+  fill: overlayHex.optional(),
+  stroke: overlayHex.optional(),
   strokeWidth: z.number().min(0).max(64).optional(),
   rotation: z.number().min(-180).max(180).optional(),
   opacity: z.number().min(0).max(1).optional(),
-  /** Pixels; used when type is rounded_rect. */
-  borderRadius: z.number().min(0).max(800).optional(),
 });
 
-export const overlayShapeSchema = z.union([overlayShapeLineSchema, overlayShapeBoxSchema]);
+/** Filled/stroked box shapes in 1080×1080 design space (same coordinate system as text zones). */
+const overlayShapeRectSchema = overlayShapeBoxCommonSchema.extend({
+  type: z.literal("rect"),
+});
+const overlayShapeRoundedRectSchema = overlayShapeBoxCommonSchema.extend({
+  type: z.literal("rounded_rect"),
+  borderRadius: z.number().min(0).max(800).optional(),
+});
+const overlayShapeCircleSchema = overlayShapeBoxCommonSchema.extend({
+  type: z.literal("circle"),
+});
+const overlayShapeEllipseSchema = overlayShapeBoxCommonSchema.extend({
+  type: z.literal("ellipse"),
+});
+const overlayShapeTriangleSchema = overlayShapeBoxCommonSchema.extend({
+  type: z.literal("triangle"),
+  /** Which way the apex points. Default "up". */
+  trianglePoint: z.enum(["up", "down", "left", "right"]).optional(),
+});
+const overlayShapeStarSchema = overlayShapeBoxCommonSchema.extend({
+  type: z.literal("star"),
+  /** Number of star points (3–12). Default 5. */
+  starPoints: z.number().int().min(3).max(12).optional(),
+});
+const overlayShapePentagonSchema = overlayShapeBoxCommonSchema.extend({
+  type: z.literal("pentagon"),
+});
+const overlayShapeHexagonSchema = overlayShapeBoxCommonSchema.extend({
+  type: z.literal("hexagon"),
+});
+
+const overlayShapeBoxSchema = z.discriminatedUnion("type", [
+  overlayShapeRectSchema,
+  overlayShapeRoundedRectSchema,
+  overlayShapeCircleSchema,
+  overlayShapeEllipseSchema,
+  overlayShapeTriangleSchema,
+  overlayShapeStarSchema,
+  overlayShapePentagonSchema,
+  overlayShapeHexagonSchema,
+]);
+
+export const overlayShapeSchema = z.union([
+  overlayShapeLineSchema,
+  overlayShapeArrowSchema,
+  overlayShapeCurvedArrowSchema,
+  overlayShapeBoxSchema,
+]);
 export type OverlayShape = z.infer<typeof overlayShapeSchema>;
 
 /** Optional preset content/background/meta saved with the template (e.g. from "Save as template"). */
@@ -179,6 +256,16 @@ const templateDefaultsSchema = z
         show_counter: z.boolean().optional(),
         show_watermark: z.boolean().optional(),
         show_made_with: z.boolean().optional(),
+        /** Saved with template; mirrors slide meta for swipe defaults. */
+        show_swipe: z.boolean().optional(),
+        swipe_type: swipeTypeEnum.optional(),
+        swipe_position: swipePositionEnum.optional(),
+        swipe_text: z.string().max(50).optional(),
+        swipe_x: z.number().int().min(0).max(1080).optional(),
+        swipe_y: z.number().int().min(0).max(1920).optional(),
+        swipe_size: z.number().int().min(8).max(72).optional(),
+        swipe_color: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
+        counter_color: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
         headline_font_size: z.number().optional(),
         body_font_size: z.number().optional(),
         headline_font_family: z.string().max(80).optional(),
@@ -191,12 +278,16 @@ const templateDefaultsSchema = z
         watermark_zone_override: z.record(z.string(), z.unknown()).optional(),
         /** "Made with" line: fontSize, bottom (px). Saved with template. */
         made_with_zone_override: z.record(z.string(), z.unknown()).optional(),
+        /** Default attribution/handle line (e.g. @username). Shown when show_made_with is true. */
+        made_with_text: z.string().max(200).optional(),
         headline_highlight_style: z.enum(["text", "background", "outline"]).optional(),
         body_highlight_style: z.enum(["text", "background", "outline"]).optional(),
         /** Outline stroke width for headline (0 = off). Used when headline_highlight_style is "outline". */
         headline_outline_stroke: z.number().min(0).max(8).optional(),
         /** Outline stroke width for body (0 = off). Used when body_highlight_style is "outline". */
         body_outline_stroke: z.number().min(0).max(8).optional(),
+        headline_bold_weight: z.number().int().min(100).max(900).optional(),
+        body_bold_weight: z.number().int().min(100).max(900).optional(),
         headline_highlights: z.array(z.object({ start: z.number(), end: z.number(), color: z.string() })).optional(),
         body_highlights: z.array(z.object({ start: z.number(), end: z.number(), color: z.string() })).optional(),
         /** Image layout: pip, full, side-by-side, stacked, grid, overlay-circles, etc. Saved with template. */

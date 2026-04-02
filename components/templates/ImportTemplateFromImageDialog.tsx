@@ -26,50 +26,166 @@ import { SlidePreview } from "@/components/renderer/SlidePreview";
 import { getTemplatePreviewBackgroundOverride, getTemplatePreviewOverlayOverride } from "@/lib/renderer/getTemplatePreviewBackground";
 import { Loader2Icon, UploadIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { HighlightSpan } from "@/lib/editor/inlineFormat";
 
 /** Template preview default 4:5 (1080x1350). */
 const PREVIEW_W = 200;
 const PREVIEW_H = Math.round((PREVIEW_W - 6) * (1350 / 1080)) + 6; // 4:5 aspect
 const PREVIEW_SCALE = Math.min((PREVIEW_W - 6) / 1080, (PREVIEW_H - 6) / 1350);
 
-/** Build slide content for template preview: use actual headline/body from imported config when present. */
-function getPreviewSlide(config: TemplateConfig) {
+function parseHighlightSpansFromMeta(raw: unknown, text: string): HighlightSpan[] | undefined {
+  if (!Array.isArray(raw) || text.length === 0) return undefined;
+  const out: HighlightSpan[] = [];
+  for (const item of raw) {
+    if (typeof item !== "object" || item === null) continue;
+    const o = item as Record<string, unknown>;
+    const start = Math.floor(Number(o.start));
+    const end = Math.floor(Number(o.end));
+    const color = typeof o.color === "string" && /^#([0-9A-Fa-f]{3}){1,2}$/.test(o.color) ? o.color : null;
+    if (color == null || !Number.isFinite(start) || !Number.isFinite(end) || end <= start || start >= text.length) continue;
+    out.push({ start: Math.max(0, start), end: Math.min(end, text.length), color });
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+function getImportPreviewDerived(config: TemplateConfig) {
+  const meta = config.defaults?.meta;
+  const headlineTextZone = config.textZones?.find((z) => z.id === "headline");
+  const bodyTextZone = config.textZones?.find((z) => z.id === "body");
   const headline =
     typeof config.defaults?.headline === "string" && config.defaults.headline.trim() !== ""
       ? config.defaults.headline.trim()
       : "Your headline here";
-  const body =
-    config.defaults?.body != null && typeof config.defaults.body === "string" && config.defaults.body.trim() !== ""
-      ? config.defaults.body.trim()
-      : "Body text will appear like this.";
-  return {
-    headline,
-    body,
-    slide_index: 1,
-    slide_type: "point" as const,
-  };
-}
+  const bodyTrimmed =
+    config.defaults?.body != null && typeof config.defaults.body === "string" ? config.defaults.body.trim() : "";
+  const bodyForSlide = bodyTrimmed !== "" ? bodyTrimmed : "Body text will appear like this.";
 
-function getOverridesFromConfig(config: TemplateConfig) {
-  const meta = config.defaults?.meta;
-  const headlineTextZone = config.textZones?.find((z) => z.id === "headline");
-  const bodyTextZone = config.textZones?.find((z) => z.id === "body");
   const zoneOverrides =
     meta && typeof meta === "object"
       ? (() => {
-          const headlineZone = meta.headline_zone_override && typeof meta.headline_zone_override === "object" && Object.keys(meta.headline_zone_override).length > 0 ? meta.headline_zone_override : undefined;
-          const bodyZone = meta.body_zone_override && typeof meta.body_zone_override === "object" && Object.keys(meta.body_zone_override).length > 0 ? meta.body_zone_override : undefined;
-          return headlineZone || bodyZone ? { headline: headlineZone as Record<string, unknown>, body: bodyZone as Record<string, unknown> } : undefined;
+          const headlineZone =
+            meta.headline_zone_override &&
+            typeof meta.headline_zone_override === "object" &&
+            Object.keys(meta.headline_zone_override).length > 0
+              ? meta.headline_zone_override
+              : undefined;
+          const bodyZone =
+            meta.body_zone_override && typeof meta.body_zone_override === "object" && Object.keys(meta.body_zone_override).length > 0
+              ? meta.body_zone_override
+              : undefined;
+          return headlineZone || bodyZone
+            ? { headline: headlineZone as Record<string, unknown>, body: bodyZone as Record<string, unknown> }
+            : undefined;
         })()
       : undefined;
-  // Use meta headline_font_size/body_font_size when set; otherwise derive from textZones so import preview matches the image font sizes.
-  const headlineFont = meta && typeof meta === "object" && meta.headline_font_size != null ? Number(meta.headline_font_size) : headlineTextZone?.fontSize;
-  const bodyFont = meta && typeof meta === "object" && meta.body_font_size != null ? Number(meta.body_font_size) : bodyTextZone?.fontSize;
+
+  const headlineFont =
+    meta && typeof meta === "object" && meta.headline_font_size != null ? Number(meta.headline_font_size) : headlineTextZone?.fontSize;
+  const bodyFont =
+    meta && typeof meta === "object" && meta.body_font_size != null ? Number(meta.body_font_size) : bodyTextZone?.fontSize;
   const fontOverrides =
     headlineFont != null || bodyFont != null
-      ? { ...(headlineFont != null && !Number.isNaN(headlineFont) && { headline_font_size: headlineFont }), ...(bodyFont != null && !Number.isNaN(bodyFont) && { body_font_size: bodyFont }) }
+      ? {
+          ...(headlineFont != null && !Number.isNaN(headlineFont) && { headline_font_size: headlineFont }),
+          ...(bodyFont != null && !Number.isNaN(bodyFont) && { body_font_size: bodyFont }),
+        }
       : undefined;
-  return { zoneOverrides, fontOverrides };
+
+  const m = meta && typeof meta === "object" ? (meta as Record<string, unknown>) : null;
+  const headline_highlights = m ? parseHighlightSpansFromMeta(m.headline_highlights, headline) : undefined;
+  const body_highlights =
+    m && bodyTrimmed !== "" ? parseHighlightSpansFromMeta(m.body_highlights, bodyTrimmed) : undefined;
+
+  const hlHead = m?.headline_highlight_style;
+  const hlBody = m?.body_highlight_style;
+  const headlineHighlightStyle: "text" | "background" | undefined =
+    hlHead === "text" || hlHead === "background" ? hlHead : undefined;
+  const bodyHighlightStyle: "text" | "background" | undefined =
+    hlBody === "text" || hlBody === "background" ? hlBody : undefined;
+  const headlineOutlineStroke =
+    m?.headline_outline_stroke != null && Number.isFinite(Number(m.headline_outline_stroke))
+      ? Math.min(8, Math.max(0, Number(m.headline_outline_stroke)))
+      : undefined;
+  const bodyOutlineStroke =
+    m?.body_outline_stroke != null && Number.isFinite(Number(m.body_outline_stroke))
+      ? Math.min(8, Math.max(0, Number(m.body_outline_stroke)))
+      : undefined;
+
+  const counterRaw = m?.counter_zone_override;
+  const watermarkRaw = m?.watermark_zone_override;
+  const madeWithRaw = m?.made_with_zone_override;
+  const counter =
+    counterRaw && typeof counterRaw === "object" && counterRaw !== null && Object.keys(counterRaw).length > 0
+      ? (() => {
+          const c = counterRaw as Record<string, unknown>;
+          return {
+            ...(c.top != null && { top: Number(c.top) }),
+            ...(c.right != null && { right: Number(c.right) }),
+            ...(c.fontSize != null && { fontSize: Number(c.fontSize) }),
+          };
+        })()
+      : undefined;
+  const watermark =
+    watermarkRaw && typeof watermarkRaw === "object" && watermarkRaw !== null && Object.keys(watermarkRaw).length > 0
+      ? (() => {
+          const w = watermarkRaw as Record<string, unknown>;
+          return {
+            ...(w.position
+              ? {
+                  position: w.position as "top_left" | "top_right" | "bottom_left" | "bottom_right" | "custom",
+                }
+              : {}),
+            ...(w.logoX != null && { logoX: Number(w.logoX) }),
+            ...(w.logoY != null && { logoY: Number(w.logoY) }),
+            ...(w.fontSize != null && { fontSize: Number(w.fontSize) }),
+            ...(w.maxWidth != null && { maxWidth: Number(w.maxWidth) }),
+            ...(w.maxHeight != null && { maxHeight: Number(w.maxHeight) }),
+          };
+        })()
+      : undefined;
+  const madeWith =
+    madeWithRaw && typeof madeWithRaw === "object" && madeWithRaw !== null && Object.keys(madeWithRaw).length > 0
+      ? (() => {
+          const mw = madeWithRaw as Record<string, unknown>;
+          return {
+            ...(mw.fontSize != null && { fontSize: Number(mw.fontSize) }),
+            ...(mw.x != null && { x: Number(mw.x) }),
+            ...(mw.y != null && { y: Number(mw.y) }),
+            ...(mw.color != null &&
+              typeof mw.color === "string" &&
+              /^#([0-9A-Fa-f]{3}){1,2}$/.test(mw.color) && { color: mw.color }),
+            ...(mw.y == null && {
+              bottom: mw.bottom != null ? Number(mw.bottom) : 16,
+            }),
+          };
+        })()
+      : undefined;
+  const chromeOverridesFromMeta =
+    (counter && Object.keys(counter).length > 0) ||
+    (watermark && Object.keys(watermark).length > 0) ||
+    (madeWith && Object.keys(madeWith).length > 0)
+      ? { counter, watermark, madeWith }
+      : undefined;
+
+  const slide = {
+    headline,
+    body: bodyForSlide,
+    slide_index: 1,
+    slide_type: "point" as const,
+  };
+
+  return {
+    slide,
+    zoneOverrides,
+    fontOverrides,
+    headline_highlights,
+    body_highlights,
+    headlineHighlightStyle,
+    bodyHighlightStyle,
+    headlineOutlineStroke,
+    bodyOutlineStroke,
+    chromeOverridesFromMeta,
+  };
 }
 
 /** Build full imageDisplay from template defaults so preview shows shape, frame, frameColor, position (PIP or full). */
@@ -156,8 +272,8 @@ function resizeOrCompressIfNeeded(dataUrl: string): Promise<string> {
 export type ImportTemplateFromImageDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** When creating from modal (e.g. Choose template): pass new template to parent. */
-  onSuccess?: (templateId: string, name: string, config: TemplateConfig) => void;
+  /** When creating from modal (e.g. Choose template): pass new template to parent. `referenceAssetId` is set when the import image was saved for default background / edit comparison. */
+  onSuccess?: (templateId: string, name: string, config: TemplateConfig, referenceAssetId?: string) => void;
   /** After template is created (e.g. router.refresh). */
   onCreated?: () => void;
   isPro?: boolean;
@@ -264,14 +380,19 @@ export function ImportTemplateFromImageDialog({
         name: name.trim(),
         category,
         config: importedConfig,
+        referenceImageDataUrl: dataUrl ?? undefined,
       });
       if (result.ok && "templateId" in result) {
-        onSuccess?.(result.templateId, name.trim(), importedConfig);
+        const refId = result.referenceAssetId;
+        onSuccess?.(result.templateId, name.trim(), importedConfig, refId);
         onCreated?.();
         router.refresh();
         setStep("done");
         handleOpenChange(false);
-        if (!onSuccess) router.push(`/templates/${result.templateId}/edit`);
+        if (!onSuccess) {
+          const q = refId ? `?refAsset=${encodeURIComponent(refId)}` : "";
+          router.push(`/templates/${result.templateId}/edit${q}`);
+        }
       } else {
         setError(result.error ?? "Failed to create template.");
       }
@@ -280,7 +401,7 @@ export function ImportTemplateFromImageDialog({
     } finally {
       setCreating(false);
     }
-  }, [importedConfig, name, category, onSuccess, onCreated, router, handleOpenChange]);
+  }, [importedConfig, name, category, dataUrl, onSuccess, onCreated, router, handleOpenChange]);
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
@@ -316,7 +437,7 @@ export function ImportTemplateFromImageDialog({
             ) : (
               <>
                 <p className="text-sm text-muted-foreground">
-                  Upload a screenshot or design of a single carousel slide. We’ll try to replicate the layout. The image is not saved.
+                  Upload a screenshot or design of a single carousel slide. We analyze it to infer layout and styles. When you create the template, we save the image as your library asset and default slide background so the editor matches your reference.
                 </p>
                 <div
                   onDrop={handleDrop}
@@ -353,6 +474,7 @@ export function ImportTemplateFromImageDialog({
         )}
 
         {step === "create" && importedConfig && dataUrl && (() => {
+          const previewDerived = getImportPreviewDerived(importedConfig);
           const imageDisplay = getImageDisplayFromConfig(importedConfig);
           const isPip = imageDisplay?.mode === "pip";
           const isMultiImageLayout = imageDisplay?.layout && ["side-by-side", "stacked", "grid"].includes(imageDisplay.layout);
@@ -400,7 +522,7 @@ export function ImportTemplateFromImageDialog({
                       }}
                     >
                       <SlidePreview
-                        slide={getPreviewSlide(importedConfig)}
+                        slide={previewDerived.slide}
                         templateConfig={importedConfig}
                         brandKit={{
                           primary_color: "#0a0a0a",
@@ -408,6 +530,7 @@ export function ImportTemplateFromImageDialog({
                         }}
                         totalSlides={8}
                         exportSize="1080x1350"
+                        viewportFit="contain"
                         backgroundImageUrl={templateHasNoImage ? undefined : (!isMultiImageLayout ? singleUrl : undefined)}
                         backgroundImageUrls={templateHasNoImage ? undefined : (isMultiImageLayout ? multiUrls : undefined)}
                         backgroundOverride={templateHasNoImage ? getTemplatePreviewBackgroundOverride(importedConfig) : (getTemplatePreviewOverlayOverride(importedConfig) ?? getTemplatePreviewBackgroundOverride(importedConfig))}
@@ -415,11 +538,27 @@ export function ImportTemplateFromImageDialog({
                         showWatermarkOverride={importedConfig.chrome?.watermark?.enabled ?? false}
                         showMadeWithOverride={importedConfig.defaults?.meta && typeof importedConfig.defaults.meta === "object" ? (importedConfig.defaults.meta as { show_made_with?: boolean }).show_made_with : undefined}
                         chromeOverrides={{
-                          showSwipe: true,
-                          swipeSize: importedConfig.chrome?.swipeSize ?? (["arrow-right", "arrow-left", "arrows"].includes(importedConfig.chrome?.swipeType ?? "") ? 40 : undefined),
+                          ...previewDerived.chromeOverridesFromMeta,
+                          ...(importedConfig.chrome?.showSwipe
+                            ? {
+                                showSwipe: true,
+                                swipeSize:
+                                  importedConfig.chrome?.swipeSize ??
+                                  (["arrow-right", "arrow-left", "arrows"].includes(importedConfig.chrome?.swipeType ?? "")
+                                    ? 40
+                                    : undefined),
+                              }
+                            : { showSwipe: false }),
                         }}
                         imageDisplay={imageDisplay}
-                        {...getOverridesFromConfig(importedConfig)}
+                        zoneOverrides={previewDerived.zoneOverrides}
+                        fontOverrides={previewDerived.fontOverrides}
+                        headline_highlights={previewDerived.headline_highlights}
+                        body_highlights={previewDerived.body_highlights}
+                        headlineHighlightStyle={previewDerived.headlineHighlightStyle}
+                        bodyHighlightStyle={previewDerived.bodyHighlightStyle}
+                        headlineOutlineStroke={previewDerived.headlineOutlineStroke}
+                        bodyOutlineStroke={previewDerived.bodyOutlineStroke}
                       />
                     </div>
                   </div>
@@ -427,14 +566,28 @@ export function ImportTemplateFromImageDialog({
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="import-template-name">Name</Label>
+              <div className="space-y-0.5">
+                <Label htmlFor="import-template-name">Template name</Label>
+                <p className="text-xs text-muted-foreground">
+                  We suggest a name from your image—edit it here before creating.
+                </p>
+              </div>
               <Input
                 id="import-template-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Imported from image"
+                placeholder="Name for this template"
                 className="w-full"
               />
+              {suggestedName.trim() !== "" && name.trim() !== suggestedName.trim() && (
+                <button
+                  type="button"
+                  className="text-xs text-primary hover:underline underline-offset-2"
+                  onClick={() => setName(suggestedName)}
+                >
+                  Restore AI-suggested name
+                </button>
+              )}
             </div>
             <div className="space-y-2">
               <Label>Category</Label>

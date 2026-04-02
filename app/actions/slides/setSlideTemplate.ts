@@ -81,7 +81,38 @@ export type SetSlideTemplateOptions = {
   clearBackground?: boolean;
   /** When true and template has allowImage false, keep the slide's image and show it with template overlay (blend). Sets meta.allow_background_image_override. */
   allowBlend?: boolean;
+  /**
+   * When true, remove `meta.overlay_shapes` after applying the template.
+   * Use when those shapes were merged into `template.overlayShapes` (e.g. Save as template) so they are not drawn twice.
+   */
+  clearSlideOverlayShapes?: boolean;
 };
+
+/** Remove per-slide overlay shapes from DB (e.g. after Update template baked them into template.overlayShapes). */
+export async function clearSlideOverlayShapesAction(
+  slideId: string,
+  revalidatePathname?: string | string[]
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { user } = await getUser();
+  if (!user) return { ok: false, error: "Unauthorized" };
+
+  const proCheck = await requirePro(user.id, user.email);
+  if (!proCheck.allowed) return { ok: false, error: proCheck.error ?? "Upgrade to Pro" };
+
+  const slide = await getSlide(user.id, slideId);
+  if (!slide) return { ok: false, error: "Slide not found" };
+
+  const meta = { ...((slide.meta as Record<string, unknown> | null) ?? {}) };
+  delete meta.overlay_shapes;
+  delete meta.overlay_shapes_replace_template;
+  await updateSlide(user.id, slideId, { meta: meta as Json });
+
+  if (revalidatePathname) {
+    const paths = Array.isArray(revalidatePathname) ? revalidatePathname : [revalidatePathname];
+    for (const p of paths) revalidatePath(p);
+  }
+  return { ok: true };
+}
 
 /** True when background has an image (single or multi). Used to save before clear and to decide when to restore. */
 function backgroundHasImage(bg: Record<string, unknown> | null | undefined): boolean {
@@ -296,6 +327,13 @@ export async function setSlideTemplate(
         { ...(patch.meta as Record<string, unknown>) },
         parsed.data.chrome
       ) as Json;
+    }
+
+    if (options?.clearSlideOverlayShapes === true) {
+      const m = { ...((patch.meta as Record<string, unknown>) ?? {}) };
+      delete m.overlay_shapes;
+      delete m.overlay_shapes_replace_template;
+      patch.meta = m as Json;
     }
 
     updated = await updateSlide(user.id, slideId, patch);

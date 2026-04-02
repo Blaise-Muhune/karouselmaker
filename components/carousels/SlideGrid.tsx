@@ -26,6 +26,7 @@ import type { BrandKit } from "@/lib/renderer/renderModel";
 import type { SlideBackgroundOverride } from "@/components/renderer/SlidePreview";
 import { getTemplatePreviewBackgroundOverride } from "@/lib/renderer/getTemplatePreviewBackground";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
+import { resolveOverlayShapesForRender } from "@/lib/editor/slideOverlayShapes";
 import type { Slide, Template } from "@/lib/server/db/types";
 import { useRouter } from "next/navigation";
 import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, DownloadIcon, GripVerticalIcon, Images, LayoutTemplateIcon, Loader2Icon, PencilIcon, PlusIcon, Shuffle, SquareIcon, Trash2Icon } from "lucide-react";
@@ -822,6 +823,7 @@ export function SlideGrid({
                             allowBackgroundImageOverride={allowBackgroundImageOverride}
                             imageDisplay={imageDisplayForSlide}
                             exportSize={exportSize}
+                            slideOverlayShapesResolved={resolveOverlayShapesForRender(effectiveTemplateConfig.overlayShapes, slide.meta)}
                             {...getBoldWeights(slide)}
                           />
                         </div>
@@ -915,6 +917,7 @@ export function SlideGrid({
                             allowBackgroundImageOverride={allowBackgroundImageOverride}
                             imageDisplay={imageDisplayForSlide}
                             exportSize={exportSize}
+                            slideOverlayShapesResolved={resolveOverlayShapesForRender(effectiveTemplateConfig.overlayShapes, slide.meta)}
                             {...getBoldWeights(slide)}
                           />
                         </div>

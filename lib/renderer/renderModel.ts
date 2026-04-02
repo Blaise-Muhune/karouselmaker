@@ -283,6 +283,12 @@ export function buildSlideRenderModel(
     .replace("1", String(slideIndex))
     .replace("8", String(totalSlides));
 
+  const templateMadeWithZone =
+    templateConfig.defaults?.meta && typeof templateConfig.defaults.meta === "object"
+      ? (templateConfig.defaults.meta as { made_with_zone_override?: Record<string, unknown> }).made_with_zone_override
+      : undefined;
+  const tmw = templateMadeWithZone && typeof templateMadeWithZone === "object" ? templateMadeWithZone : undefined;
+
   /** Headline zone color used as default for chrome (counter, logo, swipe) when not set. */
   const headlineZone = textBlocks.find((b) => b.zone.id === "headline")?.zone;
   const headlineColor =
@@ -334,11 +340,25 @@ export function buildSlideRenderModel(
       counterRight: chromeOverrides?.counter?.right,
       counterFontSize: chromeOverrides?.counter?.fontSize,
       watermark,
-      madeWithFontSize: chromeOverrides?.madeWith?.fontSize,
-      madeWithX: chromeOverrides?.madeWith?.x,
-      madeWithY: chromeOverrides?.madeWith?.y,
-      madeWithBottom: chromeOverrides?.madeWith?.bottom,
-      madeWithText: chromeOverrides?.madeWith?.text,
+      madeWithFontSize:
+        chromeOverrides?.madeWith?.fontSize ??
+        (typeof tmw?.fontSize === "number" && Number.isFinite(tmw.fontSize) ? tmw.fontSize : undefined),
+      madeWithX:
+        chromeOverrides?.madeWith?.x ?? (typeof tmw?.x === "number" && Number.isFinite(tmw.x) ? tmw.x : undefined),
+      madeWithY:
+        chromeOverrides?.madeWith?.y ?? (typeof tmw?.y === "number" && Number.isFinite(tmw.y) ? tmw.y : undefined),
+      madeWithBottom:
+        chromeOverrides?.madeWith?.bottom ??
+        (typeof tmw?.bottom === "number" && Number.isFinite(tmw.bottom) ? tmw.bottom : undefined),
+      madeWithText:
+        chromeOverrides?.madeWith?.text ??
+        (() => {
+          const raw =
+            templateConfig.defaults?.meta && typeof templateConfig.defaults.meta === "object"
+              ? (templateConfig.defaults.meta as { made_with_text?: string }).made_with_text
+              : undefined;
+          return typeof raw === "string" && raw.trim() !== "" ? raw.trim() : undefined;
+        })(),
       madeWithColor: (() => {
         const over = chromeOverrides?.madeWith?.color;
         if (over && /^#([0-9A-Fa-f]{3}){1,2}$/.test(over)) return over;

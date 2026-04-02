@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { overlayShapeSchema } from "@/lib/server/renderer/templateSchema";
 
 export const gradientDirectionSchema = z.enum(["top", "bottom", "left", "right"]);
 export type GradientDirection = z.output<typeof gradientDirectionSchema>;
@@ -283,6 +284,13 @@ export const slideMetaSchema = z.object({
   body_font_size_spans: z.array(z.object({ start: z.number().int().min(0), end: z.number().int().min(0), fontSize: z.number().int().min(8).max(280) })).optional(),
   /** When true, show background image even if template has allowImage false (user chose "blend" for no-image template). */
   allow_background_image_override: z.boolean().optional(),
+  /** Extra lines/shapes on this slide only (merged after template overlayShapes in preview & export). */
+  overlay_shapes: z.array(overlayShapeSchema).max(20).optional(),
+  /**
+   * When true, `overlay_shapes` is the full list for this slide and template `overlayShapes` are ignored.
+   * Set when the user edits shapes that originated from the template in the slide editor.
+   */
+  overlay_shapes_replace_template: z.boolean().optional(),
 });
 
 export const updateSlideInputSchema = z.object({

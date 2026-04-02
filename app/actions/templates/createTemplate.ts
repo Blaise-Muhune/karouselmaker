@@ -8,10 +8,18 @@ import type { Json } from "@/lib/server/db/types";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { normalizeNoImageTemplateDefaults } from "@/lib/server/renderer/normalizeTemplateConfig";
+import { applyImportReferenceImageToConfig } from "@/lib/server/templates/applyImportReferenceImage";
+import { uploadImportReferenceImage } from "@/lib/server/templates/uploadImportReferenceImage";
 
-export async function createTemplateAction(
-  payload: { name: string; category: string; config?: unknown; baseTemplateId?: string; asSystemTemplate?: boolean }
-): Promise<{ ok: true; templateId: string } | { ok: false; error: string }> {
+export async function createTemplateAction(payload: {
+  name: string;
+  category: string;
+  config?: unknown;
+  baseTemplateId?: string;
+  asSystemTemplate?: boolean;
+  /** When set (e.g. import-from-image), upload and embed as template default background + return referenceAssetId for edit-page comparison. */
+  referenceImageDataUrl?: string;
+}): Promise<{ ok: true; templateId: string; referenceAssetId?: string } | { ok: false; error: string }> {
   const { user } = await getUser();
   const asSystem = payload.asSystemTemplate === true;
 
@@ -39,6 +47,7 @@ export async function createTemplateAction(
   }
 
   let config: TemplateConfig;
+  let referenceAssetId: string | undefined;
 
   if (payload.baseTemplateId) {
     const base = await getTemplate(user.id, payload.baseTemplateId);
@@ -49,7 +58,24 @@ export async function createTemplateAction(
   } else if (payload.config) {
     const parsed = templateConfigSchema.safeParse(payload.config);
     if (!parsed.success) return { ok: false, error: "Invalid template config." };
-    config = normalizeNoImageTemplateDefaults(parsed.data);
+    config = parsed.data;
+
+    const refUrl = typeof payload.referenceImageDataUrl === "string" ? payload.referenceImageDataUrl.trim() : "";
+    if (refUrl.length > 0 && !asSystem) {
+      const uploaded = await uploadImportReferenceImage(user.id, refUrl, user.email ?? null);
+      if (!uploaded.ok) return { ok: false, error: uploaded.error };
+      referenceAssetId = uploaded.assetId;
+      const merged = applyImportReferenceImageToConfig(config, {
+        image_url: uploaded.signedUrl,
+        storage_path: uploaded.storagePath,
+        asset_id: uploaded.assetId,
+      });
+      const reparse = templateConfigSchema.safeParse(merged);
+      if (!reparse.success) return { ok: false, error: "Invalid template after adding reference image." };
+      config = reparse.data;
+    }
+
+    config = normalizeNoImageTemplateDefaults(config);
   } else {
     return { ok: false, error: "Template config or base template is required." };
   }
@@ -68,5 +94,5 @@ export async function createTemplateAction(
     ? await createSystemTemplate(insertPayload)
     : await createTemplate(user.id, { ...insertPayload, user_id: user.id });
 
-  return { ok: true, templateId: template.id };
+  return { ok: true, templateId: template.id, ...(referenceAssetId && { referenceAssetId }) };
 }

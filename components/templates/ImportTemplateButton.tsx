@@ -8,7 +8,7 @@ import { ImageIcon } from "lucide-react";
 
 export type ImportTemplateButtonProps = {
   /** When provided (e.g. in Choose template modal), new template is passed here and we don’t navigate to edit. */
-  onSuccess?: (templateId: string, name: string, config: TemplateConfig) => void;
+  onSuccess?: (templateId: string, name: string, config: TemplateConfig, referenceAssetId?: string) => void;
   onCreated?: () => void;
   isPro?: boolean;
   atLimit?: boolean;

@@ -1,7 +1,8 @@
 import { getUser } from "@/lib/server/auth/getUser";
 import { hasFullProFeatureAccess } from "@/lib/server/subscription";
 import { isAdmin } from "@/lib/server/auth/isAdmin";
-import { getTemplate } from "@/lib/server/db";
+import { getAsset, getTemplate } from "@/lib/server/db";
+import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { TemplateBuilderForm } from "@/components/templates/TemplateBuilderForm";
 import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
@@ -11,12 +12,20 @@ import { notFound } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { ArrowLeftIcon } from "lucide-react";
 
+const ASSETS_BUCKET = "carousel-assets";
+
 export default async function EditTemplatePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { id } = await params;
+  const sp = searchParams ? await searchParams : {};
+  const refRaw = sp.refAsset;
+  const refAssetId =
+    typeof refRaw === "string" && /^[0-9a-f-]{36}$/i.test(refRaw.trim()) ? refRaw.trim() : undefined;
   const { user } = await getUser();
   const userIsAdmin = isAdmin(user.email ?? null);
   const [template, fullAccess] = await Promise.all([
@@ -46,6 +55,18 @@ export default async function EditTemplatePage({
         </div>
       </div>
     );
+  }
+
+  let importReferenceImageUrl: string | null = null;
+  if (refAssetId) {
+    const asset = await getAsset(user.id, refAssetId);
+    if (asset?.user_id === user.id && asset.storage_path) {
+      try {
+        importReferenceImageUrl = await getSignedImageUrl(ASSETS_BUCKET, asset.storage_path, 3600);
+      } catch {
+        importReferenceImageUrl = null;
+      }
+    }
   }
 
   const config = templateConfigSchema.safeParse(template.config);
@@ -96,6 +117,7 @@ export default async function EditTemplatePage({
           initialCategory={template.category}
           initialConfig={config.data}
           hideHeader
+          importReferenceImageUrl={importReferenceImageUrl}
         />
       </div>
     </div>

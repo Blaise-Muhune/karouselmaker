@@ -7,13 +7,14 @@ import { getRoundedPolygonClipPath } from "@/lib/renderer/shapeClipPath";
 import { resolvePipLayoutsForImageCount } from "@/lib/renderer/resolvePipLayouts";
 import { fullImageRotationStyle, normalizeFullImageRotation } from "@/lib/renderer/fullImageRotation";
 import { parseZoneBoxChrome } from "@/lib/renderer/zoneBoxChrome";
-import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
+import type { OverlayShape, TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { getContrastingTextColor, hexToRgba } from "@/lib/editor/colorUtils";
 import { parseInlineFormatting, HIGHLIGHT_COLORS, stripHighlightMarkers, getFontSizeSegmentsForRange, getLineSubstringByPlainRange, type HighlightSpan, type InlineSegment } from "@/lib/editor/inlineFormat";
 import { Hand, ChevronsLeft, ChevronsRight, MoveHorizontal, Minus, Plus, ChevronDownIcon, SparklesIcon, Loader2Icon } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { FontPickerModal } from "@/components/FontPickerModal";
 import { OverlayShapesLayer } from "@/components/renderer/OverlayShapesLayer";
+import { SlideOverlayShapesEditLayer } from "@/components/editor/SlideOverlayShapesEditLayer";
 
 /** Base design size (slide content is laid out in 1080x1080, then scaled to cover export dimensions). */
 const CANVAS_SIZE = 1080;
@@ -377,6 +378,8 @@ export type SlidePreviewProps = {
       color: string;
       onApply: (start: number, end: number, color: string) => void;
       onAuto: () => void;
+      /** When true, Auto highlight is on for this field (pressed toggle). */
+      autoHighlightActive?: boolean;
     };
     /** Optional: text (font) color and clear */
     textColor?: string;
@@ -405,6 +408,8 @@ export type SlidePreviewProps = {
       color: string;
       onApply: (start: number, end: number, color: string) => void;
       onAuto: () => void;
+      /** When true, Auto highlight is on for this field (pressed toggle). */
+      autoHighlightActive?: boolean;
     };
     textColor?: string;
     onTextColorChange?: (color: string) => void;
@@ -455,6 +460,21 @@ export type SlidePreviewProps = {
   positionAndSizeOnly?: boolean;
   /** How portrait viewport is filled: cover (crop sides) or contain (no crop). */
   viewportFit?: "cover" | "contain";
+  /** Extra shapes from slide meta (drawn above template overlayShapes). Ignored when `slideOverlayShapesResolved` is set. */
+  slideOverlayShapes?: OverlayShape[];
+  /**
+   * When set, template `overlayShapes` + slide meta are already merged (e.g. `resolveOverlayShapesForRender`).
+   * Renders a single overlay layer so preview matches export without doubling template shapes.
+   */
+  slideOverlayShapesResolved?: OverlayShape[];
+  /** Drag/rotate handles for slide-only shapes (edit slide; selection can jump editor to Layout). */
+  slideOverlayShapesEditable?: {
+    shapes: OverlayShape[];
+    onShapesChange: (next: OverlayShape[]) => void;
+    selectedIndex: number | null;
+    onSelectIndex: (i: number | null) => void;
+    enabled: boolean;
+  } | null;
 };
 
 const POSITION_TO_CSS: Record<string, string> = {
@@ -623,6 +643,9 @@ export function SlidePreview({
   onPipPositionChange,
   onPipSizeChange,
   onPipImageClick,
+  slideOverlayShapes,
+  slideOverlayShapesResolved,
+  slideOverlayShapesEditable = null,
 }: SlidePreviewProps) {
   const canvasH = exportSize === "1080x1920" ? 1920 : exportSize === "1080x1350" ? 1350 : 1080;
   const textScale = getTextScaleForDimensions(CANVAS_SIZE, canvasH);
@@ -1310,6 +1333,14 @@ export function SlidePreview({
           : undefined
       }
       aria-label={isEditablePreview && !chromeVisible ? "Click to show edit controls" : undefined}
+      onPointerDownCapture={(e) => {
+        const ed = slideOverlayShapesEditable;
+        if (!ed || ed.selectedIndex == null) return;
+        const t = e.target as HTMLElement | null;
+        if (!t?.closest) return;
+        if (t.closest("[data-slide-shapes-edit-layer]")) return;
+        ed.onSelectIndex(null);
+      }}
     >
       {/* Full-canvas background layer for 9:16 / 4:5: image covers actual frame so no square crop. */}
       {useFullCanvasBackground && (
@@ -2257,7 +2288,28 @@ export function SlidePreview({
         );
       })()}
 
-      <OverlayShapesLayer shapes={templateConfig.overlayShapes} />
+      {slideOverlayShapesResolved !== undefined ? (
+        (slideOverlayShapesResolved?.length ?? 0) > 0 && (
+          <OverlayShapesLayer shapes={slideOverlayShapesResolved} layerZIndex={2} />
+        )
+      ) : (
+        <>
+          <OverlayShapesLayer shapes={templateConfig.overlayShapes} />
+          {(slideOverlayShapes?.length ?? 0) > 0 && <OverlayShapesLayer shapes={slideOverlayShapes} layerZIndex={3} />}
+        </>
+      )}
+      {slideOverlayShapesEditable != null && (
+        <SlideOverlayShapesEditLayer
+          shapes={slideOverlayShapesEditable.shapes}
+          onShapesChange={slideOverlayShapesEditable.onShapesChange}
+          selectedIndex={slideOverlayShapesEditable.selectedIndex}
+          onSelectIndex={slideOverlayShapesEditable.onSelectIndex}
+          designWidth={CANVAS_SIZE}
+          designHeight={canvasH}
+          rootRef={previewRootRef}
+          enabled={slideOverlayShapesEditable.enabled}
+        />
+      )}
 
       {/* Text zones (positioned in 1080x1080 space). When onHeadlineChange/onBodyChange provided, render editable textareas. */}
       {model.textBlocks.map((block) => {
@@ -2817,8 +2869,13 @@ export function SlidePreview({
                               ))}
                               <button
                                 type="button"
-                                className="rounded border border-border bg-muted/50 px-1 py-0.5 text-[10px] font-medium hover:bg-muted"
-                                title="Auto highlight"
+                                className={`rounded border px-1 py-0.5 text-[10px] font-medium transition-colors ${
+                                  editToolbarHeadline.highlight?.autoHighlightActive
+                                    ? "border-primary bg-primary/15 text-primary ring-1 ring-primary/40"
+                                    : "border-border bg-muted/50 hover:bg-muted"
+                                }`}
+                                title={editToolbarHeadline.highlight?.autoHighlightActive ? "Turn off auto highlights" : "Auto highlight key words"}
+                                aria-pressed={editToolbarHeadline.highlight?.autoHighlightActive ?? false}
                                 onClick={() => editToolbarHeadline.highlight!.onAuto()}
                               >
                                 A
@@ -3186,8 +3243,13 @@ export function SlidePreview({
                               ))}
                               <button
                                 type="button"
-                                className="rounded border border-border bg-muted/50 px-1 py-0.5 text-[10px] font-medium hover:bg-muted"
-                                title="Auto highlight"
+                                className={`rounded border px-1 py-0.5 text-[10px] font-medium transition-colors ${
+                                  editToolbarBody.highlight?.autoHighlightActive
+                                    ? "border-primary bg-primary/15 text-primary ring-1 ring-primary/40"
+                                    : "border-border bg-muted/50 hover:bg-muted"
+                                }`}
+                                title={editToolbarBody.highlight?.autoHighlightActive ? "Turn off auto highlights" : "Auto highlight key words"}
+                                aria-pressed={editToolbarBody.highlight?.autoHighlightActive ?? false}
                                 onClick={() => editToolbarBody.highlight!.onAuto()}
                               >
                                 A

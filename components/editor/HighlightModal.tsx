@@ -33,6 +33,10 @@ type HighlightModalProps = {
   onApplyToSelection: (color: string, useSaved: boolean) => void;
   onRemoveFromSelection: (useSaved: boolean) => void;
   onAuto: () => void;
+  /** When true, Auto is on for this field (toggle pressed). */
+  autoHighlightActive?: boolean;
+  /** When false, "Apply auto to all" is disabled until the user turns Auto on for this slide. */
+  canApplyAutoToAll?: boolean;
   onApplyColorToAll: () => void;
   onApplyAutoToAll: () => void;
   onClearAll: () => void;
@@ -59,6 +63,8 @@ export function HighlightModal({
   onApplyToSelection,
   onRemoveFromSelection,
   onAuto,
+  autoHighlightActive = false,
+  canApplyAutoToAll = false,
   onApplyColorToAll,
   onApplyAutoToAll,
   onClearAll,
@@ -115,7 +121,15 @@ export function HighlightModal({
           <div className="space-y-2">
             <Label className="text-xs text-muted-foreground">Colors</Label>
             <div className="flex flex-wrap items-center gap-1.5">
-              <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={onAuto} title="Highlight key words automatically">
+              <Button
+                type="button"
+                variant={autoHighlightActive ? "secondary" : "outline"}
+                size="sm"
+                className="h-8 text-xs"
+                aria-pressed={autoHighlightActive}
+                onClick={onAuto}
+                title={autoHighlightActive ? "Remove auto highlights" : "Highlight key words automatically"}
+              >
                 Auto
               </Button>
               <button
@@ -181,6 +195,24 @@ export function HighlightModal({
                 </Button>
               ))}
             </div>
+            {totalSlides > 1 && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs gap-1 shrink-0"
+                disabled={!canApplyAutoToAll || applyingAutoHighlights}
+                onClick={onApplyAutoToAll}
+                title={
+                  canApplyAutoToAll
+                    ? "Apply the same auto highlights to every slide in this carousel"
+                    : "Turn Auto on for this slide first"
+                }
+              >
+                {applyingAutoHighlights ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
+                Auto on all slides
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -233,11 +265,12 @@ export function HighlightModal({
             <div className="flex flex-wrap items-center gap-1.5">
               <Button
                 type="button"
-                variant="outline"
+                variant={autoHighlightActive ? "secondary" : "outline"}
                 size="sm"
                 className="h-8 text-xs"
+                aria-pressed={autoHighlightActive}
                 onClick={onAuto}
-                title="Highlight key words automatically"
+                title={autoHighlightActive ? "Remove auto highlights" : "Highlight key words automatically"}
               >
                 Auto
               </Button>
@@ -325,6 +358,24 @@ export function HighlightModal({
                 </Button>
               ))}
             </div>
+            {totalSlides > 1 && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs gap-1 shrink-0"
+                disabled={!canApplyAutoToAll || applyingAutoHighlights}
+                onClick={onApplyAutoToAll}
+                title={
+                  canApplyAutoToAll
+                    ? "Apply the same auto highlights to every slide in this carousel"
+                    : "Turn Auto on for this slide first"
+                }
+              >
+                {applyingAutoHighlights ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
+                Auto on all slides
+              </Button>
+            )}
           </div>
         </div>
       </DialogContent>

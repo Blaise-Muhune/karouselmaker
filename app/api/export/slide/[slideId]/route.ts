@@ -332,7 +332,11 @@ export async function GET(
     (slide.meta as { body_font_size_spans?: { start: number; end: number; fontSize: number }[] })?.body_font_size_spans,
     borderedFrame,
     imageDisplayParam,
-    dimensions
+    dimensions,
+    undefined,
+    undefined,
+    undefined,
+    slideMeta
   );
 
   const browser = await launchChromium();

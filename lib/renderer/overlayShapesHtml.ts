@@ -1,4 +1,12 @@
 import type { OverlayShape } from "@/lib/server/renderer/templateSchema";
+import {
+  arrowHeadPointsSvg,
+  arrowShaftEnd,
+  curvedArrowHeadPointsSvg,
+  regularPolygonPointsLocal,
+  starPointsLocal,
+  trianglePointsLocal,
+} from "@/lib/renderer/overlayShapeGeometry";
 
 /**
  * HTML for template overlay shapes inside `.slide-inner` (1080×1080 design space).
@@ -9,42 +17,78 @@ export function getOverlayShapesHtml(
   escapeHtml: (s: string) => string
 ): string {
   if (!shapes.length) return "";
-  const lineParts: string[] = [];
-  const boxParts: string[] = [];
+  const inner = shapes.map((s) => shapeToSvgFragment(s, escapeHtml)).join("");
+  return `<div class="overlay-shapes" style="position:absolute;inset:0;pointer-events:none;z-index:2;overflow:visible" aria-hidden="true"><svg width="1080" height="1080" viewBox="0 0 1080 1080" style="position:absolute;left:0;top:0;overflow:visible" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${inner}</svg></div>`;
+}
 
-  for (const s of shapes) {
-    if (s.type === "line") {
-      const stroke = escapeHtml(s.stroke ?? "#ffffff");
-      const sw = s.strokeWidth ?? 4;
-      const op = s.opacity ?? 1;
-      lineParts.push(
-        `<line x1="${s.x}" y1="${s.y}" x2="${s.x2}" y2="${s.y2}" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round" opacity="${op}" />`
-      );
-    } else {
-      const op = s.opacity ?? 1;
-      const fill = s.fill ? escapeHtml(s.fill) : "transparent";
-      const stroke = s.stroke ? escapeHtml(s.stroke) : "";
-      const sw = s.strokeWidth ?? 2;
-      const br =
-        s.type === "rounded_rect"
-          ? `${Math.round(s.borderRadius ?? 12)}px`
-          : s.type === "circle" || s.type === "ellipse"
-            ? "50%"
-            : "0";
-      const border =
-        stroke && sw > 0 ? `border:${sw}px solid ${stroke};` : "border:none;";
-      const rot = s.rotation ? `transform:rotate(${s.rotation}deg);transform-origin:center center;` : "";
-      const inner = `<div style="width:100%;height:100%;background-color:${fill};border-radius:${br};box-sizing:border-box;opacity:${op};${border}"></div>`;
-      boxParts.push(
-        `<div style="position:absolute;left:${s.x}px;top:${s.y}px;width:${s.w}px;height:${s.h}px;${rot}">${inner}</div>`
-      );
-    }
+function shapeToSvgFragment(s: OverlayShape, esc: (s: string) => string): string {
+  if (s.type === "line") {
+    const stroke = esc(s.stroke ?? "#ffffff");
+    const sw = s.strokeWidth ?? 4;
+    const op = s.opacity ?? 1;
+    return `<line x1="${s.x}" y1="${s.y}" x2="${s.x2}" y2="${s.y2}" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round" opacity="${op}" />`;
+  }
+  if (s.type === "arrow") {
+    const stroke = esc(s.stroke ?? "#ffffff");
+    const sw = s.strokeWidth ?? 4;
+    const op = s.opacity ?? 1;
+    const hl = s.headLength ?? 28;
+    const hw = s.headWidth ?? 22;
+    const { lx, ly } = arrowShaftEnd(s.x, s.y, s.x2, s.y2, hl);
+    const pts = esc(arrowHeadPointsSvg(s.x, s.y, s.x2, s.y2, hl, hw));
+    return `<g opacity="${op}"><line x1="${s.x}" y1="${s.y}" x2="${lx}" y2="${ly}" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round" /><polygon points="${pts}" fill="${stroke}" stroke="none" /></g>`;
+  }
+  if (s.type === "curved_arrow") {
+    const stroke = esc(s.stroke ?? "#ffffff");
+    const sw = s.strokeWidth ?? 4;
+    const op = s.opacity ?? 1;
+    const hl = s.headLength ?? 28;
+    const hw = s.headWidth ?? 22;
+    const d = `M ${s.x} ${s.y} Q ${s.cx} ${s.cy} ${s.x2} ${s.y2}`;
+    const headPts = esc(curvedArrowHeadPointsSvg(s.x, s.y, s.cx, s.cy, s.x2, s.y2, hl, hw));
+    return `<g opacity="${op}"><path d="${d}" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" /><polygon points="${headPts}" fill="${stroke}" stroke="none" /></g>`;
   }
 
-  const svg =
-    lineParts.length > 0
-      ? `<svg width="1080" height="1080" viewBox="0 0 1080 1080" style="position:absolute;left:0;top:0;overflow:visible;pointer-events:none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${lineParts.join("")}</svg>`
-      : "";
+  const w = s.w;
+  const h = s.h;
+  const rot = s.rotation ?? 0;
+  const op = s.opacity ?? 1;
+  const fill = s.fill ? esc(s.fill) : "transparent";
+  const sw0 = s.strokeWidth ?? 0;
+  const strokeCol = s.stroke && sw0 > 0 ? esc(s.stroke) : "none";
+  const swAttr = strokeCol === "none" ? 0 : sw0;
 
-  return `<div class="overlay-shapes" style="position:absolute;inset:0;pointer-events:none;z-index:2;overflow:visible" aria-hidden="true">${svg}${boxParts.join("")}</div>`;
+  const gTransform =
+    rot !== 0
+      ? `translate(${s.x + w / 2},${s.y + h / 2}) rotate(${rot}) translate(${-w / 2},${-h / 2})`
+      : `translate(${s.x},${s.y})`;
+
+  if (s.type === "rect") {
+    return `<g transform="${gTransform}" opacity="${op}"><rect x="0" y="0" width="${w}" height="${h}" fill="${fill}" stroke="${strokeCol}" stroke-width="${swAttr}" rx="0" /></g>`;
+  }
+  if (s.type === "rounded_rect") {
+    const rx = Math.round(s.borderRadius ?? 12);
+    return `<g transform="${gTransform}" opacity="${op}"><rect x="0" y="0" width="${w}" height="${h}" fill="${fill}" stroke="${strokeCol}" stroke-width="${swAttr}" rx="${rx}" /></g>`;
+  }
+  if (s.type === "circle" || s.type === "ellipse") {
+    return `<g transform="${gTransform}" opacity="${op}"><ellipse cx="${w / 2}" cy="${h / 2}" rx="${w / 2}" ry="${h / 2}" fill="${fill}" stroke="${strokeCol}" stroke-width="${swAttr}" /></g>`;
+  }
+  if (s.type === "triangle") {
+    const pts = esc(trianglePointsLocal(w, h, s.trianglePoint ?? "up"));
+    return `<g transform="${gTransform}" opacity="${op}"><polygon points="${pts}" fill="${fill}" stroke="${strokeCol}" stroke-width="${swAttr}" stroke-linejoin="round" /></g>`;
+  }
+  if (s.type === "star") {
+    const n = s.starPoints ?? 5;
+    const pts = esc(starPointsLocal(w, h, n));
+    return `<g transform="${gTransform}" opacity="${op}"><polygon points="${pts}" fill="${fill}" stroke="${strokeCol}" stroke-width="${swAttr}" stroke-linejoin="round" /></g>`;
+  }
+  if (s.type === "pentagon") {
+    const pts = esc(regularPolygonPointsLocal(w, h, 5));
+    return `<g transform="${gTransform}" opacity="${op}"><polygon points="${pts}" fill="${fill}" stroke="${strokeCol}" stroke-width="${swAttr}" stroke-linejoin="round" /></g>`;
+  }
+  if (s.type === "hexagon") {
+    const pts = esc(regularPolygonPointsLocal(w, h, 6));
+    return `<g transform="${gTransform}" opacity="${op}"><polygon points="${pts}" fill="${fill}" stroke="${strokeCol}" stroke-width="${swAttr}" stroke-linejoin="round" /></g>`;
+  }
+  return "";
 }

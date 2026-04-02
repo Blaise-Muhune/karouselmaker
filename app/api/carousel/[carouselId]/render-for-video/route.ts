@@ -241,7 +241,11 @@ export async function POST(
         (slide.meta as { body_font_size_spans?: { start: number; end: number; fontSize: number }[] })?.body_font_size_spans,
         borderedFrame,
         imageDisplayForVideo,
-        dimensions
+        dimensions,
+        undefined,
+        undefined,
+        undefined,
+        slideMeta
       );
 
       const page = await browser.newPage();
@@ -289,7 +293,10 @@ export async function POST(
         borderedFrame,
         imageDisplayForVideo,
         dimensions,
-        true
+        true,
+        undefined,
+        undefined,
+        slideMeta
         );
         await page.setContent(overlayHtml, { waitUntil: "load", timeout: CONTENT_TIMEOUT_MS });
         await page.waitForSelector(".slide-wrap", { state: "visible", timeout: SELECTOR_TIMEOUT_MS });
@@ -335,7 +342,9 @@ export async function POST(
             imageDisplayForVideo,
             dimensions,
             undefined,
-            true
+            true,
+            undefined,
+            slideMeta
           );
           await page.setContent(variantHtml, { waitUntil: "load", timeout: CONTENT_TIMEOUT_MS });
           await page.waitForSelector(".slide-wrap", { state: "visible", timeout: SELECTOR_TIMEOUT_MS });
