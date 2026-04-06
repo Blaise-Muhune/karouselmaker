@@ -164,6 +164,23 @@ export default async function CarouselEditorPage({
     spicy?: string;
   }) ?? {};
   const hashtags = Array.isArray(carousel.hashtags) ? carousel.hashtags : [];
+  const genOpts = (carousel.generation_options ?? {}) as Record<string, unknown>;
+  const useAiBackgroundsCarousel = genOpts.use_ai_backgrounds === true;
+  const generationErrorRecovery = genOpts.generation_error_recovery === true;
+  const similarCarouselIdeasFromOpts = Array.isArray(genOpts.similar_carousel_ideas)
+    ? (genOpts.similar_carousel_ideas as string[])
+    : [];
+  const hasCaptionContent = Boolean(
+    captionVariants.title?.trim() ||
+      captionVariants.medium?.trim() ||
+      captionVariants.long?.trim() ||
+      captionVariants.short?.trim() ||
+      captionVariants.spicy?.trim()
+  );
+  const captionHydrating = generationErrorRecovery && !hasCaptionContent;
+  const carouselForGen = genOpts.carousel_for as "instagram" | "linkedin" | undefined;
+  const similarIdeasLoading =
+    generationErrorRecovery && similarCarouselIdeasFromOpts.length === 0 && carouselForGen !== "linkedin";
 
   // Collect Unsplash attributions from slides for credits section
   const unsplashAttributionsMap = new Map<
@@ -347,12 +364,14 @@ export default async function CarouselEditorPage({
             isPro={hasFullAccess}
             disabled={isGenerating}
             downloadFilenameSlug={slugifyForFilename([project.name, carousel.title].filter(Boolean).join(" - ")) || undefined}
+            enableBackgroundHydrationPoll={useAiBackgroundsCarousel}
           />
         </section>
 
         <SimilarCarouselIdeas
           projectId={projectId}
-          ideas={(carousel.generation_options as { similar_carousel_ideas?: string[] } | undefined)?.similar_carousel_ideas ?? []}
+          ideas={similarCarouselIdeasFromOpts}
+          loading={similarIdeasLoading}
         />
 
         {/* Caption */}
@@ -363,7 +382,8 @@ export default async function CarouselEditorPage({
           unsplashAttributions={unsplashAttributions}
           editorPath={editorPath}
           disabled={isGenerating}
-          carouselFor={(carousel.generation_options as { carousel_for?: "instagram" | "linkedin" } | undefined)?.carousel_for}
+          carouselFor={carouselForGen}
+          captionHydrating={captionHydrating}
         />
       </div>
     </div>

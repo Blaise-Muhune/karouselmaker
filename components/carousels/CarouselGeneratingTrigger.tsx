@@ -4,6 +4,18 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { getCarouselGenerationSnapshot } from "@/app/actions/carousels/carouselActions";
+
+function isGenerationPollComplete(
+  s: { status: string; generation_started: boolean; generation_complete: boolean },
+  startedAt: number
+): boolean {
+  if (s.status === "generating") return false;
+  if (s.status !== "generated") return true;
+  if (s.generation_complete) return true;
+  if (!s.generation_started) return true;
+  return Date.now() - startedAt > 120_000;
+}
 
 /**
  * When carousel status is "generating", triggers POST /api/carousel/[carouselId]/generate
@@ -21,8 +33,9 @@ export function CarouselGeneratingTrigger({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    console.log("[carousel-gen] client: POST /api/carousel/.../generate + start polling every 1.5s");
+    console.log("[carousel-gen] client: POST /api/carousel/.../generate + poll until DB says complete");
     const apiUrl = `/api/carousel/${carouselId}/generate`;
+    const startedAt = Date.now();
     fetch(apiUrl, { method: "POST" })
       .then((res) => {
         if (res.status === 200 || res.status === 202) {
@@ -37,7 +50,19 @@ export function CarouselGeneratingTrigger({
         setError(err instanceof Error ? err.message : "Failed to start generation");
       });
 
-    pollRef.current = setInterval(() => router.refresh(), 1500);
+    const tick = async () => {
+      const snap = await getCarouselGenerationSnapshot(carouselId);
+      if (!snap.ok) return;
+      if (isGenerationPollComplete(snap, startedAt)) {
+        if (pollRef.current) {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
+        }
+        router.refresh();
+      }
+    };
+    void tick();
+    pollRef.current = setInterval(() => void tick(), 1500);
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
@@ -91,8 +116,9 @@ export function CarouselGeneratingPage({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    console.log("[carousel-gen] client: full-page loading — POST + polling every 1.5s");
+    console.log("[carousel-gen] client: full-page loading — POST + poll until generation_complete");
     const apiUrl = `/api/carousel/${carouselId}/generate`;
+    const startedAt = Date.now();
     fetch(apiUrl, { method: "POST" })
       .then((res) => {
         if (res.status === 200 || res.status === 202) {
@@ -107,15 +133,24 @@ export function CarouselGeneratingPage({
         setError(err instanceof Error ? err.message : "Failed to start generation");
       });
 
-    const startedAt = Date.now();
-    pollRef.current = setInterval(() => {
+    const tick = async () => {
       if (!reloadOnceRef.current && Date.now() - startedAt >= POLL_FULL_RELOAD_AFTER_MS) {
         reloadOnceRef.current = true;
         window.location.reload();
         return;
       }
-      router.refresh();
-    }, 1500);
+      const snap = await getCarouselGenerationSnapshot(carouselId);
+      if (!snap.ok) return;
+      if (isGenerationPollComplete(snap, startedAt)) {
+        if (pollRef.current) {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
+        }
+        router.refresh();
+      }
+    };
+    void tick();
+    pollRef.current = setInterval(() => void tick(), 1500);
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
@@ -144,7 +179,7 @@ export function CarouselGeneratingPage({
         <Loader2Icon className="mx-auto size-12 animate-spin text-primary" />
         <p className="text-sm font-medium text-foreground">Generating your carousel…</p>
         <p className="text-xs text-muted-foreground">
-          This page stays up until slides and background images are finished (often 1–3 minutes; AI-generated images can take longer). You won&apos;t see an empty carousel first.
+          This page stays up until the server finishes slides, captions, and background images (often 1–3 minutes; AI images can take longer). You won&apos;t see the editor until everything is saved.
         </p>
       </div>
     </div>

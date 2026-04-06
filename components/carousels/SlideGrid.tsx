@@ -66,6 +66,11 @@ type SlideGridProps = {
   disabled?: boolean;
   /** Slug for personalized image download filenames (e.g. "My-Project - Carousel-Title"). */
   downloadFilenameSlug?: string;
+  /**
+   * When true, soft-refresh while image-mode slides have storage/URLs in DB but no signed preview URL yet,
+   * and show a short “Loading image…” overlay on those frames.
+   */
+  enableBackgroundHydrationPoll?: boolean;
 };
 
 /** Build overlay object from template gradient for optimistic UI update. */
@@ -437,6 +442,29 @@ function getMergedImageDisplayForPreview(
   return (Object.keys(merged).length > 0 ? merged : undefined) as React.ComponentProps<typeof SlidePreview>["imageDisplay"];
 }
 
+function slideBackgroundImageStillHydrating(
+  slide: Slide,
+  slideBackgroundImageUrls: Record<string, string | string[]>
+): boolean {
+  const bg = slide.background as {
+    mode?: string;
+    storage_path?: string;
+    image_url?: string;
+    asset_id?: string;
+    images?: { storage_path?: string; image_url?: string; asset_id?: string }[];
+  } | null;
+  if (bg?.mode !== "image") return false;
+  const u = slideBackgroundImageUrls[slide.id];
+  const hasUrl =
+    (typeof u === "string" && u.length > 0) ||
+    (Array.isArray(u) && (u as string[]).some((x) => typeof x === "string" && x.length > 0));
+  if (hasUrl) return false;
+  const hasAnySource =
+    !!(bg.storage_path?.trim() || bg.image_url?.trim() || bg.asset_id) ||
+    (bg.images?.some((im) => im.storage_path?.trim() || im.image_url?.trim() || im.asset_id) ?? false);
+  return hasAnySource;
+}
+
 function slideHasShuffleableImages(slide: Slide): boolean {
   const bg = slide.background as { mode?: string; images?: { image_url?: string; alternates?: string[] }[] } | null;
   if (bg?.mode !== "image" || !Array.isArray(bg.images)) return false;
@@ -461,6 +489,7 @@ export function SlideGrid({
   isPro = true,
   disabled = false,
   downloadFilenameSlug,
+  enableBackgroundHydrationPoll = false,
 }: SlideGridProps) {
   const canEdit = isPro && !disabled;
   const previewDims = getPreviewDimensions(exportSize);
@@ -475,6 +504,28 @@ export function SlideGrid({
   const [addingSlide, setAddingSlide] = useState(false);
   const router = useRouter();
   const editorPath = `/p/${projectId}/c/${carouselId}`;
+
+  const backgroundHydrationKey = slidesOrder
+    .map((s) => {
+      const u = slideBackgroundImageUrls[s.id];
+      const ok =
+        (typeof u === "string" && u.length > 0) ||
+        (Array.isArray(u) && (u as string[]).some((x) => typeof x === "string" && x.length > 0));
+      return `${s.id}:${ok ? "1" : "0"}`;
+    })
+    .join("|");
+  useEffect(() => {
+    if (!enableBackgroundHydrationPoll) return;
+    const needs = slidesOrder.some((s) => slideBackgroundImageStillHydrating(s, slideBackgroundImageUrls));
+    if (!needs) return;
+    let n = 0;
+    const id = setInterval(() => {
+      n += 1;
+      router.refresh();
+      if (n >= 50) clearInterval(id);
+    }, 2500);
+    return () => clearInterval(id);
+  }, [enableBackgroundHydrationPoll, backgroundHydrationKey, router, slidesOrder, slideBackgroundImageUrls]);
   const [fetchedTemplateConfigs, setFetchedTemplateConfigs] = useState<Record<string, TemplateConfig>>({});
   const [templateModalSlideId, setTemplateModalSlideId] = useState<string | null>(null);
   const [selectedSlideIds, setSelectedSlideIds] = useState<Set<string>>(new Set());
@@ -711,6 +762,8 @@ export function SlideGrid({
           const hasBackgroundImage =
             (typeof bgUrls === "string" && bgUrls.length > 0) ||
             (Array.isArray(bgUrls) && (bgUrls as string[]).some((u) => typeof u === "string" && u.length > 0));
+          const stillHydratingBackground =
+            enableBackgroundHydrationPoll && slideBackgroundImageStillHydrating(slide, slideBackgroundImageUrls);
           /** Match SlideEditForm / SlidePreview: show user images when template has allowImage false (LinkedIn-style, etc.). */
           const allowBackgroundImageOverride =
             (slide.meta as { allow_background_image_override?: boolean } | null)?.allow_background_image_override === true ||
@@ -835,6 +888,16 @@ export function SlideGrid({
                           No template
                         </div>
                       )}
+                        {stillHydratingBackground && (
+                          <div
+                            className="pointer-events-none absolute inset-0 z-[15] flex flex-col items-center justify-center gap-1 rounded-lg bg-background/50 backdrop-blur-[1px]"
+                            aria-busy
+                            aria-label="Loading background image"
+                          >
+                            <Loader2Icon className="size-6 animate-spin text-primary" />
+                            <span className="text-[10px] font-medium text-foreground">Loading image…</span>
+                          </div>
+                        )}
                       </Link>
                       <Button
                         variant="secondary"
@@ -927,6 +990,16 @@ export function SlideGrid({
                           style={{ width: previewDims.w, height: previewDims.h }}
                         >
                           No template
+                        </div>
+                      )}
+                      {stillHydratingBackground && (
+                        <div
+                          className="pointer-events-none absolute inset-0 z-[15] flex flex-col items-center justify-center gap-1 rounded-lg bg-background/50 backdrop-blur-[1px]"
+                          aria-busy
+                          aria-label="Loading background image"
+                        >
+                          <Loader2Icon className="size-6 animate-spin text-primary" />
+                          <span className="text-[10px] font-medium text-foreground">Loading image…</span>
                         </div>
                       )}
                     </Link>

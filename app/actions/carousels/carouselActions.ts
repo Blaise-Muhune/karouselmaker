@@ -8,6 +8,28 @@ import { startCarouselGeneration } from "./generateCarousel";
 
 export type CarouselActionResult = { ok: true } | { ok: false; error: string };
 
+/** Lightweight poll target for the generating overlay—avoids relying on RSC cache timing. */
+export async function getCarouselGenerationSnapshot(carouselId: string): Promise<
+  | { ok: false; error: string }
+  | {
+      ok: true;
+      status: string;
+      generation_started: boolean;
+      generation_complete: boolean;
+    }
+> {
+  const { user } = await getUser();
+  const c = await getCarousel(user.id, carouselId);
+  if (!c) return { ok: false, error: "not_found" };
+  const o = (c.generation_options ?? {}) as Record<string, unknown>;
+  return {
+    ok: true,
+    status: c.status,
+    generation_started: o.generation_started === true,
+    generation_complete: o.generation_complete === true,
+  };
+}
+
 export async function deleteCarousel(
   carouselId: string,
   projectId: string

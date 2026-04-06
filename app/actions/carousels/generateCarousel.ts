@@ -1072,12 +1072,16 @@ export async function generateCarousel(formData: FormData): Promise<
   }
 
   /** Only mark generated after slides + backgrounds + template—otherwise polling shows the editor with empty frames. */
+  const generationOptionsForDb: Record<string, unknown> = {
+    ...finalGenerationOptions,
+    generation_complete: true,
+  };
   const carouselFinalUpdate: Parameters<typeof updateCarousel>[2] = {
     title: resolvedTitle,
     status: "generated",
     caption_variants: validated.caption_variants,
     hashtags: validated.hashtags,
-    generation_options: finalGenerationOptions,
+    generation_options: generationOptionsForDb,
   };
   try {
     await updateCarousel(user.id, carousel.id, carouselFinalUpdate);
@@ -1085,7 +1089,14 @@ export async function generateCarousel(formData: FormData): Promise<
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes("generation_options") || msg.includes("column")) {
       const { generation_options: _go, ...fallback } = carouselFinalUpdate;
-      await updateCarousel(user.id, carousel.id, fallback);
+      /** Must clear generation_started or the client keeps polling forever. */
+      await updateCarousel(user.id, carousel.id, {
+        ...fallback,
+        generation_options: {
+          generation_started: false,
+          generation_complete: true,
+        },
+      });
     } else {
       throw err;
     }
@@ -1106,9 +1117,38 @@ export async function generateCarousel(formData: FormData): Promise<
       : "Some background images couldn't be generated. Your carousel was saved — you can edit the carousel or try again with different settings.";
     try {
       const current = await getCarousel(user.id, carousel.id);
-      if (current?.status === "generating") {
-        const fallbackTitle = data.input_value?.trim()?.slice(0, 200) || "Untitled";
-        await updateCarousel(user.id, carousel.id, { status: "generated", title: fallbackTitle });
+      if (current?.status === "generating" && validated) {
+        const fallbackTitle = resolvedTitle?.trim() || data.input_value?.trim()?.slice(0, 200) || "Untitled";
+        const recoveryGenerationOptions: Record<string, unknown> = {
+          ...finalGenerationOptions,
+          generation_started: false,
+          generation_complete: true,
+          generation_error_recovery: true,
+        };
+        try {
+          await updateCarousel(user.id, carousel.id, {
+            status: "generated",
+            title: fallbackTitle,
+            caption_variants: validated.caption_variants,
+            hashtags: validated.hashtags,
+            generation_options: recoveryGenerationOptions,
+          });
+        } catch (e2) {
+          const m2 = e2 instanceof Error ? e2.message : String(e2);
+          if (m2.includes("generation_options") || m2.includes("column")) {
+            await updateCarousel(user.id, carousel.id, {
+              status: "generated",
+              title: fallbackTitle,
+              caption_variants: validated.caption_variants,
+              hashtags: validated.hashtags,
+              generation_options: {
+                generation_started: false,
+                generation_complete: true,
+                generation_error_recovery: true,
+              },
+            });
+          }
+        }
       }
     } catch {
       // ignore; avoid hiding original error

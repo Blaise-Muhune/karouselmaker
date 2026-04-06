@@ -362,10 +362,17 @@ export async function generateImageFromPrompt(
   const model = options?.model ?? getDefaultImageModel();
   const quality = model === "gpt-image-1.5" ? "medium" : "low";
 
-  const imagePart = prompt.includes("Generate this image: ") ? prompt.slice(prompt.indexOf("Generate this image: ")) : prompt;
-  console.log("[openaiImageGenerate] Prompt length:", prompt.length, "| aspect:", aspect, "| size:", openaiSize);
-  console.log("[openaiImageGenerate] Image:", imagePart);
-  console.log("");
+  console.log(
+    "[openaiImageGenerate] Full prompt (" +
+      prompt.length +
+      " chars) | aspect:",
+    aspect,
+    "| size:",
+    openaiSize +
+      "\n" +
+      prompt +
+      "\n"
+  );
 
   try {
     const result = await openai.images.generate({

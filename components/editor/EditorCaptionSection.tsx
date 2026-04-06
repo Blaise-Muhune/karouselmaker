@@ -39,6 +39,8 @@ type EditorCaptionSectionProps = {
   disabled?: boolean;
   /** When LinkedIn, show feed-first tips and combined "Copy for LinkedIn". */
   carouselFor?: "instagram" | "linkedin";
+  /** Show a loading state instead of “No caption variants yet” (e.g. recovery / late hydration). */
+  captionHydrating?: boolean;
 };
 
 export function EditorCaptionSection({
@@ -49,6 +51,7 @@ export function EditorCaptionSection({
   editorPath,
   disabled = false,
   carouselFor,
+  captionHydrating = false,
 }: EditorCaptionSectionProps) {
   const [editOpen, setEditOpen] = useState(false);
   const [copied, setCopied] = useState<"title" | "medium" | "long" | "hashtags" | "credits" | "linkedin" | null>(null);
@@ -178,7 +181,14 @@ export function EditorCaptionSection({
             </div>
           )}
           {!titleText && !mediumText && !longText && (
-            <p className="text-muted-foreground text-sm">No caption variants yet.</p>
+            captionHydrating ? (
+              <div className="flex items-center gap-2 rounded-md border border-border/80 bg-muted/30 px-3 py-4 text-sm text-muted-foreground">
+                <span className="inline-block size-4 animate-pulse rounded-full bg-primary/40" aria-hidden />
+                Finishing captions… refresh if this stays empty.
+              </div>
+            ) : (
+              <p className="text-muted-foreground text-sm">No caption variants yet.</p>
+            )
           )}
 
           <div className="flex items-start justify-between gap-2">
