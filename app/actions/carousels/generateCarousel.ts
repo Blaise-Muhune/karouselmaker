@@ -31,6 +31,7 @@ import {
   mergeStyleReferenceAssetIds,
   summarizeStyleReferenceImages,
 } from "@/lib/server/ai/summarizeStyleReferenceImages";
+import { buildCarouselSeriesVisualConsistency } from "@/lib/server/ai/carouselSeriesVisualConsistency";
 import { preferRecognizablePublicFiguresForImages } from "@/lib/server/ai/topicFictionHeuristic";
 import { extractInputTextFromDocument } from "@/lib/server/documents/extractInputText";
 import { uploadGeneratedImage } from "@/lib/server/storage/uploadGeneratedImage";
@@ -754,6 +755,18 @@ export async function generateCarousel(formData: FormData): Promise<
         validated.title?.trim()
       );
       const imageAspectRatio = parseAspectRatioFromNotes(data.notes?.trim());
+      const slideHeadlinesForSeries = validated.slides
+        .slice()
+        .sort((a, b) => a.slide_index - b.slide_index)
+        .map((s) => s.headline?.trim() ?? "")
+        .filter(Boolean);
+      const seriesVisualConsistency = await buildCarouselSeriesVisualConsistency({
+        carouselTitle: validated.title?.trim(),
+        topic: data.input_value?.trim(),
+        slideHeadlines: slideHeadlinesForSeries,
+        slideCount: validated.slides.length,
+        preferRecognizablePublicFigures: preferPublicFigures,
+      });
 
       const processOneAiSlide = async ({
         slide,
@@ -774,6 +787,7 @@ export async function generateCarousel(formData: FormData): Promise<
           userNotes: data.notes?.trim() || undefined,
           projectImageStyleNotes: projectRules?.trim() || undefined,
           referenceStyleSummary,
+          seriesVisualConsistency,
           aspectRatio: imageAspectRatio,
           preferRecognizablePublicFigures: preferPublicFigures || undefined,
         };
@@ -808,6 +822,7 @@ export async function generateCarousel(formData: FormData): Promise<
               userNotes: data.notes?.trim() || undefined,
               projectImageStyleNotes: projectRules?.trim() || undefined,
               referenceStyleSummary,
+              seriesVisualConsistency,
               year: slideContext?.year?.trim() || undefined,
               location: slideContext?.location?.trim() || undefined,
               isHookSlide: isHookSlide || undefined,

@@ -38,6 +38,8 @@ export type ImagePromptContext = {
   projectImageStyleNotes?: string;
   /** Vision-derived structured style brief from user reference images (one carousel-level summary). */
   referenceStyleSummary?: string;
+  /** One carousel-level paragraph for recurring character/world/palette consistency across AI slides. */
+  seriesVisualConsistency?: string;
   /** Desired aspect ratio for generated image. Default 4:5; can be overridden from user notes (e.g. "square", "9:16"). */
   aspectRatio?: "1:1" | "4:5" | "9:16" | "2:3" | "16:9";
   /**
@@ -242,6 +244,12 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
   if (refSummary) {
     parts.push(
       `Primary visual style from user reference images—follow this for look unless carousel or project notes below contradict: ${truncateForContext(refSummary, MAX_REFERENCE_STYLE_IN_PROMPT)}`
+    );
+  }
+  const seriesConsistency = context?.seriesVisualConsistency?.trim();
+  if (seriesConsistency) {
+    parts.push(
+      `Series consistency (same carousel—follow on every slide unless this slide’s content clearly needs a different scene; carousel notes below override on conflict): ${truncateForContext(seriesConsistency, 520)}`
     );
   }
   if (context?.projectImageStyleNotes?.trim()) {
