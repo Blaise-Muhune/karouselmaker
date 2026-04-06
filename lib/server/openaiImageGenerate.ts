@@ -116,7 +116,10 @@ function softenForSafety(s: string): string {
  * Reusing the full original prompt on retry re-sends the same risky wording; a short concept (like
  * Replicate's fallback) passes more often while still matching subject, setting, and mood.
  */
-function buildSafeRetryPrompt(query: string, opts?: { genericFacesOnly?: boolean }): string {
+function buildSafeRetryPrompt(
+  query: string,
+  opts?: { genericFacesOnly?: boolean; referenceStyleSummary?: string }
+): string {
   const q = query
     .replace(/\b(3000x2000|4k|official photo|wallpaper)\b/gi, "")
     .replace(/\s{2,}/g, " ")
@@ -132,6 +135,11 @@ function buildSafeRetryPrompt(query: string, opts?: { genericFacesOnly?: boolean
   const faceLine = opts?.genericFacesOnly
     ? " If people appear: generic invented adults only—no likeness to any real or famous person."
     : "";
+  const ref = opts?.referenceStyleSummary?.trim();
+  if (ref) {
+    const refBrief = truncateForContext(ref, 480);
+    return `Generate one image that closely matches this user reference style: ${refBrief}. Subject and scene: ${concept}. No text, no logos. Do not add generic golden-hour or stock lighting—stay faithful to the reference look.${faceLine}`;
+  }
   return `Generate a single professional image that closely resembles the following concept. Same subject, setting, and mood—appropriate for a general audience. No text, no logos. Concept: ${concept}. Soft lighting, subtle cinematic feel, suitable as a background.${faceLine}`;
 }
 
@@ -140,7 +148,7 @@ function buildSafeRetryPrompt(query: string, opts?: { genericFacesOnly?: boolean
  * longer, richer description (up to ~220 chars of the query) and a more descriptive wrapper
  * for better visual match without re-pasting the full OpenAI prompt.
  */
-function buildSafeFallbackPrompt(query: string): string {
+function buildSafeFallbackPrompt(query: string, opts?: { referenceStyleSummary?: string }): string {
   const q = query
     .replace(/\b(3000x2000|4k|official photo|wallpaper)\b/gi, "")
     .replace(/\s{2,}/g, " ")
@@ -151,6 +159,10 @@ function buildSafeFallbackPrompt(query: string): string {
     const cut = subject.slice(0, maxLen);
     const lastSpace = cut.lastIndexOf(" ");
     subject = lastSpace > 100 ? cut.slice(0, lastSpace).trim() : cut.trim();
+  }
+  const ref = opts?.referenceStyleSummary?.trim();
+  if (ref) {
+    return `Match this reference visual style: ${truncateForContext(ref, 420)}. Subject: ${subject}. No text, no logos. High quality; preserve palette, lighting, and camera feel from the style description—avoid generic cinematic stock look.`;
   }
   return `Professional cinematic image: ${subject}. Atmospheric, dramatic lighting, moody and evocative. No text, no logos. High quality, suitable as a background.`;
 }
@@ -170,7 +182,11 @@ const GENERIC_OFF_TOPIC = /^(nature\s+landscape\s+peaceful|peaceful\s+nature|nat
 const MAX_CONTEXT_BLOCK_LEN = 3600;
 
 /** Room for structured reference-image style brief (vision summary); aligns with summarizeStyleReferenceImages cap. */
-const MAX_REFERENCE_STYLE_IN_PROMPT = 1400;
+const MAX_REFERENCE_STYLE_IN_PROMPT = 1650;
+
+/** When user attached reference images: dominate the prompt—no house “golden hour / vary angles / stock” defaults. */
+const REFERENCE_STYLE_FIRST_LINE =
+  "User attached reference images: match their visual language as closely as possible—palette and color grading, lighting direction and quality, lens/DOF/bokeh, typical camera angles and shot scale, background treatment, and wardrobe/styling level when people appear. Do not substitute generic social-feed defaults (golden hour, forced cinematic drama, rotating shot types just for variety, or stock lighting). Subject and story come from the slide text and topic below; references define HOW the image should look. Carousel notes override only when they explicitly conflict.";
 
 /** Short global line: real people accurate, inclusive. Reused instead of long repeated preamble. */
 const GLOBAL_REAL_PEOPLE_LINE =
@@ -196,7 +212,11 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
   }
   if (GENERIC_OFF_TOPIC.test(q) && (context?.carouselTitle?.trim() || context?.topic?.trim())) {
     const from = (context.carouselTitle?.trim() || context.topic?.trim() || "").slice(0, 70).trim();
-    q = from ? `Scene or subject related to: ${from}. Atmospheric, no text.` : q;
+    q = from
+      ? hasReferenceStyle
+        ? `Scene or subject related to: ${from}. No text.`
+        : `Scene or subject related to: ${from}. Atmospheric, no text.`
+      : q;
   }
 
   const subjectDefault = "Clean, well-lit photo, clear background, natural lighting";
@@ -225,29 +245,29 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
     /\b(stylized|stylise|artistic|art style|cartoon|illustration|animated|painting|drawing|abstract|creative style|different style)\b/i.test(notesLower) ||
     /\b(stylized|stylise|artistic|art style|cartoon|illustration|animated|painting|drawing|abstract|creative style|different style)\b/i.test(projectStyleLower);
 
+  /** Reference block first so the image model sees style priority before other rules. */
+  if (refSummary) {
+    parts.push(REFERENCE_STYLE_FIRST_LINE);
+    parts.push(
+      `Extracted reference style (palette, light, camera, backgrounds, wardrobe—follow closely): ${truncateForContext(refSummary, MAX_REFERENCE_STYLE_IN_PROMPT)}`
+    );
+  }
+
   if (context?.genericFacesOnly) {
     parts.push(
-      "People: use clearly invented, generic-looking adults only—no resemblance to any real individual, public figure, or celebrity. Keep outfit, era, setting, and mood aligned with the slide; photorealistic invented faces."
+      "People: use clearly invented, generic-looking adults only—no resemblance to any real individual, public figure, or celebrity. Keep outfit, era, setting, and mood aligned with the slide and reference style when provided; photorealistic invented faces."
     );
-  } else if (!notesAskForStyle) {
+  } else if (!notesAskForStyle && !hasReferenceStyle) {
     if (context?.preferRecognizablePublicFigures) {
       parts.push(
         "Non-fiction carousel: when the slide is about real public figures (athletes, leaders, artists, etc.), aim for a recognizable portrayal—accurate era, team colors, venue, or role. If a specific likeness is not possible, keep the same person’s context without inventing a different identity."
       );
     }
-    if (!hasReferenceStyle) {
-      parts.push(GLOBAL_REAL_PEOPLE_LINE);
-    }
+    parts.push(GLOBAL_REAL_PEOPLE_LINE);
   }
 
-  /** Reference look is primary for aesthetics when present; carousel notes and project still override on conflict (listed after). */
-  if (refSummary) {
-    parts.push(
-      `Primary visual style from user reference images—follow this for look unless carousel or project notes below contradict: ${truncateForContext(refSummary, MAX_REFERENCE_STYLE_IN_PROMPT)}`
-    );
-  }
   const seriesConsistency = context?.seriesVisualConsistency?.trim();
-  if (seriesConsistency) {
+  if (seriesConsistency && !hasReferenceStyle) {
     parts.push(
       `Series consistency (same carousel—follow on every slide unless this slide’s content clearly needs a different scene; carousel notes below override on conflict): ${truncateForContext(seriesConsistency, 520)}`
     );
@@ -270,7 +290,7 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
       );
     } else {
       parts.push(
-        "First slide (hook): strong focal point and clear subject; composition and mood should match the reference style above."
+        "First slide (hook): subject from slide/topic; composition, camera angle, palette, and lighting must match the reference style above—same production look as references, not a different aesthetic."
       );
     }
     if (isBibleChristianTopic) {
@@ -377,6 +397,7 @@ export async function generateImageFromPrompt(
     if (isSafetyRejection(err)) {
       const retryPrompt = buildSafeRetryPrompt(query, {
         genericFacesOnly: options?.context?.preferRecognizablePublicFigures === true,
+        referenceStyleSummary: options?.context?.referenceStyleSummary,
       });
       console.log("[openaiImageGenerate] Safety rejection. Retrying OpenAI with short concept:", retryPrompt, "\n");
       try {
@@ -398,7 +419,9 @@ export async function generateImageFromPrompt(
       } catch {
         // fall through to Replicate
       }
-      const replicatePrompt = buildSafeFallbackPrompt(query);
+      const replicatePrompt = buildSafeFallbackPrompt(query, {
+        referenceStyleSummary: options?.context?.referenceStyleSummary,
+      });
       console.log("[openaiImageGenerate] OpenAI retry failed. Using Replicate:", replicatePrompt, "| aspect:", aspect, "\n");
       const replicateResult = await generateImageViaReplicate(replicatePrompt, aspect);
       if (replicateResult.ok) {

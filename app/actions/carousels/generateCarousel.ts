@@ -760,13 +760,17 @@ export async function generateCarousel(formData: FormData): Promise<
         .sort((a, b) => a.slide_index - b.slide_index)
         .map((s) => s.headline?.trim() ?? "")
         .filter(Boolean);
-      const seriesVisualConsistency = await buildCarouselSeriesVisualConsistency({
-        carouselTitle: validated.title?.trim(),
-        topic: data.input_value?.trim(),
-        slideHeadlines: slideHeadlinesForSeries,
-        slideCount: validated.slides.length,
-        preferRecognizablePublicFigures: preferPublicFigures,
-      });
+      /** Series “bible” fights user style refs (different angles, invented mascot)—skip when refs are attached. */
+      const seriesVisualConsistency =
+        mergedStyleRefIds.length === 0
+          ? await buildCarouselSeriesVisualConsistency({
+              carouselTitle: validated.title?.trim(),
+              topic: data.input_value?.trim(),
+              slideHeadlines: slideHeadlinesForSeries,
+              slideCount: validated.slides.length,
+              preferRecognizablePublicFigures: preferPublicFigures,
+            })
+          : undefined;
 
       const processOneAiSlide = async ({
         slide,
@@ -810,9 +814,14 @@ export async function generateCarousel(formData: FormData): Promise<
         if (!genResult.ok || !slidesWithImage.has(slide.id)) {
           const topicFallback =
             (validated.title?.trim() || data.input_value?.trim() || "").slice(0, 60) || "a compelling scene";
-          const fallbackQuery = preferPublicFigures
-            ? `Photorealistic scene inspired by: ${topicFallback}. If people appear, use invented generic adults only—no specific celebrity or public figure. Atmospheric, no text, no logos.`
-            : `Dramatic atmospheric scene related to: ${topicFallback}. No text.`;
+          const fallbackQuery =
+            referenceStyleSummary
+              ? preferPublicFigures
+                ? `Photorealistic scene related to: ${topicFallback}. If people appear, invented generic adults only—no celebrity likeness. No text, no logos.`
+                : `Scene related to: ${topicFallback}. No text, no logos.`
+              : preferPublicFigures
+                ? `Photorealistic scene inspired by: ${topicFallback}. If people appear, use invented generic adults only—no specific celebrity or public figure. Atmospheric, no text, no logos.`
+                : `Dramatic atmospheric scene related to: ${topicFallback}. No text.`;
           const fallbackResult = await generateImageFromPrompt(fallbackQuery, {
             context: {
               carouselTitle: validated.title?.trim(),

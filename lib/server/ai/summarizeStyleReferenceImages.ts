@@ -25,22 +25,25 @@ function styleReferenceVisionModel(): string {
   return "gpt-4o-mini";
 }
 
-const VISION_SYSTEM_USER_TEXT = `These images are STYLE REFERENCES for an AI image generator (carousel slide backgrounds). Your job is to extract a transferable visual language so new images can match this look—not copy subjects.
+const VISION_SYSTEM_USER_TEXT = `These images are STYLE REFERENCES for an AI image generator (carousel slide backgrounds). Your job is to extract a transferable visual language so NEW images can match this look as closely as possible—same camera language, color, and production feel—not copy identifiable subjects.
 
 Output rules:
 - Do NOT name or describe specific people, faces, brands, logos, or copyrighted characters—style only.
 - Start your entire reply with exactly this prefix on its own line: Style match:
 - After that, write compact labeled sections in this exact order (skip a section only if it truly does not apply). Use short phrases and semicolons; no bullet characters.
 
-Palette: dominant colors, saturation level, contrast (use color names or approximate hex).
-Lighting: direction, hard vs soft, color temperature, shadow character.
+Palette: dominant colors, saturation, contrast, highlights/shadows (color names or approximate hex).
+Lighting: direction, hard vs soft, color temperature, key/fill/rim if visible, shadow character.
 Texture & finish: grain, noise, sharpness, clean digital vs film-like, matte vs glossy.
-Composition: framing habits, negative space, symmetry, busy vs minimal.
+Camera & angles: typical shot scale (wide/medium/tight), camera height (eye/low/high), lens feel (wide vs telephoto), depth of field / bokeh vs deep focus, motion blur or frozen.
+Composition: framing habits, negative space, symmetry, subject placement, busy vs minimal.
+Background & environment: studio vs location; seamless/backdrop vs real environment; blur amount; props or set dressing level.
+Wardrobe & styling: when people appear—formality, silhouette, color palette of clothing, accessories level (minimal vs layered); when no people, note object/product styling if relevant.
 Mood: 2–5 words.
-Look: photorealistic vs illustrated/painterly; if photographic, lens or camera feel (wide, telephoto, shallow DOF, etc.).
-Avoid: 3–6 concrete clichés the image model should avoid because they would break this look (e.g. oversaturated neon gradients, plastic HDR, generic stock lighting).
+Look: photorealistic vs illustrated/painterly; editorial vs candid vs commercial; era if obvious.
+Avoid: 4–8 concrete clichés the image model must NOT add (e.g. golden-hour wash, neon gradients, stock "diverse boardroom", generic HDR, random new lighting style) if they would break this reference look.
 
-Target 900–1400 characters total after the "Style match:" line. Be specific and visual; avoid vague words like "nice" or "professional" without qualifiers.`;
+Target 1000–1500 characters total after the "Style match:" line. Be specific and visual; avoid vague words like "nice" or "professional" without qualifiers.`;
 
 /**
  * Carousel references first (higher priority for vision ordering), then project, deduped, capped.
@@ -94,7 +97,7 @@ export async function summarizeStyleReferenceImages(
   try {
     const res = await openai.chat.completions.create({
       model,
-      max_tokens: 1200,
+      max_tokens: 1400,
       messages: [
         {
           role: "user",
