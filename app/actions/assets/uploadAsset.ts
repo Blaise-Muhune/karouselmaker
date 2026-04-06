@@ -22,6 +22,71 @@ export type UploadAssetResult =
   | { ok: true; assetId: string; storagePath: string }
   | { ok: false; error: string };
 
+const MAX_FILES_PER_BATCH = 30;
+
+export type UploadAssetsResult =
+  | {
+      ok: true;
+      assetIds: string[];
+      errors: { fileName: string; error: string }[];
+    }
+  | { ok: false; error: string };
+
+/**
+ * Upload multiple images in one action (same rules as `uploadAsset` per file).
+ * Use FormData key `files` for each file (append multiple), optional `project_id`.
+ */
+export async function uploadAssets(
+  formData: FormData,
+  revalidatePathname?: string
+): Promise<UploadAssetsResult> {
+  const { user } = await getUser();
+  if (!user) return { ok: false, error: "Unauthorized" };
+
+  const files = formData.getAll("files").filter((x): x is File => x instanceof File);
+  if (files.length === 0) return { ok: false, error: "No files provided" };
+
+  const { isPro } = await getSubscription(user.id, user.email);
+  const fullAccess = await hasFullProFeatureAccess(user.id, user.email);
+  const limits = await getEffectivePlanLimits(user.id, user.email);
+  let remaining = Math.max(0, limits.assets - (await countAssets(user.id)));
+
+  const projectIdRaw = formData.get("project_id") as string | null;
+  const projectId = projectIdRaw && projectIdRaw.trim() ? projectIdRaw.trim() : null;
+
+  const assetIds: string[] = [];
+  const errors: { fileName: string; error: string }[] = [];
+  const sliced = files.slice(0, MAX_FILES_PER_BATCH);
+
+  for (const file of sliced) {
+    if (remaining <= 0) {
+      errors.push({
+        fileName: file.name,
+        error: `Asset limit reached (${limits.assets}${isPro || fullAccess ? "" : " on free plan. Upgrade to Pro for more"}).`,
+      });
+      continue;
+    }
+    const fd = new FormData();
+    fd.set("file", file);
+    if (projectId) fd.set("project_id", projectId);
+    const r = await uploadAsset(fd, undefined);
+    if (r.ok) {
+      assetIds.push(r.assetId);
+      remaining -= 1;
+    } else {
+      errors.push({ fileName: file.name, error: r.error });
+    }
+  }
+
+  if (revalidatePathname) revalidatePath(revalidatePathname);
+
+  if (assetIds.length === 0) {
+    const first = errors[0]?.error ?? "Upload failed";
+    return { ok: false, error: errors.length > 1 ? `${first} (${errors.length} files failed.)` : first };
+  }
+  return { ok: true, assetIds, errors };
+}
+
 export async function uploadAsset(
   formData: FormData,
   revalidatePathname?: string

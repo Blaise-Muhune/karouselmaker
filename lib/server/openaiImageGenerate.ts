@@ -36,7 +36,7 @@ export type ImagePromptContext = {
   userNotes?: string;
   /** Project rules text applied to image mood/style; carousel notes override when they conflict. */
   projectImageStyleNotes?: string;
-  /** Vision summary from user reference images (palette, lighting, etc.). */
+  /** Vision-derived structured style brief from user reference images (one carousel-level summary). */
   referenceStyleSummary?: string;
   /** Desired aspect ratio for generated image. Default 4:5; can be overridden from user notes (e.g. "square", "9:16"). */
   aspectRatio?: "1:1" | "4:5" | "9:16" | "2:3" | "16:9";
@@ -165,14 +165,24 @@ function isBibleAsObjectOnly(s: string): boolean {
 const GENERIC_OFF_TOPIC = /^(nature\s+landscape\s+peaceful|peaceful\s+nature|nature\s+scene|landscape\s+peaceful|calm\s+landscape|nature\s+background)$/i;
 
 /** Max length for the context block so the "Generate this image: {base}" part always has room and is never truncated. Base is sent in full. */
-const MAX_CONTEXT_BLOCK_LEN = 2200;
+const MAX_CONTEXT_BLOCK_LEN = 3600;
+
+/** Room for structured reference-image style brief (vision summary); aligns with summarizeStyleReferenceImages cap. */
+const MAX_REFERENCE_STYLE_IN_PROMPT = 1400;
 
 /** Short global line: real people accurate, inclusive. Reused instead of long repeated preamble. */
 const GLOBAL_REAL_PEOPLE_LINE =
   "Real people/places/events: photorealistic and accurate. Inclusive, diverse depiction; no single default ethnicity.";
 
-/** Convert image_query to a generation prompt. Injects context so the image relates to the user's topic and the current slide. Keeps styling natural—avoids heavy cinematic/golden hour. Preamble kept short so the image description (base) is never truncated and gets most of the token budget. */
+/**
+ * When the user attached reference images, vision produced `referenceStyleSummary`.
+ * In that mode we drop default app *look* rules (stock photo bias, our color grading, lighting clichés, hook composition recipes)
+ * so the generated look is driven by the reference brief + user notes/project + slide subject—not our house style.
+ */
 function queryToPrompt(query: string, context?: ImagePromptContext): string {
+  const refSummary = context?.referenceStyleSummary?.trim();
+  const hasReferenceStyle = Boolean(refSummary);
+
   let q = query
     .replace(/\b(3000x2000|4k|official photo|wallpaper)\b/gi, "")
     .replace(/\s{2,}/g, " ")
@@ -186,15 +196,22 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
     const from = (context.carouselTitle?.trim() || context.topic?.trim() || "").slice(0, 70).trim();
     q = from ? `Scene or subject related to: ${from}. Atmospheric, no text.` : q;
   }
-  const subject = softenStylePhrases(q || "Clean, well-lit photo, clear background, natural lighting");
+
+  const subjectDefault = "Clean, well-lit photo, clear background, natural lighting";
+  const subjectFallbackForRefs = "Scene and subject as described by the slide headline, content, and topic below";
+  const subjectRaw = q || (hasReferenceStyle ? subjectFallbackForRefs : subjectDefault);
+  const subject = hasReferenceStyle ? subjectRaw : softenStylePhrases(subjectRaw);
+
   const hasDramaCue = /\b(dramatic|cinematic|golden hour|atmospheric|bokeh|backlight|intense|mysterious|celebratory)\b/i.test(subject);
   const suggestsIndoor = /\b(desk|office|room|indoor|kitchen|interior|workspace|lamp|windowless|inside)\b/i.test(subject);
   const lightingCue = suggestsIndoor
     ? "Lighting appropriate for indoor setting (soft window light, lamp, or overhead); no golden hour."
     : "Subtle cinematic feel; a touch of golden hour only if outdoor/sun fits; not overly heavy.";
-  /** Image description sent in full—never truncated. */
-  const base =
-    subject.length > 50 && (hasDramaCue || /(of|in|with|on|at)\s+\w+/i.test(subject))
+
+  /** Image description sent in full—never truncated. With reference style: no app lighting/stock framing—only subject + no text. */
+  const base = hasReferenceStyle
+    ? `${subject}. No text, no logos.`
+    : subject.length > 50 && (hasDramaCue || /(of|in|with|on|at)\s+\w+/i.test(subject))
       ? `${subject}. ${lightingCue} No text, no logos.`
       : `Professional photo: ${subject}. ${lightingCue} Suitable as a background. No text, no logos.`;
 
@@ -205,6 +222,7 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
   const notesAskForStyle =
     /\b(stylized|stylise|artistic|art style|cartoon|illustration|animated|painting|drawing|abstract|creative style|different style)\b/i.test(notesLower) ||
     /\b(stylized|stylise|artistic|art style|cartoon|illustration|animated|painting|drawing|abstract|creative style|different style)\b/i.test(projectStyleLower);
+
   if (context?.genericFacesOnly) {
     parts.push(
       "People: use clearly invented, generic-looking adults only—no resemblance to any real individual, public figure, or celebrity. Keep outfit, era, setting, and mood aligned with the slide; photorealistic invented faces."
@@ -215,12 +233,15 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
         "Non-fiction carousel: when the slide is about real public figures (athletes, leaders, artists, etc.), aim for a recognizable portrayal—accurate era, team colors, venue, or role. If a specific likeness is not possible, keep the same person’s context without inventing a different identity."
       );
     }
-    parts.push(GLOBAL_REAL_PEOPLE_LINE);
+    if (!hasReferenceStyle) {
+      parts.push(GLOBAL_REAL_PEOPLE_LINE);
+    }
   }
-  /** Priority for overlapping instructions: carousel (userNotes) > project > reference summary > app defaults. */
-  if (context?.referenceStyleSummary?.trim()) {
+
+  /** Reference look is primary for aesthetics when present; carousel notes and project still override on conflict (listed after). */
+  if (refSummary) {
     parts.push(
-      `Reference-image style (match this look for palette, lighting, and mood unless carousel notes below say otherwise): ${truncateForContext(context.referenceStyleSummary, 520)}`
+      `Primary visual style from user reference images—follow this for look unless carousel or project notes below contradict: ${truncateForContext(refSummary, MAX_REFERENCE_STYLE_IN_PROMPT)}`
     );
   }
   if (context?.projectImageStyleNotes?.trim()) {
@@ -235,14 +256,24 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
   }
 
   if (context?.isHookSlide) {
-    parts.push(
-      "First slide (hook): striking, scroll-stopping. Vary—close-up, mid-shot action, scale contrast, or micro-story. Avoid clichés: no person from behind at window, no coffee+notebook, no silhouette at sunrise. Indoor = indoor lighting, not golden hour."
-    );
+    if (!hasReferenceStyle) {
+      parts.push(
+        "First slide (hook): striking, scroll-stopping. Vary—close-up, mid-shot action, scale contrast, or micro-story. Avoid clichés: no person from behind at window, no coffee+notebook, no silhouette at sunrise. Indoor = indoor lighting, not golden hour."
+      );
+    } else {
+      parts.push(
+        "First slide (hook): strong focal point and clear subject; composition and mood should match the reference style above."
+      );
+    }
     if (isBibleChristianTopic) {
       parts.push("No Bible as object; show a character or scene from the topic (e.g. David and Goliath, prophet), not the book.");
     }
   } else if (context?.carouselTitle || context?.topic || context?.slideHeadline || context?.slideBody) {
-    parts.push("Image must relate to this slide and the topic. Avoid generic stock; use a specific moment or detail. Indoor = indoor lighting.");
+    parts.push(
+      hasReferenceStyle
+        ? "Image must relate to this slide and the topic; avoid generic unrelated imagery."
+        : "Image must relate to this slide and the topic. Avoid generic stock; use a specific moment or detail. Indoor = indoor lighting."
+    );
   }
 
   if (context?.carouselTitle?.trim()) parts.push(`Carousel: ${truncateForContext(context.carouselTitle, 80)}`);
@@ -260,7 +291,12 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
   const colorGradingLine =
     "Color: natural, true-to-life grading when it fits the subject; avoid default neon magenta/purple gradients unless the topic is explicitly about that look.";
 
-  if (!contextBlock.trim()) return `${colorGradingLine} ${base}`;
+  if (!contextBlock.trim()) {
+    return hasReferenceStyle ? base : `${colorGradingLine} ${base}`;
+  }
+  if (hasReferenceStyle) {
+    return `${contextBlock}. Generate this image: ${base}`;
+  }
   return `${contextBlock}. ${colorGradingLine} Generate this image: ${base}`;
 }
 

@@ -1137,7 +1137,7 @@ export function NewCarouselForm({
           onOpenChange={setBackgroundPickerOpen}
           selectedIds={backgroundAssetIds}
           onConfirm={setBackgroundAssetIds}
-          listFilterProjectId={projectId}
+          contextProjectId={projectId}
         />
         <BackgroundImagesPickerModal
           open={styleRefPickerOpen}
@@ -1146,9 +1146,9 @@ export function NewCarouselForm({
           onConfirm={setAiStyleRefIds}
           maxSelection={MAX_CAROUSEL_AI_STYLE_REFERENCE_ASSETS}
           allowEmptyConfirm
-          listFilterProjectId={projectId}
+          contextProjectId={projectId}
           dialogTitle="Style references for AI-generated backgrounds"
-          dialogDescription={`Select up to ${MAX_CAROUSEL_AI_STYLE_REFERENCE_ASSETS} images from this project. Used only to match visual style.`}
+          dialogDescription={`Select up to ${MAX_CAROUSEL_AI_STYLE_REFERENCE_ASSETS} images. Used only to match visual style. Upload or import from Drive here—they’re saved to your library.`}
         />
 
         <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center">

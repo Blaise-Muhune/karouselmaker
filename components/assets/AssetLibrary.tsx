@@ -17,12 +17,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { uploadAsset } from "@/app/actions/assets/uploadAsset";
 import { setSlideBackground } from "@/app/actions/slides/setSlideBackground";
+import { LibraryImageImportBar } from "@/components/assets/LibraryImageImportBar";
 import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
 import { PLAN_LIMITS } from "@/lib/constants";
 import type { Asset } from "@/lib/server/db/types";
-import { ImageIcon, Loader2Icon, UploadIcon } from "lucide-react";
+import { ImageIcon } from "lucide-react";
 
 type AssetLibraryProps = {
   assets: Asset[];
@@ -57,31 +57,13 @@ export function AssetLibrary({
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
   const assets = initialAssets;
   const urls = initialUrls;
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
   const [applyError, setApplyError] = useState<string | null>(null);
   const [projectFilter, setProjectFilter] = useState<string>(initialProjectFilter);
 
   const atLimit = assetLimit > 0 && assetCount >= assetLimit;
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (atLimit) return;
-    setUploading(true);
-    setUploadError(null);
-    const formData = new FormData();
-    formData.set("file", file);
-    if (projectFilter !== "all" && projectFilter !== "global") formData.set("project_id", projectFilter);
-    const result = await uploadAsset(formData, "/assets");
-    setUploading(false);
-    e.target.value = "";
-    if (result.ok) {
-      startTransition(() => router.refresh());
-    } else {
-      setUploadError(result.error ?? "Upload failed");
-    }
-  };
+  const attachProjectIdForImport =
+    projectFilter !== "all" && projectFilter !== "global" ? projectFilter : null;
 
   const handleUseAsBackground = async () => {
     if (!selectedAsset || !slideId) return;
@@ -127,61 +109,39 @@ export function AssetLibrary({
           variant="inline"
         />
       )}
-      {uploadError && !isPro && (uploadError.toLowerCase().includes("limit") || uploadError.toLowerCase().includes("upgrade")) && (
-        <UpgradeBanner
-          message={uploadError}
-          variant="inline"
-        />
-      )}
-      {uploadError && (!uploadError.toLowerCase().includes("limit") && !uploadError.toLowerCase().includes("upgrade")) && (
-        <p className="text-destructive text-sm rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2">{uploadError}</p>
-      )}
       <section>
         <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
           Library
         </p>
-        <div className="flex flex-wrap items-center gap-2">
-        <Select
-          value={projectFilter}
-          onValueChange={setProjectFilter}
-          disabled={isPending}
-        >
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="Filter" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All assets</SelectItem>
-            <SelectItem value="global">Global (no project)</SelectItem>
-            {projects.map((p) => (
-              <SelectItem key={p.id} value={p.id}>
-                {p.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <span className="text-muted-foreground text-xs">
-          {assetCount}/{assetLimit} images
-        </span>
-        <label className={atLimit ? "cursor-not-allowed opacity-60" : "cursor-pointer"}>
-          <input
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={handleFileChange}
-            disabled={uploading || atLimit}
-          />
-          <Button type="button" variant="outline" size="sm" disabled={uploading || atLimit} asChild>
-            <span>
-              {uploading ? (
-                <Loader2Icon className="mr-2 size-4 animate-spin" />
-              ) : (
-                <UploadIcon className="mr-2 size-4" />
-              )}
-              {atLimit ? "Upload (limit reached)" : "Upload image"}
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:gap-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <Select value={projectFilter} onValueChange={setProjectFilter} disabled={isPending}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Filter" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All assets</SelectItem>
+                <SelectItem value="global">Global (no project)</SelectItem>
+                {projects.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <span className="text-muted-foreground text-xs tabular-nums">
+              {assetCount}/{assetLimit} images
             </span>
-          </Button>
-        </label>
-      </div>
+          </div>
+          <LibraryImageImportBar
+            attachProjectId={attachProjectIdForImport}
+            onRefresh={() => startTransition(() => router.refresh())}
+            atLimit={atLimit}
+            revalidatePathname="/assets"
+            disabled={isPending}
+            className="min-w-0 flex-1"
+          />
+        </div>
 
       {filteredAssets.length === 0 ? (
         <div className="flex min-h-[220px] flex-col items-center justify-center rounded-2xl border border-dashed border-border/60 bg-muted/20 p-8 text-center">
@@ -191,9 +151,7 @@ export function AssetLibrary({
           <p className="text-muted-foreground text-xs mb-4 max-w-sm">
             Pro tip: Use high-res images (1080×1080 or larger). Landscapes, textures, and solid colors work great.
           </p>
-          <p className="text-xs text-muted-foreground/80">
-            Drag & drop or click Upload above ↑
-          </p>
+          <p className="text-xs text-muted-foreground/80">Use Upload or Google Drive above to add images.</p>
         </div>
       ) : (
         <ul className="grid gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">

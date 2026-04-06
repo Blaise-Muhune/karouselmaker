@@ -104,14 +104,24 @@ export async function generateCarouselTopicBatch(
           .join("\n")
       : "(none yet — still diversify angles)";
 
+  const platformViral =
+    carouselFor === "linkedin"
+      ? `LinkedIn: topics should feel *discussion-worthy* in the feed—career stakes, contrarian but defensible takes, "what nobody tells you" professional angles, pattern breaks vs. generic career advice. Aim for saves and comments from peers, not bland thought leadership. Still credible: no fake controversy, no engagement bait without substance.`
+      : `Instagram / short-form: optimize for *stop-scroll, save, and share*—curiosity gaps ("the mistake everyone makes…"), bold specifics (numbers, timeframes, before/after framing), relatable pain → payoff, micro-stories, "you're not alone" validation, and one-line shareability. Avoid sleepy listicles; each idea should feel like it could start a comment thread or DM share.`;
+
   const system = `You suggest carousel *input topics* for a creator app: each topic becomes the brief the AI uses to generate a full multi-slide carousel (hook → body slides → CTA). Reply with ONLY a JSON object: {"topics":["...","..."]} containing exactly 10 distinct topic strings.
 
+Primary goal — **viral potential, retention, engagement, shares** (not generic or boring):
+- Every topic should feel like something a creator would post because it *performs*: strong hook energy in the premise itself, clear payoff for the viewer, reason to save or send to a friend.
+- Prefer **specific, visceral, or surprising** angles over broad education ("5 marketing tips" → bad unless narrowed to a sharp hook, e.g. a single myth destroyed or one counterintuitive rule with stakes).
+- Include **emotional or identity hooks** where natural (relief, frustration, ambition, "I wish I knew this sooner") without being manipulative or misleading.
+- ${platformViral}
+
 Rules:
-- Each string: short (max ~12 words), written as a topic the creator would type — not a slide headline pack, not a question with no answer to deliver.
-- Every topic must imply a clear *premise* the carousel can fulfill: teach something, debunk myths, list concrete points, tell a tight story, or take a sharp angle — avoid vague buckets ("tips for growth", "about branding") unless you narrow them to a specific promise for this niche.
-- Fit ${carouselFor === "linkedin" ? "LinkedIn: professional, credible, work-relevant angles" : "Instagram: scroll-stopping, share/save-friendly angles"} while staying true to the niche and tone below.
+- Each string: short (max ~12 words), written as a topic the creator would type — not a slide headline pack, not a hollow question with nothing to deliver.
+- Every topic must imply a clear *premise* the carousel can fulfill: teach, debunk, list concrete points, tell a tight story, or take a sharp angle — **and** imply why someone would finish all slides (tension, promise, or payoff).
 - Language: match project language (${language}) unless clearly multi-lingual — default English if unsure.
-- Mix angles across the 10 with **format diversity**: include at least one clear how-to, one mistakes/myths angle, one checklist or framework, one story/case angle, one contrarian or hot-take, and one timely/trend angle when relevant—do not output 10 near-identical listicles or generic "tips" strings.
+- Mix the 10 with **format diversity**: at least one how-to with a twist, one mistakes/myths, one checklist or framework, one story/case angle, one contrarian or hot-take with substance, one timely/trend hook when relevant — **and** at least two that are explicitly optimized for *share or save* (e.g. "send this to someone who…" energy in the *topic phrase* without using those exact words).
 - Do NOT repeat or closely paraphrase anything in the "already used" list.
 - No URLs, no markdown, no numbering inside strings — plain topic phrases only.`;
 
@@ -119,14 +129,14 @@ Rules:
 Niche / audience: ${niche}
 Tone: ${tone}
 Carousel platform focus: ${carouselFor}
-Project rules / constraints / goals (may be empty — when present, lean topics toward what those rules imply for content and outcomes): ${rulesSnippet || "—"}
+Project rules / constraints / goals (may be empty — when present, respect them but still push toward high-retention, high-engagement angles): ${rulesSnippet || "—"}
 
 Topics and titles already used in this project (do not reuse or trivially rephrase):
 ${blockedList}
 
-${useWebSearch ? "Use web search when helpful so 2–4 ideas are timely (news, launches, seasonality) for this niche; keep the rest evergreen and specific. Respect the do-not-repeat list. Prefer 1–3 quick searches over many." : "Use your general knowledge only (no live web). Still keep ideas varied, niche-specific, and concrete."}
+${useWebSearch ? "Use web search when helpful so 2–4 ideas tie to *right now* (news, trends, seasonality, launches) in a way that boosts shares and comments; keep the rest evergreen but still punchy. Respect the do-not-repeat list. Prefer 1–3 quick searches over many." : "Use your general knowledge only (no live web). Still make ideas feel timely in *tone*—specific, urgent, or culturally aware—not textbook boring."}
 
-Return exactly 10 strings in the JSON "topics" array.`;
+Return exactly 10 strings in the JSON "topics" array. Bias heavily away from safe, generic, or corporate-bland phrasing; every line should pass a "would I tap this in the feed?" test.`;
 
   let raw = "";
   try {

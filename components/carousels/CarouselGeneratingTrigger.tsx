@@ -73,10 +73,10 @@ const POLL_FULL_RELOAD_AFTER_MS = 5 * 60 * 1000;
 
 /**
  * Full-page loading state when user lands on carousel page while status is still "generating".
- * Kicks off generation (POST) and polls until status is no longer "generating". Loading goes away
- * as soon as the next refresh sees the updated status—no reliance on the POST response (which
- * can time out after 1–3 minutes). If still loading after 5 minutes, does one full reload to avoid
- * infinite loading when the result is ready but router.refresh() was serving cached data.
+ * Kicks off generation (POST) and polls until status is no longer "generating". The server only
+ * sets status to "generated" after slides, backgrounds, and template are applied—so the editor
+ * should not appear with empty frames mid-generation. If still loading after 5 minutes, does one
+ * full reload to bypass stale client cache.
  */
 export function CarouselGeneratingPage({
   projectId,
@@ -144,7 +144,7 @@ export function CarouselGeneratingPage({
         <Loader2Icon className="mx-auto size-12 animate-spin text-primary" />
         <p className="text-sm font-medium text-foreground">Generating your carousel…</p>
         <p className="text-xs text-muted-foreground">
-          This usually takes 1–3 minutes. You&apos;ll see your carousel here when it&apos;s ready.
+          This page stays up until slides and background images are finished (often 1–3 minutes; AI-generated images can take longer). You won&apos;t see an empty carousel first.
         </p>
       </div>
     </div>

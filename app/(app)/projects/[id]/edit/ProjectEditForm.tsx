@@ -408,9 +408,9 @@ export function ProjectEditForm({
           onConfirm={setAiStyleRefIds}
           maxSelection={MAX_PROJECT_AI_STYLE_REFERENCE_ASSETS}
           allowEmptyConfirm
-          listFilterProjectId={projectId}
+          contextProjectId={projectId}
           dialogTitle="Style references for AI-generated backgrounds"
-          dialogDescription={`Select up to ${MAX_PROJECT_AI_STYLE_REFERENCE_ASSETS} images. We use them only to match visual style (not to copy subjects). Upload images on the Assets page if needed.`}
+          dialogDescription={`Select up to ${MAX_PROJECT_AI_STYLE_REFERENCE_ASSETS} images. We use them only to match visual style (not to copy subjects). Upload or import from Drive here—they’re saved to your library.`}
         />
 
         <div className="flex gap-4">

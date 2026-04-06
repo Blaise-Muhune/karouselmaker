@@ -573,34 +573,28 @@ export async function generateCarousel(formData: FormData): Promise<
     (validated.title?.trim() && validated.title.trim() !== "Generating…")
       ? validated.title.trim()
       : (data.input_value?.trim()?.slice(0, 200) || "Untitled");
-  const carouselUpdate: Parameters<typeof updateCarousel>[2] = {
-    title: resolvedTitle,
-    status: "generated",
-    caption_variants: validated.caption_variants,
-    hashtags: validated.hashtags,
-    generation_options: {
-      use_ai_backgrounds: requestedUseAiBackgrounds,
-      use_stock_photos: effectiveUseStockPhotos,
-      use_ai_generate: useAiGenerate,
-      use_web_search: useWebSearch,
-      ...(carouselFor && { carousel_for: carouselFor }),
-      ...(data.notes?.trim() && { notes: data.notes.trim() }),
-      ...(validated.similar_ideas?.length && {
-        similar_carousel_ideas: validated.similar_ideas,
-      }),
-    },
+
+  /** Merge with options from startCarouselGeneration so we keep template_id, style refs, etc. */
+  const prevGenOpts = (carousel.generation_options ?? {}) as Record<string, unknown>;
+  const finalGenerationOptions: Record<string, unknown> = {
+    ...prevGenOpts,
+    use_ai_backgrounds: requestedUseAiBackgrounds,
+    use_stock_photos: effectiveUseStockPhotos,
+    use_ai_generate: useAiGenerate,
+    use_web_search: useWebSearch,
+    generation_started: false,
+    ...(carouselFor && { carousel_for: carouselFor }),
+    ...(data.notes?.trim() && { notes: data.notes.trim() }),
+    ...(data.template_id && { template_id: data.template_id }),
+    ...(data.number_of_slides != null && { number_of_slides: data.number_of_slides }),
+    ...(data.background_asset_ids != null && { background_asset_ids: data.background_asset_ids }),
+    ...(data.ai_style_reference_asset_ids != null && {
+      ai_style_reference_asset_ids: data.ai_style_reference_asset_ids,
+    }),
+    ...(validated.similar_ideas?.length && {
+      similar_carousel_ideas: validated.similar_ideas,
+    }),
   };
-  try {
-    await updateCarousel(user.id, carousel.id, carouselUpdate);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes("generation_options") || msg.includes("column")) {
-      const { generation_options: _go, ...fallback } = carouselUpdate;
-      await updateCarousel(user.id, carousel.id, fallback);
-    } else {
-      throw err;
-    }
-  }
 
   const hasImageQueriesForDefault = (s: { image_queries?: string[]; unsplash_queries?: string[]; image_query?: string; unsplash_query?: string }) =>
     (s.image_queries?.length ?? s.unsplash_queries?.length ?? 0) > 0 || !!(s.image_query?.trim() || s.unsplash_query?.trim());
@@ -1050,6 +1044,26 @@ export async function generateCarousel(formData: FormData): Promise<
     for (const slide of createdSlides) {
       const result = await setSlideTemplate(slide.id, defaultTemplateId);
       if (!result.ok) LOG("backgrounds", `setSlideTemplate failed for ${slide.id}: ${result.error}`);
+    }
+  }
+
+  /** Only mark generated after slides + backgrounds + template—otherwise polling shows the editor with empty frames. */
+  const carouselFinalUpdate: Parameters<typeof updateCarousel>[2] = {
+    title: resolvedTitle,
+    status: "generated",
+    caption_variants: validated.caption_variants,
+    hashtags: validated.hashtags,
+    generation_options: finalGenerationOptions,
+  };
+  try {
+    await updateCarousel(user.id, carousel.id, carouselFinalUpdate);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("generation_options") || msg.includes("column")) {
+      const { generation_options: _go, ...fallback } = carouselFinalUpdate;
+      await updateCarousel(user.id, carousel.id, fallback);
+    } else {
+      throw err;
     }
   }
 
