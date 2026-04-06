@@ -35,6 +35,25 @@ const textZoneSchema = z.object({
   boxBackgroundColor: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
   /** Opacity of the box fill (0–1). Default 1. Coerce strings from stored JSON. */
   boxBackgroundOpacity: z.coerce.number().min(0).max(1).optional(),
+  /** When true, no fill — only outline on selected sides (like overlay shape outline mode). */
+  boxBackgroundFrameOnly: z.boolean().optional(),
+  /** Outline width in px (0 = no outline in filled mode). Outline-only defaults to 2 in renderer if unset. */
+  boxBackgroundBorderWidth: z.number().int().min(0).max(32).optional(),
+  /** Per-side outline. Omit a key or omit object = that side on (default all on). Explicit false = hide edge. */
+  boxBackgroundBorderSides: z
+    .object({
+      top: z.boolean().optional(),
+      right: z.boolean().optional(),
+      bottom: z.boolean().optional(),
+      left: z.boolean().optional(),
+    })
+    .optional(),
+  /** Outline color (hex). When unset, outline uses backdrop color + backdrop opacity. */
+  boxBackgroundBorderColor: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
+  /** Outline opacity 0–1 when border color is set; default 1. */
+  boxBackgroundBorderOpacity: z.coerce.number().min(0).max(1).optional(),
+  /** Corner radius px for backdrop fill + outline (default 8). */
+  boxBackgroundBorderRadius: z.number().int().min(0).max(64).optional(),
 });
 
 const gradientOverlaySchema = z.object({
@@ -192,6 +211,8 @@ const overlayShapeBoxCommonSchema = z.object({
   strokeWidth: z.number().min(0).max(64).optional(),
   rotation: z.number().min(-180).max(180).optional(),
   opacity: z.number().min(0).max(1).optional(),
+  /** Hollow outline only (no interior fill); stroke defaults if missing. */
+  frameOnly: z.boolean().optional(),
 });
 
 /** Filled/stroked box shapes in 1080×1080 design space (same coordinate system as text zones). */

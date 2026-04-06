@@ -93,7 +93,19 @@ export type NormalizedSlideMeta = {
   body_highlights?: { start: number; end: number; color: string }[];
 };
 
-const NUMERIC_KEYS = ["x", "y", "w", "h", "fontSize", "fontWeight", "lineHeight", "maxLines", "rotation"] as const;
+const NUMERIC_KEYS = [
+  "x",
+  "y",
+  "w",
+  "h",
+  "fontSize",
+  "fontWeight",
+  "lineHeight",
+  "maxLines",
+  "rotation",
+  "boxBackgroundBorderWidth",
+  "boxBackgroundBorderRadius",
+] as const;
 const ALIGN_VALUES = new Set(["left", "center", "right", "justify"]);
 
 /**
@@ -111,7 +123,16 @@ function normalizeZoneOverride(
     if (v === null || v === undefined) continue;
     const n = Number(v);
     if (Number.isNaN(n)) continue;
-    out[key] = key === "lineHeight" ? n : key === "rotation" ? Math.max(-180, Math.min(180, Math.round(n))) : Math.round(n);
+    out[key] =
+      key === "lineHeight"
+        ? n
+        : key === "rotation"
+          ? Math.max(-180, Math.min(180, Math.round(n)))
+          : key === "boxBackgroundBorderWidth"
+            ? Math.min(32, Math.max(0, Math.round(n)))
+            : key === "boxBackgroundBorderRadius"
+              ? Math.min(64, Math.max(0, Math.round(n)))
+              : Math.round(n);
   }
   if (raw.align && ALIGN_VALUES.has(raw.align as string)) out.align = raw.align;
   if (typeof raw.color === "string" && /^#([0-9A-Fa-f]{3}){1,2}$/.test(raw.color)) out.color = raw.color;
@@ -119,9 +140,27 @@ function normalizeZoneOverride(
   if (typeof raw.boxBackgroundColor === "string" && /^#([0-9A-Fa-f]{3}){1,2}$/.test(raw.boxBackgroundColor.trim())) {
     out.boxBackgroundColor = raw.boxBackgroundColor.trim();
   }
+  if (typeof raw.boxBackgroundBorderColor === "string" && /^#([0-9A-Fa-f]{3}){1,2}$/.test(raw.boxBackgroundBorderColor.trim())) {
+    out.boxBackgroundBorderColor = raw.boxBackgroundBorderColor.trim();
+  }
   if (raw.boxBackgroundOpacity != null) {
     const n = Number(raw.boxBackgroundOpacity);
     if (!Number.isNaN(n)) out.boxBackgroundOpacity = Math.min(1, Math.max(0, n));
+  }
+  if (raw.boxBackgroundBorderOpacity != null) {
+    const n = Number(raw.boxBackgroundBorderOpacity);
+    if (!Number.isNaN(n)) out.boxBackgroundBorderOpacity = Math.min(1, Math.max(0, n));
+  }
+  if (raw.boxBackgroundFrameOnly === true) out.boxBackgroundFrameOnly = true;
+  if (raw.boxBackgroundFrameOnly === false) out.boxBackgroundFrameOnly = false;
+  const rawSides = raw.boxBackgroundBorderSides;
+  if (rawSides != null && typeof rawSides === "object" && !Array.isArray(rawSides)) {
+    const b = rawSides as Record<string, unknown>;
+    const sides: { top?: boolean; right?: boolean; bottom?: boolean; left?: boolean } = {};
+    for (const k of ["top", "right", "bottom", "left"] as const) {
+      if (b[k] === true || b[k] === false) sides[k] = b[k];
+    }
+    if (Object.keys(sides).length > 0) out.boxBackgroundBorderSides = sides;
   }
   return Object.keys(out).length > 0 ? out : undefined;
 }

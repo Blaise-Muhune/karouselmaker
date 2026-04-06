@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef } from "react";
 import type { OverlayShape } from "@/lib/server/renderer/templateSchema";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ColorPicker } from "@/components/ui/color-picker";
 import { StepperWithLongPress } from "@/components/ui/stepper-with-long-press";
@@ -15,7 +14,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Trash2Icon } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { PlusIcon, Trash2Icon } from "lucide-react";
 import { createDefaultOverlayShape } from "@/lib/editor/overlayShapeDefaults";
 
 const HEX = /^#([0-9A-Fa-f]{3}){1,2}$/;
@@ -81,6 +86,21 @@ export function TemplateOverlayShapesEditor({
     [list, onChange]
   );
 
+  /** Filled interior: drop `frameOnly` so renderer uses fill color (not outline-only mode). */
+  const clearFrameOnlyAt = useCallback(
+    (index: number) => {
+      onChange(
+        list.map((shape, j) => {
+          if (j !== index) return shape;
+          if (!("w" in shape)) return shape;
+          const { frameOnly: _omit, ...rest } = shape as OverlayShape & { frameOnly?: boolean };
+          return rest as OverlayShape;
+        })
+      );
+    },
+    [list, onChange]
+  );
+
   const removeAt = useCallback(
     (index: number) => {
       onChange(list.filter((_, i) => i !== index));
@@ -103,37 +123,39 @@ export function TemplateOverlayShapesEditor({
   const inner = (
     <>
       {!embedded && (
-        <div>
-          <h3 className="text-xs font-semibold text-foreground mb-0.5">Overlay shapes</h3>
-          <p className="text-muted-foreground text-[11px] leading-relaxed">
-            Lines and shapes in design space (1080×1080), saved with this template. Shown in preview, export, and carousel thumbnails.
-          </p>
-        </div>
+        <h3 className="text-xs font-semibold text-foreground mb-0.5">Overlay shapes</h3>
       )}
 
       <div className="space-y-1.5">
-        {embedded && <Label className="text-xs text-muted-foreground">Add shape</Label>}
-        <Select
-          key={list.length}
-          onValueChange={(v) => onChange([...list, createDefaultOverlayShape(v as OverlayShape["type"])])}
-        >
-          <SelectTrigger
-            className={
-              embedded
-                ? "h-8 text-xs w-full rounded-md border-input/80 bg-background"
-                : "h-9 rounded-md border-input/80 bg-background text-sm w-full max-w-xs"
-            }
-          >
-            <SelectValue placeholder="Choose type…" />
-          </SelectTrigger>
-          <SelectContent>
-            <ShapeTypeSelectItems />
-          </SelectContent>
-        </Select>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="default"
+              className={cn(
+                "h-9 gap-2 text-sm font-semibold shadow-sm",
+                embedded ? "w-full" : "w-full max-w-xs"
+              )}
+            >
+              <PlusIcon className="size-4 shrink-0" aria-hidden />
+              Add shape
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="min-w-48 max-h-[min(70vh,360px)] overflow-y-auto">
+            {SHAPE_TYPES.map(({ value, label }) => (
+              <DropdownMenuItem
+                key={value}
+                onClick={() => onChange([...list, createDefaultOverlayShape(value)])}
+              >
+                {label}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {list.length === 0 ? (
-        <p className="text-muted-foreground text-[11px] leading-relaxed">No shapes yet. Add one above.</p>
+        <p className="text-muted-foreground text-[11px]">No shapes yet.</p>
       ) : (
         <ul className="space-y-3">
           {list.map((s, i) => {
@@ -180,10 +202,9 @@ export function TemplateOverlayShapesEditor({
 
               {s.type === "line" ? (
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                  <Num label="x1" value={s.x} onChange={(v) => updateAt(i, { x: v })} />
-                  <Num label="y1" value={s.y} onChange={(v) => updateAt(i, { y: v })} />
-                  <Num label="x2" value={s.x2} onChange={(v) => updateAt(i, { x2: v })} />
-                  <Num label="y2" value={s.y2} onChange={(v) => updateAt(i, { y2: v })} />
+                  <p className="text-muted-foreground text-[11px] leading-snug col-span-2 sm:col-span-4">
+                    Drag on the slide to move or stretch this line.
+                  </p>
                   <div className="col-span-2 space-y-1">
                     <Label className="text-xs">Stroke</Label>
                     <ColorPicker
@@ -198,10 +219,9 @@ export function TemplateOverlayShapesEditor({
                 </div>
               ) : s.type === "arrow" ? (
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                  <Num label="x1" value={s.x} onChange={(v) => updateAt(i, { x: v })} />
-                  <Num label="y1" value={s.y} onChange={(v) => updateAt(i, { y: v })} />
-                  <Num label="x2" value={s.x2} onChange={(v) => updateAt(i, { x2: v })} />
-                  <Num label="y2" value={s.y2} onChange={(v) => updateAt(i, { y2: v })} />
+                  <p className="text-muted-foreground text-[11px] leading-snug col-span-2 sm:col-span-4">
+                    Drag on the slide to move the arrow or resize the shaft.
+                  </p>
                   <div className="col-span-2 space-y-1">
                     <Label className="text-xs">Stroke</Label>
                     <ColorPicker
@@ -218,12 +238,9 @@ export function TemplateOverlayShapesEditor({
                 </div>
               ) : s.type === "curved_arrow" ? (
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                  <Num label="x1" value={s.x} onChange={(v) => updateAt(i, { x: v })} />
-                  <Num label="y1" value={s.y} onChange={(v) => updateAt(i, { y: v })} />
-                  <Num label="x2" value={s.x2} onChange={(v) => updateAt(i, { x2: v })} />
-                  <Num label="y2" value={s.y2} onChange={(v) => updateAt(i, { y2: v })} />
-                  <Num label="cx" value={s.cx} onChange={(v) => updateAt(i, { cx: v })} />
-                  <Num label="cy" value={s.cy} onChange={(v) => updateAt(i, { cy: v })} />
+                  <p className="text-muted-foreground text-[11px] leading-snug col-span-2 sm:col-span-4">
+                    Drag endpoints and the curve handle on the slide to shape this arrow.
+                  </p>
                   <div className="col-span-2 space-y-1">
                     <Label className="text-xs">Stroke</Label>
                     <ColorPicker
@@ -240,12 +257,56 @@ export function TemplateOverlayShapesEditor({
                 </div>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                  <Num label="x" value={s.x} onChange={(v) => updateAt(i, { x: v })} />
-                  <Num label="y" value={s.y} onChange={(v) => updateAt(i, { y: v })} />
-                  <Num label="w" value={s.w} onChange={(v) => updateAt(i, { w: Math.max(1, v) })} />
-                  <Num label="h" value={s.h} onChange={(v) => updateAt(i, { h: Math.max(1, v) })} />
-                  <div className="col-span-2 space-y-1">
-                    <Label className="text-xs">Fill</Label>
+                  <Step label="x" value={s.x} min={0} max={1080} step={4} onChange={(v) => updateAt(i, { x: v })} />
+                  <Step label="y" value={s.y} min={0} max={1080} step={4} onChange={(v) => updateAt(i, { y: v })} />
+                  <Step label="w" value={s.w} min={8} max={2160} step={4} onChange={(v) => updateAt(i, { w: v })} />
+                  <Step label="h" value={s.h} min={8} max={2160} step={4} onChange={(v) => updateAt(i, { h: v })} />
+                  <div className="col-span-2 sm:col-span-4 space-y-1">
+                    <Label className="text-xs">Interior</Label>
+                    <div className="flex rounded-md border border-border/60 overflow-hidden w-fit">
+                      <Button
+                        type="button"
+                        variant={s.frameOnly !== true ? "secondary" : "ghost"}
+                        size="sm"
+                        className="h-8 rounded-none px-3 text-xs"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          clearFrameOnlyAt(i);
+                        }}
+                      >
+                        Filled
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={s.frameOnly === true ? "secondary" : "ghost"}
+                        size="sm"
+                        className="h-8 rounded-none px-3 text-xs"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          updateAt(i, {
+                            frameOnly: true,
+                            stroke: s.stroke ?? "#ffffff",
+                            strokeWidth:
+                              s.strokeWidth != null && s.strokeWidth > 0 ? s.strokeWidth : 4,
+                          });
+                        }}
+                      >
+                        Outline only
+                      </Button>
+                    </div>
+                    <p className="text-muted-foreground text-[11px] leading-snug">
+                      Filled uses the fill color (optional stroke). Outline only draws the border, no interior.
+                    </p>
+                  </div>
+                  <div
+                    className={cn(
+                      "col-span-2 space-y-1",
+                      s.frameOnly === true && "pointer-events-none opacity-45"
+                    )}
+                  >
+                    <Label className="text-xs text-muted-foreground">Fill color</Label>
                     <ColorPicker
                       value={s.fill ?? ""}
                       onChange={(c) => updateAt(i, { fill: HEX.test(c.trim()) ? c.trim() : undefined })}
@@ -254,7 +315,7 @@ export function TemplateOverlayShapesEditor({
                     />
                   </div>
                   <div className="col-span-2 space-y-1">
-                    <Label className="text-xs">Stroke (optional)</Label>
+                    <Label className="text-xs">{s.frameOnly === true ? "Outline" : "Stroke (optional)"}</Label>
                     <ColorPicker
                       value={s.stroke ?? ""}
                       onChange={(c) => updateAt(i, { stroke: HEX.test(c.trim()) ? c.trim() : undefined })}
@@ -262,7 +323,19 @@ export function TemplateOverlayShapesEditor({
                       compact
                     />
                   </div>
-                  <Step label="Stroke px" value={s.strokeWidth ?? 0} min={0} max={32} onChange={(v) => updateAt(i, { strokeWidth: v })} />
+                  <Step
+                    label={s.frameOnly === true ? "Outline px" : "Stroke px"}
+                    value={
+                      s.frameOnly === true
+                        ? s.strokeWidth != null && s.strokeWidth > 0
+                          ? s.strokeWidth
+                          : 4
+                        : s.strokeWidth ?? 0
+                    }
+                    min={s.frameOnly === true ? 1 : 0}
+                    max={32}
+                    onChange={(v) => updateAt(i, { strokeWidth: v })}
+                  />
                   <Step label="Opacity %" value={Math.round((s.opacity ?? 1) * 100)} min={0} max={100} onChange={(v) => updateAt(i, { opacity: v / 100 })} />
                   {s.type === "rounded_rect" && (
                     <Step label="Radius" value={s.borderRadius ?? 12} min={0} max={200} onChange={(v) => updateAt(i, { borderRadius: v })} />
@@ -318,37 +391,25 @@ export function TemplateOverlayShapesEditor({
   return <div className="rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3">{inner}</div>;
 }
 
-function Num({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
-  return (
-    <div className="space-y-1">
-      <Label className="text-xs text-muted-foreground">{label}</Label>
-      <Input
-        type="number"
-        className="h-8 text-xs px-2"
-        value={Number.isFinite(value) ? Math.round(value) : 0}
-        onChange={(e) => onChange(Number(e.target.value) || 0)}
-      />
-    </div>
-  );
-}
-
 function Step({
   label,
   value,
   min,
   max,
+  step = 1,
   onChange,
 }: {
   label: string;
   value: number;
   min: number;
   max: number;
+  step?: number;
   onChange: (v: number) => void;
 }) {
   return (
-    <div className="space-y-1">
+    <div className="min-w-0 space-y-1">
       <Label className="text-xs text-muted-foreground">{label}</Label>
-      <StepperWithLongPress value={value} min={min} max={max} step={1} onChange={onChange} className="w-full max-w-[100px]" label={label} />
+      <StepperWithLongPress value={value} min={min} max={max} step={step} onChange={onChange} className="w-full min-w-0" label={label} />
     </div>
   );
 }

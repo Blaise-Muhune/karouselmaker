@@ -54,10 +54,21 @@ export async function regenerateCarousel(
   formData.set("input_type", carousel.input_type);
   formData.set("input_value", carousel.input_value);
   formData.set("use_ai_backgrounds", "true");
-  const opts = carousel.generation_options as { use_stock_photos?: boolean; use_unsplash_only?: boolean; use_pixabay_only?: boolean; use_pexels_only?: boolean; use_ai_generate?: boolean; carousel_for?: "instagram" | "linkedin"; notes?: string } | undefined;
+  const opts = carousel.generation_options as {
+    use_stock_photos?: boolean;
+    use_unsplash_only?: boolean;
+    use_pixabay_only?: boolean;
+    use_pexels_only?: boolean;
+    use_ai_generate?: boolean;
+    carousel_for?: "instagram" | "linkedin";
+    notes?: string;
+    ai_style_reference_asset_ids?: string[];
+  } | undefined;
   if (opts?.use_stock_photos || opts?.use_unsplash_only || opts?.use_pixabay_only || opts?.use_pexels_only) formData.set("use_stock_photos", "true");
   if (opts?.use_ai_generate) formData.set("use_ai_generate", "true");
   if (opts?.carousel_for === "linkedin" || opts?.carousel_for === "instagram") formData.set("carousel_for", opts.carousel_for);
   if (opts?.notes && typeof opts.notes === "string" && opts.notes.trim()) formData.set("notes", opts.notes.trim());
+  if (opts?.ai_style_reference_asset_ids?.length)
+    formData.set("ai_style_reference_asset_ids", JSON.stringify(opts.ai_style_reference_asset_ids));
   return startCarouselGeneration(formData);
 }

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { MinusIcon, PlusIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 /** +/- stepper with long-press: hold to repeat, interval speeds up over time. Same behavior as slide editor. */
 export function StepperWithLongPress({
@@ -93,12 +94,18 @@ export function StepperWithLongPress({
   }, [clearTimers]);
 
   return (
-    <div className={`flex items-center gap-0.5 rounded-md border border-input/80 bg-background ${className} ${disabled ? "opacity-50 pointer-events-none" : ""}`}>
+    <div
+      className={cn(
+        "flex w-full min-w-0 items-stretch overflow-hidden rounded-md border border-input/80 bg-background divide-x divide-input/80",
+        disabled && "pointer-events-none opacity-50",
+        className
+      )}
+    >
       <Button
         type="button"
         variant="ghost"
         size="icon-sm"
-        className="h-7 w-7 shrink-0 rounded-r-none"
+        className="h-7 w-9 shrink-0 flex-none rounded-none border-0 px-0"
         onPointerDown={handlePointerDown(-1)}
         onPointerUp={handlePointerUpOrLeave}
         onPointerLeave={handlePointerUpOrLeave}
@@ -106,16 +113,22 @@ export function StepperWithLongPress({
         aria-label={`Decrease ${label}`}
         disabled={disabled}
       >
-        <MinusIcon className="size-3" />
+        <MinusIcon className="size-3 shrink-0" />
       </Button>
-      <span className={`flex-1 text-center text-xs tabular-nums ${valueClassName}`} aria-hidden>
+      <span
+        className={cn(
+          "flex min-h-7 min-w-0 flex-1 items-center justify-center px-1 text-center text-xs font-medium tabular-nums leading-none",
+          valueClassName
+        )}
+        aria-hidden
+      >
         {formatDisplay(value)}
       </span>
       <Button
         type="button"
         variant="ghost"
         size="icon-sm"
-        className="h-7 w-7 shrink-0 rounded-l-none"
+        className="h-7 w-9 shrink-0 flex-none rounded-none border-0 px-0"
         onPointerDown={handlePointerDown(1)}
         onPointerUp={handlePointerUpOrLeave}
         onPointerLeave={handlePointerUpOrLeave}
@@ -123,7 +136,7 @@ export function StepperWithLongPress({
         aria-label={`Increase ${label}`}
         disabled={disabled}
       >
-        <PlusIcon className="size-3" />
+        <PlusIcon className="size-3 shrink-0" />
       </Button>
     </div>
   );

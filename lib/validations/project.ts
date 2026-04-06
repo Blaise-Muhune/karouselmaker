@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PROJECT_RULES_MAX_CHARS } from "@/lib/constants";
 
 const tonePresetEnum = z.enum([
   "neutral",
@@ -9,7 +10,7 @@ const tonePresetEnum = z.enum([
 ]);
 
 export const projectRulesSchema = z.object({
-  rules: z.string().optional().default(""),
+  rules: z.string().max(PROJECT_RULES_MAX_CHARS).optional().default(""),
 });
 
 export const slideStructureSchema = z.object({

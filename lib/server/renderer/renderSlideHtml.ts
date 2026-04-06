@@ -511,7 +511,16 @@ export function renderSlideHtml(
             .join("");
           const justifyCss = zoneAlign === "justify" ? "text-align-last:justify;text-justify:inter-word;" : "";
           const boxChrome = zoneBoxChromeInlineCss(
-            block.zone as { boxBackgroundColor?: string; boxBackgroundOpacity?: number }
+            block.zone as {
+              boxBackgroundColor?: string;
+              boxBackgroundOpacity?: number;
+              boxBackgroundFrameOnly?: boolean;
+              boxBackgroundBorderWidth?: number;
+              boxBackgroundBorderSides?: { top?: boolean; right?: boolean; bottom?: boolean; left?: boolean };
+              boxBackgroundBorderColor?: string;
+              boxBackgroundBorderOpacity?: number;
+              boxBackgroundBorderRadius?: number;
+            }
           );
           return `<div class="text-block" style="left:${block.zone.x}px;top:${block.zone.y}px;width:${block.zone.w}px;height:${block.zone.h}px;overflow:visible;font-size:${fontSize}px;font-weight:${block.zone.fontWeight};line-height:${lineHeight};text-align:${zoneAlign};${justifyCss}color:${escapeHtml(zoneColor)};font-family:${fontStack};z-index:5;${transformCss}${boxChrome}">${linesHtml}</div>`;
         })
@@ -960,6 +969,8 @@ export function renderSlideHtml(
     return `<div style="position:absolute;opacity:0.7;font-size:${wmFontSize}px;font-weight:500;z-index:10;color:${escapeHtml(wm.color ?? textColor)};${posStyle}">${wm.logoUrl ? `<img src="${escapeHtml(wm.logoUrl)}" alt="" style="${logoImgStyle}" />` : escapeHtml(wm.text)}</div>`;
   })() : ""}
   ${!noTextOrChrome && showMadeWithOverride !== false ? (() => {
+    const mwPlain = model.chrome.madeWithText?.trim() ?? "";
+    if (!mwPlain) return "";
     const mwY = model.chrome.madeWithY != null ? (model.chrome.madeWithY * chromeScale) : null;
     const mwBottom = model.chrome.madeWithY == null ? ((model.chrome.madeWithBottom ?? 16) * chromeScale) : null;
     const mwX = model.chrome.madeWithX != null ? (model.chrome.madeWithX * chromeScale) : null;
@@ -968,7 +979,7 @@ export function renderSlideHtml(
     const mwFs = (model.chrome.madeWithFontSize ?? 30) * chromeScale;
     const mwMaxW = 1032 * chromeScale;
     const mwColor = (model.chrome as { madeWithColor?: string }).madeWithColor ?? textColor;
-    return `<div style="position:absolute;${leftCss};${topBottomCss};max-width:${mwMaxW}px;font-size:${mwFs}px;font-weight:500;letter-spacing:0.02em;opacity:0.65;z-index:10;color:${escapeHtml(mwColor)};text-shadow:0 1px 2px rgba(0,0,0,0.3);white-space:nowrap">${escapeHtml(model.chrome.madeWithText ?? "Follow us")}</div>`;
+    return `<div style="position:absolute;${leftCss};${topBottomCss};max-width:${mwMaxW}px;font-size:${mwFs}px;font-weight:500;letter-spacing:0.02em;opacity:0.65;z-index:10;color:${escapeHtml(mwColor)};text-shadow:0 1px 2px rgba(0,0,0,0.3);white-space:nowrap">${escapeHtml(mwPlain)}</div>`;
   })() : ""}
   </div>
 </body>

@@ -9,6 +9,7 @@ import {
   starPointsLocal,
   trianglePointsLocal,
 } from "@/lib/renderer/overlayShapeGeometry";
+import { resolveOverlayBoxPaint } from "@/lib/renderer/overlayShapeBoxPaint";
 
 export function OverlayShapesLayer({
   shapes,
@@ -97,9 +98,7 @@ function OverlayShapeSvgEl({ shape: s }: { shape: OverlayShape }) {
   const h = s.h;
   const rot = s.rotation ?? 0;
   const op = s.opacity ?? 1;
-  const fill = s.fill ?? "transparent";
-  const sw = s.strokeWidth ?? 0;
-  const strokeCol = s.stroke && sw > 0 ? s.stroke : "none";
+  const { fillAttr: fill, strokeAttr: strokeCol, strokeWidth: sw } = resolveOverlayBoxPaint(s);
 
   const gTransform =
     rot !== 0
@@ -109,7 +108,7 @@ function OverlayShapeSvgEl({ shape: s }: { shape: OverlayShape }) {
   if (s.type === "rect") {
     return (
       <g transform={gTransform} opacity={op}>
-        <rect x={0} y={0} width={w} height={h} fill={fill} stroke={strokeCol} strokeWidth={strokeCol === "none" ? 0 : sw} rx={0} />
+        <rect x={0} y={0} width={w} height={h} fill={fill} stroke={strokeCol} strokeWidth={sw} rx={0} />
       </g>
     );
   }
@@ -118,7 +117,7 @@ function OverlayShapeSvgEl({ shape: s }: { shape: OverlayShape }) {
     const rx = Math.round(s.borderRadius ?? 12);
     return (
       <g transform={gTransform} opacity={op}>
-        <rect x={0} y={0} width={w} height={h} fill={fill} stroke={strokeCol} strokeWidth={strokeCol === "none" ? 0 : sw} rx={rx} />
+        <rect x={0} y={0} width={w} height={h} fill={fill} stroke={strokeCol} strokeWidth={sw} rx={rx} />
       </g>
     );
   }
@@ -133,7 +132,7 @@ function OverlayShapeSvgEl({ shape: s }: { shape: OverlayShape }) {
           ry={h / 2}
           fill={fill}
           stroke={strokeCol}
-          strokeWidth={strokeCol === "none" ? 0 : sw}
+          strokeWidth={sw}
         />
       </g>
     );
@@ -143,7 +142,7 @@ function OverlayShapeSvgEl({ shape: s }: { shape: OverlayShape }) {
     const pts = trianglePointsLocal(w, h, s.trianglePoint ?? "up");
     return (
       <g transform={gTransform} opacity={op}>
-        <polygon points={pts} fill={fill} stroke={strokeCol} strokeWidth={strokeCol === "none" ? 0 : sw} strokeLinejoin="round" />
+        <polygon points={pts} fill={fill} stroke={strokeCol} strokeWidth={sw} strokeLinejoin="round" />
       </g>
     );
   }
@@ -153,7 +152,7 @@ function OverlayShapeSvgEl({ shape: s }: { shape: OverlayShape }) {
     const pts = starPointsLocal(w, h, n);
     return (
       <g transform={gTransform} opacity={op}>
-        <polygon points={pts} fill={fill} stroke={strokeCol} strokeWidth={strokeCol === "none" ? 0 : sw} strokeLinejoin="round" />
+        <polygon points={pts} fill={fill} stroke={strokeCol} strokeWidth={sw} strokeLinejoin="round" />
       </g>
     );
   }
@@ -162,7 +161,7 @@ function OverlayShapeSvgEl({ shape: s }: { shape: OverlayShape }) {
     const pts = regularPolygonPointsLocal(w, h, 5);
     return (
       <g transform={gTransform} opacity={op}>
-        <polygon points={pts} fill={fill} stroke={strokeCol} strokeWidth={strokeCol === "none" ? 0 : sw} strokeLinejoin="round" />
+        <polygon points={pts} fill={fill} stroke={strokeCol} strokeWidth={sw} strokeLinejoin="round" />
       </g>
     );
   }
@@ -171,7 +170,7 @@ function OverlayShapeSvgEl({ shape: s }: { shape: OverlayShape }) {
     const pts = regularPolygonPointsLocal(w, h, 6);
     return (
       <g transform={gTransform} opacity={op}>
-        <polygon points={pts} fill={fill} stroke={strokeCol} strokeWidth={strokeCol === "none" ? 0 : sw} strokeLinejoin="round" />
+        <polygon points={pts} fill={fill} stroke={strokeCol} strokeWidth={sw} strokeLinejoin="round" />
       </g>
     );
   }

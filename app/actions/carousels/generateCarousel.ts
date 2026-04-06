@@ -27,6 +27,10 @@ import { searchUnsplashPhotosMultiple, trackUnsplashDownload } from "@/lib/serve
 import { searchPixabayPhotos } from "@/lib/server/pixabay";
 import { searchPexelsPhotos } from "@/lib/server/pexels";
 import { generateImageFromPrompt, parseAspectRatioFromNotes } from "@/lib/server/openaiImageGenerate";
+import {
+  mergeStyleReferenceAssetIds,
+  summarizeStyleReferenceImages,
+} from "@/lib/server/ai/summarizeStyleReferenceImages";
 import { preferRecognizablePublicFiguresForImages } from "@/lib/server/ai/topicFictionHeuristic";
 import { extractInputTextFromDocument } from "@/lib/server/documents/extractInputText";
 import { uploadGeneratedImage } from "@/lib/server/storage/uploadGeneratedImage";
@@ -254,6 +258,16 @@ export async function generateCarousel(formData: FormData): Promise<
     })(),
     background_asset_ids: (() => {
       const rawIds = formData.get("background_asset_ids") as string | null;
+      if (!rawIds) return undefined;
+      try {
+        const arr = JSON.parse(rawIds) as unknown;
+        return Array.isArray(arr) ? arr : undefined;
+      } catch {
+        return undefined;
+      }
+    })(),
+    ai_style_reference_asset_ids: (() => {
+      const rawIds = formData.get("ai_style_reference_asset_ids") as string | null;
       if (!rawIds) return undefined;
       try {
         const arr = JSON.parse(rawIds) as unknown;
@@ -721,6 +735,16 @@ export async function generateCarousel(formData: FormData): Promise<
       validated.slides.map((s) => [s.slide_index, s])
     );
 
+    const projectStyleRefIds =
+      (project as { ai_style_reference_asset_ids?: string[] | null }).ai_style_reference_asset_ids ?? [];
+    const carouselStyleRefIds = data.ai_style_reference_asset_ids ?? [];
+    const mergedStyleRefIds = mergeStyleReferenceAssetIds(carouselStyleRefIds, projectStyleRefIds);
+    let referenceStyleSummary: string | undefined;
+    if (useAiGenerate && mergedStyleRefIds.length > 0) {
+      referenceStyleSummary = await summarizeStyleReferenceImages(user.id, mergedStyleRefIds);
+      if (referenceStyleSummary) LOG("backgrounds", `AI style refs: summarized ${mergedStyleRefIds.length} image(s)`);
+    }
+
     if (useAiGenerate) {
       LOG("backgrounds", `AI generate: ${aiSlideByIndex.size} slides (concurrency ${AI_IMAGE_CONCURRENCY})`);
       const aiGenJobs: { slide: (typeof createdSlides)[number]; aiSlide: (typeof validated.slides)[number] }[] = [];
@@ -754,6 +778,8 @@ export async function generateCarousel(formData: FormData): Promise<
           location: slideContext?.location?.trim() || undefined,
           isHookSlide: isHookSlide || undefined,
           userNotes: data.notes?.trim() || undefined,
+          projectImageStyleNotes: projectRules?.trim() || undefined,
+          referenceStyleSummary,
           aspectRatio: imageAspectRatio,
           preferRecognizablePublicFigures: preferPublicFigures || undefined,
         };
@@ -786,6 +812,8 @@ export async function generateCarousel(formData: FormData): Promise<
               slideHeadline: aiSlide?.headline?.trim(),
               slideBody: aiSlide?.body?.trim(),
               userNotes: data.notes?.trim() || undefined,
+              projectImageStyleNotes: projectRules?.trim() || undefined,
+              referenceStyleSummary,
               year: slideContext?.year?.trim() || undefined,
               location: slideContext?.location?.trim() || undefined,
               isHookSlide: isHookSlide || undefined,
@@ -1086,6 +1114,16 @@ export async function startCarouselGeneration(formData: FormData): Promise<
         return undefined;
       }
     })(),
+    ai_style_reference_asset_ids: (() => {
+      const rawIds = formData.get("ai_style_reference_asset_ids") as string | null;
+      if (!rawIds) return undefined;
+      try {
+        const arr = JSON.parse(rawIds) as unknown;
+        return Array.isArray(arr) ? arr : undefined;
+      } catch {
+        return undefined;
+      }
+    })(),
     use_ai_backgrounds: formData.get("use_ai_backgrounds") ?? undefined,
     use_stock_photos: formData.get("use_stock_photos") ?? undefined,
     use_ai_generate: formData.get("use_ai_generate") ?? undefined,
@@ -1168,6 +1206,7 @@ export async function startCarouselGeneration(formData: FormData): Promise<
     template_id: data.template_id,
     viral_shorts_style: !!parsed.data.viral_shorts_style && userIsAdmin,
     background_asset_ids: data.background_asset_ids,
+    ai_style_reference_asset_ids: data.ai_style_reference_asset_ids ?? [],
     ...(parsed.data.carousel_for && { carousel_for: parsed.data.carousel_for }),
   };
 

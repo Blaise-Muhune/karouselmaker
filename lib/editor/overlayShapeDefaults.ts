@@ -8,7 +8,17 @@ export function createDefaultOverlayShape(kind: OverlayShape["type"]): OverlaySh
       : `s-${Date.now()}`;
   switch (kind) {
     case "line":
-      return { id, type: "line", x: 120, y: 540, x2: 960, y2: 540, stroke: "#ffffff", strokeWidth: 6, opacity: 0.9 };
+      return {
+        id,
+        type: "line",
+        x: 120,
+        y: 540,
+        x2: 960,
+        y2: 540,
+        stroke: "#ffffff",
+        strokeWidth: 3,
+        opacity: 1,
+      };
     case "arrow":
       return {
         id,
@@ -18,8 +28,8 @@ export function createDefaultOverlayShape(kind: OverlayShape["type"]): OverlaySh
         x2: 880,
         y2: 520,
         stroke: "#ffffff",
-        strokeWidth: 6,
-        opacity: 0.95,
+        strokeWidth: 3,
+        opacity: 1,
         headLength: 36,
         headWidth: 28,
       };
@@ -34,8 +44,8 @@ export function createDefaultOverlayShape(kind: OverlayShape["type"]): OverlaySh
         cx: 540,
         cy: 420,
         stroke: "#ffffff",
-        strokeWidth: 6,
-        opacity: 0.95,
+        strokeWidth: 3,
+        opacity: 1,
         headLength: 36,
         headWidth: 28,
       };
@@ -48,7 +58,7 @@ export function createDefaultOverlayShape(kind: OverlayShape["type"]): OverlaySh
         w: 300,
         h: 260,
         fill: "#ffffff",
-        opacity: 0.15,
+        opacity: 1,
         trianglePoint: "up",
       };
     case "star":
@@ -60,7 +70,7 @@ export function createDefaultOverlayShape(kind: OverlayShape["type"]): OverlaySh
         w: 400,
         h: 400,
         fill: "#fbbf24",
-        opacity: 0.35,
+        opacity: 1,
         starPoints: 5,
       };
     case "pentagon":
@@ -72,7 +82,7 @@ export function createDefaultOverlayShape(kind: OverlayShape["type"]): OverlaySh
         w: 400,
         h: 400,
         fill: "#a78bfa",
-        opacity: 0.2,
+        opacity: 1,
       };
     case "hexagon":
       return {
@@ -83,25 +93,34 @@ export function createDefaultOverlayShape(kind: OverlayShape["type"]): OverlaySh
         w: 400,
         h: 400,
         fill: "#34d399",
-        opacity: 0.18,
+        opacity: 1,
       };
     case "rounded_rect":
       return {
         id,
         type: "rounded_rect",
-        x: 80,
-        y: 400,
-        w: 920,
-        h: 12,
+        x: 240,
+        y: 340,
+        w: 600,
+        h: 400,
         fill: "#ffffff",
-        opacity: 0.35,
-        borderRadius: 6,
+        opacity: 1,
+        borderRadius: 24,
       };
     case "circle":
-      return { id, type: "circle", x: 400, y: 200, w: 280, h: 280, fill: "#ffffff", opacity: 0.12 };
+      return { id, type: "circle", x: 400, y: 200, w: 280, h: 280, fill: "#ffffff", opacity: 1 };
     case "ellipse":
-      return { id, type: "ellipse", x: 140, y: 120, w: 800, h: 200, fill: "#ffffff", opacity: 0.08 };
+      return { id, type: "ellipse", x: 140, y: 120, w: 800, h: 200, fill: "#ffffff", opacity: 1 };
     default:
-      return { id, type: "rect", x: 80, y: 380, w: 920, h: 8, fill: "#ffffff", opacity: 0.4 };
+      return {
+        id,
+        type: "rect",
+        x: 240,
+        y: 340,
+        w: 600,
+        h: 400,
+        fill: "#ffffff",
+        opacity: 1,
+      };
   }
 }

@@ -5,12 +5,26 @@ export const generateCarouselInputSchema = z.object({
   /** When set, regenerate in place instead of creating a new carousel. */
   carousel_id: z.string().uuid().optional(),
   input_type: z.enum(["topic", "url", "text", "document"]),
-  input_value: z.string().min(1, "Input is required").max(10000),
+  input_value: z.string().min(1, "Input is required").max(20000),
   title: z.string().max(200).optional(),
   /** Optional. If set, AI generates exactly this many slides. If omitted, AI decides the best number. */
   number_of_slides: z.coerce.number().int().min(3).max(12).optional(),
   /** Optional asset IDs to use as slide backgrounds (round-robin). Max 30 per carousel (one per slide). */
   background_asset_ids: z.array(z.string().uuid()).max(30).optional(),
+  /** Optional library assets to steer AI-generated image style for this run (max 5; merged with project refs). */
+  ai_style_reference_asset_ids: z
+    .array(z.string())
+    .max(5)
+    .optional()
+    .transform((arr) => {
+      if (!arr?.length) return undefined;
+      const out: string[] = [];
+      for (const id of arr) {
+        if (z.string().uuid().safeParse(id).success) out.push(id);
+        if (out.length >= 5) break;
+      }
+      return out.length ? out : undefined;
+    }),
   /** When true, AI suggests Unsplash search queries per slide and we fetch those images as backgrounds. */
   use_ai_backgrounds: z
     .string()
@@ -32,7 +46,7 @@ export const generateCarouselInputSchema = z.object({
     .optional()
     .transform((v) => v === "true" || v === "1"),
   /** Optional notes or context for the AI before generating (e.g. "focus on beginners", "avoid jargon"). */
-  notes: z.string().max(2000).optional(),
+  notes: z.string().max(8000).optional(),
   /** Optional template ID to apply to all slides. If omitted, app default template is used. */
   template_id: z.string().uuid().optional(),
   /** When true, generate in "Viral Shorts" style: curiosity-gap/contrarian hook, story build-up, one natural mid-carousel engagement slide, payoff, follow CTA. */

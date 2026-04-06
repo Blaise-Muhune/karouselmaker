@@ -40,6 +40,8 @@ export interface Project {
   post_to_platforms?: PostToPlatforms | null;
   /** Saved topic idea queue + daily refresh usage for the new-carousel flow. */
   topic_suggestions_cache?: Json;
+  /** Library asset IDs (max 10) used to steer AI-generated slide image style for this project. */
+  ai_style_reference_asset_ids?: string[];
   created_at: string;
   updated_at: string;
 }
@@ -85,6 +87,8 @@ export interface Carousel {
     carousel_for?: "instagram" | "linkedin";
     /** AI-suggested follow-up carousel topics (from generation). */
     similar_carousel_ideas?: string[];
+    /** Library asset IDs (max 5) for this run—merged with project refs when generating AI images. */
+    ai_style_reference_asset_ids?: string[];
   };
   created_at: string;
   updated_at: string;

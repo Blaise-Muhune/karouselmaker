@@ -9,6 +9,8 @@ import type { OverlayShape, TemplateConfig } from "@/lib/server/renderer/templat
 import { DEFAULT_TEMPLATE_CONFIG } from "@/lib/templateDefaults";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
 import { PREVIEW_FONTS } from "@/lib/constants/previewFonts";
+import { captureImportTemplatePreviewPng } from "@/lib/server/templates/importPreviewScreenshot";
+import { collectImportLayoutIssues, importRefinementMode } from "@/lib/server/templates/importLayoutHeuristics";
 
 /** Single source of truth: all fonts the app supports. Import prompt uses this for accuracy. */
 const ALLOWED_FONT_LIST = PREVIEW_FONTS.map((f) => f.id).join(", ");
@@ -42,8 +44,7 @@ function ensureTextZoneColors(config: TemplateConfig): TemplateConfig {
 }
 
 /**
- * Normalization fills omitted chrome.showSwipe from app defaults (true). For image import, if the model never
- * mentions swipe—or explicitly disables it—turn swipe chrome off so static designs don't get chevrons.
+ * When the model explicitly disables swipe in chrome or meta, sync both so preview matches intent.
  */
 function applyImageImportSwipeDefaults(raw: Record<string, unknown>, config: TemplateConfig): TemplateConfig {
   const chromeRaw = raw.chrome;
@@ -62,15 +63,6 @@ function applyImageImportSwipeDefaults(raw: Record<string, unknown>, config: Tem
     config.defaults?.meta != null && typeof config.defaults.meta === "object" && !Array.isArray(config.defaults.meta)
       ? { ...(config.defaults.meta as Record<string, unknown>) }
       : {};
-
-  if (!hasChromeSwipeKey && !hasMetaSwipeKey) {
-    baseMeta.show_swipe = false;
-    return {
-      ...config,
-      chrome: { ...config.chrome, showSwipe: false },
-      defaults: { ...config.defaults, meta: baseMeta },
-    };
-  }
 
   if (hasMetaSwipeKey && metaObj!.show_swipe === false) {
     baseMeta.show_swipe = false;
@@ -91,6 +83,31 @@ function applyImageImportSwipeDefaults(raw: Record<string, unknown>, config: Tem
   }
 
   return config;
+}
+
+/**
+ * Carousel slides often show a single @handle as "made with" text, not the app logo watermark.
+ * If we keep watermark.enabled + project username, the preview shows two different handles.
+ */
+function dedupeWatermarkVsMadeWithForImport(config: TemplateConfig): TemplateConfig {
+  const metaRaw = config.defaults?.meta;
+  if (!metaRaw || typeof metaRaw !== "object") return config;
+  const meta = metaRaw as Record<string, unknown>;
+  const mwt = meta.made_with_text;
+  if (typeof mwt !== "string" || mwt.trim().length === 0) return config;
+  const showMw = meta.show_made_with;
+  if (showMw === false) return config;
+  return {
+    ...config,
+    chrome: {
+      ...config.chrome,
+      watermark: { ...config.chrome.watermark, enabled: false },
+    },
+    defaults: {
+      ...config.defaults,
+      meta: { ...meta, show_watermark: false },
+    },
+  };
 }
 
 /**
@@ -174,6 +191,75 @@ function expandTextZonesForImportedCopy(config: TemplateConfig): TemplateConfig 
   return { ...config, textZones };
 }
 
+/** Post-normalize pipeline shared by first pass and vision refinement pass. */
+function applyImportPostPipeline(rawObj: Record<string, unknown>, config: TemplateConfig): TemplateConfig {
+  let c = config;
+  c = applyImageImportSwipeDefaults(rawObj, c);
+  c = dedupeWatermarkVsMadeWithForImport(c);
+  c = ensureTextZoneColors(c);
+  c = unifyTextBackdropBetweenZonesAndMeta(c);
+  c = expandTextZonesForImportedCopy(c);
+  if (c.textZones && Array.isArray(c.textZones)) {
+    c = {
+      ...c,
+      textZones: c.textZones.map((z) => {
+        const zone = { ...z };
+        if (zone.id === "headline") {
+          const fs = Number(zone.fontSize);
+          const w = Number(zone.w);
+          const h = Number(zone.h);
+          if (Number.isFinite(fs) && fs >= 72 && Number.isFinite(w) && w < 880) {
+            zone.w = 920;
+            if (Number.isFinite(h) && h < 350) zone.h = 400;
+          } else if (Number.isFinite(fs) && fs >= 56 && Number.isFinite(w) && w < 800) {
+            zone.w = 920;
+          }
+        } else if (zone.id === "body") {
+          const w = Number(zone.w);
+          if (Number.isFinite(w) && w < 750) zone.w = 800;
+        }
+        return zone;
+      }) as TemplateConfig["textZones"],
+    };
+  }
+  const meta = c.defaults?.meta && typeof c.defaults.meta === "object" ? (c.defaults.meta as { image_display?: { mode?: string }; headline_font_size?: number; body_font_size?: number }) : undefined;
+  const imageMode = meta?.image_display?.mode;
+  const bgStyle = c.defaults?.background && typeof c.defaults.background === "object" ? (c.defaults.background as { style?: string }).style : undefined;
+  const isSolidOnlyDesign = bgStyle === "solid" && imageMode !== "pip" && imageMode !== "full";
+  if (isSolidOnlyDesign && c.backgroundRules) {
+    c = { ...c, backgroundRules: { ...c.backgroundRules, allowImage: false } };
+  }
+  const headlineZone = c.textZones?.find((z) => z.id === "headline");
+  const bodyZone = c.textZones?.find((z) => z.id === "body");
+  const existingMeta = c.defaults?.meta && typeof c.defaults.meta === "object" ? (c.defaults.meta as Record<string, unknown>) : {};
+  const needHeadlineFont = headlineZone && (existingMeta.headline_font_size == null || typeof existingMeta.headline_font_size !== "number");
+  const needBodyFont = bodyZone && (existingMeta.body_font_size == null || typeof existingMeta.body_font_size !== "number");
+  if ((needHeadlineFont || needBodyFont) && (headlineZone || bodyZone)) {
+    const nextMeta = {
+      ...existingMeta,
+      ...(needHeadlineFont && headlineZone && { headline_font_size: Math.round(Math.min(280, Math.max(8, headlineZone.fontSize))) }),
+      ...(needBodyFont && bodyZone && { body_font_size: Math.round(Math.min(280, Math.max(8, bodyZone.fontSize))) }),
+    };
+    c = {
+      ...c,
+      defaults: { ...c.defaults, meta: nextMeta },
+    };
+  }
+  return c;
+}
+
+const REFINEMENT_SYSTEM = `You refine carousel slide templates. You receive two images: (1) the user's reference slide and (2) how our app currently renders their JSON template. You also receive the full JSON we used for image 2.
+
+Your job: output ONE JSON object — the complete template in the same schema (layout, safeArea, textZones, overlays, defaults, chrome, backgroundRules, overlayShapes, name). Adjust positions, sizes, PiP/image_display coordinates, counter_zone_override, made_with_zone_override, swipe positions, and overlayShapes coordinates so a re-render would match image 1.
+
+Hard rules:
+- Keep defaults.headline and defaults.body strings EXACTLY the same characters as in the input JSON.
+- Keep headline_highlights and body_highlights identical (same start, end, color) unless a position fix requires none — prefer unchanged.
+- Keep fontFamily ids from the input unless clearly wrong.
+- Keep hex colors unless clearly wrong vs image 1.
+- You may change numeric layout: textZones x,y,w,h, fontSize, lineHeight, maxLines; defaults.meta zone overrides; image_display; chrome swipe/counter fields; overlayShapes geometry.
+Output only valid JSON, no markdown.`;
+
 const VALID_LAYOUTS = ["headline_bottom", "headline_center", "split_top_bottom", "headline_only"] as const;
 const VALID_WATERMARK_POSITIONS = ["top_left", "top_right", "bottom_left", "bottom_right", "custom"] as const;
 const VALID_HIGHLIGHT_STYLES = ["text", "background", "outline"] as const;
@@ -198,7 +284,58 @@ const NUMERIC_KEYS = new Set([
   "overlay_tint_opacity", "start", "end",
   "headLength", "headWidth", "starPoints", "borderRadius", "swipeX", "swipeY", "swipeSize",
   "boxBackgroundOpacity",
+  "boxBackgroundBorderWidth",
+  "boxBackgroundBorderOpacity",
+  "boxBackgroundBorderRadius",
 ]);
+
+function sanitizeTextZoneBackdropChrome(zr: Record<string, unknown>) {
+  if (zr.boxBackgroundFrameOnly !== undefined && typeof zr.boxBackgroundFrameOnly !== "boolean") {
+    delete zr.boxBackgroundFrameOnly;
+  }
+  if (zr.boxBackgroundBorderWidth != null) {
+    const n =
+      typeof zr.boxBackgroundBorderWidth === "string"
+        ? Number(zr.boxBackgroundBorderWidth)
+        : Number(zr.boxBackgroundBorderWidth);
+    if (!Number.isFinite(n)) delete zr.boxBackgroundBorderWidth;
+    else zr.boxBackgroundBorderWidth = Math.min(32, Math.max(0, Math.round(n)));
+  }
+  if (zr.boxBackgroundBorderSides != null) {
+    if (typeof zr.boxBackgroundBorderSides !== "object" || Array.isArray(zr.boxBackgroundBorderSides)) {
+      delete zr.boxBackgroundBorderSides;
+    } else {
+      const bs = zr.boxBackgroundBorderSides as Record<string, unknown>;
+      const clean: Record<string, boolean> = {};
+      for (const k of ["top", "right", "bottom", "left"]) {
+        if (bs[k] === true || bs[k] === false) clean[k] = bs[k] as boolean;
+      }
+      if (Object.keys(clean).length > 0) zr.boxBackgroundBorderSides = clean;
+      else delete zr.boxBackgroundBorderSides;
+    }
+  }
+  if (zr.boxBackgroundBorderColor != null) {
+    const s = String(zr.boxBackgroundBorderColor).trim();
+    if (/^#([0-9A-Fa-f]{3}){1,2}$/.test(s)) zr.boxBackgroundBorderColor = s;
+    else delete zr.boxBackgroundBorderColor;
+  }
+  if (zr.boxBackgroundBorderOpacity != null) {
+    const n =
+      typeof zr.boxBackgroundBorderOpacity === "string"
+        ? Number(zr.boxBackgroundBorderOpacity)
+        : Number(zr.boxBackgroundBorderOpacity);
+    if (!Number.isFinite(n)) delete zr.boxBackgroundBorderOpacity;
+    else zr.boxBackgroundBorderOpacity = Math.min(1, Math.max(0, n));
+  }
+  if (zr.boxBackgroundBorderRadius != null) {
+    const n =
+      typeof zr.boxBackgroundBorderRadius === "string"
+        ? Number(zr.boxBackgroundBorderRadius)
+        : Number(zr.boxBackgroundBorderRadius);
+    if (!Number.isFinite(n)) delete zr.boxBackgroundBorderRadius;
+    else zr.boxBackgroundBorderRadius = Math.min(64, Math.max(0, Math.round(n)));
+  }
+}
 
 const OVERLAY_SHAPE_NUMERIC_KEYS = new Set([
   "x", "y", "x2", "y2", "cx", "cy", "w", "h", "strokeWidth", "opacity", "rotation",
@@ -222,7 +359,15 @@ function sanitizeOverlayShapesInput(raw: unknown): OverlayShape[] | undefined {
       }
     }
     const parsed = overlayShapeSchema.safeParse(obj);
-    if (parsed.success) out.push(parsed.data);
+    if (!parsed.success) continue;
+    let data = parsed.data;
+    if (
+      (data.type === "line" || data.type === "arrow" || data.type === "curved_arrow") &&
+      (data.strokeWidth ?? 0) > 12
+    ) {
+      data = { ...data, strokeWidth: 4 };
+    }
+    out.push(data);
   }
   return out.length > 0 ? out : undefined;
 }
@@ -373,6 +518,7 @@ function normalizeToValidConfig(parsed: unknown): TemplateConfig {
           if (!Number.isFinite(n)) zr.boxBackgroundOpacity = undefined;
           else zr.boxBackgroundOpacity = Math.min(1, Math.max(0, n));
         }
+        sanitizeTextZoneBackdropChrome(zr);
       }
     }
   }
@@ -400,6 +546,10 @@ function normalizeToValidConfig(parsed: unknown): TemplateConfig {
     }
     if (chrome.swipePosition !== undefined && (typeof chrome.swipePosition !== "string" || !VALID_SWIPE_POSITIONS.includes(chrome.swipePosition as (typeof VALID_SWIPE_POSITIONS)[number]))) {
       chrome.swipePosition = "bottom_center";
+    }
+    const cs = chrome.counterStyle;
+    if (typeof cs !== "string" || /^default$/i.test(cs.trim()) || !/^\d+\s*\/\s*\d+$/.test(String(cs).trim())) {
+      chrome.counterStyle = fullDefault.chrome.counterStyle;
     }
   }
   // Coerce overlays.gradient.direction and strip nulls
@@ -498,6 +648,9 @@ function normalizeToValidConfig(parsed: unknown): TemplateConfig {
             const n = typeof obj.boxBackgroundOpacity === "string" ? Number(obj.boxBackgroundOpacity) : Number(obj.boxBackgroundOpacity);
             if (!Number.isFinite(n)) delete obj.boxBackgroundOpacity;
             else obj.boxBackgroundOpacity = Math.min(1, Math.max(0, n));
+          }
+          if (key === "headline_zone_override" || key === "body_zone_override") {
+            sanitizeTextZoneBackdropChrome(obj);
           }
         }
       }
@@ -664,7 +817,7 @@ HOW TO INTERPRET overlays.gradient / overlays.vignette (full-slide only—do not
 
 COLORS (always hex, critical for readability):
 - overlays.gradient.color = the overlay/block color.
-- defaults.meta.background_color and defaults.background.color = main slide background.
+- defaults.meta.background_color and defaults.background.color = main slide background. For a **flat solid** slide (no photo filling the canvas), sample the **true** fill color—do not substitute near-black unless the image is actually black. Purple/navy social slides often use mid/dark hues (e.g. "#1e1b4b", "#312e81", "#2e1065", "#3730a3", "#1e1a2e")—avoid collapsing them to "#0a0a0a" or pure "#000000" when the reference is visibly tinted.
 - textZones[].color = MUST set for headline and body. Infer the exact text color from the image (e.g. cream "#FFFEF0", white "#ffffff", light gray "#b0b0b0", dark "#111111"). When the text sits on a dark area use light/white/cream; when on a light area use dark. If unsure, use a contrasting color to the background behind that text: dark background → "#ffffff" or "#f5f5dc"; light background → "#111111" or "#1a1a1a". Never omit color; wrong color breaks readability.
 - If a small image has a tint: defaults.meta.image_overlay_blend_enabled true, overlay_tint_opacity 0.4–0.75, overlay_tint_color = background hex.
 
@@ -679,22 +832,23 @@ TEXT (match the image's font sizes, content, and font styles—critical for impo
 - Body/caption: fontWeight 400–600; color hex; **w,h from measured block**; maxLines up to 20 for dense copy.
 
 CHROME (match what you see—critical for preview):
-- Counter/slide number: Set showCounter true ONLY when the image shows a slide number (e.g. "1/7", "2/8", "Slide 3"). If the image has NO slide number or pagination, set showCounter false.
-- **Swipe UI vs decorative line:** chrome.showSwipe / defaults.meta.show_swipe = true ONLY when the image shows an actual swipe affordance: arrow icons, « », chevrons, "swipe" dots row meant as UI, or explicit carousel swipe hints. A **plain thin horizontal rule** (separator above/below text) with **no** chevrons or arrows is **NOT** swipe chrome—model it as **overlayShapes** type "line" (x,y,x2,y2, stroke, strokeWidth) at the correct y; set **showSwipe false** and **show_swipe false**.
-- When you DO see swipe arrows: chrome.showSwipe true, swipeType "arrow-right" (or "arrow-left", "arrows"), swipePosition to match; mirror defaults.meta.show_swipe true, swipe_type, swipe_position, swipe_size, swipe_x/swipe_y if custom, swipe_color.
+- Counter/slide number: Set showCounter true ONLY when the image shows a slide number (e.g. "1/7", "2/8"). If the image has NO slide number, set showCounter false. When true, **chrome.counterStyle** MUST be a pagination pattern like **"1/8"** where the first digit is the current slide and the second is total slides—use the **exact** numbers from the image (e.g. "1/6" if the badge says 1/6). Never use the word "default" or free text; the renderer expects \`current/total\` with digits only (optional spaces).
+- **Swipe / carousel indicators:** (1) Arrows, « », chevrons → chrome.showSwipe true, appropriate swipeType, mirror meta. (2) **Small horizontal line or line+dot at the very bottom** of Instagram/TikTok-style carousels (navigation hint) → chrome.showSwipe **true**, swipeType **"line-dots"** (or **"dots"** if multiple dots), swipePosition **"bottom_right"** or **"bottom_center"** to match; set defaults.meta.show_swipe true and matching swipe_type, swipe_position, swipe_color (often white "#ffffff"), swipe_size if visible. (3) A **long** horizontal rule used as a **design separator** between headline blocks (not the tiny bottom swipe bar) → **overlayShapes** "line" OR text layout only—not swipe chrome.
+- When you DO see swipe arrows: chrome.showSwipe true, swipeType "arrow-right" (or "arrow-left", "arrows"), swipePosition to match; mirror defaults.meta.
 - Set chrome.swipeSize to match visibility: 32–48 for a clearly visible arrow (default 24 is too small).
-- Dots or **carousel-style** line+dots at bottom (Instagram-style) → chrome.showSwipe true, swipeType "dots" or "line-dots", swipePosition "bottom_center"; mirror meta. Do **not** use this for a simple white divider line in a footer stack.
-- Watermark/logo slot: We always show either the project's logo (if set) or the project's username (watermark_text from the project). So always set watermark.enabled true so the template has a slot for logo/username. When the image HAS a visible logo or branding (e.g. "OSHEA CREATIONS", logo graphic): set watermark position (and logoX/logoY if custom) from where it appears in the image. When the image has NO logo/watermark: set watermark.enabled true with position bottom_right (or a sensible default) so the slot is reserved—when the template is used, the project's username will show there if they have no logo. When the image has any watermark or footer branding, also set defaults.meta.show_made_with true.
+- **Watermark vs @handle (do not duplicate):** The app can show (A) a **logo/username watermark** chrome and (B) a **made_with** line with **made_with_text** (e.g. @username). If the slide shows **only** a text @handle or social handle (no separate logo mark), put it **only** in **defaults.meta.made_with_text** + **made_with_zone_override** + **show_made_with true**, and set **chrome.watermark.enabled false** and **defaults.meta.show_watermark false**. Use **watermark.enabled true** only when there is a distinct **logo graphic** or a **separate** brand mark—not the same string as made_with_text.
 
 IMAGE & FRAME (critical—extract every visible detail so the template matches the import):
 - Image placement: If the photo/image is in a corner or small box → mode "pip". If it fills most of the slide or a large central area → mode "full". Always set mode.
 - Shape of the image container: Look carefully. Output frameShape as exactly one of: "squircle" (rounded rectangle), "circle", "diamond", "hexagon", "pill". Hexagon = six-sided; diamond = four-sided rotated square; circle = round; squircle = rounded corners; pill = very rounded long shape. Do not default to squircle if you see hexagon or circle.
 - Frame/border: If the image has a visible border or frame, set frame to "none"|"thin"|"medium"|"thick"|"chunky"|"heavy" (thin≈2px, medium≈5px, thick≈10px) and frameColor to the exact border color in hex. Describe the color precisely: reddish-brown → "#8B4513" or "#A0522D"; cream → "#FFF8DC"; white → "#ffffff"; black → "#111111"; gold → "#DAA520". Never omit frameColor when there is a visible frame.
-- Position: For mode "full", set position to "center"|"top"|"bottom"|"left"|"right"|"top-left"|"top-right"|"bottom-left"|"bottom-right" based on where the image sits. For mode "pip", set pipPosition to the corner (top_left, top_right, bottom_left, bottom_right).
-- Other image_display: frameRadius 0–48 (rounded corners in px); pipSize 0.25–1 (fraction of canvas for PIP); pipRotation degrees if tilted; pipBorderRadius 0–72 for PIP; pipX/pipY 0–100 for custom PIP position; imagePositionX/imagePositionY 0–100 for focal point when full; fit "cover"|"contain"; layout for multi-image (side-by-side, stacked, grid).
+- Position: For mode "full", set position to "center"|"top"|"bottom"|"left"|"right"|"top-left"|"top-right"|"bottom-left"|"bottom-right" based on where the image sits. For mode "pip", you may set **pipPosition** to the nearest corner **or** use **custom placement** (see below).
+- Other image_display: frameRadius 0–48 (rounded corners in px); pipSize 0.25–1 (fraction of canvas for PIP); pipRotation degrees if tilted; pipBorderRadius 0–72 for PIP; **pipX and pipY (0–100)** = anchor position of the PIP box as **percentage of the design canvas** (left/top). **When the photo is visually centered** (not tucked in a corner), you MUST set **both** pipX and pipY (e.g. **50** and **48–55** for vertical center-ish)—do **not** rely on pipPosition alone, which only snaps to corners. **Both numbers are required** whenever the inset is not clearly flush to one corner.
+- **PIP frame weight:** A **thick white (or colored) border** around the inset photo is **not** "thin"—use **frame "thick"**, **"chunky"**, or **"heavy"** to match visible border weight; set **frameColor** to the actual border hex (usually "#ffffff"). **thin** ≈ 2px, **medium** ≈ 5px, **thick** ≈ 10px, **chunky/heavy** for very bold frames.
+- imagePositionX/imagePositionY 0–100 for focal point when full; fit "cover"|"contain"; layout for multi-image (side-by-side, stacked, grid).
 
-PIP (small image in corner):
-- defaults.meta.image_display: mode "pip", pipPosition, pipSize 0.35–0.5, pipRotation if tilted, pipBorderRadius 16–24, frame "thin"|"medium" if bordered, frameColor hex (exact border color), frameShape (hexagon|circle|squircle|diamond|pill).
+PIP (inset / picture-in-picture):
+- defaults.meta.image_display: mode "pip", **pipX + pipY** when not strictly corner-aligned, **pipPosition** as fallback corner if you omit custom coords (corners only), pipSize from measured relative size, pipRotation if tilted, pipBorderRadius for inner rounded corners, **frame** matching visible border weight (**thick**/**chunky**/**heavy** for bold white frames), frameColor hex, frameShape (hexagon|circle|squircle|diamond|pill).
 
 FULL-BLEED / CENTRAL IMAGE (image is main visual, not in corner):
 - defaults.meta.image_display: mode "full", position "center" (or top/bottom/left/right), frameShape (hexagon|circle|squircle|diamond|pill), frame "none"|"thin"|"medium"|"thick", frameColor hex, frameRadius 0–48.
@@ -707,8 +861,9 @@ textZones: headline color "#FFFEF0" or "#f5f5dc", body color "#b0b0b0"; headline
 
 OVERLAY SHAPES (optional array overlayShapes — decorative vectors in 1080×1080 px, drawn above the slide background; max 20 items):
 - When the image shows extra graphics NOT covered by chrome swipe/counter: underline bars, circles, triangles, stars, arrows, curved arrows, hexagons, pentagons, straight lines. Output overlayShapes as an array of objects. Omit overlayShapes or use [] when there are no such shapes.
-- Types (type field): "line" { x,y,x2,y2, stroke?, strokeWidth?, opacity? } | "arrow" (same + optional headLength 6–120, headWidth 4–100) | "curved_arrow" { x,y,x2,y2,cx,cy, stroke?, strokeWidth?, opacity?, headLength?, headWidth? } — quadratic Bézier from (x,y) to (x2,y2) with control point (cx,cy) | "rect" | "rounded_rect" (+ borderRadius) | "circle" | "ellipse" | "triangle" (+ trianglePoint "up"|"down"|"left"|"right") | "star" (+ starPoints 3–12) | "pentagon" | "hexagon" — for filled shapes use x,y,w,h, fill?, stroke?, strokeWidth?, rotation?, opacity?.
+- Types (type field): "line" { x,y,x2,y2, stroke?, strokeWidth?, opacity? } | "arrow" (same + optional headLength 6–120, headWidth 4–100) | "curved_arrow" { x,y,x2,y2,cx,cy, stroke?, strokeWidth?, opacity?, headLength?, headWidth? } — quadratic Bézier from (x,y) to (x2,y2) with control point (cx,cy) | "rect" | "rounded_rect" (+ borderRadius) | "circle" | "ellipse" | "triangle" (+ trianglePoint "up"|"down"|"left"|"right") | "star" (+ starPoints 3–12) | "pentagon" | "hexagon" — for box shapes use x,y,w,h, fill?, stroke?, strokeWidth?, rotation?, opacity?, optional **frameOnly** (boolean): true = hollow outline only (no interior fill), use stroke/strokeWidth.
 - Colors: stroke, fill as hex. Coordinates are pixels on the 1080×1080 design canvas (same as textZones).
+- For **line** shapes that are thin rules or dividers, use **strokeWidth 2–6** (typically 3–4). Do not use strokeWidth above 12 unless the line is clearly a very thick bar in the image.
 - Do not duplicate the swipe arrow chrome in overlayShapes if chrome.showSwipe already describes it—use overlayShapes for separate design elements (e.g. big curved arrow between text blocks, star badge, **horizontal separator lines** in a footer stack).
 
 TEXT BACKDROP (NOT overlays.gradient — see TERMINOLOGY):
@@ -723,7 +878,7 @@ VERTICAL LAYOUT & READING ORDER (1080×1080 design coordinates):
 HANDLE / @USERNAME / SMALL BRANDING LINE:
 - If you see "@user", "ig: …", or a small handle near top or bottom: set defaults.meta.made_with_text to that exact string, defaults.meta.show_made_with true, and defaults.meta.made_with_zone_override with fontSize (20–34), x, y (pixel position of the handle’s center-left or center in 1080 space—use x for horizontal, y from top). Match text color in made_with_zone_override.color (hex) when visible.
 - **Footer reading order (y increases downward):** If the reference stacks elements vertically (e.g. thin line, then @handle, then large headline—or line above headline with handle between), assign **smaller y** to elements that appear **higher** on the slide: e.g. overlay line shape y near the separator; made_with_zone_override y between line and headline; headline textZone y lowest in that group. Do not float the handle over the middle of the subject unless it truly appears there in the image.
-- If the handle is where a logo would be, still use made_with_text + made_with_zone_override; watermark chrome is for logo image slot.
+- If the handle is where a logo would be, still use made_with_text + made_with_zone_override; **disable watermark** for that case (see CHROME—no duplicate branding).
 
 WORD-LEVEL COLORS (mandatory when words differ):
 - Copy defaults.headline/body strings EXACTLY (including punctuation). Then set defaults.meta.headline_highlights / body_highlights as [{ start, end, color }] with 0-based character indices into THAT EXACT string for every word or phrase that is a different color (yellow vs white, green accent, etc.). Wrong indices break the preview.
@@ -750,8 +905,8 @@ BACKGROUND TAB (overlays, defaults.background, backgroundRules, defaults.meta ba
 - TEXT-ONLY SLIDES (no photo, no graphic): If the image is only text on a flat solid background (e.g. headline + subhead on cream, white, or dark), set backgroundRules.allowImage to false, defaults.background to { style: "solid", color: "<exact background hex>" }, and defaults.meta.background_color to the same hex. Omit or leave image_display minimal so the template preview does not show a stock photo.
 
 CHROME / LAYOUT (counter, swipe, watermark, made with)—be accurate to pixel positions. Canvas: 1080px wide; for 4:5 aspect ratio height is 1350px.
-- chrome: showSwipe, swipeType, swipePosition, swipeSize. showCounter (true only if the image shows a slide number; otherwise false). counterStyle. watermark: always set enabled true (template reserves a slot for project logo or username). position from the image when there is a visible logo/watermark; when the image has no logo use bottom_right. logoX, logoY when position is custom. When the image has a watermark/branding, set defaults.meta.show_made_with true.
-- defaults.meta: counter_zone_override { top?, right?, fontSize? } in px—match where the slide number (e.g. "1/7") appears. watermark_zone_override { position or logoX, logoY, fontSize? }. made_with_zone_override { fontSize?, x?, y? } for the "Made with" / attribution line position. Report positions as accurately as possible from the image.
+- chrome: showSwipe, swipeType, swipePosition, swipeSize. showCounter + **counterStyle** "current/total" digits from the badge (e.g. "1/6"). **watermark.enabled** only for logo/separate brand mark; if the only on-slide handle is **made_with_text**, set watermark.enabled **false** and show_watermark **false** (see CHROME rules above).
+- defaults.meta: counter_zone_override { top?, right?, fontSize? } in px—match where the slide number appears. watermark_zone_override when watermark is used. made_with_zone_override { fontSize?, x?, y? } for the @handle line. Report positions as accurately as possible from the image.
 
 OVERLAY SHAPES (top-level overlayShapes):
 - Optional array of shape objects (see OVERLAY SHAPES rules above). Include when the slide has visible geometric decorations beyond text and chrome.
@@ -783,6 +938,71 @@ function stripJson(raw: string): string {
   const inner = codeFence?.[1];
   if (inner) s = inner.trim();
   return s;
+}
+
+async function refineImportTemplateWithVision(
+  openai: OpenAI,
+  referenceDataUrl: string,
+  config: TemplateConfig,
+  layoutIssues: string[]
+): Promise<TemplateConfig | null> {
+  const png = await captureImportTemplatePreviewPng(config);
+  if (!png || png.length < 80) {
+    console.log("[import-template] Refinement: no preview PNG, skipping second pass.");
+    return null;
+  }
+  const renderedDataUrl = `data:image/png;base64,${png.toString("base64")}`;
+  let configJson = JSON.stringify(config);
+  const maxJson = 120_000;
+  if (configJson.length > maxJson) {
+    configJson = configJson.slice(0, maxJson) + "\n…[truncated]";
+  }
+  const issuesBlock =
+    layoutIssues.length > 0 ? `Automated checks also noted:\n- ${layoutIssues.join("\n- ")}\n\n` : "";
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4o",
+    messages: [
+      { role: "system", content: REFINEMENT_SYSTEM },
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: `IMAGE 1 = user reference slide. IMAGE 2 = our app render from the JSON below.
+
+${issuesBlock}Adjust the template so a re-render would match IMAGE 1. Keep headline/body text and highlight index arrays exactly as in the JSON unless impossible.
+
+Current template JSON:
+${configJson}
+
+Output only the full template JSON object, same schema as import. No markdown.`,
+          },
+          { type: "image_url", image_url: { url: referenceDataUrl } },
+          { type: "image_url", image_url: { url: renderedDataUrl } },
+        ],
+      },
+    ],
+    max_tokens: 8192,
+  });
+  const content = completion.choices[0]?.message?.content;
+  if (!content) return null;
+  const cleaned = stripJson(content);
+  let refinedParsed: unknown;
+  try {
+    refinedParsed = JSON.parse(cleaned) as unknown;
+  } catch {
+    console.warn("[import-template] Refinement: invalid JSON from model.");
+    return null;
+  }
+  const refinedObj = refinedParsed as Record<string, unknown>;
+  let refinedConfig = normalizeToValidConfig(refinedParsed);
+  refinedConfig = applyImportPostPipeline(refinedObj, refinedConfig);
+  const check = templateConfigSchema.safeParse(refinedConfig);
+  if (!check.success) {
+    console.warn("[import-template] Refined config failed schema check; keeping first pass.");
+    return null;
+  }
+  return check.data;
 }
 
 export async function importTemplateFromImageAction(
@@ -834,7 +1054,9 @@ Hard rules:
 - **Measured text boxes**: integer x,y,w,h from the image (not generic 936×400 unless the layout is truly full-width).
 - Verbatim defaults.headline/body; **only different-colored words** → headline_highlights/body_highlights with exact indices; **all one color** → zone color only, no fake single-word highlights.
 - @handles → made_with_text + made_with_zone_override + show_made_with; stack y order: line (overlayShapes) / handle / headline as in the image.
-- **Swipe chrome** only for real swipe UI (arrows, chevrons, « », dot row). Plain divider lines → overlayShapes "line", show_swipe false.
+- **Swipe:** tiny **bottom** line/dot carousel indicator → show_swipe + swipe_type line-dots/dots; long **design** divider → overlayShapes line. Arrows/chevrons → swipe chrome.
+- **PIP:** always **pipX AND pipY** (0–100) when the inset is **not** clearly in one corner; **thick** frame when the reference has a bold border.
+- **Solid background:** use a **true** purple/navy hex, not black, when the slide is visibly tinted.
 - When swipe UI exists, mirror defaults.meta (show_swipe, swipe_type, swipe_position, swipe_size, …).
 - Decorative vectors → overlayShapes (not swipe chrome).
 - **Top-level "name"** (required): short template title, 2–6 words, from the slide’s topic or style (user can rename in the next step).
@@ -873,58 +1095,23 @@ Output only valid JSON, no markdown.`,
     let config = normalizeToValidConfig(parsed);
     console.log("[import-template] Config ready. Layout:", config.layout);
 
-    config = applyImageImportSwipeDefaults(obj, config);
-    config = ensureTextZoneColors(config);
-    config = unifyTextBackdropBetweenZonesAndMeta(config);
-    config = expandTextZonesForImportedCopy(config);
-    // Ensure headline/body zones are wide enough for the chosen font size so the template preview doesn't clip text.
-    if (config.textZones && Array.isArray(config.textZones)) {
-      config = {
-        ...config,
-        textZones: config.textZones.map((z) => {
-          const zone = { ...z };
-          if (zone.id === "headline") {
-            const fs = Number(zone.fontSize);
-            const w = Number(zone.w);
-            const h = Number(zone.h);
-            if (Number.isFinite(fs) && fs >= 72 && Number.isFinite(w) && w < 880) {
-              zone.w = 920;
-              if (Number.isFinite(h) && h < 350) zone.h = 400;
-            } else if (Number.isFinite(fs) && fs >= 56 && Number.isFinite(w) && w < 800) {
-              zone.w = 920;
-            }
-          } else if (zone.id === "body") {
-            const w = Number(zone.w);
-            if (Number.isFinite(w) && w < 750) zone.w = 800;
-          }
-          return zone;
-        }) as TemplateConfig["textZones"],
-      };
-    }
-    // When design is solid-only (no photo), ensure allowImage is false so preview and saved template match "Your image".
-    const meta = config.defaults?.meta && typeof config.defaults.meta === "object" ? (config.defaults.meta as { image_display?: { mode?: string }; headline_font_size?: number; body_font_size?: number }) : undefined;
-    const imageMode = meta?.image_display?.mode;
-    const bgStyle = config.defaults?.background && typeof config.defaults.background === "object" ? (config.defaults.background as { style?: string }).style : undefined;
-    const isSolidOnlyDesign = bgStyle === "solid" && imageMode !== "pip" && imageMode !== "full";
-    if (isSolidOnlyDesign && config.backgroundRules) {
-      config = { ...config, backgroundRules: { ...config.backgroundRules, allowImage: false } };
-    }
-    // Sync textZones font sizes into defaults.meta so preview and new slides use the imported sizes (not defaults).
-    const headlineZone = config.textZones?.find((z) => z.id === "headline");
-    const bodyZone = config.textZones?.find((z) => z.id === "body");
-    const existingMeta = config.defaults?.meta && typeof config.defaults.meta === "object" ? (config.defaults.meta as Record<string, unknown>) : {};
-    const needHeadlineFont = headlineZone && (existingMeta.headline_font_size == null || typeof existingMeta.headline_font_size !== "number");
-    const needBodyFont = bodyZone && (existingMeta.body_font_size == null || typeof existingMeta.body_font_size !== "number");
-    if ((needHeadlineFont || needBodyFont) && (headlineZone || bodyZone)) {
-      const nextMeta = {
-        ...existingMeta,
-        ...(needHeadlineFont && headlineZone && { headline_font_size: Math.round(Math.min(280, Math.max(8, headlineZone.fontSize))) }),
-        ...(needBodyFont && bodyZone && { body_font_size: Math.round(Math.min(280, Math.max(8, bodyZone.fontSize))) }),
-      };
-      config = {
-        ...config,
-        defaults: { ...config.defaults, meta: nextMeta },
-      };
+    config = applyImportPostPipeline(obj, config);
+
+    const refinementMode = importRefinementMode();
+    const layoutIssues = collectImportLayoutIssues(config);
+    const shouldRefine = refinementMode !== "off" && (refinementMode === "always" || layoutIssues.length > 0);
+    if (shouldRefine) {
+      try {
+        const refined = await refineImportTemplateWithVision(openai, dataUrl, config, layoutIssues);
+        if (refined) {
+          config = refined;
+          console.log("[import-template] Applied vision refinement pass (mode=%s, issues=%s).", refinementMode, layoutIssues.length);
+        }
+      } catch (refErr) {
+        console.warn("[import-template] Refinement error:", refErr instanceof Error ? refErr.message : refErr);
+      }
+    } else if (refinementMode === "off") {
+      console.log("[import-template] Refinement disabled (IMPORT_TEMPLATE_REFINEMENT).");
     }
     const rawName = typeof obj?.name === "string" ? String(obj.name).trim() : "";
     let suggestedName = rawName.length > 0 ? rawName.slice(0, 80) : "";

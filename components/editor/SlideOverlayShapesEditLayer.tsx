@@ -6,11 +6,11 @@ import { isOverlayBoxShape } from "@/lib/renderer/overlayShapeGeometry";
 import { cn } from "@/lib/utils";
 
 const MIN_BOX = 8;
-/** Match text zone resize handles in `SlidePreview`. */
+/** Match text zone and PiP resize handles in `SlidePreview`. */
 const HANDLE_SIZE = 44;
 const HANDLE_OFFSET = -HANDLE_SIZE / 2;
 const handleClass =
-  "rounded-full border-2 border-primary bg-primary/80 hover:scale-110 z-20 touch-none";
+  "rounded-full border-2 border-primary bg-primary/80 hover:scale-110 z-20 touch-none shadow-md ring-2 ring-background";
 
 type DragState =
   | {
@@ -35,6 +35,7 @@ type DragState =
       kind: "box-resize";
       index: number;
       snapshot: OverlayShape[];
+      corner: "nw" | "ne" | "sw" | "se";
       ptr0x: number;
       ptr0y: number;
       ox: number;
@@ -150,13 +151,56 @@ export function SlideOverlayShapesEditLayer({
       } else if (d.kind === "box-resize") {
         const s = next[d.index];
         if (s && isOverlayBoxShape(s)) {
-          const nw = Math.round(Math.max(MIN_BOX, d.ow + (x - d.ptr0x)));
-          const nh = Math.round(Math.max(MIN_BOX, d.oh + (y - d.ptr0y)));
+          const dx = x - d.ptr0x;
+          const dy = y - d.ptr0y;
+          const MAX_W = designWidth;
+          const MAX_H = designHeight;
+          let nx = d.ox;
+          let ny = d.oy;
+          let nw = d.ow;
+          let nh = d.oh;
+          if (d.corner === "se") {
+            nw = Math.min(MAX_W, Math.max(MIN_BOX, d.ow + dx));
+            nh = Math.min(MAX_H, Math.max(MIN_BOX, d.oh + dy));
+          } else if (d.corner === "sw") {
+            nx = d.ox + dx;
+            nw = Math.min(MAX_W, Math.max(MIN_BOX, d.ow - dx));
+            nh = Math.min(MAX_H, Math.max(MIN_BOX, d.oh + dy));
+            if (nw <= MIN_BOX) {
+              nx = d.ox + d.ow - MIN_BOX;
+              nw = MIN_BOX;
+            }
+          } else if (d.corner === "ne") {
+            ny = d.oy + dy;
+            nw = Math.min(MAX_W, Math.max(MIN_BOX, d.ow + dx));
+            nh = Math.min(MAX_H, Math.max(MIN_BOX, d.oh - dy));
+            if (nh <= MIN_BOX) {
+              ny = d.oy + d.oh - MIN_BOX;
+              nh = MIN_BOX;
+            }
+          } else {
+            nx = d.ox + dx;
+            ny = d.oy + dy;
+            nw = Math.min(MAX_W, Math.max(MIN_BOX, d.ow - dx));
+            nh = Math.min(MAX_H, Math.max(MIN_BOX, d.oh - dy));
+            if (nw <= MIN_BOX) {
+              nx = d.ox + d.ow - MIN_BOX;
+              nw = MIN_BOX;
+            }
+            if (nh <= MIN_BOX) {
+              ny = d.oy + d.oh - MIN_BOX;
+              nh = MIN_BOX;
+            }
+          }
+          nw = Math.max(MIN_BOX, Math.min(nw, MAX_W - nx));
+          nh = Math.max(MIN_BOX, Math.min(nh, MAX_H - ny));
+          nx = Math.max(0, Math.min(nx, MAX_W - nw));
+          ny = Math.max(0, Math.min(ny, MAX_H - nh));
           Object.assign(s, {
-            x: d.ox,
-            y: d.oy,
-            w: clamp(nw, MIN_BOX, designWidth * 2),
-            h: clamp(nh, MIN_BOX, designHeight * 2),
+            x: Math.round(nx),
+            y: Math.round(ny),
+            w: Math.round(nw),
+            h: Math.round(nh),
           });
         }
       } else if (d.kind === "line-move") {
@@ -235,10 +279,11 @@ export function SlideOverlayShapesEditLayer({
 
   if (!enabled || shapes.length === 0) return null;
 
+  // z-index 4: under text zones (5–6) so body/headline stay clickable over shapes; above decorative OverlayShapesLayer (2–3).
   return (
     <div
       className="absolute inset-0 overflow-visible"
-      style={{ zIndex: 25, pointerEvents: "none" }}
+      style={{ zIndex: 4, pointerEvents: "none" }}
       aria-hidden
       data-slide-shapes-edit-layer
     >
@@ -591,32 +636,38 @@ export function SlideOverlayShapesEditLayer({
                     };
                   }}
                 />
-                {Math.abs(rot) <= 3 && (
+                {(["nw", "ne", "sw", "se"] as const).map((corner) => (
                   <button
+                    key={corner}
                     type="button"
                     data-shape-handle="resize"
-                    className={cn("absolute", handleClass, "cursor-nwse-resize")}
+                    className={cn(
+                      "absolute",
+                      handleClass,
+                      corner === "nw" || corner === "se" ? "cursor-nwse-resize" : "cursor-nesw-resize"
+                    )}
                     style={{
                       width: HANDLE_SIZE,
                       height: HANDLE_SIZE,
-                      right: HANDLE_OFFSET,
-                      bottom: HANDLE_OFFSET,
-                      left: "auto",
-                      top: "auto",
                       pointerEvents: "auto",
+                      ...(corner === "nw" && { left: HANDLE_OFFSET, top: HANDLE_OFFSET }),
+                      ...(corner === "ne" && { right: HANDLE_OFFSET, top: HANDLE_OFFSET, left: "auto" }),
+                      ...(corner === "sw" && { left: HANDLE_OFFSET, bottom: HANDLE_OFFSET, top: "auto" }),
+                      ...(corner === "se" && { right: HANDLE_OFFSET, bottom: HANDLE_OFFSET, left: "auto", top: "auto" }),
                     }}
-                    aria-label="Resize"
+                    aria-label={`Resize shape from ${corner}`}
                     onPointerDown={(e) => {
                       e.stopPropagation();
                       e.preventDefault();
                       e.currentTarget.setPointerCapture(e.pointerId);
-                      const { x, y } = clientToDesign(e.clientX, e.clientY);
+                      const { x: px, y: py } = clientToDesign(e.clientX, e.clientY);
                       dragRef.current = {
                         kind: "box-resize",
                         index: i,
                         snapshot: shapes,
-                        ptr0x: x,
-                        ptr0y: y,
+                        corner,
+                        ptr0x: px,
+                        ptr0y: py,
                         ox: s.x,
                         oy: s.y,
                         ow: s.w,
@@ -624,7 +675,7 @@ export function SlideOverlayShapesEditLayer({
                       };
                     }}
                   />
-                )}
+                ))}
               </>
             )}
           </div>

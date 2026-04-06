@@ -69,6 +69,8 @@ export async function POST(
     formData.set("number_of_slides", String(opts.number_of_slides));
   if (opts.background_asset_ids != null && Array.isArray(opts.background_asset_ids))
     formData.set("background_asset_ids", JSON.stringify(opts.background_asset_ids));
+  if (opts.ai_style_reference_asset_ids != null && Array.isArray(opts.ai_style_reference_asset_ids))
+    formData.set("ai_style_reference_asset_ids", JSON.stringify(opts.ai_style_reference_asset_ids));
   if (opts.use_ai_backgrounds) formData.set("use_ai_backgrounds", "true");
   if (opts.use_stock_photos) formData.set("use_stock_photos", "true");
   if (opts.use_ai_generate) formData.set("use_ai_generate", "true");

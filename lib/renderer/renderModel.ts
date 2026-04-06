@@ -1,6 +1,7 @@
 import type { TemplateConfig, TextZone } from "@/lib/server/renderer/templateSchema";
 import { fitTextToZone } from "./fitText";
 import { injectHighlightMarkers, stripHighlightMarkers, clampHighlightSpansToText, type HighlightSpan } from "@/lib/editor/inlineFormat";
+import { formatHandleAttribution } from "./attributionText";
 
 export type SlideData = {
   headline: string;
@@ -87,7 +88,7 @@ export type SlideRenderModel = {
     madeWithY?: number;
     /** Distance from bottom (px). Used when madeWithY is undefined. Default 16. */
     madeWithBottom?: number;
-    /** Custom text for "Made with" attribution. When undefined, use "Follow us". */
+    /** Bottom attribution line (e.g. @handle). When unset, falls back to formatted project handle from brand kit. */
     madeWithText?: string;
     /** "Made with" line color (hex). When unset, uses contrasting text color. */
     madeWithColor?: string;
@@ -130,7 +131,19 @@ export type TextZoneOverrides = {
   body?: Partial<TextZone>;
 };
 
-const ZONE_NUMERIC_KEYS = ["x", "y", "w", "h", "fontSize", "fontWeight", "lineHeight", "maxLines", "rotation"] as const;
+const ZONE_NUMERIC_KEYS = [
+  "x",
+  "y",
+  "w",
+  "h",
+  "fontSize",
+  "fontWeight",
+  "lineHeight",
+  "maxLines",
+  "rotation",
+  "boxBackgroundBorderWidth",
+  "boxBackgroundBorderRadius",
+] as const;
 const ZONE_ALIGN_VALUES = new Set(["left", "center", "right", "justify"]);
 
 /**
@@ -147,7 +160,16 @@ export function normalizeZoneOverrideSingle(
     if (v === null || v === undefined) continue;
     const n = Number(v);
     if (Number.isNaN(n)) continue;
-    (out as Record<string, number>)[key] = key === "lineHeight" ? n : key === "rotation" ? Math.max(-180, Math.min(180, Math.round(n))) : Math.round(n);
+    (out as Record<string, number>)[key] =
+      key === "lineHeight"
+        ? n
+        : key === "rotation"
+          ? Math.max(-180, Math.min(180, Math.round(n)))
+          : key === "boxBackgroundBorderWidth"
+            ? Math.min(32, Math.max(0, Math.round(n)))
+            : key === "boxBackgroundBorderRadius"
+              ? Math.min(64, Math.max(0, Math.round(n)))
+              : Math.round(n);
   }
   if (raw.align && ZONE_ALIGN_VALUES.has(raw.align as string)) out.align = raw.align;
   if (typeof raw.color === "string" && /^#([0-9A-Fa-f]{3}){1,2}$/.test(raw.color)) out.color = raw.color;
@@ -155,9 +177,27 @@ export function normalizeZoneOverrideSingle(
   if (typeof raw.boxBackgroundColor === "string" && /^#([0-9A-Fa-f]{3}){1,2}$/.test(raw.boxBackgroundColor.trim())) {
     out.boxBackgroundColor = raw.boxBackgroundColor.trim();
   }
+  if (typeof raw.boxBackgroundBorderColor === "string" && /^#([0-9A-Fa-f]{3}){1,2}$/.test(raw.boxBackgroundBorderColor.trim())) {
+    out.boxBackgroundBorderColor = raw.boxBackgroundBorderColor.trim();
+  }
   if (raw.boxBackgroundOpacity != null) {
     const n = Number(raw.boxBackgroundOpacity);
     if (!Number.isNaN(n)) out.boxBackgroundOpacity = Math.min(1, Math.max(0, n));
+  }
+  if (raw.boxBackgroundBorderOpacity != null) {
+    const n = Number(raw.boxBackgroundBorderOpacity);
+    if (!Number.isNaN(n)) out.boxBackgroundBorderOpacity = Math.min(1, Math.max(0, n));
+  }
+  if (raw.boxBackgroundFrameOnly === true) out.boxBackgroundFrameOnly = true;
+  if (raw.boxBackgroundFrameOnly === false) out.boxBackgroundFrameOnly = false;
+  const rawSides = raw.boxBackgroundBorderSides;
+  if (rawSides != null && typeof rawSides === "object" && !Array.isArray(rawSides)) {
+    const b = rawSides as Record<string, unknown>;
+    const sides: { top?: boolean; right?: boolean; bottom?: boolean; left?: boolean } = {};
+    for (const k of ["top", "right", "bottom", "left"] as const) {
+      if (b[k] === true || b[k] === false) sides[k] = b[k];
+    }
+    if (Object.keys(sides).length > 0) out.boxBackgroundBorderSides = sides;
   }
   return Object.keys(out).length > 0 ? (out as Partial<TextZone>) : undefined;
 }
@@ -350,15 +390,17 @@ export function buildSlideRenderModel(
       madeWithBottom:
         chromeOverrides?.madeWith?.bottom ??
         (typeof tmw?.bottom === "number" && Number.isFinite(tmw.bottom) ? tmw.bottom : undefined),
-      madeWithText:
-        chromeOverrides?.madeWith?.text ??
-        (() => {
-          const raw =
-            templateConfig.defaults?.meta && typeof templateConfig.defaults.meta === "object"
-              ? (templateConfig.defaults.meta as { made_with_text?: string }).made_with_text
-              : undefined;
-          return typeof raw === "string" && raw.trim() !== "" ? raw.trim() : undefined;
-        })(),
+      madeWithText: (() => {
+        const fromOverride = chromeOverrides?.madeWith?.text;
+        if (typeof fromOverride === "string" && fromOverride.trim() !== "") return fromOverride.trim();
+        const raw =
+          templateConfig.defaults?.meta && typeof templateConfig.defaults.meta === "object"
+            ? (templateConfig.defaults.meta as { made_with_text?: string }).made_with_text
+            : undefined;
+        if (typeof raw === "string" && raw.trim() !== "") return raw.trim();
+        const fromBrand = formatHandleAttribution(brandKit.watermark_text);
+        return fromBrand !== "" ? fromBrand : undefined;
+      })(),
       madeWithColor: (() => {
         const over = chromeOverrides?.madeWith?.color;
         if (over && /^#([0-9A-Fa-f]{3}){1,2}$/.test(over)) return over;

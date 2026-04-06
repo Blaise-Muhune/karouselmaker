@@ -1,9 +1,11 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { z } from "zod";
 import { getUser } from "@/lib/server/auth/getUser";
 import { getProject, updateProject as dbUpdateProject } from "@/lib/server/db";
 import type { ProjectUpdate } from "@/lib/server/db/types";
+import { MAX_PROJECT_AI_STYLE_REFERENCE_ASSETS } from "@/lib/constants";
 import { projectFormSchema, projectFormToDbPayload } from "@/lib/validations/project";
 
 export async function updateProject(projectId: string, formData: FormData) {
@@ -59,6 +61,28 @@ export async function updateProject(projectId: string, formData: FormData) {
   }
 
   const payload = projectFormToDbPayload(parsed.data);
-  await dbUpdateProject(user.id, projectId, payload as ProjectUpdate);
+
+  let styleRefUpdate: { ai_style_reference_asset_ids: string[] } | undefined;
+  const rawStyleRefs = formData.get("ai_style_reference_asset_ids");
+  if (rawStyleRefs !== null) {
+    const rawStr = typeof rawStyleRefs === "string" ? rawStyleRefs : "";
+    try {
+      const arr = JSON.parse(rawStr || "[]") as unknown;
+      const uuid = z.string().uuid();
+      const ids = Array.isArray(arr)
+        ? arr
+            .filter((x): x is string => typeof x === "string" && uuid.safeParse(x).success)
+            .slice(0, MAX_PROJECT_AI_STYLE_REFERENCE_ASSETS)
+        : [];
+      styleRefUpdate = { ai_style_reference_asset_ids: ids };
+    } catch {
+      styleRefUpdate = { ai_style_reference_asset_ids: [] };
+    }
+  }
+
+  await dbUpdateProject(user.id, projectId, {
+    ...(payload as ProjectUpdate),
+    ...styleRefUpdate,
+  });
   redirect(`/p/${projectId}`);
 }

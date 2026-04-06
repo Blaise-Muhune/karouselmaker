@@ -33,6 +33,7 @@ import { getTemplatePreviewImageUrls } from "@/lib/renderer/templatePreviewImage
 import { getSwipeRightXForFormat } from "@/lib/renderer/renderModel";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { TemplateOverlayShapesEditor } from "@/components/templates/TemplateOverlayShapesEditor";
+import { TextBackdropChromeFields } from "@/components/editor/TextBackdropChromeFields";
 import type { Template } from "@/lib/server/db/types";
 import { ArrowLeftIcon, CheckIcon, ChevronDownIcon, ChevronUpIcon, LayoutTemplateIcon, Loader2Icon, Maximize2Icon, MinusIcon, MoreHorizontal, PaletteIcon, PlusIcon, Type } from "lucide-react";
 
@@ -835,7 +836,7 @@ export function TemplateBuilderForm({
                   step={4}
                   onChange={(next) => updateConfig((prev) => ({ safeArea: { ...prev.safeArea, [side]: next } }))}
                   label={side}
-                  className="w-full max-w-[100px]"
+                  className="w-full min-w-0"
                 />
               </div>
             ))}
@@ -877,11 +878,11 @@ export function TemplateBuilderForm({
                 <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
                   <div className="space-y-1.5">
                     <Label className="text-xs">Font size</Label>
-                    <StepperWithLongPress value={headlineZone.fontSize} min={8} max={280} step={2} onChange={(next) => updateTextZone("headline", { fontSize: next })} label="Font size" className="w-full max-w-[100px]" />
+                    <StepperWithLongPress value={headlineZone.fontSize} min={8} max={280} step={2} onChange={(next) => updateTextZone("headline", { fontSize: next })} label="Font size" className="w-full min-w-0" />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Font weight</Label>
-                    <StepperWithLongPress value={headlineZone.fontWeight} min={100} max={900} step={100} onChange={(next) => updateTextZone("headline", { fontWeight: next })} label="Font weight" className="w-full max-w-[100px]" />
+                    <StepperWithLongPress value={headlineZone.fontWeight} min={100} max={900} step={100} onChange={(next) => updateTextZone("headline", { fontWeight: next })} label="Font weight" className="w-full min-w-0" />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Line height</Label>
@@ -893,12 +894,12 @@ export function TemplateBuilderForm({
                       onChange={(next) => updateTextZone("headline", { lineHeight: next / 100 })}
                       formatDisplay={(n) => (n / 100).toFixed(1)}
                       label="Line height"
-                      className="w-full max-w-[100px]"
+                      className="w-full min-w-0"
                     />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Max lines</Label>
-                    <StepperWithLongPress value={headlineZone.maxLines} min={1} max={20} step={1} onChange={(next) => updateTextZone("headline", { maxLines: next })} label="Max lines" className="w-full max-w-[100px]" valueClassName="min-w-6" />
+                    <StepperWithLongPress value={headlineZone.maxLines} min={1} max={20} step={1} onChange={(next) => updateTextZone("headline", { maxLines: next })} label="Max lines" className="w-full min-w-0" valueClassName="min-w-6" />
                   </div>
                 </div>
                 <div className="space-y-1 mt-4">
@@ -954,7 +955,13 @@ export function TemplateBuilderForm({
                             : "text-muted-foreground hover:text-foreground"
                         )}
                         onClick={() =>
-                          updateTextZone("headline", { boxBackgroundColor: undefined, boxBackgroundOpacity: undefined })
+                          updateTextZone("headline", {
+                            boxBackgroundColor: undefined,
+                            boxBackgroundOpacity: undefined,
+                            boxBackgroundFrameOnly: undefined,
+                            boxBackgroundBorderWidth: undefined,
+                            boxBackgroundBorderSides: undefined,
+                          })
                         }
                       >
                         Off
@@ -994,7 +1001,16 @@ export function TemplateBuilderForm({
                               const c = v.trim();
                               const ok = c.length > 0 && TMPL_BACKDROP_HEX_RE.test(c);
                               if (!ok) {
-                                updateTextZone("headline", { boxBackgroundColor: undefined, boxBackgroundOpacity: undefined });
+                                updateTextZone("headline", {
+                                  boxBackgroundColor: undefined,
+                                  boxBackgroundOpacity: undefined,
+                                  boxBackgroundFrameOnly: undefined,
+                                  boxBackgroundBorderWidth: undefined,
+                                  boxBackgroundBorderSides: undefined,
+                                  boxBackgroundBorderColor: undefined,
+                                  boxBackgroundBorderOpacity: undefined,
+                                  boxBackgroundBorderRadius: undefined,
+                                });
                                 return;
                               }
                               updateTextZone("headline", {
@@ -1026,6 +1042,9 @@ export function TemplateBuilderForm({
                         </span>
                       </div>
                     </div>
+                  )}
+                  {templateTextBackdropOn(headlineZone) && (
+                    <TextBackdropChromeFields zone={headlineZone} onMerge={(patch) => updateTextZone("headline", patch)} />
                   )}
                 </div>
               </div>
@@ -1065,11 +1084,11 @@ export function TemplateBuilderForm({
                 <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
                   <div className="space-y-1.5">
                     <Label className="text-xs">Font size</Label>
-                    <StepperWithLongPress value={bodyZone.fontSize} min={8} max={280} step={2} onChange={(next) => updateTextZone("body", { fontSize: next })} label="Font size" className="w-full max-w-[100px]" />
+                    <StepperWithLongPress value={bodyZone.fontSize} min={8} max={280} step={2} onChange={(next) => updateTextZone("body", { fontSize: next })} label="Font size" className="w-full min-w-0" />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Font weight</Label>
-                    <StepperWithLongPress value={bodyZone.fontWeight} min={100} max={900} step={100} onChange={(next) => updateTextZone("body", { fontWeight: next })} label="Font weight" className="w-full max-w-[100px]" />
+                    <StepperWithLongPress value={bodyZone.fontWeight} min={100} max={900} step={100} onChange={(next) => updateTextZone("body", { fontWeight: next })} label="Font weight" className="w-full min-w-0" />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Line height</Label>
@@ -1081,12 +1100,12 @@ export function TemplateBuilderForm({
                       onChange={(next) => updateTextZone("body", { lineHeight: next / 100 })}
                       formatDisplay={(n) => (n / 100).toFixed(1)}
                       label="Line height"
-                      className="w-full max-w-[100px]"
+                      className="w-full min-w-0"
                     />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Max lines</Label>
-                    <StepperWithLongPress value={bodyZone.maxLines} min={1} max={20} step={1} onChange={(next) => updateTextZone("body", { maxLines: next })} label="Max lines" className="w-full max-w-[100px]" valueClassName="min-w-6" />
+                    <StepperWithLongPress value={bodyZone.maxLines} min={1} max={20} step={1} onChange={(next) => updateTextZone("body", { maxLines: next })} label="Max lines" className="w-full min-w-0" valueClassName="min-w-6" />
                   </div>
                 </div>
                 <div className="space-y-1 mt-4">
@@ -1142,7 +1161,16 @@ export function TemplateBuilderForm({
                             : "text-muted-foreground hover:text-foreground"
                         )}
                         onClick={() =>
-                          updateTextZone("body", { boxBackgroundColor: undefined, boxBackgroundOpacity: undefined })
+                          updateTextZone("body", {
+                            boxBackgroundColor: undefined,
+                            boxBackgroundOpacity: undefined,
+                            boxBackgroundFrameOnly: undefined,
+                            boxBackgroundBorderWidth: undefined,
+                            boxBackgroundBorderSides: undefined,
+                            boxBackgroundBorderColor: undefined,
+                            boxBackgroundBorderOpacity: undefined,
+                            boxBackgroundBorderRadius: undefined,
+                          })
                         }
                       >
                         Off
@@ -1182,7 +1210,16 @@ export function TemplateBuilderForm({
                               const c = v.trim();
                               const ok = c.length > 0 && TMPL_BACKDROP_HEX_RE.test(c);
                               if (!ok) {
-                                updateTextZone("body", { boxBackgroundColor: undefined, boxBackgroundOpacity: undefined });
+                                updateTextZone("body", {
+                                  boxBackgroundColor: undefined,
+                                  boxBackgroundOpacity: undefined,
+                                  boxBackgroundFrameOnly: undefined,
+                                  boxBackgroundBorderWidth: undefined,
+                                  boxBackgroundBorderSides: undefined,
+                                  boxBackgroundBorderColor: undefined,
+                                  boxBackgroundBorderOpacity: undefined,
+                                  boxBackgroundBorderRadius: undefined,
+                                });
                                 return;
                               }
                               updateTextZone("body", {
@@ -1214,6 +1251,9 @@ export function TemplateBuilderForm({
                         </span>
                       </div>
                     </div>
+                  )}
+                  {templateTextBackdropOn(bodyZone) && (
+                    <TextBackdropChromeFields zone={bodyZone} onMerge={(patch) => updateTextZone("body", patch)} />
                   )}
                 </div>
               </div>
@@ -1764,7 +1804,7 @@ export function TemplateBuilderForm({
                             })
                           }
                           label={label}
-                          className="w-full max-w-[100px]"
+                          className="w-full min-w-0"
                         />
                       </div>
                     );
@@ -1863,7 +1903,7 @@ export function TemplateBuilderForm({
                       step={1}
                       onChange={(next) => updateConfig((prev) => ({ chrome: { ...prev.chrome, watermark: { ...prev.chrome.watermark, fontSize: next } } }))}
                       label="Font size"
-                      className="w-full max-w-[100px]"
+                      className="w-full min-w-0"
                     />
                   </div>
                 </div>
@@ -2018,7 +2058,7 @@ export function TemplateBuilderForm({
                       step={2}
                       onChange={(next) => updateConfig((prev) => ({ chrome: { ...prev.chrome, swipeSize: next } }))}
                       label="Size"
-                      className="w-full max-w-[100px]"
+                      className="w-full min-w-0"
                     />
                   </div>
                   {(config.chrome.swipeType ?? "text") === "text" && (

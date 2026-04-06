@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, type ComponentProps } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   Dialog,
@@ -24,194 +24,18 @@ import { createTemplateAction } from "@/app/actions/templates/createTemplate";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { SlidePreview } from "@/components/renderer/SlidePreview";
 import { getTemplatePreviewBackgroundOverride, getTemplatePreviewOverlayOverride } from "@/lib/renderer/getTemplatePreviewBackground";
+import {
+  getImportPreviewDerived,
+  getImageDisplayFromConfig,
+  IMPORT_PREVIEW_UNSPLASH_URLS,
+} from "@/lib/templates/importPreviewDerived";
 import { Loader2Icon, UploadIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { HighlightSpan } from "@/lib/editor/inlineFormat";
 
 /** Template preview default 4:5 (1080x1350). */
 const PREVIEW_W = 200;
 const PREVIEW_H = Math.round((PREVIEW_W - 6) * (1350 / 1080)) + 6; // 4:5 aspect
 const PREVIEW_SCALE = Math.min((PREVIEW_W - 6) / 1080, (PREVIEW_H - 6) / 1350);
-
-function parseHighlightSpansFromMeta(raw: unknown, text: string): HighlightSpan[] | undefined {
-  if (!Array.isArray(raw) || text.length === 0) return undefined;
-  const out: HighlightSpan[] = [];
-  for (const item of raw) {
-    if (typeof item !== "object" || item === null) continue;
-    const o = item as Record<string, unknown>;
-    const start = Math.floor(Number(o.start));
-    const end = Math.floor(Number(o.end));
-    const color = typeof o.color === "string" && /^#([0-9A-Fa-f]{3}){1,2}$/.test(o.color) ? o.color : null;
-    if (color == null || !Number.isFinite(start) || !Number.isFinite(end) || end <= start || start >= text.length) continue;
-    out.push({ start: Math.max(0, start), end: Math.min(end, text.length), color });
-  }
-  return out.length > 0 ? out : undefined;
-}
-
-function getImportPreviewDerived(config: TemplateConfig) {
-  const meta = config.defaults?.meta;
-  const headlineTextZone = config.textZones?.find((z) => z.id === "headline");
-  const bodyTextZone = config.textZones?.find((z) => z.id === "body");
-  const headline =
-    typeof config.defaults?.headline === "string" && config.defaults.headline.trim() !== ""
-      ? config.defaults.headline.trim()
-      : "Your headline here";
-  const bodyTrimmed =
-    config.defaults?.body != null && typeof config.defaults.body === "string" ? config.defaults.body.trim() : "";
-  const bodyForSlide = bodyTrimmed !== "" ? bodyTrimmed : "Body text will appear like this.";
-
-  const zoneOverrides =
-    meta && typeof meta === "object"
-      ? (() => {
-          const headlineZone =
-            meta.headline_zone_override &&
-            typeof meta.headline_zone_override === "object" &&
-            Object.keys(meta.headline_zone_override).length > 0
-              ? meta.headline_zone_override
-              : undefined;
-          const bodyZone =
-            meta.body_zone_override && typeof meta.body_zone_override === "object" && Object.keys(meta.body_zone_override).length > 0
-              ? meta.body_zone_override
-              : undefined;
-          return headlineZone || bodyZone
-            ? { headline: headlineZone as Record<string, unknown>, body: bodyZone as Record<string, unknown> }
-            : undefined;
-        })()
-      : undefined;
-
-  const headlineFont =
-    meta && typeof meta === "object" && meta.headline_font_size != null ? Number(meta.headline_font_size) : headlineTextZone?.fontSize;
-  const bodyFont =
-    meta && typeof meta === "object" && meta.body_font_size != null ? Number(meta.body_font_size) : bodyTextZone?.fontSize;
-  const fontOverrides =
-    headlineFont != null || bodyFont != null
-      ? {
-          ...(headlineFont != null && !Number.isNaN(headlineFont) && { headline_font_size: headlineFont }),
-          ...(bodyFont != null && !Number.isNaN(bodyFont) && { body_font_size: bodyFont }),
-        }
-      : undefined;
-
-  const m = meta && typeof meta === "object" ? (meta as Record<string, unknown>) : null;
-  const headline_highlights = m ? parseHighlightSpansFromMeta(m.headline_highlights, headline) : undefined;
-  const body_highlights =
-    m && bodyTrimmed !== "" ? parseHighlightSpansFromMeta(m.body_highlights, bodyTrimmed) : undefined;
-
-  const hlHead = m?.headline_highlight_style;
-  const hlBody = m?.body_highlight_style;
-  const headlineHighlightStyle: "text" | "background" | undefined =
-    hlHead === "text" || hlHead === "background" ? hlHead : undefined;
-  const bodyHighlightStyle: "text" | "background" | undefined =
-    hlBody === "text" || hlBody === "background" ? hlBody : undefined;
-  const headlineOutlineStroke =
-    m?.headline_outline_stroke != null && Number.isFinite(Number(m.headline_outline_stroke))
-      ? Math.min(8, Math.max(0, Number(m.headline_outline_stroke)))
-      : undefined;
-  const bodyOutlineStroke =
-    m?.body_outline_stroke != null && Number.isFinite(Number(m.body_outline_stroke))
-      ? Math.min(8, Math.max(0, Number(m.body_outline_stroke)))
-      : undefined;
-
-  const counterRaw = m?.counter_zone_override;
-  const watermarkRaw = m?.watermark_zone_override;
-  const madeWithRaw = m?.made_with_zone_override;
-  const counter =
-    counterRaw && typeof counterRaw === "object" && counterRaw !== null && Object.keys(counterRaw).length > 0
-      ? (() => {
-          const c = counterRaw as Record<string, unknown>;
-          return {
-            ...(c.top != null && { top: Number(c.top) }),
-            ...(c.right != null && { right: Number(c.right) }),
-            ...(c.fontSize != null && { fontSize: Number(c.fontSize) }),
-          };
-        })()
-      : undefined;
-  const watermark =
-    watermarkRaw && typeof watermarkRaw === "object" && watermarkRaw !== null && Object.keys(watermarkRaw).length > 0
-      ? (() => {
-          const w = watermarkRaw as Record<string, unknown>;
-          return {
-            ...(w.position
-              ? {
-                  position: w.position as "top_left" | "top_right" | "bottom_left" | "bottom_right" | "custom",
-                }
-              : {}),
-            ...(w.logoX != null && { logoX: Number(w.logoX) }),
-            ...(w.logoY != null && { logoY: Number(w.logoY) }),
-            ...(w.fontSize != null && { fontSize: Number(w.fontSize) }),
-            ...(w.maxWidth != null && { maxWidth: Number(w.maxWidth) }),
-            ...(w.maxHeight != null && { maxHeight: Number(w.maxHeight) }),
-          };
-        })()
-      : undefined;
-  const madeWith =
-    madeWithRaw && typeof madeWithRaw === "object" && madeWithRaw !== null && Object.keys(madeWithRaw).length > 0
-      ? (() => {
-          const mw = madeWithRaw as Record<string, unknown>;
-          return {
-            ...(mw.fontSize != null && { fontSize: Number(mw.fontSize) }),
-            ...(mw.x != null && { x: Number(mw.x) }),
-            ...(mw.y != null && { y: Number(mw.y) }),
-            ...(mw.color != null &&
-              typeof mw.color === "string" &&
-              /^#([0-9A-Fa-f]{3}){1,2}$/.test(mw.color) && { color: mw.color }),
-            ...(mw.y == null && {
-              bottom: mw.bottom != null ? Number(mw.bottom) : 16,
-            }),
-          };
-        })()
-      : undefined;
-  const chromeOverridesFromMeta =
-    (counter && Object.keys(counter).length > 0) ||
-    (watermark && Object.keys(watermark).length > 0) ||
-    (madeWith && Object.keys(madeWith).length > 0)
-      ? { counter, watermark, madeWith }
-      : undefined;
-
-  const slide = {
-    headline,
-    body: bodyForSlide,
-    slide_index: 1,
-    slide_type: "point" as const,
-  };
-
-  return {
-    slide,
-    zoneOverrides,
-    fontOverrides,
-    headline_highlights,
-    body_highlights,
-    headlineHighlightStyle,
-    bodyHighlightStyle,
-    headlineOutlineStroke,
-    bodyOutlineStroke,
-    chromeOverridesFromMeta,
-  };
-}
-
-/** Build full imageDisplay from template defaults so preview shows shape, frame, frameColor, position (PIP or full). */
-function getImageDisplayFromConfig(config: TemplateConfig): ComponentProps<typeof SlidePreview>["imageDisplay"] {
-  const raw = config.defaults?.meta && typeof config.defaults.meta === "object" && "image_display" in config.defaults.meta
-    ? (config.defaults.meta as { image_display?: unknown }).image_display
-    : undefined;
-  if (raw == null || typeof raw !== "object" || Array.isArray(raw)) return undefined;
-  const d = raw as Record<string, unknown>;
-  const pipPos = d.pipPosition;
-  const validPipPos = pipPos === "top_left" || pipPos === "top_right" || pipPos === "bottom_left" || pipPos === "bottom_right" ? pipPos : undefined;
-  return {
-    ...d,
-    pipPosition: d.mode === "pip" ? (validPipPos ?? "bottom_right") : undefined,
-  } as ComponentProps<typeof SlidePreview>["imageDisplay"];
-}
-
-/** Unsplash sample images for template preview (single or multiple). Ensures correct position/layout for PIP and multi-image. */
-const IMPORT_PREVIEW_UNSPLASH_URLS = [
-  "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=1080&q=80",
-  "https://images.unsplash.com/photo-1587300003388-59208cc962cb?w=1080&q=80",
-  "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=1080&q=80",
-  "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1080&q=80",
-  "https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=1080&q=80",
-  "https://images.unsplash.com/photo-1514565131-fce0801e5785?w=1080&q=80",
-];
 
 const CATEGORIES = [
   { value: "generic", label: "Generic" },
@@ -458,7 +282,9 @@ export function ImportTemplateFromImageDialog({
                     <div className="flex flex-col items-center gap-2">
                       <Loader2Icon className="size-10 animate-spin text-primary" />
                       <p className="text-sm font-medium">Analyzing image…</p>
-                      <p className="text-xs text-muted-foreground">Using AI to detect layout and styles</p>
+                      <p className="text-xs text-muted-foreground">
+                        AI reads your slide, then may render a test preview and tune layout to match (can take a bit longer).
+                      </p>
                     </div>
                   ) : (
                     <label htmlFor="import-template-file" className="cursor-pointer flex flex-col items-center gap-2">
@@ -476,6 +302,18 @@ export function ImportTemplateFromImageDialog({
         {step === "create" && importedConfig && dataUrl && (() => {
           const previewDerived = getImportPreviewDerived(importedConfig);
           const imageDisplay = getImageDisplayFromConfig(importedConfig);
+          const metaForPreview =
+            importedConfig.defaults?.meta && typeof importedConfig.defaults.meta === "object"
+              ? (importedConfig.defaults.meta as Record<string, unknown>)
+              : undefined;
+          const madeWithText =
+            typeof metaForPreview?.made_with_text === "string" ? metaForPreview.made_with_text.trim() : "";
+          const suppressProjectWatermark = madeWithText.length > 0;
+          const bgHex =
+            typeof metaForPreview?.background_color === "string" &&
+            /^#([0-9A-Fa-f]{3}){1,2}$/.test(metaForPreview.background_color)
+              ? metaForPreview.background_color
+              : "#0a0a0a";
           const isPip = imageDisplay?.mode === "pip";
           const isMultiImageLayout = imageDisplay?.layout && ["side-by-side", "stacked", "grid"].includes(imageDisplay.layout);
           /** When template has no background image (e.g. text-on-solid from import), preview uses only the template background color to match "Your image". */
@@ -525,17 +363,21 @@ export function ImportTemplateFromImageDialog({
                         slide={previewDerived.slide}
                         templateConfig={importedConfig}
                         brandKit={{
-                          primary_color: "#0a0a0a",
-                          watermark_text: watermarkText?.trim() || (importedConfig.chrome?.watermark?.enabled ? "Your handle" : undefined),
+                          primary_color: bgHex,
+                          watermark_text: suppressProjectWatermark
+                            ? undefined
+                            : watermarkText?.trim() || (importedConfig.chrome?.watermark?.enabled ? "Your handle" : undefined),
                         }}
-                        totalSlides={8}
+                        totalSlides={previewDerived.totalSlides}
                         exportSize="1080x1350"
                         viewportFit="contain"
                         backgroundImageUrl={templateHasNoImage ? undefined : (!isMultiImageLayout ? singleUrl : undefined)}
                         backgroundImageUrls={templateHasNoImage ? undefined : (isMultiImageLayout ? multiUrls : undefined)}
                         backgroundOverride={templateHasNoImage ? getTemplatePreviewBackgroundOverride(importedConfig) : (getTemplatePreviewOverlayOverride(importedConfig) ?? getTemplatePreviewBackgroundOverride(importedConfig))}
                         showCounterOverride={importedConfig.chrome?.showCounter}
-                        showWatermarkOverride={importedConfig.chrome?.watermark?.enabled ?? false}
+                        showWatermarkOverride={
+                          suppressProjectWatermark ? false : (importedConfig.chrome?.watermark?.enabled ?? false)
+                        }
                         showMadeWithOverride={importedConfig.defaults?.meta && typeof importedConfig.defaults.meta === "object" ? (importedConfig.defaults.meta as { show_made_with?: boolean }).show_made_with : undefined}
                         chromeOverrides={{
                           ...previewDerived.chromeOverridesFromMeta,

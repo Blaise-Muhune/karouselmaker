@@ -7,6 +7,9 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { updateProject } from "@/app/actions/projects/updateProject";
 import { uploadProjectLogo } from "@/app/actions/projects/uploadProjectLogo";
+import { BackgroundImagesPickerModal } from "@/components/carousels/BackgroundImagesPickerModal";
+import { MAX_PROJECT_AI_STYLE_REFERENCE_ASSETS, PROJECT_RULES_MAX_CHARS } from "@/lib/constants";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ColorPicker } from "@/components/ui/color-picker";
 import { Input } from "@/components/ui/input";
@@ -30,7 +33,7 @@ import {
   projectFormSchema,
   type ProjectFormInput,
 } from "@/lib/validations/project";
-import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, Settings2Icon } from "lucide-react";
+import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, ImageIcon, Settings2Icon } from "lucide-react";
 
 const TONE_OPTIONS = [
   { value: "neutral", label: "Neutral" },
@@ -59,16 +62,23 @@ const LANGUAGE_OPTIONS = [
 export function ProjectEditForm({
   projectId,
   defaultValues,
+  initialAiStyleReferenceAssetIds = [],
   isAdmin = false,
 }: {
   projectId: string;
   defaultValues: ProjectFormInput;
+  /** Library images (max 10) used to steer AI-generated slide backgrounds for this project. */
+  initialAiStyleReferenceAssetIds?: string[];
   isAdmin?: boolean;
 }) {
   const [isPending, setIsPending] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [aiStyleRefPickerOpen, setAiStyleRefPickerOpen] = useState(false);
+  const [aiStyleRefIds, setAiStyleRefIds] = useState<string[]>(() =>
+    (initialAiStyleReferenceAssetIds ?? []).slice(0, MAX_PROJECT_AI_STYLE_REFERENCE_ASSETS)
+  );
   const router = useRouter();
 
   const form = useForm<ProjectFormInput>({
@@ -96,6 +106,7 @@ export function ProjectEditForm({
     if (pt.instagram) fd.set("post_instagram", "true");
     if (pt.linkedin) fd.set("post_linkedin", "true");
     if (pt.youtube) fd.set("post_youtube", "true");
+    fd.set("ai_style_reference_asset_ids", JSON.stringify(aiStyleRefIds));
     try {
       const result = await updateProject(projectId, fd);
       if (result && "error" in result) {
@@ -263,19 +274,53 @@ export function ProjectEditForm({
           <FormField
             control={form.control}
             name="project_rules.rules"
-            render={({ field }) => (
-              <FormItem>
-                <FormControl>
-                  <Textarea
-                    placeholder="e.g. Use short sentences. No jargon. For images: natural lighting, no text in images..."
-                    className="min-h-24"
-                    {...field}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
+            render={({ field }) => {
+              const len = (field.value ?? "").length;
+              return (
+                <FormItem>
+                  <FormControl>
+                    <Textarea
+                      placeholder="e.g. Use short sentences. No jargon. For images: natural lighting, no text in images..."
+                      className="min-h-24"
+                      maxLength={PROJECT_RULES_MAX_CHARS}
+                      {...field}
+                    />
+                  </FormControl>
+                  <p
+                    className={cn(
+                      "text-xs tabular-nums text-muted-foreground",
+                      len >= PROJECT_RULES_MAX_CHARS && "text-destructive font-medium"
+                    )}
+                  >
+                    {len}/{PROJECT_RULES_MAX_CHARS}
+                    {len >= PROJECT_RULES_MAX_CHARS ? " — character limit reached" : ""}
+                  </p>
+                  <FormMessage />
+                </FormItem>
+              );
+            }}
           />
+        </div>
+        <div className="space-y-2">
+          <FormLabel>AI image style references (optional)</FormLabel>
+          <p className="text-muted-foreground text-xs">
+            Pick up to {MAX_PROJECT_AI_STYLE_REFERENCE_ASSETS} images from this project&apos;s library. When you use{" "}
+            <strong>AI generate</strong> for backgrounds, we summarize their look (colors, lighting, mood) so new images match
+            that style. Per-carousel references (new carousel form) can refine or override for a single run.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={() => setAiStyleRefPickerOpen(true)}>
+              <ImageIcon className="mr-1.5 size-3.5" />
+              {aiStyleRefIds.length
+                ? `${aiStyleRefIds.length} reference${aiStyleRefIds.length !== 1 ? "s" : ""}`
+                : "Choose from library"}
+            </Button>
+            {aiStyleRefIds.length > 0 && (
+              <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground" onClick={() => setAiStyleRefIds([])}>
+                Clear
+              </Button>
+            )}
+          </div>
         </div>
         <div className="space-y-2">
           <FormLabel>Brand kit (optional)</FormLabel>
@@ -356,6 +401,18 @@ export function ProjectEditForm({
                 </div>
               )}
             </div>
+        <BackgroundImagesPickerModal
+          open={aiStyleRefPickerOpen}
+          onOpenChange={setAiStyleRefPickerOpen}
+          selectedIds={aiStyleRefIds}
+          onConfirm={setAiStyleRefIds}
+          maxSelection={MAX_PROJECT_AI_STYLE_REFERENCE_ASSETS}
+          allowEmptyConfirm
+          listFilterProjectId={projectId}
+          dialogTitle="Style references for AI-generated backgrounds"
+          dialogDescription={`Select up to ${MAX_PROJECT_AI_STYLE_REFERENCE_ASSETS} images. We use them only to match visual style (not to copy subjects). Upload images on the Assets page if needed.`}
+        />
+
         <div className="flex gap-4">
           <Button type="submit" disabled={isPending}>
             {isPending ? "Saving…" : "Save"}

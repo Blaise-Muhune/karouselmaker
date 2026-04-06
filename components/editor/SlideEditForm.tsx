@@ -48,7 +48,11 @@ import { imageSourceDisplayName } from "@/lib/utils/imageSourceDisplay";
 import { isSupabaseSignedUrl } from "@/lib/server/storage/signedUrlUtils";
 import { getTemplatePreviewBackgroundOverride } from "@/lib/renderer/getTemplatePreviewBackground";
 import { getTemplatePreviewImageUrls } from "@/lib/renderer/templatePreviewImages";
+import { formatHandleAttribution } from "@/lib/renderer/attributionText";
 import { getSwipeRightXForFormat, type BrandKit, type ChromeOverrides } from "@/lib/renderer/renderModel";
+import { clampTextZonePositionToCanvas } from "@/lib/renderer/textZoneGeometry";
+import { resolvePipLayoutsForImageCount } from "@/lib/renderer/resolvePipLayouts";
+import { TextBackdropChromeFields } from "@/components/editor/TextBackdropChromeFields";
 import type { OverlayShape, TemplateConfig, TextZone } from "@/lib/server/renderer/templateSchema";
 import {
   mergeTemplateAndSlideOverlayShapes,
@@ -107,6 +111,10 @@ const TEXT_BACKDROP_HEX_RE = /^#([0-9A-Fa-f]{3}){1,2}$/;
 /** Default fill when user turns backdrop on (still adjustable). */
 const DEFAULT_TEXT_BACKDROP_HEX = "#000000";
 const DEFAULT_TEXT_BACKDROP_OPACITY = 0.85;
+
+/** Layout sidebar cards when matching chrome is focused in the live preview (with shapes-on-slide styling). */
+const LAYOUT_CHROME_PANEL_HIGHLIGHT =
+  "border-primary/50 bg-primary/10 shadow-[0_0_0_1px_hsl(var(--primary)_/_0.25)] ring-2 ring-primary/35 transition-[box-shadow,border-color,background-color] duration-200";
 
 /** Row has something we can save: public https URL or library asset. */
 function slotHasPersistableImage(row: {
@@ -432,7 +440,7 @@ function getMaxPreviewSizeForArea(
 const SECTION_INFO: Record<string, { title: string; body: string }> = {
   content: {
     title: "Content",
-    body: "Headline and body: Text style (size, text color, font), Backdrop (Off/On, then color and strength behind the text on the slide), then the text field. Advanced: placement, highlights, bold (**word**), outline. Highlight style: Text or Bg for selected words only.",
+    body: "Headline and body: The text field first, then text style (size, text color, font), then on the slide (layout, highlights, bold **word**, outline), then backdrop (panel behind the text). Highlight style: Text or Bg for selected words only.",
   },
   layout: {
     title: "Frame layout",
@@ -496,7 +504,7 @@ type SlideEditFormProps = {
   initialImageSources?: ("brave" | "unsplash" | "google" | "pixabay" | "pexels")[] | null;
   /** Hook only: resolved URL for second image (circle). */
   initialSecondaryBackgroundImageUrl?: string | null;
-  /** Default attribution text when slide has no made_with_text (e.g. "Follow us" or "follow @username"). */
+  /** Template default for made-with line when slide has no `made_with_text` (often empty; project handle fills in). */
   initialMadeWithText?: string;
   /** Initial editor tab (from URL ?tab=). Preserved when using Prev/Next. */
   initialEditorTab?: "text" | "layout" | "background" | "more";
@@ -633,6 +641,13 @@ function computeEditorAnchoredPanelPlacement(
   const panelTop = Math.max(gutter, vh * 0.08);
   const panelMaxHeight = Math.max(200, vh - panelTop - gutter);
   return { panelLeft, panelTop, panelWidth, panelMaxHeight };
+}
+
+/** All caps → lowercase; otherwise uppercase the whole string (length unchanged; highlights stay valid). */
+function toggleAllTextCase(text: string): string {
+  if (!text) return text;
+  const upper = text.toUpperCase();
+  return text === upper ? text.toLowerCase() : upper;
 }
 
 export function SlideEditForm({
@@ -778,6 +793,8 @@ export function SlideEditForm({
       ...(isLinkedIn ? { mode: "pip" as const, pipPosition: "bottom_right" as const, pipSize: 0.4 } : {}),
     };
   });
+  /** When multiple images exist, Display panel configures this slot; synced with preview PiP clicks. */
+  const [backgroundImageDisplaySlot, setBackgroundImageDisplaySlot] = useState(0);
   const [backgroundImageUrlForPreview, setBackgroundImageUrlForPreview] = useState<string | null>(() => initialBackgroundImageUrl ?? null);
   const [secondaryBackgroundImageUrlForPreview, setSecondaryBackgroundImageUrlForPreview] = useState<string | null>(() => initialSecondaryBackgroundImageUrl ?? null);
   type ImageUrlItem = {
@@ -1012,6 +1029,12 @@ export function SlideEditForm({
     boxBackgroundColor?: string;
     /** 0–1; how solid the box fill is (default 1). */
     boxBackgroundOpacity?: number;
+    boxBackgroundFrameOnly?: boolean;
+    boxBackgroundBorderWidth?: number;
+    boxBackgroundBorderSides?: { top?: boolean; right?: boolean; bottom?: boolean; left?: boolean };
+    boxBackgroundBorderColor?: string;
+    boxBackgroundBorderOpacity?: number;
+    boxBackgroundBorderRadius?: number;
   };
   /** Max lines that fit in zone height (fontSize * lineHeight per line). Clamped 1–20. */
   const computeMaxLinesForZone = useCallback((h: number, fontSize: number, lineHeight: number) => {
@@ -1104,6 +1127,10 @@ export function SlideEditForm({
   /** When set, scroll the Layout tab to this chrome section (from preview click/drag). */
   const [scrollToChromeSection, setScrollToChromeSection] = useState<
     "counter" | "watermark" | "swipe" | "madeWith" | "shapes" | null
+  >(null);
+  /** Sidebar card highlight matching preview chrome focus (slide number / logo / swipe / bottom handle). */
+  const [layoutChromeHighlight, setLayoutChromeHighlight] = useState<
+    "counter" | "watermark" | "swipe" | "madeWith" | null
   >(null);
   const layoutCounterRef = useRef<HTMLDivElement>(null);
   const layoutSlideShapesRef = useRef<HTMLDivElement>(null);
@@ -1212,8 +1239,6 @@ export function SlideEditForm({
   /** Which text section is expanded in the Text tab (click to expand and show green container in preview). */
   const [expandedTextSection, setExpandedTextSection] = useState<"headline" | "body" | null>(null);
   /** "Edit more" (style, highlight, layout) open per section. */
-  const [headlineEditMoreOpen, setHeadlineEditMoreOpen] = useState(true);
-  const [bodyEditMoreOpen, setBodyEditMoreOpen] = useState(true);
   const headerRef = useRef<HTMLElement>(null);
   const mainScrollRef = useRef<HTMLDivElement>(null);
   const editorSectionRef = useRef<HTMLElement>(null);
@@ -1378,7 +1403,9 @@ export function SlideEditForm({
             ? layoutSwipeRef.current
             : scrollToChromeSection === "shapes"
               ? layoutSlideShapesRef.current
-              : layoutWatermarkRef.current;
+              : scrollToChromeSection === "madeWith"
+                ? layoutWatermarkRef.current
+                : null;
     if (ref) {
       const t = setTimeout(() => {
         ref.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -1388,6 +1415,10 @@ export function SlideEditForm({
     }
     setScrollToChromeSection(null);
   }, [editorTab, scrollToChromeSection]);
+
+  useEffect(() => {
+    if (slideShapesSelectedIndex != null) setLayoutChromeHighlight(null);
+  }, [slideShapesSelectedIndex]);
 
   useEffect(() => {
     const main = mainScrollRef.current;
@@ -1634,6 +1665,15 @@ export function SlideEditForm({
       : httpImageSlotCount === 1
         ? 1 + (hasSecondaryImage ? 1 : 0)
         : (hasPrimaryStoredImage ? 1 : 0) + (hasSecondaryImage ? 1 : 0);
+  useEffect(() => {
+    setBackgroundImageDisplaySlot((s) => Math.min(s, Math.max(0, validImageCount - 1)));
+  }, [validImageCount]);
+  const pipResolvedLayoutsForEditor = useMemo(() => {
+    if (validImageCount < 1 || (imageDisplay.mode ?? "full") !== "pip") return null;
+    return resolvePipLayoutsForImageCount(imageDisplay, validImageCount);
+  }, [imageDisplay, validImageCount]);
+  const activeBackgroundDisplaySlot = validImageCount <= 1 ? 0 : Math.min(backgroundImageDisplaySlot, validImageCount - 1);
+  const activePipResolved = pipResolvedLayoutsForEditor?.[activeBackgroundDisplaySlot];
   const singleImageWithPip = (imageDisplay?.mode === "pip") && validImageCount === 1;
   const pipDefaultHeadlineSize = headlineZoneFromTemplate?.fontSize ?? 72;
   const pipDefaultBodySize = bodyZoneFromTemplate?.fontSize ?? 48;
@@ -1682,9 +1722,7 @@ export function SlideEditForm({
           }),
           madeWith: {
             ...previewChromeOverrides.madeWith,
-            text: isPro
-              ? (madeWithText.trim() || initialMadeWithText || "Follow us")
-              : "Follow us",
+            ...(isPro && madeWithText.trim() !== "" ? { text: madeWithText.trim() } : {}),
             ...((!madeWithZoneOverride || (madeWithZoneOverride.x == null && madeWithZoneOverride.y == null)) && { bottom: 16 }),
           },
         }
@@ -1700,9 +1738,7 @@ export function SlideEditForm({
           ...((counterColorOverride ?? headlineColorForChrome) && { counterColor: counterColorOverride ?? headlineColorForChrome }),
           ...((watermarkColorOverride ?? headlineColorForChrome) && { watermark: { color: watermarkColorOverride ?? headlineColorForChrome } }),
           madeWith: {
-            text: isPro
-              ? (madeWithText.trim() || initialMadeWithText || "Follow us")
-              : "Follow us",
+            ...(isPro && madeWithText.trim() !== "" ? { text: madeWithText.trim() } : {}),
             bottom: 16,
           },
         };
@@ -3010,6 +3046,22 @@ export function SlideEditForm({
     if (result.ok) router.refresh();
   };
 
+  const toggleHeadlineCase = useCallback(() => {
+    setHeadline((h) => {
+      const next = toggleAllTextCase(h);
+      setHeadlineHighlights((prev) => clampHighlightSpansToText(next, prev));
+      return next;
+    });
+  }, []);
+
+  const toggleBodyCase = useCallback(() => {
+    setBody((b) => {
+      const next = toggleAllTextCase(b);
+      setBodyHighlights((prev) => clampHighlightSpansToText(next, prev));
+      return next;
+    });
+  }, []);
+
   /** Apply headline font size, position, layout, and text color to all slides. Uses effective zone (template + overrides) so color is always included. */
   const handleApplyHeadlineToAll = async () => {
     setApplyingHeadlineZone(true);
@@ -4142,24 +4194,28 @@ export function SlideEditForm({
                   const head = headlineZoneOverride ?? templateConfig?.textZones?.find((z) => z.id === "headline");
                   const w = head?.w ?? 920;
                   const h = head?.h ?? 340;
+                  const rot = head?.rotation ?? 0;
                   const ch = exportSize === "1080x1920" ? 1920 : exportSize === "1080x1350" ? 1350 : 1080;
+                  const { x: nx, y: ny } = clampTextZonePositionToCanvas(Math.round(x), Math.round(y), w, h, rot, 1080, ch);
                   setHeadlineZoneOverride((prev) => ({
                     ...headlineZoneFromTemplate,
                     ...prev,
-                    x: Math.min(1080 - w, Math.max(0, Math.round(x))),
-                    y: Math.min(ch - h, Math.max(0, Math.round(y))),
+                    x: nx,
+                    y: ny,
                   }));
                 }}
                 onBodyPositionChange={(x, y) => {
                   const body = bodyZoneOverride ?? templateConfig?.textZones?.find((z) => z.id === "body");
                   const w = body?.w ?? 920;
                   const h = body?.h ?? 220;
+                  const rot = body?.rotation ?? 0;
                   const ch = exportSize === "1080x1920" ? 1920 : exportSize === "1080x1350" ? 1350 : 1080;
+                  const { x: nx, y: ny } = clampTextZonePositionToCanvas(Math.round(x), Math.round(y), w, h, rot, 1080, ch);
                   setBodyZoneOverride((prev) => ({
                     ...bodyZoneFromTemplate,
                     ...prev,
-                    x: Math.min(1080 - w, Math.max(0, Math.round(x))),
-                    y: Math.min(ch - h, Math.max(0, Math.round(y))),
+                    x: nx,
+                    y: ny,
                   }));
                 }}
                 onBackgroundImagePositionChange={
@@ -4185,7 +4241,8 @@ export function SlideEditForm({
                             : setImageDisplay((d) => upsertImageDisplayPipSlot(d, slotIndex, validImageCount, { pipSize: size }))
                     : undefined
                 }
-                onPipImageClick={() => {
+                onPipImageClick={(slot) => {
+                  setBackgroundImageDisplaySlot(Math.min(Math.max(0, slot), Math.max(0, validImageCount - 1)));
                   if (editorTab !== "background") setEditorTab("background");
                 }}
                 positionAndSizeOnly
@@ -4220,6 +4277,9 @@ export function SlideEditForm({
                             return { ...headlineZoneFromTemplate, ...prev, h, maxLines: computeMaxLinesForZone(h, fs, lh) };
                           });
                         },
+                        rotation: headlineZoneOverride?.rotation ?? headlineZoneFromTemplate?.rotation ?? 0,
+                        onRotationChange: (deg) =>
+                          setHeadlineZoneOverride((o) => ({ ...headlineZoneFromTemplate, ...o, rotation: deg })),
                         highlight: {
                           color: headlineHighlightColor,
                           onApply: (start, end, color) => applyHighlightToRange("headline", start, end, color),
@@ -4268,6 +4328,9 @@ export function SlideEditForm({
                             return { ...bodyZoneFromTemplate, ...prev, h, maxLines: computeMaxLinesForZone(h, fs, lh) };
                           });
                         },
+                        rotation: bodyZoneOverride?.rotation ?? bodyZoneFromTemplate?.rotation ?? 0,
+                        onRotationChange: (deg) =>
+                          setBodyZoneOverride((o) => ({ ...bodyZoneFromTemplate, ...o, rotation: deg })),
                         highlight: {
                           color: bodyHighlightColor,
                           onApply: (start, end, color) => applyHighlightToRange("body", start, end, color),
@@ -4290,8 +4353,10 @@ export function SlideEditForm({
                 editChromeSwipe={editChromeSwipeProp}
                 editChromeMadeWith={editChromeMadeWithProp}
                 onChromeFocus={(chrome) => {
-                  setEditorTab("layout");
+                  setLayoutChromeHighlight(chrome);
                   if (chrome) {
+                    setSlideShapesSelectedIndex(null);
+                    setEditorTab("layout");
                     setChromeLayoutOpen(true);
                     setScrollToChromeSection(chrome);
                   }
@@ -4600,67 +4665,62 @@ export function SlideEditForm({
 
       <Dialog open={templateModalOpen} onOpenChange={(open) => !applyingTemplate && setTemplateModalOpen(open)}>
         <DialogContent className="flex flex-col max-w-[calc(100%-2rem)] max-h-[85vh] sm:max-w-2xl md:max-w-[92vw] md:max-h-[92vh] md:w-[92vw] md:h-[92vh] lg:max-w-[94vw] lg:max-h-[94vh] lg:w-[94vw] lg:h-[94vh]">
-          <DialogHeader className="flex flex-row items-start justify-between gap-2">
-            <div>
-              <DialogTitle>Choose template</DialogTitle>
-              <p className="text-muted-foreground text-sm mt-1">
-                Pick a layout for your slide. You can load more below.
-              </p>
-            </div>
-            {isPro && (
-              <ImportTemplateButton
-                isPro={isPro}
-                atLimit={false}
-                isAdmin={isAdmin}
-                watermarkText={brandKit.watermark_text}
-                variant="outline"
-                size="sm"
-                className="shrink-0 gap-1.5"
-                onSuccess={(newId, newName, config) => {
-                  setRecentlyCreatedTemplates((prev) => [...prev, { id: newId, name: newName, parsedConfig: config, isSystemTemplate: false }]);
-                  setTemplateId(newId);
-                  setOverrideTemplateConfig(config);
-                  const templateBg = getTemplatePreviewBackgroundOverride(config);
-                  const grad = config.overlays?.gradient;
-                  const defaultBgColor =
-                    config.defaults?.background && typeof config.defaults.background === "object" && "color" in config.defaults.background
-                      ? (config.defaults.background as { color?: string }).color
-                      : undefined;
-                  const newColor =
-                    (grad?.color && /^#[0-9A-Fa-f]{3,6}$/i.test(grad.color) ? grad.color : defaultBgColor) ?? templateBg.color ?? "#0a0a0a";
-                  setBackground((prev) => ({
-                    ...prev,
-                    style: templateBg.style ?? "solid",
-                    pattern: templateBg.pattern ?? prev.pattern,
-                    color: newColor,
-                    overlay: {
-                      ...prev.overlay,
-                      gradient: prev.overlay?.gradient ?? (grad?.enabled ?? true),
-                      darken: prev.overlay?.darken ?? (grad?.strength ?? 0.5),
-                      color: newColor,
-                      textColor: getContrastingTextColor(newColor),
-                      direction: prev.overlay?.direction ?? (grad?.direction ?? "bottom"),
-                      extent: prev.overlay?.extent ?? (grad?.extent ?? 50),
-                      solidSize: prev.overlay?.solidSize ?? (grad?.solidSize ?? 25),
-                    },
-                  }));
-                  const metaImageDisplay = config.defaults?.meta && typeof config.defaults.meta === "object" && "image_display" in config.defaults.meta
-                    ? (config.defaults.meta as { image_display?: unknown }).image_display
-                    : undefined;
-                  if (metaImageDisplay != null && typeof metaImageDisplay === "object" && !Array.isArray(metaImageDisplay)) {
-                    const d = { ...metaImageDisplay } as ImageDisplayState;
-                    const ds = d.dividerStyle as string | undefined;
-                    if (ds === "dotted") d.dividerStyle = "dashed";
-                    else if (ds === "double" || ds === "triple") d.dividerStyle = "scalloped";
-                    setImageDisplay(d);
-                  } else {
-                    setImageDisplay({});
-                  }
-                }}
-                onCreated={() => router.refresh()}
-              />
-            )}
+          <DialogHeader>
+            <DialogTitle>Choose template</DialogTitle>
+            <p className="text-muted-foreground text-sm mt-1">
+              Pick a layout for your slide. You can load more below.
+            </p>
           </DialogHeader>
+          <ImportTemplateButton
+            layout="callout"
+            isPro={isPro}
+            atLimit={false}
+            isAdmin={isAdmin}
+            watermarkText={brandKit.watermark_text}
+            className="shrink-0"
+            onSuccess={(newId, newName, config) => {
+              setRecentlyCreatedTemplates((prev) => [...prev, { id: newId, name: newName, parsedConfig: config, isSystemTemplate: false }]);
+              setTemplateId(newId);
+              setOverrideTemplateConfig(config);
+              const templateBg = getTemplatePreviewBackgroundOverride(config);
+              const grad = config.overlays?.gradient;
+              const defaultBgColor =
+                config.defaults?.background && typeof config.defaults.background === "object" && "color" in config.defaults.background
+                  ? (config.defaults.background as { color?: string }).color
+                  : undefined;
+              const newColor =
+                (grad?.color && /^#[0-9A-Fa-f]{3,6}$/i.test(grad.color) ? grad.color : defaultBgColor) ?? templateBg.color ?? "#0a0a0a";
+              setBackground((prev) => ({
+                ...prev,
+                style: templateBg.style ?? "solid",
+                pattern: templateBg.pattern ?? prev.pattern,
+                color: newColor,
+                overlay: {
+                  ...prev.overlay,
+                  gradient: prev.overlay?.gradient ?? (grad?.enabled ?? true),
+                  darken: prev.overlay?.darken ?? (grad?.strength ?? 0.5),
+                  color: newColor,
+                  textColor: getContrastingTextColor(newColor),
+                  direction: prev.overlay?.direction ?? (grad?.direction ?? "bottom"),
+                  extent: prev.overlay?.extent ?? (grad?.extent ?? 50),
+                  solidSize: prev.overlay?.solidSize ?? (grad?.solidSize ?? 25),
+                },
+              }));
+              const metaImageDisplay = config.defaults?.meta && typeof config.defaults.meta === "object" && "image_display" in config.defaults.meta
+                ? (config.defaults.meta as { image_display?: unknown }).image_display
+                : undefined;
+              if (metaImageDisplay != null && typeof metaImageDisplay === "object" && !Array.isArray(metaImageDisplay)) {
+                const d = { ...metaImageDisplay } as ImageDisplayState;
+                const ds = d.dividerStyle as string | undefined;
+                if (ds === "dotted") d.dividerStyle = "dashed";
+                else if (ds === "double" || ds === "triple") d.dividerStyle = "scalloped";
+                setImageDisplay(d);
+              } else {
+                setImageDisplay({});
+              }
+            }}
+            onCreated={() => router.refresh()}
+          />
           <div className="relative flex-1 min-h-0 min-w-0 flex flex-col">
             {applyingTemplate && (
               <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-lg bg-background/95 backdrop-blur-sm">
@@ -5060,24 +5120,28 @@ export function SlideEditForm({
                           const head = headlineZoneOverride ?? templateConfig?.textZones?.find((z) => z.id === "headline");
                           const w = head?.w ?? 920;
                           const h = head?.h ?? 340;
+                          const rot = head?.rotation ?? 0;
                           const ch = exportSize === "1080x1920" ? 1920 : exportSize === "1080x1350" ? 1350 : 1080;
+                          const { x: nx, y: ny } = clampTextZonePositionToCanvas(Math.round(x), Math.round(y), w, h, rot, 1080, ch);
                           setHeadlineZoneOverride((prev) => ({
                             ...headlineZoneFromTemplate,
                             ...prev,
-                            x: Math.min(1080 - w, Math.max(0, Math.round(x))),
-                            y: Math.min(ch - h, Math.max(0, Math.round(y))),
+                            x: nx,
+                            y: ny,
                           }));
                         }}
                         onBodyPositionChange={(x, y) => {
                           const body = bodyZoneOverride ?? templateConfig?.textZones?.find((z) => z.id === "body");
                           const w = body?.w ?? 920;
                           const h = body?.h ?? 220;
+                          const rot = body?.rotation ?? 0;
                           const ch = exportSize === "1080x1920" ? 1920 : exportSize === "1080x1350" ? 1350 : 1080;
+                          const { x: nx, y: ny } = clampTextZonePositionToCanvas(Math.round(x), Math.round(y), w, h, rot, 1080, ch);
                           setBodyZoneOverride((prev) => ({
                             ...bodyZoneFromTemplate,
                             ...prev,
-                            x: Math.min(1080 - w, Math.max(0, Math.round(x))),
-                            y: Math.min(ch - h, Math.max(0, Math.round(y))),
+                            x: nx,
+                            y: ny,
                           }));
                         }}
                         onBackgroundImagePositionChange={
@@ -5103,7 +5167,8 @@ export function SlideEditForm({
                                     : setImageDisplay((d) => upsertImageDisplayPipSlot(d, slotIndex, validImageCount, { pipSize: size }))
                             : undefined
                         }
-                        onPipImageClick={() => {
+                        onPipImageClick={(slot) => {
+                          setBackgroundImageDisplaySlot(Math.min(Math.max(0, slot), Math.max(0, validImageCount - 1)));
                           if (editorTab !== "background") setEditorTab("background");
                         }}
                         editToolbarHeadline={
@@ -5137,6 +5202,9 @@ export function SlideEditForm({
                                     return { ...headlineZoneFromTemplate, ...prev, h, maxLines: computeMaxLinesForZone(h, fs, lh) };
                                   });
                                 },
+                                rotation: headlineZoneOverride?.rotation ?? headlineZoneFromTemplate?.rotation ?? 0,
+                                onRotationChange: (deg) =>
+                                  setHeadlineZoneOverride((o) => ({ ...headlineZoneFromTemplate, ...o, rotation: deg })),
                                 highlight: {
                                   color: headlineHighlightColor,
                                   onApply: (start, end, color) => applyHighlightToRange("headline", start, end, color),
@@ -5185,6 +5253,9 @@ export function SlideEditForm({
                                     return { ...bodyZoneFromTemplate, ...prev, h, maxLines: computeMaxLinesForZone(h, fs, lh) };
                                   });
                                 },
+                                rotation: bodyZoneOverride?.rotation ?? bodyZoneFromTemplate?.rotation ?? 0,
+                                onRotationChange: (deg) =>
+                                  setBodyZoneOverride((o) => ({ ...bodyZoneFromTemplate, ...o, rotation: deg })),
                                 highlight: {
                                   color: bodyHighlightColor,
                                   onApply: (start, end, color) => applyHighlightToRange("body", start, end, color),
@@ -5207,8 +5278,10 @@ export function SlideEditForm({
                         editChromeSwipe={editChromeSwipeProp}
                         editChromeMadeWith={editChromeMadeWithProp}
                         onChromeFocus={(chrome) => {
-                          setEditorTab("layout");
+                          setLayoutChromeHighlight(chrome);
                           if (chrome) {
+                            setSlideShapesSelectedIndex(null);
+                            setEditorTab("layout");
                             setChromeLayoutOpen(true);
                             setScrollToChromeSection(chrome);
                           }
@@ -5340,14 +5413,21 @@ export function SlideEditForm({
                   </Button>
                   {chromeLayoutOpen && (
                     <div className="space-y-4 mt-2">
-                        <div ref={layoutCounterRef} className={`rounded-lg border border-border/50 bg-muted/5 p-3 ${showCounter ? "" : "opacity-50 pointer-events-none"}`}>
+                        <div
+                          ref={layoutCounterRef}
+                          className={cn(
+                            "rounded-lg border border-border/50 bg-muted/5 p-3",
+                            showCounter ? "" : "opacity-50 pointer-events-none",
+                            layoutChromeHighlight === "counter" && LAYOUT_CHROME_PANEL_HIGHLIGHT
+                          )}
+                        >
                         <h4 className="text-xs font-semibold text-foreground mb-2 pb-1.5 border-b border-border/50">Slide number</h4>
                         <div className="grid grid-cols-3 gap-3">
                           {(["top", "right", "fontSize"] as const).map((key) => {
                             const label = key === "top" ? "Top (px)" : key === "right" ? "Right (px)" : "Font size";
                             const val = counterZoneOverride?.[key] ?? (key === "fontSize" ? 20 : 24);
                             return (
-                              <div key={key} className="space-y-1">
+                              <div key={key} className="min-w-0 space-y-1">
                                 <Label className="text-xs">{label}</Label>
                                 <StepperWithLongPress
                                   value={val}
@@ -5356,7 +5436,7 @@ export function SlideEditForm({
                                   step={key === "fontSize" ? 1 : 4}
                                   onChange={(v) => setCounterZoneOverride((o) => ({ ...o, [key]: v }))}
                                   label={label}
-                                  className="w-full max-w-[100px]"
+                                  className="w-full min-w-0"
                                   disabled={!showCounter}
                                 />
                               </div>
@@ -5380,7 +5460,14 @@ export function SlideEditForm({
                         )}
                         </div>
                       {(brandKit.watermark_text || brandKit.logo_url) && (
-                        <div ref={layoutLogoRef} className={`rounded-lg border border-border/50 bg-muted/5 p-3 ${showWatermark ? "" : "opacity-50 pointer-events-none"}`}>
+                        <div
+                          ref={layoutLogoRef}
+                          className={cn(
+                            "rounded-lg border border-border/50 bg-muted/5 p-3",
+                            showWatermark ? "" : "opacity-50 pointer-events-none",
+                            layoutChromeHighlight === "watermark" && LAYOUT_CHROME_PANEL_HIGHLIGHT
+                          )}
+                        >
                           <h4 className="text-xs font-semibold text-foreground mb-2 pb-1.5 border-b border-border/50">Logo</h4>
                           <div className="mb-2">
                             <Label className="text-xs">Color</Label>
@@ -5393,18 +5480,18 @@ export function SlideEditForm({
                           </div>
                           <div className="space-y-2">
                             <div className="grid grid-cols-2 gap-2">
-                              <div>
+                              <div className="min-w-0">
                                 <Label className="text-xs">X (px)</Label>
-                                <StepperWithLongPress value={watermarkZoneOverride?.logoX ?? templateConfig?.chrome?.watermark?.logoX ?? 24} min={0} max={1080} step={8} onChange={(v) => setWatermarkZoneOverride((o) => ({ ...o, logoX: v }))} label="X" className="w-full max-w-[80px]" disabled={!showWatermark} />
+                                <StepperWithLongPress value={watermarkZoneOverride?.logoX ?? templateConfig?.chrome?.watermark?.logoX ?? 24} min={0} max={1080} step={8} onChange={(v) => setWatermarkZoneOverride((o) => ({ ...o, logoX: v }))} label="X" className="w-full min-w-0" disabled={!showWatermark} />
                               </div>
-                              <div>
+                              <div className="min-w-0">
                                 <Label className="text-xs">Y (px)</Label>
-                                <StepperWithLongPress value={watermarkZoneOverride?.logoY ?? templateConfig?.chrome?.watermark?.logoY ?? 24} min={0} max={1080} step={8} onChange={(v) => setWatermarkZoneOverride((o) => ({ ...o, logoY: v }))} label="Y" className="w-full max-w-[80px]" disabled={!showWatermark} />
+                                <StepperWithLongPress value={watermarkZoneOverride?.logoY ?? templateConfig?.chrome?.watermark?.logoY ?? 24} min={0} max={1080} step={8} onChange={(v) => setWatermarkZoneOverride((o) => ({ ...o, logoY: v }))} label="Y" className="w-full min-w-0" disabled={!showWatermark} />
                               </div>
                             </div>
                             <div>
                               <Label className="text-xs">Font size</Label>
-                              <StepperWithLongPress value={watermarkZoneOverride?.fontSize ?? 20} min={8} max={72} step={1} onChange={(v) => setWatermarkZoneOverride((o) => ({ ...o, fontSize: v }))} label="Font size" className="w-full max-w-[80px]" disabled={!showWatermark} />
+                              <StepperWithLongPress value={watermarkZoneOverride?.fontSize ?? 20} min={8} max={72} step={1} onChange={(v) => setWatermarkZoneOverride((o) => ({ ...o, fontSize: v }))} label="Font size" className="w-full min-w-0" disabled={!showWatermark} />
                             </div>
                           </div>
                           {totalSlides > 1 && isPro && (
@@ -5416,7 +5503,13 @@ export function SlideEditForm({
                         </div>
                       )}
                       {showSwipe && (
-                        <div ref={layoutSwipeRef} className="rounded-lg border border-border/50 bg-muted/5 p-3 space-y-2">
+                        <div
+                          ref={layoutSwipeRef}
+                          className={cn(
+                            "rounded-lg border border-border/50 bg-muted/5 p-3 space-y-2",
+                            layoutChromeHighlight === "swipe" && LAYOUT_CHROME_PANEL_HIGHLIGHT
+                          )}
+                        >
                           <h4 className="text-xs font-semibold text-foreground mb-2 pb-1.5 border-b border-border/50">Swipe</h4>
                           <div className="grid grid-cols-2 gap-3">
                             <div>
@@ -5502,7 +5595,7 @@ export function SlideEditForm({
                             />
                           </div>
                           <div className="grid grid-cols-2 gap-3 mt-2">
-                            <div>
+                            <div className="min-w-0">
                               <Label className="text-xs">X</Label>
                               <StepperWithLongPress
                                 value={(() => {
@@ -5520,10 +5613,10 @@ export function SlideEditForm({
                                   setSwipePosition("custom");
                                 }}
                                 label="X"
-                                className="w-full max-w-[80px]"
+                                className="w-full min-w-0"
                               />
                             </div>
-                            <div>
+                            <div className="min-w-0">
                               <Label className="text-xs">Y</Label>
                               <StepperWithLongPress
                                 value={swipeY ?? SWIPE_POSITION_PRESETS[swipePosition]?.y ?? 980}
@@ -5535,12 +5628,12 @@ export function SlideEditForm({
                                   setSwipePosition("custom");
                                 }}
                                 label="Y"
-                                className="w-full max-w-[80px]"
+                                className="w-full min-w-0"
                               />
                             </div>
-                            <div>
+                            <div className="min-w-0">
                               <Label className="text-xs">Size</Label>
-                              <StepperWithLongPress value={swipeSize ?? 24} min={8} max={72} step={1} onChange={(v) => setSwipeSize(v)} label="Size" className="w-full max-w-[80px]" />
+                              <StepperWithLongPress value={swipeSize ?? 24} min={8} max={72} step={1} onChange={(v) => setSwipeSize(v)} label="Size" className="w-full min-w-0" />
                             </div>
                             {swipeType === "text" && (
                               <div className="col-span-2">
@@ -5557,8 +5650,15 @@ export function SlideEditForm({
                           )}
                         </div>
                       )}
-                      <div ref={layoutWatermarkRef} className={`rounded-lg border border-border/50 bg-muted/5 p-3 ${showMadeWith ? "" : "opacity-50 pointer-events-none"}`}>
-                        <h4 className="text-xs font-semibold text-foreground mb-2 pb-1.5 border-b border-border/50">Watermark</h4>
+                      <div
+                        ref={layoutWatermarkRef}
+                        className={cn(
+                          "rounded-lg border border-border/50 bg-muted/5 p-3",
+                          showMadeWith ? "" : "opacity-50 pointer-events-none",
+                          layoutChromeHighlight === "madeWith" && LAYOUT_CHROME_PANEL_HIGHLIGHT
+                        )}
+                      >
+                        <h4 className="text-xs font-semibold text-foreground mb-2 pb-1.5 border-b border-border/50">Bottom handle</h4>
                         <div className="space-y-3">
                           {isPro ? (
                             <div>
@@ -5567,28 +5667,32 @@ export function SlideEditForm({
                                 type="text"
                                 value={madeWithText}
                                 onChange={(e) => setMadeWithText(e.target.value)}
-                                placeholder={initialMadeWithText || "e.g. follow @username"}
+                                placeholder={initialMadeWithText || "@handle"}
                                 maxLength={200}
                                 className="h-8 text-xs mt-0.5"
                                 disabled={!showMadeWith}
                               />
-                              <p className="text-[10px] text-muted-foreground mt-0.5">e.g. follow @username</p>
+                              <p className="text-[10px] text-muted-foreground mt-0.5">
+                                Leave blank to use your project handle. Logo uses project logo when set (see Logo above); without a logo it shows the same handle there.
+                              </p>
                             </div>
                           ) : (
-                            <p className="text-[11px] text-muted-foreground">Follow us</p>
+                            <p className="text-[11px] text-muted-foreground">
+                              {formatHandleAttribution(brandKit.watermark_text) || "Set a handle in project settings to show @you here."}
+                            </p>
                           )}
                           <div className="grid grid-cols-2 gap-3">
                             <div>
                               <Label className="text-xs">Font size</Label>
-                              <StepperWithLongPress value={madeWithZoneOverride?.fontSize ?? 30} min={12} max={48} step={1} onChange={(v) => setMadeWithZoneOverride((o) => ({ ...o, fontSize: v }))} label="Font size" className="w-full max-w-[80px]" disabled={!showMadeWith} />
+                              <StepperWithLongPress value={madeWithZoneOverride?.fontSize ?? 30} min={12} max={48} step={1} onChange={(v) => setMadeWithZoneOverride((o) => ({ ...o, fontSize: v }))} label="Font size" className="w-full min-w-0" disabled={!showMadeWith} />
                             </div>
                             <div>
                               <Label className="text-xs">X (px)</Label>
-                              <StepperWithLongPress value={madeWithZoneOverride?.x ?? 540} min={0} max={968} step={4} onChange={(v) => setMadeWithZoneOverride((o) => ({ ...(o ?? {}), x: v }))} label="X" className="w-full max-w-[80px]" disabled={!showMadeWith} />
+                              <StepperWithLongPress value={madeWithZoneOverride?.x ?? 540} min={0} max={968} step={4} onChange={(v) => setMadeWithZoneOverride((o) => ({ ...(o ?? {}), x: v }))} label="X" className="w-full min-w-0" disabled={!showMadeWith} />
                             </div>
                             <div>
                               <Label className="text-xs">Y (px)</Label>
-                              <StepperWithLongPress value={madeWithZoneOverride?.y ?? 1016} min={0} max={1032} step={4} onChange={(v) => setMadeWithZoneOverride((o) => ({ ...(o ?? {}), y: v }))} label="Y" className="w-full max-w-[80px]" disabled={!showMadeWith} />
+                              <StepperWithLongPress value={madeWithZoneOverride?.y ?? 1016} min={0} max={1032} step={4} onChange={(v) => setMadeWithZoneOverride((o) => ({ ...(o ?? {}), y: v }))} label="Y" className="w-full min-w-0" disabled={!showMadeWith} />
                             </div>
                           </div>
                           <div className={cn("mt-2", !showMadeWith && "opacity-50 pointer-events-none")}>
@@ -5622,9 +5726,6 @@ export function SlideEditForm({
                 )}
               >
                 <h3 className="text-xs font-semibold text-foreground">Shapes on this slide</h3>
-                <p className="text-muted-foreground text-[11px] leading-relaxed">
-                  Lists template shapes plus any added on this frame. Editing a template shape here replaces template shapes for this slide only (saved in slide meta). Click a shape in the live preview to jump here, then drag to move; use the top handle to rotate boxes and the bottom-right to resize when rotation is near 0°. Click elsewhere on the slide to deselect. Save to persist.
-                </p>
                 <TemplateOverlayShapesEditor
                   embedded
                   shapes={resolvedOverlayShapesForPreview}
@@ -5699,7 +5800,7 @@ export function SlideEditForm({
           {editorTab === "text" && (
           <section className="space-y-3" aria-label="Text">
             <p className="text-xs text-muted-foreground leading-relaxed px-0.5">
-              <span className="font-medium text-foreground">Headline & body</span> — open a block to edit. <span className="whitespace-nowrap">Text style</span> is size, color, and font; <span className="whitespace-nowrap">Backdrop</span> uses Off/On, then color and strength. Use <span className="whitespace-nowrap">Advanced</span> for position, highlights, and outline.
+              <span className="font-medium text-foreground">Headline & body</span> — open a block to edit. Order: <span className="whitespace-nowrap">text field</span>, then <span className="whitespace-nowrap">text style</span> (size, color, font), <span className="whitespace-nowrap">on the slide</span> (layout, highlights, outline), then <span className="whitespace-nowrap">backdrop</span>.
             </p>
             <div className="relative min-h-0 space-y-3">
             {/* Headline: collapsible */}
@@ -5723,11 +5824,57 @@ export function SlideEditForm({
                 </span>
               </button>
               <div id="text-section-headline" className={expandedTextSection === "headline" ? "p-3 pt-0 space-y-3" : "hidden"}>
+              <Textarea
+                ref={headlineRef}
+                id="headline"
+                value={headline}
+                onChange={(e) => setHeadline(e.target.value)}
+                onFocus={() => {
+                  setExpandedTextSection("headline");
+                  setActiveEditZone("headline");
+                  if (isMobile) {
+                    setTimeout(() => scrollFocusedFieldIntoView(), 350);
+                  }
+                }}
+                onBlur={() => { if (headlineHighlightOpen) saveHighlightSelectionForPicker("headline"); }}
+                placeholder="Enter your headline..."
+                className="min-h-[72px] w-full resize-none rounded-md border-input/80 text-sm field-sizing-content px-3 py-2"
+                rows={2}
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 min-w-8 px-2 text-xs font-semibold"
+                  onClick={toggleHeadlineCase}
+                  disabled={!headline}
+                  title="Uppercase all text, or lowercase if it is already all caps"
+                  aria-label="Toggle headline between uppercase and lowercase"
+                >
+                  Aa
+                </Button>
+                {isPro && (
+                  <Button type="button" variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={handleCycleHook} disabled={cyclingHook || ensuringVariants || (isHook && headlineVariants.length === 0)} title={isHook ? "Cycle to next headline variant" : "Generate headline variants (hook slide)"}>
+                    {cyclingHook ? <Loader2Icon className="size-3.5 animate-spin" /> : <SparklesIcon className="size-3.5" />}
+                    Rewrite headline
+                  </Button>
+                )}
+                {totalSlides > 1 && (
+                  <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={handleApplyHeadlineToAll} disabled={applyingHeadlineZone} title="Apply headline size, position, layout, and text color to all frames">
+                    {applyingHeadlineZone ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
+                    Apply to all
+                  </Button>
+                )}
+                <button type="button" onClick={() => setInfoSection("content")} className="rounded p-1.5 text-muted-foreground hover:bg-muted" aria-label="Content help" title="Help">
+                  <InfoIcon className="size-3.5" />
+                </button>
+              </div>
                 <div className="rounded-lg border border-border/50 bg-muted/20 p-3 space-y-4">
                   <div className="space-y-3">
                     <p className="text-xs font-medium text-foreground">Text style</p>
-                    <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
-                <div className="space-y-1.5">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:gap-x-4 sm:gap-y-3">
+                <div className="min-w-0 w-full space-y-1.5 sm:w-auto sm:max-w-[11rem]">
                         <Label className="text-[11px] text-muted-foreground font-normal">Size</Label>
                   <StepperWithLongPress
                     value={headlineFontSize ?? defaultHeadlineSize}
@@ -5736,10 +5883,10 @@ export function SlideEditForm({
                     step={4}
                     onChange={(v) => setHeadlineFontSize(v)}
                     label="Size"
-                    className="shrink-0 max-w-[90px]"
+                    className="w-full"
                   />
                       </div>
-                      <div className="space-y-1.5">
+                      <div className="min-w-0 w-full space-y-1.5 sm:w-auto sm:min-w-[5.5rem]">
                         <Label className="text-[11px] text-muted-foreground font-normal">Text color</Label>
                         <div className="flex h-8 items-center rounded-md border border-input/80 bg-background px-1.5">
                     <ColorPicker
@@ -5774,118 +5921,6 @@ export function SlideEditForm({
                     </div>
                   </div>
 
-                  <div className="border-t border-border/40 pt-3 space-y-3">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
-                      <div className="min-w-0">
-                        <p className="text-xs font-medium text-foreground">Backdrop</p>
-                        <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">
-                          Panel behind this text on the slide — not highlighted words. Turn on, then pick a color.
-                        </p>
-                      </div>
-                      <div
-                        className="inline-flex shrink-0 rounded-lg border border-input/80 bg-muted/40 p-0.5"
-                        role="group"
-                        aria-label="Backdrop on or off"
-                      >
-                        <button
-                          type="button"
-                          className={cn(
-                            "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                            !textBackdropIsOn(headlineZoneOverride)
-                              ? "bg-background text-foreground shadow-sm"
-                              : "text-muted-foreground hover:text-foreground"
-                          )}
-                          onClick={() => {
-                            setHeadlineZoneOverride((o) => {
-                              const next = { ...(o ?? {}) };
-                              delete next.boxBackgroundColor;
-                              delete next.boxBackgroundOpacity;
-                              return Object.keys(next).length > 0 ? next : undefined;
-                            });
-                          }}
-                        >
-                          Off
-                        </button>
-                        <button
-                          type="button"
-                          className={cn(
-                            "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                            textBackdropIsOn(headlineZoneOverride)
-                              ? "bg-background text-foreground shadow-sm"
-                              : "text-muted-foreground hover:text-foreground"
-                          )}
-                          onClick={() => {
-                            setHeadlineZoneOverride((o) => {
-                              const cur = o?.boxBackgroundColor?.trim();
-                              const hasValid = !!cur && TEXT_BACKDROP_HEX_RE.test(cur);
-                              const prevOp = o?.boxBackgroundOpacity;
-                              const keepOpacity =
-                                typeof prevOp === "number" && !Number.isNaN(prevOp) && hasValid;
-                              return {
-                                ...(o ?? {}),
-                                boxBackgroundColor: hasValid ? cur! : DEFAULT_TEXT_BACKDROP_HEX,
-                                boxBackgroundOpacity: keepOpacity ? prevOp! : DEFAULT_TEXT_BACKDROP_OPACITY,
-                              };
-                            });
-                          }}
-                        >
-                          On
-                        </button>
-                      </div>
-                    </div>
-                    {textBackdropIsOn(headlineZoneOverride) && (
-                      <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-3">
-                        <div className="flex items-center gap-2 shrink-0">
-                          <Label className="text-[11px] text-muted-foreground font-normal w-12 shrink-0 hidden sm:inline">
-                            Color
-                          </Label>
-                          <div className="flex h-8 items-center rounded-md border border-input/80 bg-background px-1.5">
-                            <ColorPicker
-                              value={headlineZoneOverride?.boxBackgroundColor ?? ""}
-                              onChange={(v) => {
-                                const c = v.trim();
-                                const ok = c.length > 0 && TEXT_BACKDROP_HEX_RE.test(c);
-                                setHeadlineZoneOverride((o) => {
-                                  if (!ok) {
-                                    const next = { ...(o ?? {}) };
-                                    delete next.boxBackgroundColor;
-                                    delete next.boxBackgroundOpacity;
-                                    return Object.keys(next).length > 0 ? next : undefined;
-                                  }
-                                  return {
-                                    ...(o ?? {}),
-                                    boxBackgroundColor: c,
-                                    boxBackgroundOpacity: o?.boxBackgroundOpacity ?? DEFAULT_TEXT_BACKDROP_OPACITY,
-                                  };
-                                });
-                              }}
-                              placeholder="#000000"
-                              compact
-                              swatchOnly
-                            />
-                          </div>
-                        </div>
-                        <div className="flex flex-1 items-center gap-2 min-w-0 min-h-9">
-                          <span className="text-[11px] text-muted-foreground shrink-0 w-14 hidden sm:inline">Strength</span>
-                          <Slider
-                            className="flex-1 py-1"
-                            min={0}
-                            max={100}
-                            step={1}
-                            value={[Math.round((headlineZoneOverride?.boxBackgroundOpacity ?? DEFAULT_TEXT_BACKDROP_OPACITY) * 100)]}
-                            onValueChange={(vals) => {
-                              const pct = vals[0] ?? 100;
-                              setHeadlineZoneOverride((o) => ({ ...(o ?? {}), boxBackgroundOpacity: pct / 100 }));
-                            }}
-                          />
-                          <span className="text-[11px] tabular-nums text-muted-foreground w-10 text-right shrink-0">
-                            {Math.round((headlineZoneOverride?.boxBackgroundOpacity ?? DEFAULT_TEXT_BACKDROP_OPACITY) * 100)}%
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
                   <FontPickerModal
                     open={headlineFontModalOpen}
                     onOpenChange={setHeadlineFontModalOpen}
@@ -5894,62 +5929,15 @@ export function SlideEditForm({
                     title="Headline font"
                   />
                 </div>
-              <Textarea
-                ref={headlineRef}
-                id="headline"
-                value={headline}
-                onChange={(e) => setHeadline(e.target.value)}
-                onFocus={() => {
-                  setExpandedTextSection("headline");
-                  setActiveEditZone("headline");
-                  if (isMobile) {
-                    setTimeout(() => scrollFocusedFieldIntoView(), 350);
-                  }
-                }}
-                onBlur={() => { if (headlineHighlightOpen) saveHighlightSelectionForPicker("headline"); }}
-                placeholder="Enter your headline..."
-                className="min-h-[72px] w-full resize-none rounded-md border-input/80 text-sm field-sizing-content px-3 py-2"
-                rows={2}
-              />
-              <div className="flex flex-wrap items-center gap-2">
-                {isPro && (
-                  <Button type="button" variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={handleCycleHook} disabled={cyclingHook || ensuringVariants || (isHook && headlineVariants.length === 0)} title={isHook ? "Cycle to next headline variant" : "Generate headline variants (hook slide)"}>
-                    {cyclingHook ? <Loader2Icon className="size-3.5 animate-spin" /> : <SparklesIcon className="size-3.5" />}
-                    Rewrite headline
-                  </Button>
-                )}
+              <div className="border-t border-border/40 pt-3 space-y-4">
                 {totalSlides > 1 && (
-                  <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={handleApplyHeadlineToAll} disabled={applyingHeadlineZone} title="Apply headline size, position, layout, and text color to all frames">
-                    {applyingHeadlineZone ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
-                    Apply to all
-                  </Button>
+                  <div className="flex justify-end">
+                    <Button type="button" variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground hover:text-foreground" onClick={handleApplyHeadlineHighlightStyleToAll} disabled={applyingHighlightStyle || applyingAutoHighlights} title="Apply Text/Bg highlight style to all slides. Auto highlights run on every slide only if Auto is on for this slide.">
+                      {applyingHighlightStyle || applyingAutoHighlights ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
+                      Apply highlight style to all slides
+                    </Button>
+                  </div>
                 )}
-                <button type="button" onClick={() => setInfoSection("content")} className="rounded p-1.5 text-muted-foreground hover:bg-muted" aria-label="Content help" title="Help">
-                  <InfoIcon className="size-3.5" />
-                </button>
-              </div>
-              <div className="border-t border-border/40 pt-2">
-                <div className="flex items-center justify-between gap-2">
-                  <button
-                    type="button"
-                    className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-                    onClick={() => setHeadlineEditMoreOpen((o) => !o)}
-                    aria-expanded={headlineEditMoreOpen}
-                  >
-                    <ChevronDownIcon className={`size-3.5 shrink-0 transition-transform ${headlineEditMoreOpen ? "" : "-rotate-90"}`} />
-                    {headlineEditMoreOpen ? "Less" : "Advanced — placement, highlights, outline"}
-                  </button>
-                  {totalSlides > 1 && (
-                    <span onClick={(e) => e.stopPropagation()}>
-                      <Button type="button" variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground hover:text-foreground" onClick={handleApplyHeadlineHighlightStyleToAll} disabled={applyingHighlightStyle || applyingAutoHighlights} title="Apply Text/Bg highlight style to all slides. Auto highlights run on every slide only if Auto is on for this slide.">
-                        {applyingHighlightStyle || applyingAutoHighlights ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
-                        Apply to all
-                      </Button>
-                    </span>
-                  )}
-                </div>
-                {headlineEditMoreOpen && (
-                  <div className="mt-3 space-y-4">
                       <>
                         <div className="space-y-2">
                           <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">On the slide</p>
@@ -6023,7 +6011,7 @@ export function SlideEditForm({
                                                   }
                                                 }}
                                                 label={label.toLowerCase()}
-                                                className="w-full max-w-[140px]"
+                                                className="w-full min-w-0"
                                               />
                                             </div>
                                           );
@@ -6042,7 +6030,7 @@ export function SlideEditForm({
                                             step={1}
                                             onChange={(v) => setHeadlineZoneOverride((o) => ({ ...(effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!), ...o, maxLines: v }))}
                                             label="max lines"
-                                            className="w-full max-w-[100px]"
+                                            className="w-full min-w-0"
                                           />
                                         </div>
                                         <div className="space-y-1 sm:space-y-1.5 min-w-0">
@@ -6054,7 +6042,7 @@ export function SlideEditForm({
                                             step={100}
                                             onChange={(v) => setHeadlineZoneOverride((o) => ({ ...(effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!), ...o, fontWeight: v }))}
                                             label="font weight"
-                                            className="w-full max-w-[100px]"
+                                            className="w-full min-w-0"
                                           />
                                         </div>
                                         <div className="space-y-1 sm:space-y-1.5 min-w-0">
@@ -6073,7 +6061,7 @@ export function SlideEditForm({
                                             }}
                                             formatDisplay={(v) => v.toFixed(1)}
                                             label="line height"
-                                            className="w-full max-w-[100px]"
+                                            className="w-full min-w-0"
                                           />
                                         </div>
                                         <div className="space-y-1 sm:space-y-1.5 min-w-0">
@@ -6104,7 +6092,7 @@ export function SlideEditForm({
                                             step={5}
                                             onChange={(v) => setHeadlineZoneOverride((o) => ({ ...(effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!), ...o, rotation: v }))}
                                             label="rotation degrees"
-                                            className="w-full max-w-[100px] mt-1"
+                                            className="mt-1 w-full min-w-0"
                                           />
                                         </div>
                                       </div>
@@ -6237,12 +6225,143 @@ export function SlideEditForm({
                       </Button>
                     )}
                   </div>
-                )}
+
+                  <div className="border-t border-border/40 pt-3 space-y-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-foreground">Backdrop</p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">
+                          Panel behind this text on the slide — not highlighted words. Turn on, then pick a color.
+                        </p>
+                      </div>
+                      <div
+                        className="inline-flex shrink-0 rounded-lg border border-input/80 bg-muted/40 p-0.5"
+                        role="group"
+                        aria-label="Backdrop on or off"
+                      >
+                        <button
+                          type="button"
+                          className={cn(
+                            "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                            !textBackdropIsOn(headlineZoneOverride)
+                              ? "bg-background text-foreground shadow-sm"
+                              : "text-muted-foreground hover:text-foreground"
+                          )}
+                          onClick={() => {
+                            setHeadlineZoneOverride((o) => {
+                              const next = { ...(o ?? {}) };
+                              delete next.boxBackgroundColor;
+                              delete next.boxBackgroundOpacity;
+                              delete next.boxBackgroundFrameOnly;
+                              delete next.boxBackgroundBorderWidth;
+                              delete next.boxBackgroundBorderSides;
+                              delete next.boxBackgroundBorderColor;
+                              delete next.boxBackgroundBorderOpacity;
+                              delete next.boxBackgroundBorderRadius;
+                              return Object.keys(next).length > 0 ? next : undefined;
+                            });
+                          }}
+                        >
+                          Off
+                        </button>
+                        <button
+                          type="button"
+                          className={cn(
+                            "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                            textBackdropIsOn(headlineZoneOverride)
+                              ? "bg-background text-foreground shadow-sm"
+                              : "text-muted-foreground hover:text-foreground"
+                          )}
+                          onClick={() => {
+                            setHeadlineZoneOverride((o) => {
+                              const cur = o?.boxBackgroundColor?.trim();
+                              const hasValid = !!cur && TEXT_BACKDROP_HEX_RE.test(cur);
+                              const prevOp = o?.boxBackgroundOpacity;
+                              const keepOpacity =
+                                typeof prevOp === "number" && !Number.isNaN(prevOp) && hasValid;
+                              return {
+                                ...(o ?? {}),
+                                boxBackgroundColor: hasValid ? cur! : DEFAULT_TEXT_BACKDROP_HEX,
+                                boxBackgroundOpacity: keepOpacity ? prevOp! : DEFAULT_TEXT_BACKDROP_OPACITY,
+                              };
+                            });
+                          }}
+                        >
+                          On
+                        </button>
+                      </div>
+                    </div>
+                    {textBackdropIsOn(headlineZoneOverride) && (
+                      <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-3">
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Label className="text-[11px] text-muted-foreground font-normal w-12 shrink-0 hidden sm:inline">
+                            Color
+                          </Label>
+                          <div className="flex h-8 items-center rounded-md border border-input/80 bg-background px-1.5">
+                            <ColorPicker
+                              value={headlineZoneOverride?.boxBackgroundColor ?? ""}
+                              onChange={(v) => {
+                                const c = v.trim();
+                                const ok = c.length > 0 && TEXT_BACKDROP_HEX_RE.test(c);
+                                setHeadlineZoneOverride((o) => {
+                                  if (!ok) {
+                                    const next = { ...(o ?? {}) };
+                                    delete next.boxBackgroundColor;
+                                    delete next.boxBackgroundOpacity;
+                                    delete next.boxBackgroundFrameOnly;
+                                    delete next.boxBackgroundBorderWidth;
+                                    delete next.boxBackgroundBorderSides;
+                                    delete next.boxBackgroundBorderColor;
+                                    delete next.boxBackgroundBorderOpacity;
+                                    delete next.boxBackgroundBorderRadius;
+                                    return Object.keys(next).length > 0 ? next : undefined;
+                                  }
+                                  return {
+                                    ...(o ?? {}),
+                                    boxBackgroundColor: c,
+                                    boxBackgroundOpacity: o?.boxBackgroundOpacity ?? DEFAULT_TEXT_BACKDROP_OPACITY,
+                                  };
+                                });
+                              }}
+                              placeholder="#000000"
+                              compact
+                              swatchOnly
+                            />
+                          </div>
+                        </div>
+                        <div className="flex flex-1 items-center gap-2 min-w-0 min-h-9">
+                          <span className="text-[11px] text-muted-foreground shrink-0 w-14 hidden sm:inline">Strength</span>
+                          <Slider
+                            className="flex-1 py-1"
+                            min={0}
+                            max={100}
+                            step={1}
+                            value={[Math.round((headlineZoneOverride?.boxBackgroundOpacity ?? DEFAULT_TEXT_BACKDROP_OPACITY) * 100)]}
+                            onValueChange={(vals) => {
+                              const pct = vals[0] ?? 100;
+                              setHeadlineZoneOverride((o) => ({ ...(o ?? {}), boxBackgroundOpacity: pct / 100 }));
+                            }}
+                          />
+                          <span className="text-[11px] tabular-nums text-muted-foreground w-10 text-right shrink-0">
+                            {Math.round((headlineZoneOverride?.boxBackgroundOpacity ?? DEFAULT_TEXT_BACKDROP_OPACITY) * 100)}%
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                    {textBackdropIsOn(headlineZoneOverride) && (
+                      <TextBackdropChromeFields
+                        zone={headlineZoneOverride}
+                        onMerge={(patch) =>
+                          setHeadlineZoneOverride((o) => ({ ...headlineZoneFromTemplate, ...(o ?? {}), ...patch }))
+                        }
+                      />
+                    )}
+                  </div>
               </div>
               {editorTab === "text" && (
               <div className="border-t border-border/40 pt-3 mt-3 hidden">
                   <div className="space-y-2">
-                    <p className="text-[11px] text-muted-foreground">Select a word (or drag to select), then click a color. Or click Auto to highlight key words. Use “Apply color to all” to recolor all current highlights. Use the “Apply to all” button next to Less to run Auto + style on every frame.</p>
+                    <p className="text-[11px] text-muted-foreground">Select a word (or drag to select), then click a color. Or click Auto to highlight key words. Use “Apply color to all” to recolor all current highlights. Use “Apply highlight style to all slides” above to run highlight style on every frame.</p>
                     <div className="flex flex-wrap items-center gap-1.5">
                       <Button
                         type="button"
@@ -6340,7 +6459,6 @@ export function SlideEditForm({
                   </div>
               </div>
               )}
-              </div>
             </div>
 
             {/* Body: collapsible */}
@@ -6364,11 +6482,54 @@ export function SlideEditForm({
                 </span>
               </button>
               <div id="text-section-body" className={expandedTextSection === "body" ? "p-3 pt-0 space-y-3" : "hidden"}>
+              <Textarea
+                ref={bodyRef}
+                id="body"
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                onFocus={() => {
+                  setExpandedTextSection("body");
+                  setActiveEditZone("body");
+                  if (isMobile) {
+                    setTimeout(() => scrollFocusedFieldIntoView(), 350);
+                  }
+                }}
+                onBlur={() => { if (bodyHighlightOpen) saveHighlightSelectionForPicker("body"); }}
+                placeholder="Optional body text..."
+                className="min-h-[72px] w-full resize-none rounded-md border-input/80 text-sm field-sizing-content px-3 py-2"
+                rows={2}
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 min-w-8 px-2 text-xs font-semibold"
+                  onClick={toggleBodyCase}
+                  disabled={!body}
+                  title="Uppercase all text, or lowercase if it is already all caps"
+                  aria-label="Toggle body between uppercase and lowercase"
+                >
+                  Aa
+                </Button>
+                {isPro && templateId && (
+                  <Button type="button" variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={handleCycleShorten} disabled={cyclingShorten || !bodyZoneForRewrite || !(body ?? "").trim()} title="Cycle body: main → short → long (independent of headline)">
+                    {cyclingShorten ? <Loader2Icon className="size-3.5 animate-spin" /> : <AlignJustify className="size-3.5" />}
+                    Rewrite body
+                  </Button>
+                )}
+                {totalSlides > 1 && (
+                  <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={handleApplyBodyToAll} disabled={applyingBodyZone} title="Apply body size, position, layout, and text color to all frames">
+                    {applyingBodyZone ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
+                    Apply to all
+                  </Button>
+                )}
+              </div>
                 <div className="rounded-lg border border-border/50 bg-muted/20 p-3 space-y-4">
                   <div className="space-y-3">
                     <p className="text-xs font-medium text-foreground">Text style</p>
-                    <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
-                <div className="space-y-1.5">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:gap-x-4 sm:gap-y-3">
+                <div className="min-w-0 w-full space-y-1.5 sm:w-auto sm:max-w-[11rem]">
                         <Label className="text-[11px] text-muted-foreground font-normal">Size</Label>
                   <StepperWithLongPress
                     value={bodyFontSize ?? defaultBodySize}
@@ -6377,10 +6538,10 @@ export function SlideEditForm({
                     step={4}
                     onChange={(v) => setBodyFontSize(v)}
                     label="Size"
-                    className="shrink-0 max-w-[90px]"
+                    className="w-full"
                   />
                       </div>
-                      <div className="space-y-1.5">
+                      <div className="min-w-0 w-full space-y-1.5 sm:w-auto sm:min-w-[5.5rem]">
                         <Label className="text-[11px] text-muted-foreground font-normal">Text color</Label>
                         <div className="flex h-8 items-center rounded-md border border-input/80 bg-background px-1.5">
                     <ColorPicker
@@ -6415,118 +6576,6 @@ export function SlideEditForm({
                     </div>
                   </div>
 
-                  <div className="border-t border-border/40 pt-3 space-y-3">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
-                      <div className="min-w-0">
-                        <p className="text-xs font-medium text-foreground">Backdrop</p>
-                        <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">
-                          Panel behind this text on the slide — not highlighted words. Turn on, then pick a color.
-                        </p>
-                      </div>
-                      <div
-                        className="inline-flex shrink-0 rounded-lg border border-input/80 bg-muted/40 p-0.5"
-                        role="group"
-                        aria-label="Backdrop on or off"
-                      >
-                        <button
-                          type="button"
-                          className={cn(
-                            "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                            !textBackdropIsOn(bodyZoneOverride)
-                              ? "bg-background text-foreground shadow-sm"
-                              : "text-muted-foreground hover:text-foreground"
-                          )}
-                          onClick={() => {
-                            setBodyZoneOverride((o) => {
-                              const next = { ...(o ?? {}) };
-                              delete next.boxBackgroundColor;
-                              delete next.boxBackgroundOpacity;
-                              return Object.keys(next).length > 0 ? next : undefined;
-                            });
-                          }}
-                        >
-                          Off
-                        </button>
-                        <button
-                          type="button"
-                          className={cn(
-                            "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                            textBackdropIsOn(bodyZoneOverride)
-                              ? "bg-background text-foreground shadow-sm"
-                              : "text-muted-foreground hover:text-foreground"
-                          )}
-                          onClick={() => {
-                            setBodyZoneOverride((o) => {
-                              const cur = o?.boxBackgroundColor?.trim();
-                              const hasValid = !!cur && TEXT_BACKDROP_HEX_RE.test(cur);
-                              const prevOp = o?.boxBackgroundOpacity;
-                              const keepOpacity =
-                                typeof prevOp === "number" && !Number.isNaN(prevOp) && hasValid;
-                              return {
-                                ...(o ?? {}),
-                                boxBackgroundColor: hasValid ? cur! : DEFAULT_TEXT_BACKDROP_HEX,
-                                boxBackgroundOpacity: keepOpacity ? prevOp! : DEFAULT_TEXT_BACKDROP_OPACITY,
-                              };
-                            });
-                          }}
-                        >
-                          On
-                        </button>
-                      </div>
-                    </div>
-                    {textBackdropIsOn(bodyZoneOverride) && (
-                      <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-3">
-                        <div className="flex items-center gap-2 shrink-0">
-                          <Label className="text-[11px] text-muted-foreground font-normal w-12 shrink-0 hidden sm:inline">
-                            Color
-                          </Label>
-                          <div className="flex h-8 items-center rounded-md border border-input/80 bg-background px-1.5">
-                            <ColorPicker
-                              value={bodyZoneOverride?.boxBackgroundColor ?? ""}
-                              onChange={(v) => {
-                                const c = v.trim();
-                                const ok = c.length > 0 && TEXT_BACKDROP_HEX_RE.test(c);
-                                setBodyZoneOverride((o) => {
-                                  if (!ok) {
-                                    const next = { ...(o ?? {}) };
-                                    delete next.boxBackgroundColor;
-                                    delete next.boxBackgroundOpacity;
-                                    return Object.keys(next).length > 0 ? next : undefined;
-                                  }
-                                  return {
-                                    ...(o ?? {}),
-                                    boxBackgroundColor: c,
-                                    boxBackgroundOpacity: o?.boxBackgroundOpacity ?? DEFAULT_TEXT_BACKDROP_OPACITY,
-                                  };
-                                });
-                              }}
-                              placeholder="#000000"
-                              compact
-                              swatchOnly
-                            />
-                          </div>
-                        </div>
-                        <div className="flex flex-1 items-center gap-2 min-w-0 min-h-9">
-                          <span className="text-[11px] text-muted-foreground shrink-0 w-14 hidden sm:inline">Strength</span>
-                          <Slider
-                            className="flex-1 py-1"
-                            min={0}
-                            max={100}
-                            step={1}
-                            value={[Math.round((bodyZoneOverride?.boxBackgroundOpacity ?? DEFAULT_TEXT_BACKDROP_OPACITY) * 100)]}
-                            onValueChange={(vals) => {
-                              const pct = vals[0] ?? 100;
-                              setBodyZoneOverride((o) => ({ ...(o ?? {}), boxBackgroundOpacity: pct / 100 }));
-                            }}
-                          />
-                          <span className="text-[11px] tabular-nums text-muted-foreground w-10 text-right shrink-0">
-                            {Math.round((bodyZoneOverride?.boxBackgroundOpacity ?? DEFAULT_TEXT_BACKDROP_OPACITY) * 100)}%
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
                   <FontPickerModal
                     open={bodyFontModalOpen}
                     onOpenChange={setBodyFontModalOpen}
@@ -6535,59 +6584,15 @@ export function SlideEditForm({
                     title="Body font"
                   />
                 </div>
-              <Textarea
-                ref={bodyRef}
-                id="body"
-                value={body}
-                onChange={(e) => setBody(e.target.value)}
-                onFocus={() => {
-                  setExpandedTextSection("body");
-                  setActiveEditZone("body");
-                  if (isMobile) {
-                    setTimeout(() => scrollFocusedFieldIntoView(), 350);
-                  }
-                }}
-                onBlur={() => { if (bodyHighlightOpen) saveHighlightSelectionForPicker("body"); }}
-                placeholder="Optional body text..."
-                className="min-h-[72px] w-full resize-none rounded-md border-input/80 text-sm field-sizing-content px-3 py-2"
-                rows={2}
-              />
-              <div className="flex flex-wrap items-center gap-2">
-                {isPro && templateId && (
-                  <Button type="button" variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={handleCycleShorten} disabled={cyclingShorten || !bodyZoneForRewrite || !(body ?? "").trim()} title="Cycle body: main → short → long (independent of headline)">
-                    {cyclingShorten ? <Loader2Icon className="size-3.5 animate-spin" /> : <AlignJustify className="size-3.5" />}
-                    Rewrite body
-                  </Button>
-                )}
+              <div className="border-t border-border/40 pt-3 space-y-4">
                 {totalSlides > 1 && (
-                  <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={handleApplyBodyToAll} disabled={applyingBodyZone} title="Apply body size, position, layout, and text color to all frames">
-                    {applyingBodyZone ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
-                    Apply to all
-                  </Button>
+                  <div className="flex justify-end">
+                    <Button type="button" variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground hover:text-foreground" onClick={handleApplyBodyHighlightStyleToAll} disabled={applyingHighlightStyle || applyingAutoHighlights} title="Apply Text/Bg highlight style to all slides. Auto highlights run on every slide only if Auto is on for this slide.">
+                      {applyingHighlightStyle || applyingAutoHighlights ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
+                      Apply highlight style to all slides
+                    </Button>
+                  </div>
                 )}
-              </div>
-              <div className="border-t border-border/40 pt-2">
-                <div className="flex items-center justify-between gap-2">
-                  <button
-                    type="button"
-                    className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-                    onClick={() => setBodyEditMoreOpen((o) => !o)}
-                    aria-expanded={bodyEditMoreOpen}
-                  >
-                    <ChevronDownIcon className={`size-3.5 shrink-0 transition-transform ${bodyEditMoreOpen ? "" : "-rotate-90"}`} />
-                    {bodyEditMoreOpen ? "Less" : "Advanced — placement, highlights, outline"}
-                  </button>
-                  {totalSlides > 1 && (
-                    <span onClick={(e) => e.stopPropagation()}>
-                      <Button type="button" variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground hover:text-foreground" onClick={handleApplyBodyHighlightStyleToAll} disabled={applyingHighlightStyle || applyingAutoHighlights} title="Apply Text/Bg highlight style to all slides. Auto highlights run on every slide only if Auto is on for this slide.">
-                        {applyingHighlightStyle || applyingAutoHighlights ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
-                        Apply to all
-                      </Button>
-                    </span>
-                  )}
-                </div>
-                {bodyEditMoreOpen && (
-                  <div className="mt-3 space-y-4">
                       <>
                         <div className="space-y-2">
                           <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">On the slide</p>
@@ -6661,7 +6666,7 @@ export function SlideEditForm({
                                                   }
                                                 }}
                                                 label={label.toLowerCase()}
-                                                className="w-full max-w-[140px]"
+                                                className="w-full min-w-0"
                                               />
                                             </div>
                                           );
@@ -6680,7 +6685,7 @@ export function SlideEditForm({
                                             step={1}
                                             onChange={(v) => setBodyZoneOverride((o) => ({ ...(effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!), ...o, maxLines: v }))}
                                             label="max lines"
-                                            className="w-full max-w-[100px]"
+                                            className="w-full min-w-0"
                                           />
                                         </div>
                                         <div className="space-y-1 sm:space-y-1.5 min-w-0">
@@ -6692,7 +6697,7 @@ export function SlideEditForm({
                                             step={100}
                                             onChange={(v) => setBodyZoneOverride((o) => ({ ...(effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!), ...o, fontWeight: v }))}
                                             label="font weight"
-                                            className="w-full max-w-[100px]"
+                                            className="w-full min-w-0"
                                           />
                                         </div>
                                         <div className="space-y-1 sm:space-y-1.5 min-w-0">
@@ -6711,7 +6716,7 @@ export function SlideEditForm({
                                             }}
                                             formatDisplay={(v) => v.toFixed(1)}
                                             label="line height"
-                                            className="w-full max-w-[100px]"
+                                            className="w-full min-w-0"
                                           />
                                         </div>
                                         <div className="space-y-1 sm:space-y-1.5 min-w-0">
@@ -6742,7 +6747,7 @@ export function SlideEditForm({
                                             step={5}
                                             onChange={(v) => setBodyZoneOverride((o) => ({ ...(effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!), ...o, rotation: v }))}
                                             label="rotation degrees"
-                                            className="w-full max-w-[100px] mt-1"
+                                            className="mt-1 w-full min-w-0"
                                           />
                                         </div>
                                       </div>
@@ -6875,12 +6880,141 @@ export function SlideEditForm({
                       </Button>
                     )}
                   </div>
-                )}
+
+                  <div className="border-t border-border/40 pt-3 space-y-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-foreground">Backdrop</p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">
+                          Panel behind this text on the slide — not highlighted words. Turn on, then pick a color.
+                        </p>
+                      </div>
+                      <div
+                        className="inline-flex shrink-0 rounded-lg border border-input/80 bg-muted/40 p-0.5"
+                        role="group"
+                        aria-label="Backdrop on or off"
+                      >
+                        <button
+                          type="button"
+                          className={cn(
+                            "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                            !textBackdropIsOn(bodyZoneOverride)
+                              ? "bg-background text-foreground shadow-sm"
+                              : "text-muted-foreground hover:text-foreground"
+                          )}
+                          onClick={() => {
+                            setBodyZoneOverride((o) => {
+                              const next = { ...(o ?? {}) };
+                              delete next.boxBackgroundColor;
+                              delete next.boxBackgroundOpacity;
+                              delete next.boxBackgroundFrameOnly;
+                              delete next.boxBackgroundBorderWidth;
+                              delete next.boxBackgroundBorderSides;
+                              delete next.boxBackgroundBorderColor;
+                              delete next.boxBackgroundBorderOpacity;
+                              delete next.boxBackgroundBorderRadius;
+                              return Object.keys(next).length > 0 ? next : undefined;
+                            });
+                          }}
+                        >
+                          Off
+                        </button>
+                        <button
+                          type="button"
+                          className={cn(
+                            "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                            textBackdropIsOn(bodyZoneOverride)
+                              ? "bg-background text-foreground shadow-sm"
+                              : "text-muted-foreground hover:text-foreground"
+                          )}
+                          onClick={() => {
+                            setBodyZoneOverride((o) => {
+                              const cur = o?.boxBackgroundColor?.trim();
+                              const hasValid = !!cur && TEXT_BACKDROP_HEX_RE.test(cur);
+                              const prevOp = o?.boxBackgroundOpacity;
+                              const keepOpacity =
+                                typeof prevOp === "number" && !Number.isNaN(prevOp) && hasValid;
+                              return {
+                                ...(o ?? {}),
+                                boxBackgroundColor: hasValid ? cur! : DEFAULT_TEXT_BACKDROP_HEX,
+                                boxBackgroundOpacity: keepOpacity ? prevOp! : DEFAULT_TEXT_BACKDROP_OPACITY,
+                              };
+                            });
+                          }}
+                        >
+                          On
+                        </button>
+                      </div>
+                    </div>
+                    {textBackdropIsOn(bodyZoneOverride) && (
+                      <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-3">
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Label className="text-[11px] text-muted-foreground font-normal w-12 shrink-0 hidden sm:inline">
+                            Color
+                          </Label>
+                          <div className="flex h-8 items-center rounded-md border border-input/80 bg-background px-1.5">
+                            <ColorPicker
+                              value={bodyZoneOverride?.boxBackgroundColor ?? ""}
+                              onChange={(v) => {
+                                const c = v.trim();
+                                const ok = c.length > 0 && TEXT_BACKDROP_HEX_RE.test(c);
+                                setBodyZoneOverride((o) => {
+                                  if (!ok) {
+                                    const next = { ...(o ?? {}) };
+                                    delete next.boxBackgroundColor;
+                                    delete next.boxBackgroundOpacity;
+                                    delete next.boxBackgroundFrameOnly;
+                                    delete next.boxBackgroundBorderWidth;
+                                    delete next.boxBackgroundBorderSides;
+                                    delete next.boxBackgroundBorderColor;
+                                    delete next.boxBackgroundBorderOpacity;
+                                    delete next.boxBackgroundBorderRadius;
+                                    return Object.keys(next).length > 0 ? next : undefined;
+                                  }
+                                  return {
+                                    ...(o ?? {}),
+                                    boxBackgroundColor: c,
+                                    boxBackgroundOpacity: o?.boxBackgroundOpacity ?? DEFAULT_TEXT_BACKDROP_OPACITY,
+                                  };
+                                });
+                              }}
+                              placeholder="#000000"
+                              compact
+                              swatchOnly
+                            />
+                          </div>
+                        </div>
+                        <div className="flex flex-1 items-center gap-2 min-w-0 min-h-9">
+                          <span className="text-[11px] text-muted-foreground shrink-0 w-14 hidden sm:inline">Strength</span>
+                          <Slider
+                            className="flex-1 py-1"
+                            min={0}
+                            max={100}
+                            step={1}
+                            value={[Math.round((bodyZoneOverride?.boxBackgroundOpacity ?? DEFAULT_TEXT_BACKDROP_OPACITY) * 100)]}
+                            onValueChange={(vals) => {
+                              const pct = vals[0] ?? 100;
+                              setBodyZoneOverride((o) => ({ ...(o ?? {}), boxBackgroundOpacity: pct / 100 }));
+                            }}
+                          />
+                          <span className="text-[11px] tabular-nums text-muted-foreground w-10 text-right shrink-0">
+                            {Math.round((bodyZoneOverride?.boxBackgroundOpacity ?? DEFAULT_TEXT_BACKDROP_OPACITY) * 100)}%
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                    {textBackdropIsOn(bodyZoneOverride) && (
+                      <TextBackdropChromeFields
+                        zone={bodyZoneOverride}
+                        onMerge={(patch) => setBodyZoneOverride((o) => ({ ...bodyZoneFromTemplate, ...(o ?? {}), ...patch }))}
+                      />
+                    )}
+                  </div>
               </div>
               {editorTab === "text" && (
               <div className="border-t border-border/40 pt-3 mt-3 hidden">
                   <div className="space-y-2">
-                    <p className="text-[11px] text-muted-foreground">Select a word (or drag to select), then click a color. Or click Auto to highlight key words. Use “Apply color to all” to recolor all current highlights. Use the “Apply to all” button next to Less to run Auto + style on every frame.</p>
+                    <p className="text-[11px] text-muted-foreground">Select a word (or drag to select), then click a color. Or click Auto to highlight key words. Use “Apply color to all” to recolor all current highlights. Use “Apply highlight style to all slides” above to run highlight style on every frame.</p>
                     <div className="flex flex-wrap items-center gap-1.5">
                       <Button
                         type="button"
@@ -6975,7 +7109,6 @@ export function SlideEditForm({
               )}
               </div>
             </div>
-            </div>
           </section>
           )}
           {editorTab === "background" && (
@@ -7033,8 +7166,12 @@ export function SlideEditForm({
               )}
             </div>
             {isImageMode && (
+              <>
               <div className={`rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3 ${!isPro ? "pointer-events-none opacity-60" : ""}`}>
-                <p className="text-muted-foreground text-[11px] font-medium">Background image</p>
+                <p className="text-muted-foreground text-[11px] font-medium">Images</p>
+                <p className="text-[10px] text-muted-foreground leading-snug -mt-1">
+                  Add one or more URLs or pick from library. The Display section below configures how they appear — pick a slot when you have multiple images.
+                </p>
                 {background.asset_id && validImageUrls.length === 0 && (
                   <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-background/50 px-3 py-2">
                     <ImageIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
@@ -7080,7 +7217,27 @@ export function SlideEditForm({
                         ? "AI-generated image"
                         : "Your image";
                     return (
-                    <div key={i} className="space-y-1">
+                    <div
+                      key={i}
+                      className={cn(
+                        "space-y-1 rounded-lg border p-2 -mx-0.5 transition-colors",
+                        validImageCount > 1 && activeBackgroundDisplaySlot === i && "border-primary/50 bg-primary/5",
+                        validImageCount > 1 && activeBackgroundDisplaySlot !== i && "border-transparent hover:border-border/50"
+                      )}
+                    >
+                      {validImageCount > 1 && (
+                        <div className="flex items-center gap-2 pb-0.5">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={activeBackgroundDisplaySlot === i ? "secondary" : "ghost"}
+                            className="h-7 text-[10px] px-2"
+                            onClick={() => setBackgroundImageDisplaySlot(i)}
+                          >
+                            Slot {i + 1} — Display
+                          </Button>
+                        </div>
+                      )}
                       <div className="flex gap-2 items-start">
                         <Input
                           type="text"
@@ -7289,8 +7446,38 @@ export function SlideEditForm({
                     {driveError ?? driveSuccess}
                   </p>
                 )}
-                <div className="rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3">
-                  <p className="text-muted-foreground text-[11px] font-medium">Display</p>
+              </div>
+              {validImageCount >= 1 && (
+                <div className={`rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3 ${!isPro ? "pointer-events-none opacity-60" : ""}`}>
+                  <div className="space-y-2">
+                    <div>
+                      <p className="text-muted-foreground text-[11px] font-medium">Display</p>
+                      <p className="text-[10px] text-muted-foreground leading-snug mt-0.5">
+                        {validImageCount <= 1
+                          ? "How your image appears on the slide."
+                          : (imageDisplay.mode ?? "full") === "pip"
+                            ? "Choose a slot (or tap a PiP in the preview). Corner, size, rotation, and radius apply to that image only. Frame, fit, and focal position apply to every PiP box."
+                            : "Layout, gap, and dividers apply to all images. Slot numbers match image order."}
+                      </p>
+                    </div>
+                    {validImageCount > 1 && (
+                      <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="Image slot for display options">
+                        <span className="text-[10px] text-muted-foreground shrink-0">Slot</span>
+                        {Array.from({ length: validImageCount }, (_, idx) => (
+                          <Button
+                            key={idx}
+                            type="button"
+                            size="sm"
+                            variant={backgroundImageDisplaySlot === idx ? "secondary" : "outline"}
+                            className="h-8 min-w-8 px-2.5 text-xs tabular-nums"
+                            onClick={() => setBackgroundImageDisplaySlot(idx)}
+                          >
+                            {idx + 1}
+                          </Button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 <div className="space-y-2">
                   {validImageCount === 1 && (
                     <>
@@ -7407,7 +7594,7 @@ export function SlideEditForm({
                               onChange={(v) => setImageDisplay((d) => ({ ...d, pipRotation: v }))}
                               formatDisplay={(v) => `${v}°`}
                               label="PiP rotation"
-                              className="w-full max-w-[140px]"
+                              className="w-full min-w-0"
                             />
                           </div>
                           <label className="flex items-center gap-2 sm:col-span-2 cursor-pointer">
@@ -7451,11 +7638,15 @@ export function SlideEditForm({
                       {(imageDisplay.mode ?? "full") === "pip" && (
                         <div className="grid gap-3 sm:grid-cols-2 pt-1">
                           <div className="space-y-1.5">
-                            <span className="text-muted-foreground text-xs">Primary PiP corner</span>
+                            <span className="text-muted-foreground text-xs">
+                              PiP corner (slot {activeBackgroundDisplaySlot + 1})
+                            </span>
                             <Select
-                              value={imageDisplay.pipPosition ?? "bottom_right"}
+                              value={activePipResolved?.pipPosition ?? imageDisplay.pipPosition ?? "bottom_right"}
                               onValueChange={(v: "top_left" | "top_right" | "bottom_left" | "bottom_right") =>
-                                setImageDisplay((d) => ({ ...d, pipPosition: v }))
+                                setImageDisplay((d) =>
+                                  upsertImageDisplayPipSlot(d, activeBackgroundDisplaySlot, validImageCount, { pipPosition: v })
+                                )
                               }
                             >
                               <SelectTrigger className="h-9 rounded-lg border-input/80 bg-background text-sm">
@@ -7468,33 +7659,64 @@ export function SlideEditForm({
                                 <SelectItem value="bottom_right">Bottom right</SelectItem>
                               </SelectContent>
                             </Select>
-                            <p className="text-muted-foreground text-[11px]">Extra images default to other corners; drag in preview to customize each.</p>
+                            <p className="text-muted-foreground text-[11px]">Drag in the preview for pixel-perfect placement. Other slots keep their own corners.</p>
                           </div>
                           <div className="space-y-1.5">
-                            <span className="text-muted-foreground text-xs">PiP size (primary)</span>
+                            <span className="text-muted-foreground text-xs">PiP size (this slot)</span>
                             <div className="flex items-center gap-2">
                               <input
                                 type="range"
                                 min={25}
                                 max={100}
-                                value={Math.round((imageDisplay.pipSize ?? 0.4) * 100)}
-                                onChange={(e) => setImageDisplay((d) => ({ ...d, pipSize: Number(e.target.value) / 100 }))}
+                                value={Math.round((activePipResolved?.pipSize ?? imageDisplay.pipSize ?? 0.4) * 100)}
+                                onChange={(e) =>
+                                  setImageDisplay((d) =>
+                                    upsertImageDisplayPipSlot(d, activeBackgroundDisplaySlot, validImageCount, {
+                                      pipSize: Number(e.target.value) / 100,
+                                    })
+                                  )
+                                }
                                 className="h-2 flex-1 cursor-pointer appearance-none rounded-full bg-muted accent-primary"
                               />
-                              <span className="text-muted-foreground min-w-8 text-xs tabular-nums">{Math.round((imageDisplay.pipSize ?? 0.4) * 100)}%</span>
+                              <span className="text-muted-foreground min-w-8 text-xs tabular-nums">
+                                {Math.round((activePipResolved?.pipSize ?? imageDisplay.pipSize ?? 0.4) * 100)}%
+                              </span>
                             </div>
                           </div>
                           <div className="space-y-1.5">
-                            <span className="text-muted-foreground text-xs">PiP rotation</span>
+                            <span className="text-muted-foreground text-xs">PiP rotation (this slot)</span>
                             <StepperWithLongPress
-                              value={imageDisplay.pipRotation ?? 0}
+                              value={activePipResolved?.pipRotation ?? imageDisplay.pipRotation ?? 0}
                               min={-180}
                               max={180}
                               step={15}
-                              onChange={(v) => setImageDisplay((d) => ({ ...d, pipRotation: v }))}
+                              onChange={(v) =>
+                                setImageDisplay((d) =>
+                                  upsertImageDisplayPipSlot(d, activeBackgroundDisplaySlot, validImageCount, { pipRotation: v })
+                                )
+                              }
                               formatDisplay={(v) => `${v}°`}
                               label="PiP rotation"
-                              className="w-full max-w-[140px]"
+                              className="w-full min-w-0"
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <span className="text-muted-foreground text-xs">PiP corner radius (this slot)</span>
+                            <StepperWithLongPress
+                              value={activePipResolved?.pipBorderRadius ?? 24}
+                              min={0}
+                              max={72}
+                              step={2}
+                              onChange={(v) =>
+                                setImageDisplay((d) =>
+                                  upsertImageDisplayPipSlot(d, activeBackgroundDisplaySlot, validImageCount, {
+                                    pipBorderRadius: v,
+                                  })
+                                )
+                              }
+                              formatDisplay={(v) => `${v}px`}
+                              label="PiP corner radius"
+                              className="w-full min-w-0"
                             />
                           </div>
                           <label className="flex items-center gap-2 sm:col-span-2 cursor-pointer">
@@ -7504,7 +7726,7 @@ export function SlideEditForm({
                               onChange={(e) => setImageDisplay((d) => ({ ...d, pipShadow: e.target.checked }))}
                               className="rounded border-input accent-primary"
                             />
-                            <span className="text-muted-foreground text-xs">PiP drop shadow</span>
+                            <span className="text-muted-foreground text-xs">PiP drop shadow (all boxes)</span>
                           </label>
                         </div>
                       )}
@@ -7615,7 +7837,7 @@ export function SlideEditForm({
                         onChange={(v) => setImageDisplay((d) => ({ ...d, frameRadius: v }))}
                         formatDisplay={(v) => `${v}px`}
                         label="corner radius"
-                        className="w-full max-w-[140px]"
+                        className="w-full min-w-0"
                         disabled={(imageDisplay.frameShape ?? "squircle") === "circle" || (imageDisplay.frameShape ?? "squircle") === "pill"}
                       />
                       {((imageDisplay.frameShape ?? "squircle") === "circle" || (imageDisplay.frameShape ?? "squircle") === "pill") && (
@@ -7675,7 +7897,7 @@ export function SlideEditForm({
                                 onChange={(v) => setImageDisplay((d) => ({ ...d, gap: v }))}
                                 formatDisplay={(v) => `${v}px`}
                                 label="gap"
-                                className="w-full max-w-[140px]"
+                                className="w-full min-w-0"
                               />
                             </div>
                             <div className="space-y-1.5 sm:col-span-2">
@@ -7718,7 +7940,7 @@ export function SlideEditForm({
                                         onChange={(v) => setImageDisplay((d) => ({ ...d, dividerWidth: v }))}
                                         formatDisplay={(v) => `${v}px`}
                                         label="divider width"
-                                        className="w-full max-w-[120px]"
+                                        className="w-full min-w-0"
                                       />
                                     </div>
                                   </>
@@ -7759,7 +7981,7 @@ export function SlideEditForm({
                                   step={5}
                                   onChange={(v) => setImageDisplay((d) => ({ ...d, overlayCircleX: v }))}
                                   label="position X"
-                                  className="w-full max-w-[140px]"
+                                  className="w-full min-w-0"
                                 />
                               </div>
                               <div className="space-y-1.5">
@@ -7771,7 +7993,7 @@ export function SlideEditForm({
                                   step={5}
                                   onChange={(v) => setImageDisplay((d) => ({ ...d, overlayCircleY: v }))}
                                   label="position Y"
-                                  className="w-full max-w-[140px]"
+                                  className="w-full min-w-0"
                                 />
                               </div>
                               <div className="space-y-1.5">
@@ -7784,7 +8006,7 @@ export function SlideEditForm({
                                   onChange={(v) => setImageDisplay((d) => ({ ...d, overlayCircleSize: v }))}
                                   formatDisplay={(v) => `${v}px`}
                                   label="circle size"
-                                  className="w-full max-w-[140px]"
+                                  className="w-full min-w-0"
                                 />
                               </div>
                               <div className="space-y-1.5">
@@ -7797,7 +8019,7 @@ export function SlideEditForm({
                                   onChange={(v) => setImageDisplay((d) => ({ ...d, overlayCircleBorderWidth: v }))}
                                   formatDisplay={(v) => `${v}px`}
                                   label="border width"
-                                  className="w-full max-w-[140px]"
+                                  className="w-full min-w-0"
                                 />
                               </div>
                               <div className="space-y-1.5">
@@ -7819,7 +8041,8 @@ export function SlideEditForm({
                   </div>
                 </div>
                 </div>
-              </div>
+              )}
+              </>
             )}
             {!isImageMode && (
               <div className={`rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3 ${!isPro ? "pointer-events-none opacity-60" : ""}`}>

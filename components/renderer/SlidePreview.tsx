@@ -7,6 +7,7 @@ import { getRoundedPolygonClipPath } from "@/lib/renderer/shapeClipPath";
 import { resolvePipLayoutsForImageCount } from "@/lib/renderer/resolvePipLayouts";
 import { fullImageRotationStyle, normalizeFullImageRotation } from "@/lib/renderer/fullImageRotation";
 import { parseZoneBoxChrome } from "@/lib/renderer/zoneBoxChrome";
+import { clampTextZonePositionToCanvas } from "@/lib/renderer/textZoneGeometry";
 import type { OverlayShape, TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { getContrastingTextColor, hexToRgba } from "@/lib/editor/colorUtils";
 import { parseInlineFormatting, HIGHLIGHT_COLORS, stripHighlightMarkers, getFontSizeSegmentsForRange, getLineSubstringByPlainRange, type HighlightSpan, type InlineSegment } from "@/lib/editor/inlineFormat";
@@ -15,6 +16,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/compon
 import { FontPickerModal } from "@/components/FontPickerModal";
 import { OverlayShapesLayer } from "@/components/renderer/OverlayShapesLayer";
 import { SlideOverlayShapesEditLayer } from "@/components/editor/SlideOverlayShapesEditLayer";
+import { cn } from "@/lib/utils";
 
 /** Base design size (slide content is laid out in 1080x1080, then scaled to cover export dimensions). */
 const CANVAS_SIZE = 1080;
@@ -341,7 +343,8 @@ export type SlidePreviewProps = {
   /** When set (editor live preview, PiP mode), user can resize a PiP box from corner handles. */
   onPipSizeChange?: (size: number, slotIndex?: number) => void;
   /** When set, clicking a PiP image notifies parent (e.g. switch to Background tab). */
-  onPipImageClick?: () => void;
+  /** Called when user clicks a PiP image; slotIndex matches multi-image order (0 = first). */
+  onPipImageClick?: (slotIndex: number) => void;
   /** When set, headline/body font sizes are scaled so text fits at this export size (4:5, 9:16). */
   exportSize?: "1080x1080" | "1080x1350" | "1080x1920";
   className?: string;
@@ -373,6 +376,9 @@ export type SlidePreviewProps = {
     onFontWeightChange: (v: number) => void;
     onWidthChange: (v: number) => void;
     onHeightChange: (v: number) => void;
+    /** Optional: rotation in degrees (-180–180); enables drag handle above zone (like overlay shapes). */
+    rotation?: number;
+    onRotationChange?: (deg: number) => void;
     /** Optional: highlight from preview — select text, then pick color or Auto */
     highlight?: {
       color: string;
@@ -404,6 +410,9 @@ export type SlidePreviewProps = {
     onFontWeightChange: (v: number) => void;
     onWidthChange: (v: number) => void;
     onHeightChange: (v: number) => void;
+    /** Optional: rotation in degrees (-180–180); enables drag handle above zone (like overlay shapes). */
+    rotation?: number;
+    onRotationChange?: (deg: number) => void;
     highlight?: {
       color: string;
       onApply: (start: number, end: number, color: string) => void;
@@ -505,6 +514,24 @@ const FRAME_WIDTHS: Record<string, number> = { none: 0, thin: 2, medium: 5, thic
 /** Resize handle size (touch-friendly). */
 const RESIZE_HANDLE_SIZE = 44;
 const RESIZE_HANDLE_OFFSET = -RESIZE_HANDLE_SIZE / 2;
+/** Match text zones and `SlideOverlayShapesEditLayer` box corners (not the old 16px PiP dots). */
+const PIP_RESIZE_HANDLE_CLASSNAME =
+  "rounded-full border-2 border-primary bg-primary/80 hover:scale-110 z-30 touch-none shadow-md ring-2 ring-background";
+
+function normDegTextZone(d: number) {
+  let x = d % 360;
+  if (x > 180) x -= 360;
+  if (x < -180) x += 360;
+  return x;
+}
+
+type ZoneRotateDragRef = {
+  cx: number;
+  cy: number;
+  a0: number;
+  rot0: number;
+  apply: (deg: number) => void;
+};
 
 /** Zigzag clip-paths for 2 images – shared boundary at 50%, zigzagging between 35% and 65%. */
 const ZIGZAG_LEFT = "polygon(0 0, 50% 0, 35% 25%, 65% 50%, 35% 75%, 50% 100%, 0 100%)";
@@ -698,6 +725,14 @@ export function SlidePreview({
     | null
   >(null);
   const chromeDragOffsetRef = useRef(chromeDragOffset);
+  /** Same family as focused headline/body + selected shape row: visible while editing or dragging chrome in preview. */
+  const chromeInteractionHighlight = (kind: "counter" | "watermark" | "swipe" | "madeWith", radius: "pill" | "rounded") =>
+    focusedChrome === kind || chromeDragType === kind
+      ? cn(
+          "ring-2 ring-primary/80 shadow-lg ring-offset-2 ring-offset-background/95 bg-primary/10 transition-shadow duration-150",
+          radius === "pill" ? "rounded-full" : "rounded-lg"
+        )
+      : "";
   /** Background image drag: start client coords and start focal point (%). */
   const bgImageDragRef = useRef<{ startClientX: number; startClientY: number; startX: number; startY: number } | null>(null);
   const onBackgroundImagePositionChangeRef = useRef(onBackgroundImagePositionChange);
@@ -930,6 +965,7 @@ export function SlidePreview({
     startH: number;
     startPtrX: number;
     startPtrY: number;
+    rotation: number;
   } | null>(null);
   const resizeStateRef = useRef(resizeState);
   useEffect(() => {
@@ -1020,8 +1056,9 @@ export function SlidePreview({
       }
       w = Math.max(MIN_W, Math.min(w, MAX_W - x));
       h = Math.max(MIN_H, Math.min(h, MAX_H - y));
-      x = Math.max(0, Math.min(x, MAX_W - w));
-      y = Math.max(0, Math.min(y, MAX_H - h));
+      const pos = clampTextZonePositionToCanvas(x, y, w, h, rs.rotation ?? 0, MAX_W, MAX_H);
+      x = pos.x;
+      y = pos.y;
       if (rs.zone === "headline") {
         onHeadlinePositionChange?.(Math.round(Math.max(0, x)), Math.round(Math.max(0, y)));
         editToolbarHeadline?.onWidthChange(Math.round(w));
@@ -1147,6 +1184,36 @@ export function SlidePreview({
       window.removeEventListener("pointercancel", handleResizeUp, { capture: true });
     };
   }, [resizeState, handleResizeMove, handleResizeUp]);
+
+  const zoneRotateDragRef = useRef<ZoneRotateDragRef | null>(null);
+  const [zoneRotateListening, setZoneRotateListening] = useState(false);
+  useEffect(() => {
+    if (!zoneRotateListening) return;
+    const onMove = (e: PointerEvent) => {
+      const st = zoneRotateDragRef.current;
+      const root = previewRootRef.current;
+      if (!st || !root) return;
+      const r = root.getBoundingClientRect();
+      const px = ((e.clientX - r.left) / r.width) * CANVAS_SIZE;
+      const py = ((e.clientY - r.top) / r.height) * canvasH;
+      const ang = (Math.atan2(py - st.cy, px - st.cx) * 180) / Math.PI;
+      const rot = Math.round(normDegTextZone(st.rot0 + (ang - st.a0)));
+      st.apply(rot);
+    };
+    const onUp = () => {
+      zoneRotateDragRef.current = null;
+      setZoneRotateListening(false);
+    };
+    window.addEventListener("pointermove", onMove, { capture: true });
+    window.addEventListener("pointerup", onUp, { capture: true });
+    window.addEventListener("pointercancel", onUp, { capture: true });
+    return () => {
+      window.removeEventListener("pointermove", onMove, { capture: true });
+      window.removeEventListener("pointerup", onUp, { capture: true });
+      window.removeEventListener("pointercancel", onUp, { capture: true });
+    };
+  }, [zoneRotateListening, canvasH]);
+
   const slideData: SlideData = {
     headline: slide.headline,
     body: slide.body ?? null,
@@ -1570,30 +1637,35 @@ export function SlidePreview({
                 return (
                   <div
                     key={`pip-m-${i}`}
-                    className={`absolute overflow-hidden ${onPipPositionChange ? "cursor-grab active:cursor-grabbing" : ""}`}
+                    className="absolute"
                     style={{
                       zIndex: zMp,
                       width: pipWMp,
                       height: pipHMp,
                       ...pipPosStyleMp,
-                      ...pipShapeStylesMp,
-                      ...(!pipUseClipPathFrameMp && pipFrameWMp > 0 ? { border: `${pipFrameWMp}px solid ${pipFrameColorMp}` } : {}),
-                      ...(pipShowShadowMp
-                        ? pipFrameWMp > 0 && !pipUseClipPathFrameMp
-                          ? { boxShadow: "0 8px 32px rgba(0,0,0,0.3)" }
-                          : { boxShadow: pipFrameWMp > 0 ? "0 8px 32px rgba(0,0,0,0.3)" : "0 8px 32px rgba(0,0,0,0.25)" }
-                        : {}),
                       ...(spec.pipRotation !== 0 && { transform: `rotate(${spec.pipRotation}deg)`, transformOrigin: "center" }),
                     }}
-                    {...(onPipPositionChange
-                      ? {
-                          onPointerDown: (e: React.PointerEvent) => handlePipPointerDown(e, pipWMp, pipHMp, dragSlotMp),
-                          role: "presentation" as const,
-                          "aria-label": "Drag to reposition picture-in-picture",
-                        }
-                      : {})}
-                    onClick={() => onPipImageClick?.()}
+                    onClick={() => onPipImageClick?.(i)}
                   >
+                    <div
+                      className={`absolute inset-0 overflow-hidden ${onPipPositionChange ? "cursor-grab active:cursor-grabbing" : ""}`}
+                      style={{
+                        ...pipShapeStylesMp,
+                        ...(!pipUseClipPathFrameMp && pipFrameWMp > 0 ? { border: `${pipFrameWMp}px solid ${pipFrameColorMp}` } : {}),
+                        ...(pipShowShadowMp
+                          ? pipFrameWMp > 0 && !pipUseClipPathFrameMp
+                            ? { boxShadow: "0 8px 32px rgba(0,0,0,0.3)" }
+                            : { boxShadow: pipFrameWMp > 0 ? "0 8px 32px rgba(0,0,0,0.3)" : "0 8px 32px rgba(0,0,0,0.25)" }
+                          : {}),
+                      }}
+                      {...(onPipPositionChange
+                        ? {
+                            onPointerDown: (e: React.PointerEvent) => handlePipPointerDown(e, pipWMp, pipHMp, dragSlotMp),
+                            role: "presentation" as const,
+                            "aria-label": "Drag to reposition picture-in-picture",
+                          }
+                        : {})}
+                    >
                     {pipUseClipPathFrameMp ? (
                       <>
                         <div className="absolute inset-0" style={{ ...pipShapeStylesMp, backgroundColor: pipFrameColorMp }} />
@@ -1639,34 +1711,34 @@ export function SlidePreview({
                         onLoad={onPipImageLoadMp}
                       />
                     )}
-                    {onPipSizeChange && (
-                      <>
+                    </div>
+                    {onPipSizeChange &&
+                      (["top_left", "top_right", "bottom_left", "bottom_right"] as const).map((corner) => (
                         <button
+                          key={corner}
                           type="button"
-                          className="absolute -left-2 -top-2 h-4 w-4 rounded-full border border-white/90 bg-primary/90 shadow cursor-nwse-resize"
-                          onPointerDown={(e) => handlePipResizePointerDown(e, "top_left", pipWMp, pipHMp, baseSizeMp, dragSlotMp)}
-                          aria-label="Resize picture-in-picture from top left"
+                          className={cn(
+                            "absolute",
+                            PIP_RESIZE_HANDLE_CLASSNAME,
+                            corner === "top_left" || corner === "bottom_right" ? "cursor-nwse-resize" : "cursor-nesw-resize"
+                          )}
+                          style={{
+                            width: RESIZE_HANDLE_SIZE,
+                            height: RESIZE_HANDLE_SIZE,
+                            ...(corner === "top_left" && { left: RESIZE_HANDLE_OFFSET, top: RESIZE_HANDLE_OFFSET }),
+                            ...(corner === "top_right" && { right: RESIZE_HANDLE_OFFSET, top: RESIZE_HANDLE_OFFSET, left: "auto" }),
+                            ...(corner === "bottom_left" && { left: RESIZE_HANDLE_OFFSET, bottom: RESIZE_HANDLE_OFFSET, top: "auto" }),
+                            ...(corner === "bottom_right" && {
+                              right: RESIZE_HANDLE_OFFSET,
+                              bottom: RESIZE_HANDLE_OFFSET,
+                              left: "auto",
+                              top: "auto",
+                            }),
+                          }}
+                          onPointerDown={(e) => handlePipResizePointerDown(e, corner, pipWMp, pipHMp, baseSizeMp, dragSlotMp)}
+                          aria-label={`Resize picture-in-picture from ${corner.replace(/_/g, " ")}`}
                         />
-                        <button
-                          type="button"
-                          className="absolute -right-2 -top-2 h-4 w-4 rounded-full border border-white/90 bg-primary/90 shadow cursor-nesw-resize"
-                          onPointerDown={(e) => handlePipResizePointerDown(e, "top_right", pipWMp, pipHMp, baseSizeMp, dragSlotMp)}
-                          aria-label="Resize picture-in-picture from top right"
-                        />
-                        <button
-                          type="button"
-                          className="absolute -left-2 -bottom-2 h-4 w-4 rounded-full border border-white/90 bg-primary/90 shadow cursor-nesw-resize"
-                          onPointerDown={(e) => handlePipResizePointerDown(e, "bottom_left", pipWMp, pipHMp, baseSizeMp, dragSlotMp)}
-                          aria-label="Resize picture-in-picture from bottom left"
-                        />
-                        <button
-                          type="button"
-                          className="absolute -right-2 -bottom-2 h-4 w-4 rounded-full border border-white/90 bg-primary/90 shadow cursor-nwse-resize"
-                          onPointerDown={(e) => handlePipResizePointerDown(e, "bottom_right", pipWMp, pipHMp, baseSizeMp, dragSlotMp)}
-                          aria-label="Resize picture-in-picture from bottom right"
-                        />
-                      </>
-                    )}
+                      ))}
                   </div>
                 );
               })}
@@ -2046,30 +2118,35 @@ export function SlidePreview({
               <div className="absolute inset-0" style={{ zIndex: 0, isolation: "isolate" }}>
                 <div className="absolute inset-0" style={{ ...pipBgStyle, zIndex: 0 }} />
                 <div
-                  className={`absolute overflow-hidden ${onPipPositionChange ? "cursor-grab active:cursor-grabbing" : ""}`}
+                  className="absolute"
                   style={{
                     zIndex: 1,
                     width: pipW,
                     height: pipH,
                     ...pipPosStyle,
-                    ...pipShapeStyles,
-                    ...(!pipUseClipPathFrame && pipFrameW > 0 ? { border: `${pipFrameW}px solid ${pipFrameColor}` } : {}),
-                    ...(pipShowShadowSingle
-                      ? pipFrameW > 0 && !pipUseClipPathFrame
-                        ? { boxShadow: "0 8px 32px rgba(0,0,0,0.3)" }
-                        : { boxShadow: pipFrameW > 0 ? "0 8px 32px rgba(0,0,0,0.3)" : "0 8px 32px rgba(0,0,0,0.25)" }
-                      : {}),
                     ...(pipRotationSingle !== 0 && { transform: `rotate(${pipRotationSingle}deg)`, transformOrigin: "center" }),
                   }}
-                  {...(onPipPositionChange
-                    ? {
-                        onPointerDown: (e: React.PointerEvent) => handlePipPointerDown(e, pipW, pipH, pipDragSlot),
-                        role: "presentation" as const,
-                        "aria-label": "Drag to reposition picture-in-picture",
-                      }
-                    : {})}
-                  onClick={() => onPipImageClick?.()}
+                  onClick={() => onPipImageClick?.(0)}
                 >
+                  <div
+                    className={`absolute inset-0 overflow-hidden ${onPipPositionChange ? "cursor-grab active:cursor-grabbing" : ""}`}
+                    style={{
+                      ...pipShapeStyles,
+                      ...(!pipUseClipPathFrame && pipFrameW > 0 ? { border: `${pipFrameW}px solid ${pipFrameColor}` } : {}),
+                      ...(pipShowShadowSingle
+                        ? pipFrameW > 0 && !pipUseClipPathFrame
+                          ? { boxShadow: "0 8px 32px rgba(0,0,0,0.3)" }
+                          : { boxShadow: pipFrameW > 0 ? "0 8px 32px rgba(0,0,0,0.3)" : "0 8px 32px rgba(0,0,0,0.25)" }
+                        : {}),
+                    }}
+                    {...(onPipPositionChange
+                      ? {
+                          onPointerDown: (e: React.PointerEvent) => handlePipPointerDown(e, pipW, pipH, pipDragSlot),
+                          role: "presentation" as const,
+                          "aria-label": "Drag to reposition picture-in-picture",
+                        }
+                      : {})}
+                  >
                   {pipUseClipPathFrame ? (
                     <>
                       <div className="absolute inset-0" style={{ ...pipShapeStyles, backgroundColor: pipFrameColor }} />
@@ -2113,34 +2190,34 @@ export function SlidePreview({
                       onLoad={onPipImageLoad}
                     />
                   )}
-                  {onPipSizeChange && (
-                    <>
+                  </div>
+                  {onPipSizeChange &&
+                    (["top_left", "top_right", "bottom_left", "bottom_right"] as const).map((corner) => (
                       <button
+                        key={corner}
                         type="button"
-                        className="absolute -left-2 -top-2 h-4 w-4 rounded-full border border-white/90 bg-primary/90 shadow cursor-nwse-resize"
-                        onPointerDown={(e) => handlePipResizePointerDown(e, "top_left", pipW, pipH, baseSize, pipDragSlot)}
-                        aria-label="Resize picture-in-picture from top left"
+                        className={cn(
+                          "absolute",
+                          PIP_RESIZE_HANDLE_CLASSNAME,
+                          corner === "top_left" || corner === "bottom_right" ? "cursor-nwse-resize" : "cursor-nesw-resize"
+                        )}
+                        style={{
+                          width: RESIZE_HANDLE_SIZE,
+                          height: RESIZE_HANDLE_SIZE,
+                          ...(corner === "top_left" && { left: RESIZE_HANDLE_OFFSET, top: RESIZE_HANDLE_OFFSET }),
+                          ...(corner === "top_right" && { right: RESIZE_HANDLE_OFFSET, top: RESIZE_HANDLE_OFFSET, left: "auto" }),
+                          ...(corner === "bottom_left" && { left: RESIZE_HANDLE_OFFSET, bottom: RESIZE_HANDLE_OFFSET, top: "auto" }),
+                          ...(corner === "bottom_right" && {
+                            right: RESIZE_HANDLE_OFFSET,
+                            bottom: RESIZE_HANDLE_OFFSET,
+                            left: "auto",
+                            top: "auto",
+                          }),
+                        }}
+                        onPointerDown={(e) => handlePipResizePointerDown(e, corner, pipW, pipH, baseSize, pipDragSlot)}
+                        aria-label={`Resize picture-in-picture from ${corner.replace(/_/g, " ")}`}
                       />
-                      <button
-                        type="button"
-                        className="absolute -right-2 -top-2 h-4 w-4 rounded-full border border-white/90 bg-primary/90 shadow cursor-nesw-resize"
-                        onPointerDown={(e) => handlePipResizePointerDown(e, "top_right", pipW, pipH, baseSize, pipDragSlot)}
-                        aria-label="Resize picture-in-picture from top right"
-                      />
-                      <button
-                        type="button"
-                        className="absolute -left-2 -bottom-2 h-4 w-4 rounded-full border border-white/90 bg-primary/90 shadow cursor-nesw-resize"
-                        onPointerDown={(e) => handlePipResizePointerDown(e, "bottom_left", pipW, pipH, baseSize, pipDragSlot)}
-                        aria-label="Resize picture-in-picture from bottom left"
-                      />
-                      <button
-                        type="button"
-                        className="absolute -right-2 -bottom-2 h-4 w-4 rounded-full border border-white/90 bg-primary/90 shadow cursor-nwse-resize"
-                        onPointerDown={(e) => handlePipResizePointerDown(e, "bottom_right", pipW, pipH, baseSize, pipDragSlot)}
-                        aria-label="Resize picture-in-picture from bottom right"
-                      />
-                    </>
-                  )}
+                    ))}
                 </div>
               </div>
             );
@@ -2506,7 +2583,8 @@ export function SlidePreview({
           margin: 0,
           overflowWrap: "break-word",
           wordBreak: "break-word",
-          ...(zoneBoxChromeStyle ?? { padding: 0, boxSizing: "border-box" }),
+          padding: 0,
+          boxSizing: "border-box",
         };
         const zoneRotation = (block.zone as { rotation?: number }).rotation ?? 0;
         const rotationStyle = zoneRotation !== 0 ? {
@@ -2515,22 +2593,36 @@ export function SlidePreview({
           overflow: "visible" as const,
           backfaceVisibility: "hidden" as const,
         } : undefined;
+        /** Same outer box as the editable zone (padding, backdrop, border) so preview matches export when edit chrome is hidden. */
+        const zoneBoxStyle: CSSProperties = {
+          width: block.zone.w,
+          minWidth: block.zone.w,
+          maxWidth: block.zone.w,
+          height: block.zone.h,
+          margin: 0,
+          ...(zoneBoxChromeStyle ?? { padding: 0, boxSizing: "border-box" as const }),
+        };
         const readOnlyBlockEl = (
           <div
-            className="absolute flex flex-col justify-center shrink-0 overflow-visible"
+            className="absolute overflow-visible rounded-sm"
             style={{
-              ...readOnlyBlockStyles,
               left: block.zone.x + zoneDragX,
               top: block.zone.y + zoneDragY,
-              width: block.zone.w,
-              minWidth: block.zone.w,
-              maxWidth: block.zone.w,
-              height: block.zone.h,
+              ...zoneBoxStyle,
               zIndex: 5,
               ...rotationStyle,
             }}
           >
-            {readOnlyBlockContent}
+            <div
+              className="absolute inset-0 flex min-w-0 flex-col justify-center box-border overflow-visible"
+              style={{
+                ...readOnlyBlockStyles,
+                margin: 0,
+                padding: 0,
+              }}
+            >
+              {readOnlyBlockContent}
+            </div>
           </div>
         );
         if (isEditableHeadline) {
@@ -2541,6 +2633,7 @@ export function SlidePreview({
           const showToolbar = focusedZone === "headline" && editToolbarHeadline && !positionAndSizeOnly;
           const isFocused = focusedZone === "headline";
           const canResize = editToolbarHeadline != null && editScale > 0;
+          const canRotate = canResize && isFocused && editToolbarHeadline?.onRotationChange != null;
           const handleHeadlineBlur = () => {
             setTimeout(() => {
               if (headlineMoreOpenRef.current) return;
@@ -2570,6 +2663,7 @@ export function SlidePreview({
                       startH: block.zone.h,
                       startPtrX: e.clientX,
                       startPtrY: e.clientY,
+                      rotation: (block.zone as { rotation?: number }).rotation ?? 0,
                     });
                   }}
                   className="absolute rounded-full border-2 border-primary bg-primary/80 cursor-nwse-resize hover:scale-110 z-20 touch-none"
@@ -2586,14 +2680,44 @@ export function SlidePreview({
               ))}
             </>
           ) : null;
-          const zoneBoxStyle = {
-            width: block.zone.w,
-            minWidth: block.zone.w,
-            maxWidth: block.zone.w,
-            height: block.zone.h,
-            margin: 0,
-            ...(zoneBoxChromeStyle ?? { padding: 0, boxSizing: "border-box" as const }),
-          };
+          const headlineRotateHandle =
+            canRotate && editToolbarHeadline?.onRotationChange ? (
+              <button
+                type="button"
+                data-text-zone-handle="rotate"
+                className="absolute left-1/2 z-30 -translate-x-1/2 rounded-full border-2 border-primary bg-primary/80 hover:scale-110 touch-none cursor-grab"
+                style={{
+                  width: RESIZE_HANDLE_SIZE,
+                  height: RESIZE_HANDLE_SIZE,
+                  top: -(RESIZE_HANDLE_SIZE + 12),
+                  pointerEvents: "auto",
+                }}
+                aria-label="Rotate headline"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                  const root = previewRootRef.current;
+                  const onRotationChange = editToolbarHeadline.onRotationChange;
+                  if (!root || !onRotationChange) return;
+                  const r = root.getBoundingClientRect();
+                  const px = ((e.clientX - r.left) / r.width) * CANVAS_SIZE;
+                  const py = ((e.clientY - r.top) / r.height) * canvasH;
+                  const cx = block.zone.x + offX + block.zone.w / 2;
+                  const cy = block.zone.y + offY + block.zone.h / 2;
+                  const a0 = (Math.atan2(py - cy, px - cx) * 180) / Math.PI;
+                  const rot0 = zoneRotation;
+                  zoneRotateDragRef.current = {
+                    cx,
+                    cy,
+                    a0,
+                    rot0,
+                    apply: onRotationChange,
+                  };
+                  setZoneRotateListening(true);
+                }}
+              />
+            ) : null;
           const zoneBoxContent = positionAndSizeOnly ? (
             <>
               <div
@@ -2612,6 +2736,7 @@ export function SlidePreview({
               >
                 {readOnlyBlockContent}
               </div>
+              {headlineRotateHandle}
               {resizeHandles}
             </>
           ) : (
@@ -2652,6 +2777,7 @@ export function SlidePreview({
                     aria-label="Edit headline"
                   />
                 </div>
+                {headlineRotateHandle}
                 {resizeHandles}
               </>
           );
@@ -2669,7 +2795,9 @@ export function SlidePreview({
               onPointerDown={
                 canDrag
                   ? (e) => {
-                      if ((e.target as HTMLElement)?.tagName === "TEXTAREA") return;
+                      const t = e.target as HTMLElement;
+                      if (t?.tagName === "TEXTAREA") return;
+                      if (t?.closest?.('[data-text-zone-handle="rotate"]')) return;
                       e.preventDefault();
                       (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
                       dragZoneRef.current = { zone: "headline", baseX: block.zone.x, baseY: block.zone.y };
@@ -2919,6 +3047,7 @@ export function SlidePreview({
           const showToolbar = focusedZone === "body" && editToolbarBody && !positionAndSizeOnly;
           const isFocused = focusedZone === "body";
           const canResize = editToolbarBody != null && editScale > 0;
+          const canRotate = canResize && isFocused && editToolbarBody?.onRotationChange != null;
           const handleBodyBlur = () => {
             setTimeout(() => {
               if (bodyMoreOpenRef.current) return;
@@ -2948,6 +3077,7 @@ export function SlidePreview({
                       startH: block.zone.h,
                       startPtrX: e.clientX,
                       startPtrY: e.clientY,
+                      rotation: (block.zone as { rotation?: number }).rotation ?? 0,
                     });
                   }}
                   className="absolute rounded-full border-2 border-primary bg-primary/80 cursor-nwse-resize hover:scale-110 z-20 touch-none"
@@ -2964,14 +3094,44 @@ export function SlidePreview({
               ))}
             </>
           ) : null;
-          const bodyZoneBoxStyle = {
-            width: block.zone.w,
-            minWidth: block.zone.w,
-            maxWidth: block.zone.w,
-            height: block.zone.h,
-            margin: 0,
-            ...(zoneBoxChromeStyle ?? { padding: 0, boxSizing: "border-box" as const }),
-          };
+          const bodyRotateHandle =
+            canRotate && editToolbarBody?.onRotationChange ? (
+              <button
+                type="button"
+                data-text-zone-handle="rotate"
+                className="absolute left-1/2 z-30 -translate-x-1/2 rounded-full border-2 border-primary bg-primary/80 hover:scale-110 touch-none cursor-grab"
+                style={{
+                  width: RESIZE_HANDLE_SIZE,
+                  height: RESIZE_HANDLE_SIZE,
+                  top: -(RESIZE_HANDLE_SIZE + 12),
+                  pointerEvents: "auto",
+                }}
+                aria-label="Rotate subtext"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                  const root = previewRootRef.current;
+                  const onRotationChange = editToolbarBody.onRotationChange;
+                  if (!root || !onRotationChange) return;
+                  const r = root.getBoundingClientRect();
+                  const px = ((e.clientX - r.left) / r.width) * CANVAS_SIZE;
+                  const py = ((e.clientY - r.top) / r.height) * canvasH;
+                  const cx = block.zone.x + offX + block.zone.w / 2;
+                  const cy = block.zone.y + offY + block.zone.h / 2;
+                  const a0 = (Math.atan2(py - cy, px - cx) * 180) / Math.PI;
+                  const rot0 = zoneRotation;
+                  zoneRotateDragRef.current = {
+                    cx,
+                    cy,
+                    a0,
+                    rot0,
+                    apply: onRotationChange,
+                  };
+                  setZoneRotateListening(true);
+                }}
+              />
+            ) : null;
           const bodyZoneBoxContent = (
             <>
               {positionAndSizeOnly ? (
@@ -3026,6 +3186,7 @@ export function SlidePreview({
                   />
                 </div>
               )}
+              {bodyRotateHandle}
               {resizeHandles}
             </>
           );
@@ -3036,14 +3197,16 @@ export function SlidePreview({
                 position: "absolute",
                 left: zoneRotation !== 0 ? 0 : block.zone.x + offX,
                 top: zoneRotation !== 0 ? 0 : block.zone.y + offY,
-                ...bodyZoneBoxStyle,
+                ...zoneBoxStyle,
                 overflow: "visible",
                 ...(zoneRotation !== 0 && { backfaceVisibility: "hidden" }),
               }}
               onPointerDown={
                 canDrag
                   ? (e) => {
-                      if ((e.target as HTMLElement)?.tagName === "TEXTAREA") return;
+                      const t = e.target as HTMLElement;
+                      if (t?.tagName === "TEXTAREA") return;
+                      if (t?.closest?.('[data-text-zone-handle="rotate"]')) return;
                       e.preventDefault();
                       (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
                       dragZoneRef.current = { zone: "body", baseX: block.zone.x, baseY: block.zone.y };
@@ -3083,7 +3246,7 @@ export function SlidePreview({
                       position: "absolute",
                       left: block.zone.x + offX,
                       top: block.zone.y + offY,
-                      ...bodyZoneBoxStyle,
+                      ...zoneBoxStyle,
                       transform: `rotate(${zoneRotation}deg) translateZ(0)`,
                       transformOrigin: "50% 50%",
                       overflow: "visible",
@@ -3437,7 +3600,11 @@ export function SlidePreview({
           );
         const swipeContent = (
           <div
-            className={`flex items-center justify-center gap-1 py-3 ${editChromeSwipe ? "cursor-pointer ring-offset-2 ring-offset-transparent" : ""} ${focusedChrome === "swipe" ? "ring-2 ring-primary" : ""}`}
+            className={cn(
+              "flex items-center justify-center gap-1 py-3",
+              editChromeSwipe && "cursor-pointer",
+              editChromeSwipe && chromeInteractionHighlight("swipe", "rounded")
+            )}
             style={{ fontSize: swipeFontSize, fontWeight: 600, letterSpacing: "0.1em", color: swipeColor, opacity: 0.9 }}
             onClick={() => {
               if (!editChromeSwipe) return;
@@ -3465,7 +3632,11 @@ export function SlidePreview({
             style={{ ...positionStyle, zIndex: 5 }}
           >
             <div
-              className={`flex items-center justify-center gap-1 py-3 ${editChromeSwipe ? "cursor-move ring-offset-2 ring-offset-transparent" : ""} ${focusedChrome === "swipe" ? "ring-2 ring-primary" : ""}`}
+              className={cn(
+                "flex items-center justify-center gap-1 py-3",
+                editChromeSwipe && "cursor-move",
+                editChromeSwipe && chromeInteractionHighlight("swipe", "rounded")
+              )}
               style={{ fontSize: swipeFontSize, fontWeight: 600, letterSpacing: "0.1em", color: swipeColor, opacity: 0.9 }}
               onClick={() => {
                 if (!editChromeSwipe) return;
@@ -3527,7 +3698,11 @@ export function SlidePreview({
           }}
         >
           <div
-            className={`relative rounded-full ${editChromeCounter ? "cursor-move ring-offset-2 ring-offset-transparent" : ""} ${focusedChrome === "counter" ? "ring-2 ring-primary" : ""}`}
+            className={cn(
+              "relative rounded-full",
+              editChromeCounter && "cursor-move",
+              chromeInteractionHighlight("counter", "pill")
+            )}
             style={{
               padding: `${6 * chromeScale}px ${12 * chromeScale}px`,
               fontSize: (model.chrome.counterFontSize ?? 20) * chromeScale,
@@ -3612,7 +3787,11 @@ export function SlidePreview({
               style={{ left, top, right, bottom }}
             >
               <div
-                className={`relative ${editChromeWatermark ? "cursor-move ring-offset-2 ring-offset-transparent" : ""} ${focusedChrome === "watermark" ? "ring-2 ring-primary" : ""}`}
+                className={cn(
+                  "relative overflow-visible rounded-lg",
+                  editChromeWatermark && "cursor-move",
+                  chromeInteractionHighlight("watermark", "rounded")
+                )}
                 style={{
                   color: model.chrome.watermark.color ?? textColor,
                   opacity: 0.7,
@@ -3704,6 +3883,8 @@ export function SlidePreview({
       )}
 
       {showMadeWithOverride !== false && (() => {
+        const madeWithLabel = model.chrome.madeWithText?.trim() ?? "";
+        if (!madeWithLabel && !editChromeMadeWith) return null;
         const isDraggingMadeWith = chromeDragType === "madeWith" && chromeMadeWithDragBase;
         const off = chromeDragType === "madeWith" && chromeDragOffset ? chromeDragOffset : null;
         const hasXY = model.chrome.madeWithX != null && model.chrome.madeWithY != null;
@@ -3723,7 +3904,11 @@ export function SlidePreview({
         return (
           <div
             ref={editChromeMadeWith ? madeWithChromeRef : undefined}
-            className={`absolute ${editChromeMadeWith ? "cursor-move ring-offset-2 ring-offset-transparent" : ""} ${focusedChrome === "madeWith" ? "ring-2 ring-primary" : ""}`}
+            className={cn(
+              "absolute px-1.5 py-0.5",
+              editChromeMadeWith && "cursor-move",
+              editChromeMadeWith && chromeInteractionHighlight("madeWith", "rounded")
+            )}
             style={{
               ...posStyle,
               maxWidth: 1032 * chromeScale,
@@ -3761,7 +3946,7 @@ export function SlidePreview({
             role={editChromeMadeWith ? "button" : undefined}
             aria-label={editChromeMadeWith ? "Drag to move Watermark (Made with)" : undefined}
           >
-            {model.chrome.madeWithText ?? "Follow us"}
+            {madeWithLabel}
           </div>
         );
       })()}

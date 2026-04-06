@@ -43,6 +43,11 @@ import { WEB_IMAGES_SOURCE_DESCRIPTION, imageSourceDisplayName } from "@/lib/uti
 import { BackgroundSourceBestForHint } from "@/components/carousels/BackgroundSourcePlatformHints";
 import { InstagramMicroIcon, TikTokMicroIcon } from "@/components/carousels/BackgroundSourcePlatformHints";
 import { cn } from "@/lib/utils";
+import {
+  CAROUSEL_INPUT_MAX_CHARS,
+  CAROUSEL_NOTES_MAX_CHARS,
+  MAX_CAROUSEL_AI_STYLE_REFERENCE_ASSETS,
+} from "@/lib/constants";
 
 /** Carousel for: Instagram (default) or LinkedIn. LinkedIn uses B2B-optimized content and stock/own images only (no AI generate). */
 const CAROUSEL_FOR_OPTIONS = [
@@ -126,6 +131,7 @@ export function NewCarouselForm({
   initialUseWebSearch,
   initialCarouselFor,
   initialNotes,
+  initialAiStyleReferenceAssetIds,
   templateOptions = [],
   defaultTemplateId = null,
   defaultTemplateConfig = null,
@@ -161,6 +167,8 @@ export function NewCarouselForm({
   initialCarouselFor?: "instagram" | "linkedin";
   /** Pre-fill Notes when regenerating (from carousel.generation_options.notes). */
   initialNotes?: string;
+  /** Per-run style reference asset IDs when regenerating (merged with project refs for AI generate). */
+  initialAiStyleReferenceAssetIds?: string[];
   /** Templates the user can choose before generating (with parsed config for preview). */
   templateOptions?: TemplateOption[];
   defaultTemplateId?: string | null;
@@ -194,6 +202,11 @@ export function NewCarouselForm({
   const [carouselFor, setCarouselFor] = useState<"instagram" | "linkedin">(initialCarouselFor ?? "instagram");
   const [viralShortsStyle, setViralShortsStyle] = useState(false);
   const [notes, setNotes] = useState(initialNotes ?? "");
+  const [aiStyleRefIds, setAiStyleRefIds] = useState<string[]>(() => {
+    const raw = initialAiStyleReferenceAssetIds ?? [];
+    return Array.isArray(raw) ? raw.slice(0, MAX_CAROUSEL_AI_STYLE_REFERENCE_ASSETS) : [];
+  });
+  const [styleRefPickerOpen, setStyleRefPickerOpen] = useState(false);
   const [backgroundPickerOpen, setBackgroundPickerOpen] = useState(false);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(() => {
@@ -355,6 +368,14 @@ export function NewCarouselForm({
       setError("Topic, URL, or text is required.");
       return;
     }
+    if (inputType !== "document" && trimmed.length > CAROUSEL_INPUT_MAX_CHARS) {
+      setError(`Input is too long (max ${CAROUSEL_INPUT_MAX_CHARS.toLocaleString()} characters).`);
+      return;
+    }
+    if (notes.length > CAROUSEL_NOTES_MAX_CHARS) {
+      setError(`Notes are too long (max ${CAROUSEL_NOTES_MAX_CHARS.toLocaleString()} characters).`);
+      return;
+    }
     setIsPending(true);
     try {
       const formData = new FormData();
@@ -372,7 +393,10 @@ export function NewCarouselForm({
       if (backgroundAssetIds.length) formData.set("background_asset_ids", JSON.stringify(backgroundAssetIds));
       if (useAiBackgrounds || regenerateCarouselId) formData.set("use_ai_backgrounds", "true");
       if (imageSource === "stock") formData.set("use_stock_photos", "true");
-      if (imageSource === "ai_generate" && canUseAiGenerate && carouselFor !== "linkedin") formData.set("use_ai_generate", "true");
+      if (imageSource === "ai_generate" && canUseAiGenerate && carouselFor !== "linkedin") {
+        formData.set("use_ai_generate", "true");
+        formData.set("ai_style_reference_asset_ids", JSON.stringify(aiStyleRefIds));
+      }
       formData.set("carousel_for", carouselFor);
       if (useWebSearch) formData.set("use_web_search", "true");
       if (viralShortsStyle) formData.set("viral_shorts_style", "true");
@@ -541,6 +565,7 @@ export function NewCarouselForm({
                   placeholder="Paste or type your content..."
                   className="min-h-32 resize-y"
                   value={inputValue}
+                  maxLength={CAROUSEL_INPUT_MAX_CHARS}
                   onChange={(e) => setInputValue(e.target.value)}
                   required
                 />
@@ -551,6 +576,7 @@ export function NewCarouselForm({
                   className="min-w-0 w-full"
                   placeholder="e.g. 5 habits of successful creators"
                   value={inputValue}
+                  maxLength={CAROUSEL_INPUT_MAX_CHARS}
                   onChange={(e) => setInputValue(e.target.value)}
                   required
                 />
@@ -560,6 +586,7 @@ export function NewCarouselForm({
                   type="url"
                   placeholder="https://..."
                   value={inputValue}
+                  maxLength={CAROUSEL_INPUT_MAX_CHARS}
                   onChange={(e) => setInputValue(e.target.value)}
                   required
                 />
@@ -576,6 +603,17 @@ export function NewCarouselForm({
                     Supports PDF, DOCX, TXT, MD, CSV, JSON up to 10MB. We extract text and use it as the carousel input.
                   </p>
                 </div>
+              )}
+              {inputType !== "document" && (
+                <p
+                  className={cn(
+                    "text-xs tabular-nums text-muted-foreground",
+                    inputValue.length >= CAROUSEL_INPUT_MAX_CHARS && "font-medium text-destructive"
+                  )}
+                >
+                  {inputValue.length.toLocaleString()}/{CAROUSEL_INPUT_MAX_CHARS.toLocaleString()} characters
+                  {inputValue.length >= CAROUSEL_INPUT_MAX_CHARS ? " — limit reached" : ""}
+                </p>
               )}
             </div>
           </CardContent>
@@ -665,8 +703,18 @@ export function NewCarouselForm({
                   placeholder="Add more context about your carousel…"
                   className="min-h-20 resize-y"
                   value={notes}
+                  maxLength={CAROUSEL_NOTES_MAX_CHARS}
                   onChange={(e) => setNotes(e.target.value)}
                 />
+                <p
+                  className={cn(
+                    "text-xs tabular-nums text-muted-foreground",
+                    notes.length >= CAROUSEL_NOTES_MAX_CHARS && "font-medium text-destructive"
+                  )}
+                >
+                  {notes.length.toLocaleString()}/{CAROUSEL_NOTES_MAX_CHARS.toLocaleString()} characters
+                  {notes.length >= CAROUSEL_NOTES_MAX_CHARS ? " — limit reached" : ""}
+                </p>
               </div>
             </div>
             <label className={`flex items-center gap-2.5 cursor-pointer group ${hasFullAccess ? "" : "opacity-70"}`}>
@@ -814,6 +862,42 @@ export function NewCarouselForm({
                     </span>
                   )}
                 </div>
+                {imageSource === "ai_generate" && canUseAiGenerate && carouselFor !== "linkedin" && (
+                  <div className="rounded-lg border border-border/60 bg-muted/15 px-3 py-3 space-y-2">
+                    <p className="text-xs font-medium text-foreground">Style references (optional)</p>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                      Choose up to {MAX_CAROUSEL_AI_STYLE_REFERENCE_ASSETS} library images. We summarize their look so generated backgrounds match that style.{" "}
+                      <span className="text-foreground/80">
+                        Carousel notes and these refs override project rules when they conflict.
+                      </span>
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs"
+                        onClick={() => setStyleRefPickerOpen(true)}
+                      >
+                        <ImageIcon className="mr-1.5 size-3.5" />
+                        {aiStyleRefIds.length
+                          ? `${aiStyleRefIds.length} reference${aiStyleRefIds.length !== 1 ? "s" : ""}`
+                          : "Pick from library"}
+                      </Button>
+                      {aiStyleRefIds.length > 0 && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 text-xs text-muted-foreground"
+                          onClick={() => setAiStyleRefIds([])}
+                        >
+                          Clear
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
             <div className="pt-3 border-t border-border/50">
@@ -929,25 +1013,20 @@ export function NewCarouselForm({
             </Button>
             <Dialog open={templateModalOpen} onOpenChange={setTemplateModalOpen}>
               <DialogContent className="flex flex-col max-w-[calc(100%-2rem)] max-h-[85vh] sm:max-w-2xl md:max-w-[92vw] md:max-h-[92vh] md:w-[92vw] md:h-[92vh] lg:max-w-[94vw] lg:max-h-[94vh] lg:w-[94vw] lg:h-[94vh]">
-                <DialogHeader className="flex flex-row items-start justify-between gap-2">
-                  <div>
-                    <DialogTitle>Choose template</DialogTitle>
-                    <p className="text-muted-foreground text-sm mt-1">
-                      All templates are available. Use the platform filter to match Instagram or LinkedIn; default matches your carousel type.
-                    </p>
-                  </div>
-                  {hasFullAccess && (
-                    <ImportTemplateButton
-                      isPro={hasFullAccess}
-                      atLimit={false}
-                      isAdmin={isAdminUser}
-                      variant="outline"
-                      size="sm"
-                      className="shrink-0 gap-1.5"
-                      onCreated={() => router.refresh()}
-                    />
-                  )}
+                <DialogHeader>
+                  <DialogTitle>Choose template</DialogTitle>
+                  <p className="text-muted-foreground text-sm mt-1">
+                    All templates are available. Use the platform filter to match Instagram or LinkedIn; default matches your carousel type.
+                  </p>
                 </DialogHeader>
+                <ImportTemplateButton
+                  layout="callout"
+                  isPro={hasFullAccess}
+                  atLimit={false}
+                  isAdmin={isAdminUser}
+                  className="shrink-0"
+                  onCreated={() => router.refresh()}
+                />
                 <div className="overflow-y-auto overflow-x-hidden flex-1 min-h-0 min-w-0 w-full pr-1">
                   <TemplateSelectCards
                     key={`${carouselFor}-${templateModalOpen}`}
@@ -1058,6 +1137,18 @@ export function NewCarouselForm({
           onOpenChange={setBackgroundPickerOpen}
           selectedIds={backgroundAssetIds}
           onConfirm={setBackgroundAssetIds}
+          listFilterProjectId={projectId}
+        />
+        <BackgroundImagesPickerModal
+          open={styleRefPickerOpen}
+          onOpenChange={setStyleRefPickerOpen}
+          selectedIds={aiStyleRefIds}
+          onConfirm={setAiStyleRefIds}
+          maxSelection={MAX_CAROUSEL_AI_STYLE_REFERENCE_ASSETS}
+          allowEmptyConfirm
+          listFilterProjectId={projectId}
+          dialogTitle="Style references for AI-generated backgrounds"
+          dialogDescription={`Select up to ${MAX_CAROUSEL_AI_STYLE_REFERENCE_ASSETS} images from this project. Used only to match visual style.`}
         />
 
         <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center">

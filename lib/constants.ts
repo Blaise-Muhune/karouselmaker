@@ -11,6 +11,17 @@ export const FREE_FULL_ACCESS_GENERATIONS = 3;
 /** Pro users can use AI-generated images for this many carousels per month (beta). Free users cannot use it. */
 export const AI_GENERATE_LIMIT_PRO = 2;
 
+/** Project settings: max library images saved as AI style references. */
+export const MAX_PROJECT_AI_STYLE_REFERENCE_ASSETS = 10;
+/** New carousel form: max extra style references for one generation (merged with project; carousel IDs first). */
+export const MAX_CAROUSEL_AI_STYLE_REFERENCE_ASSETS = 5;
+/** Max chars for carousel "Notes" and similar fields (must match `generateCarouselInputSchema`). */
+export const CAROUSEL_NOTES_MAX_CHARS = 8000;
+/** Max chars for carousel topic/URL/paste input (must match `generateCarouselInputSchema`). */
+export const CAROUSEL_INPUT_MAX_CHARS = 20000;
+/** Max chars for project rules textarea (must match `projectFormSchema`). */
+export const PROJECT_RULES_MAX_CHARS = 8000;
+
 /** Tester account: 500 carousel generations, double pro limits for assets/exports/templates. */
 export const TESTER_EMAIL = "muyumba@andrews.edu";
 

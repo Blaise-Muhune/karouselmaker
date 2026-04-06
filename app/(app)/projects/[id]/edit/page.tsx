@@ -31,6 +31,9 @@ export default async function EditProjectPage({
     logo_storage_path?: string;
   } | undefined;
   const postTo = project.post_to_platforms as { facebook?: boolean; tiktok?: boolean; instagram?: boolean; linkedin?: boolean; youtube?: boolean } | undefined;
+  const styleRefIds = Array.isArray(project.ai_style_reference_asset_ids)
+    ? project.ai_style_reference_asset_ids.filter((id): id is string => typeof id === "string")
+    : [];
 
   const projectWithLang = project as { language?: string };
   const defaultValues = {
@@ -77,7 +80,12 @@ export default async function EditProjectPage({
             <p className="text-muted-foreground text-sm mt-0.5">Your project is where your carousels live. Change name and niche here; use Advanced settings for language, tone, and brand.</p>
           </div>
         </div>
-        <ProjectEditForm projectId={project.id} defaultValues={defaultValues} isAdmin={isAdmin(user.email ?? null)} />
+        <ProjectEditForm
+          projectId={project.id}
+          defaultValues={defaultValues}
+          initialAiStyleReferenceAssetIds={styleRefIds}
+          isAdmin={isAdmin(user.email ?? null)}
+        />
       </div>
     </div>
   );

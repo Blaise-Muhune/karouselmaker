@@ -7,6 +7,7 @@ import {
   starPointsLocal,
   trianglePointsLocal,
 } from "@/lib/renderer/overlayShapeGeometry";
+import { resolveOverlayBoxPaint } from "@/lib/renderer/overlayShapeBoxPaint";
 
 /**
  * HTML for template overlay shapes inside `.slide-inner` (1080×1080 design space).
@@ -53,10 +54,7 @@ function shapeToSvgFragment(s: OverlayShape, esc: (s: string) => string): string
   const h = s.h;
   const rot = s.rotation ?? 0;
   const op = s.opacity ?? 1;
-  const fill = s.fill ? esc(s.fill) : "transparent";
-  const sw0 = s.strokeWidth ?? 0;
-  const strokeCol = s.stroke && sw0 > 0 ? esc(s.stroke) : "none";
-  const swAttr = strokeCol === "none" ? 0 : sw0;
+  const { fillAttr: fill, strokeAttr: strokeCol, strokeWidth: swAttr } = resolveOverlayBoxPaint(s, esc);
 
   const gTransform =
     rot !== 0

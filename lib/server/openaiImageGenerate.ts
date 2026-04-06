@@ -34,6 +34,10 @@ export type ImagePromptContext = {
   isHookSlide?: boolean;
   /** User's optional notes (e.g. "focus on accuracy" or "stylized is ok"). When notes ask for a different style we follow that; otherwise we aim for accurate, realistic depictions of real things. */
   userNotes?: string;
+  /** Project rules text applied to image mood/style; carousel notes override when they conflict. */
+  projectImageStyleNotes?: string;
+  /** Vision summary from user reference images (palette, lighting, etc.). */
+  referenceStyleSummary?: string;
   /** Desired aspect ratio for generated image. Default 4:5; can be overridden from user notes (e.g. "square", "9:16"). */
   aspectRatio?: "1:1" | "4:5" | "9:16" | "2:3" | "16:9";
   /**
@@ -161,7 +165,7 @@ function isBibleAsObjectOnly(s: string): boolean {
 const GENERIC_OFF_TOPIC = /^(nature\s+landscape\s+peaceful|peaceful\s+nature|nature\s+scene|landscape\s+peaceful|calm\s+landscape|nature\s+background)$/i;
 
 /** Max length for the context block so the "Generate this image: {base}" part always has room and is never truncated. Base is sent in full. */
-const MAX_CONTEXT_BLOCK_LEN = 1200;
+const MAX_CONTEXT_BLOCK_LEN = 2200;
 
 /** Short global line: real people accurate, inclusive. Reused instead of long repeated preamble. */
 const GLOBAL_REAL_PEOPLE_LINE =
@@ -197,7 +201,10 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
   const parts: string[] = [];
 
   const notesLower = (context?.userNotes ?? "").toLowerCase();
-  const notesAskForStyle = /\b(stylized|stylise|artistic|art style|cartoon|illustration|animated|painting|drawing|abstract|creative style|different style)\b/i.test(notesLower);
+  const projectStyleLower = (context?.projectImageStyleNotes ?? "").toLowerCase();
+  const notesAskForStyle =
+    /\b(stylized|stylise|artistic|art style|cartoon|illustration|animated|painting|drawing|abstract|creative style|different style)\b/i.test(notesLower) ||
+    /\b(stylized|stylise|artistic|art style|cartoon|illustration|animated|painting|drawing|abstract|creative style|different style)\b/i.test(projectStyleLower);
   if (context?.genericFacesOnly) {
     parts.push(
       "People: use clearly invented, generic-looking adults only—no resemblance to any real individual, public figure, or celebrity. Keep outfit, era, setting, and mood aligned with the slide; photorealistic invented faces."
@@ -210,7 +217,22 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
     }
     parts.push(GLOBAL_REAL_PEOPLE_LINE);
   }
-  if (context?.userNotes?.trim()) parts.push(`User notes: ${truncateForContext(context.userNotes, 80)}`);
+  /** Priority for overlapping instructions: carousel (userNotes) > project > reference summary > app defaults. */
+  if (context?.referenceStyleSummary?.trim()) {
+    parts.push(
+      `Reference-image style (match this look for palette, lighting, and mood unless carousel notes below say otherwise): ${truncateForContext(context.referenceStyleSummary, 520)}`
+    );
+  }
+  if (context?.projectImageStyleNotes?.trim()) {
+    parts.push(
+      `Project image/copy context (use if not contradicted by carousel notes): ${truncateForContext(context.projectImageStyleNotes, 480)}`
+    );
+  }
+  if (context?.userNotes?.trim()) {
+    parts.push(
+      `Carousel notes (highest priority—override project/reference above when they conflict): ${truncateForContext(context.userNotes, 900)}`
+    );
+  }
 
   if (context?.isHookSlide) {
     parts.push(

@@ -58,7 +58,9 @@ RULE PRIORITY (when instructions conflict, apply in this order—higher wins):
 1) User "OVERRIDE" notes in the user message (if any)
 2) Viral Shorts style section (only when Viral Shorts is enabled)
 3) Platform section: LinkedIn vs Instagram (only the block that matches carousel_for)
-4) All other rules below
+4) Project rules / context (below in this prompt, when present)
+5) All other rules below
+When use_ai_generate is on: image_queries and visual intent must respect the same order—per-carousel OVERRIDE notes beat project rules for mood, style, or art direction; project rules beat generic defaults.
 
 CRITICAL (every response must satisfy—these are non-negotiable):
 - Output STRICT JSON only, matching the schema at the end of this prompt—no markdown fences, no commentary.
