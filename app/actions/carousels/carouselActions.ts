@@ -16,6 +16,9 @@ export async function getCarouselGenerationSnapshot(carouselId: string): Promise
       status: string;
       generation_started: boolean;
       generation_complete: boolean;
+      use_ai_backgrounds: boolean;
+      /** True while server is still running AI/stock image pipeline for slides. */
+      ai_backgrounds_pending: boolean;
     }
 > {
   const { user } = await getUser();
@@ -27,6 +30,8 @@ export async function getCarouselGenerationSnapshot(carouselId: string): Promise
     status: c.status,
     generation_started: o.generation_started === true,
     generation_complete: o.generation_complete === true,
+    use_ai_backgrounds: o.use_ai_backgrounds === true,
+    ai_backgrounds_pending: o.ai_backgrounds_pending === true,
   };
 }
 

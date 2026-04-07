@@ -726,6 +726,14 @@ export async function generateCarousel(formData: FormData): Promise<
   const hasImageQueries = (s: { image_queries?: string[]; unsplash_queries?: string[]; image_query?: string; unsplash_query?: string }) =>
     (s.image_queries?.length ?? s.unsplash_queries?.length ?? 0) > 0 || !!(s.image_query?.trim() || s.unsplash_query?.trim());
   if (requestedUseAiBackgrounds && validated.slides.some(hasImageQueries)) {
+    {
+      const curBg = await getCarousel(user.id, carousel.id);
+      const po = (curBg?.generation_options ?? {}) as Record<string, unknown>;
+      await updateCarousel(user.id, carousel.id, {
+        generation_options: { ...po, ai_backgrounds_pending: true },
+      });
+    }
+
     const aiSlideByIndex = new Map(
       validated.slides.map((s) => [s.slide_index, s])
     );
@@ -1039,6 +1047,14 @@ export async function generateCarousel(formData: FormData): Promise<
         LOG("backgrounds", "Brave search done");
       }
     }
+
+    {
+      const curBg = await getCarousel(user.id, carousel.id);
+      const po = (curBg?.generation_options ?? {}) as Record<string, unknown>;
+      await updateCarousel(user.id, carousel.id, {
+        generation_options: { ...po, ai_backgrounds_pending: false },
+      });
+    }
   }
 
   LOG("backgrounds", "applying solid/pattern to slides without images");
@@ -1075,6 +1091,7 @@ export async function generateCarousel(formData: FormData): Promise<
   const generationOptionsForDb: Record<string, unknown> = {
     ...finalGenerationOptions,
     generation_complete: true,
+    ai_backgrounds_pending: false,
   };
   const carouselFinalUpdate: Parameters<typeof updateCarousel>[2] = {
     title: resolvedTitle,
@@ -1095,6 +1112,7 @@ export async function generateCarousel(formData: FormData): Promise<
         generation_options: {
           generation_started: false,
           generation_complete: true,
+          ai_backgrounds_pending: false,
         },
       });
     } else {
@@ -1123,6 +1141,7 @@ export async function generateCarousel(formData: FormData): Promise<
           ...finalGenerationOptions,
           generation_started: false,
           generation_complete: true,
+          ai_backgrounds_pending: false,
           generation_error_recovery: true,
         };
         try {
@@ -1144,6 +1163,7 @@ export async function generateCarousel(formData: FormData): Promise<
               generation_options: {
                 generation_started: false,
                 generation_complete: true,
+                ai_backgrounds_pending: false,
                 generation_error_recovery: true,
               },
             });

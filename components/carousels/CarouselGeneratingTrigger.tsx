@@ -6,15 +6,32 @@ import { Loader2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getCarouselGenerationSnapshot } from "@/app/actions/carousels/carouselActions";
 
+const POLL_STUCK_MS = 120_000;
+const POLL_AI_BACKGROUNDS_MAX_MS = 600_000;
+
 function isGenerationPollComplete(
-  s: { status: string; generation_started: boolean; generation_complete: boolean },
+  s: {
+    status: string;
+    generation_started: boolean;
+    generation_complete: boolean;
+    use_ai_backgrounds: boolean;
+    ai_backgrounds_pending: boolean;
+  },
   startedAt: number
 ): boolean {
   if (s.status === "generating") return false;
   if (s.status !== "generated") return true;
+
+  // Do not leave the overlay until AI/stock/Brave backgrounds have finished writing to slides.
+  if (s.use_ai_backgrounds && s.ai_backgrounds_pending) {
+    return Date.now() - startedAt > POLL_AI_BACKGROUNDS_MAX_MS;
+  }
+
   if (s.generation_complete) return true;
+
   if (!s.generation_started) return true;
-  return Date.now() - startedAt > 120_000;
+
+  return Date.now() - startedAt > POLL_STUCK_MS;
 }
 
 /**
@@ -179,7 +196,7 @@ export function CarouselGeneratingPage({
         <Loader2Icon className="mx-auto size-12 animate-spin text-primary" />
         <p className="text-sm font-medium text-foreground">Generating your carousel…</p>
         <p className="text-xs text-muted-foreground">
-          This page stays up until the server finishes slides, captions, and background images (often 1–3 minutes; AI images can take longer). You won&apos;t see the editor until everything is saved.
+          This page stays up until AI or stock backgrounds are written to every frame, then captions are saved (often 2–5 minutes for AI images). You won&apos;t see the editor until that pipeline finishes.
         </p>
       </div>
     </div>
