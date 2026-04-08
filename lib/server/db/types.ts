@@ -29,6 +29,8 @@ export interface Project {
   user_id: string;
   name: string;
   niche: string | null;
+  /** UGC, product_placement, educational, storytelling, or general — drives AI prompts. */
+  content_focus?: string;
   tone_preset: string;
   /** ISO 639-1 language code (e.g. en, es). Default en. All carousels in this project use this language. */
   language?: string;

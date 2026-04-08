@@ -33,6 +33,7 @@ import {
   projectFormSchema,
   type ProjectFormInput,
 } from "@/lib/validations/project";
+import { CONTENT_FOCUS_OPTIONS } from "@/lib/server/ai/projectContentFocus";
 import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, ImageIcon, Settings2Icon } from "lucide-react";
 
 const TONE_OPTIONS = [
@@ -92,6 +93,7 @@ export function ProjectEditForm({
     const fd = new FormData();
     fd.set("name", data.name);
     fd.set("niche", data.niche ?? "");
+    fd.set("content_focus", data.content_focus ?? "general");
     fd.set("tone_preset", data.tone_preset);
     fd.set("language", data.language ?? "en");
     fd.set("number_of_slides", "8"); // Default; set per carousel on New Carousel page
@@ -228,6 +230,40 @@ export function ProjectEditForm({
                   ))}
                 </SelectContent>
               </Select>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="content_focus"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Content style</FormLabel>
+              <p className="text-muted-foreground text-xs mb-2">
+                Shapes how carousels read and how topic ideas are suggested—UGC, product-in-context, teaching, or story beats. AI spreads this across slides, not just the hook.
+              </p>
+              <div className="flex flex-col gap-2">
+                {CONTENT_FOCUS_OPTIONS.map((opt) => {
+                  const selected = field.value === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => field.onChange(opt.id)}
+                      className={cn(
+                        "rounded-lg border px-3 py-2.5 text-left text-sm transition-colors",
+                        selected
+                          ? "border-primary bg-primary/5 ring-1 ring-primary"
+                          : "border-border/60 bg-background hover:bg-muted/40"
+                      )}
+                    >
+                      <span className="font-medium">{opt.label}</span>
+                      <span className="text-muted-foreground mt-0.5 block text-xs leading-snug">{opt.description}</span>
+                    </button>
+                  );
+                })}
+              </div>
               <FormMessage />
             </FormItem>
           )}

@@ -5,6 +5,10 @@ import { z } from "zod";
 import { getUser } from "@/lib/server/auth/getUser";
 import { createClient } from "@/lib/supabase/server";
 import { buildHookRewritePrompt } from "@/lib/server/ai/prompts";
+import {
+  contentFocusHookHint,
+  normalizeContentFocusId,
+} from "@/lib/server/ai/projectContentFocus";
 
 const hookVariantsSchema = z.array(z.string().min(1).max(300)).min(1).max(10);
 
@@ -45,7 +49,7 @@ export async function rewriteHook(
 
   const { data: project } = await supabase
     .from("projects")
-    .select("tone_preset, project_rules")
+    .select("tone_preset, project_rules, content_focus, language")
     .eq("id", carousel.project_id)
     .eq("user_id", user.id)
     .single();
@@ -58,9 +62,13 @@ export async function rewriteHook(
       ? [projectRulesJson.do_rules && `Do: ${projectRulesJson.do_rules}`, projectRulesJson.dont_rules && `Don't: ${projectRulesJson.dont_rules}`].filter(Boolean).join("\n\n")
       : "");
   const projectLanguage = (project as { language?: string }).language?.trim() || undefined;
+  const contentFocusId = normalizeContentFocusId(
+    (project as { content_focus?: string | null }).content_focus
+  );
   const { system, user: userMsg } = buildHookRewritePrompt({
     tone_preset: (project.tone_preset as string) ?? "professional",
     rules: projectRules,
+    content_focus_hook: contentFocusHookHint(contentFocusId),
     current_headline: (slide as { headline: string }).headline,
     language: projectLanguage,
   });

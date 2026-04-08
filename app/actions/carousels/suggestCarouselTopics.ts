@@ -7,6 +7,11 @@ import { getProject } from "@/lib/server/db/projects";
 import { listCarousels, countCarouselsLifetime } from "@/lib/server/db/carousels";
 import { FREE_FULL_ACCESS_GENERATIONS } from "@/lib/constants";
 import { normalizeTopicKey } from "@/lib/server/topicSuggestions/normalizeTopicKey";
+import {
+  contentFocusLabel,
+  contentFocusTopicHint,
+  normalizeContentFocusId,
+} from "@/lib/server/ai/projectContentFocus";
 
 export type SuggestCarouselTopicsResult =
   | { ok: true; topics: string[] }
@@ -90,6 +95,8 @@ export async function generateCarouselTopicBatch(
   const language = (project.language ?? "en").trim() || "en";
   const niche = project.niche?.trim() || "general audience";
   const tone = project.tone_preset?.trim() || "conversational";
+  const contentFocusId = normalizeContentFocusId(project.content_focus);
+  const contentStyleLine = `Project content style: ${contentFocusLabel(contentFocusId)} — ${contentFocusTopicHint(contentFocusId)}`;
   const rulesSnippet =
     typeof project.project_rules === "object" && project.project_rules !== null
       ? JSON.stringify(project.project_rules).slice(0, 1200)
@@ -122,12 +129,14 @@ Rules:
 - Every topic must imply a clear *premise* the carousel can fulfill: teach, debunk, list concrete points, tell a tight story, or take a sharp angle — **and** imply why someone would finish all slides (tension, promise, or payoff).
 - Language: match project language (${language}) unless clearly multi-lingual — default English if unsure.
 - Mix the 10 with **format diversity**: at least one how-to with a twist, one mistakes/myths, one checklist or framework, one story/case angle, one contrarian or hot-take with substance, one timely/trend hook when relevant — **and** at least two that are explicitly optimized for *share or save* (e.g. "send this to someone who…" energy in the *topic phrase* without using those exact words).
+- Respect the project's **content style** line in the user message: several of the 10 topics should clearly fit that style (not just one token example—spread across the batch).
 - Do NOT repeat or closely paraphrase anything in the "already used" list.
 - No URLs, no markdown, no numbering inside strings — plain topic phrases only.`;
 
   const userPrompt = `Project name: ${project.name}
 Niche / audience: ${niche}
 Tone: ${tone}
+${contentStyleLine}
 Carousel platform focus: ${carouselFor}
 Project rules / constraints / goals (may be empty — when present, respect them but still push toward high-retention, high-engagement angles): ${rulesSnippet || "—"}
 

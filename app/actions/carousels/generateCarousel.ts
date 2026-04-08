@@ -18,6 +18,11 @@ import {
   buildCarouselPrompts,
   buildValidationRetryPrompt,
 } from "@/lib/server/ai/prompts";
+import {
+  appendContentFocusToProjectRules,
+  contentFocusCarouselInstructions,
+  normalizeContentFocusId,
+} from "@/lib/server/ai/projectContentFocus";
 import { postProcessAiGeneratedImageQueries } from "@/lib/server/ai/sanitizeImageQueries";
 import {
   buildTemplateContextForPrompt,
@@ -361,6 +366,8 @@ export async function generateCarousel(formData: FormData): Promise<
     (projectRulesJson?.do_rules || projectRulesJson?.dont_rules
       ? [projectRulesJson?.do_rules && `Do: ${projectRulesJson.do_rules}`, projectRulesJson?.dont_rules && `Don't: ${projectRulesJson.dont_rules}`].filter(Boolean).join("\n\n")
       : "");
+  const contentFocusId = normalizeContentFocusId(project.content_focus);
+  const projectRulesForImages = appendContentFocusToProjectRules(projectRules, contentFocusId);
   /** Use only carousel-level value. If omitted (user left field empty), AI decides. Do NOT fall back to project default. */
   const number_of_slides = data.number_of_slides ?? undefined;
 
@@ -442,6 +449,7 @@ export async function generateCarousel(formData: FormData): Promise<
   const ctx = {
     tone_preset: project.tone_preset,
     rules: projectRules,
+    content_focus_instructions: contentFocusCarouselInstructions(contentFocusId),
     number_of_slides,
     input_type: inputTypeForPrompt as "topic" | "url" | "text",
     input_value: data.input_value,
@@ -797,7 +805,7 @@ export async function generateCarousel(formData: FormData): Promise<
           location: slideContext?.location?.trim() || undefined,
           isHookSlide: isHookSlide || undefined,
           userNotes: data.notes?.trim() || undefined,
-          projectImageStyleNotes: projectRules?.trim() || undefined,
+          projectImageStyleNotes: projectRulesForImages.trim() || undefined,
           referenceStyleSummary,
           seriesVisualConsistency,
           aspectRatio: imageAspectRatio,
@@ -837,7 +845,7 @@ export async function generateCarousel(formData: FormData): Promise<
               slideHeadline: aiSlide?.headline?.trim(),
               slideBody: aiSlide?.body?.trim(),
               userNotes: data.notes?.trim() || undefined,
-              projectImageStyleNotes: projectRules?.trim() || undefined,
+              projectImageStyleNotes: projectRulesForImages.trim() || undefined,
               referenceStyleSummary,
               seriesVisualConsistency,
               year: slideContext?.year?.trim() || undefined,

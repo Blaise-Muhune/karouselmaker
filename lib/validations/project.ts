@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { PROJECT_RULES_MAX_CHARS } from "@/lib/constants";
+import { CONTENT_FOCUS_IDS, type ContentFocusId } from "@/lib/server/ai/projectContentFocus";
 
 const tonePresetEnum = z.enum([
   "neutral",
@@ -40,9 +41,13 @@ export const postToPlatformsSchema = z.object({
   youtube: z.boolean().optional().default(false),
 });
 
+const contentFocusEnum = z.enum(CONTENT_FOCUS_IDS as unknown as [ContentFocusId, ...ContentFocusId[]]);
+
 export const projectFormSchema = z.object({
   name: z.string().min(1, "Name is required").max(200),
   niche: z.string().max(200).optional().default(""),
+  /** UGC, product placement, etc. — steers carousel + topic AI prompts. */
+  content_focus: contentFocusEnum.default("general"),
   tone_preset: tonePresetEnum.default("neutral"),
   language: languageCode,
   slide_structure: slideStructureSchema.default({ number_of_slides: 8 }),
@@ -69,6 +74,7 @@ export function projectFormToDbPayload(
 ): {
   name: string;
   niche: string | null;
+  content_focus: string;
   tone_preset: string;
   language: string;
   project_rules: Record<string, unknown>;
@@ -81,6 +87,7 @@ export function projectFormToDbPayload(
   return {
     name: input.name.trim(),
     niche: input.niche?.trim() || null,
+    content_focus: input.content_focus ?? "general",
     tone_preset: input.tone_preset,
     language: input.language ?? "en",
     project_rules: {

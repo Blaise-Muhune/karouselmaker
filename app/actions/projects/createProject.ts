@@ -13,6 +13,7 @@ export async function createProject(formData: FormData) {
   const raw = {
     name: formData.get("name") as string,
     niche: (formData.get("niche") as string) ?? "",
+    content_focus: (formData.get("content_focus") as string) || "general",
     tone_preset: formData.get("tone_preset") as string,
     language: (formData.get("language") as string) || "en",
     number_of_slides: Number(formData.get("number_of_slides")),
@@ -30,6 +31,7 @@ export async function createProject(formData: FormData) {
   const parsed = projectFormSchema.safeParse({
     name: raw.name,
     niche: raw.niche,
+    content_focus: raw.content_focus,
     tone_preset: raw.tone_preset,
     language: raw.language,
     slide_structure: { number_of_slides: raw.number_of_slides },

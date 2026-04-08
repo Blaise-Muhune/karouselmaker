@@ -6,6 +6,7 @@ import { getProject } from "@/lib/server/db";
 import { Button } from "@/components/ui/button";
 import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { ProjectEditForm } from "./ProjectEditForm";
+import { normalizeContentFocusId } from "@/lib/server/ai/projectContentFocus";
 import { ArrowLeftIcon } from "lucide-react";
 
 export default async function EditProjectPage({
@@ -39,6 +40,7 @@ export default async function EditProjectPage({
   const defaultValues = {
     name: project.name,
     niche: project.niche ?? "",
+    content_focus: normalizeContentFocusId(project.content_focus),
     tone_preset: project.tone_preset as "neutral" | "funny" | "serious" | "savage" | "inspirational",
     language: projectWithLang.language ?? "en",
     slide_structure: { number_of_slides: slideStructure?.number_of_slides ?? 8 },
