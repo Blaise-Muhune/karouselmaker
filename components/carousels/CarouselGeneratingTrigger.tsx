@@ -103,9 +103,7 @@ export function CarouselGeneratingBanner() {
     <div className="flex items-center gap-3 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 text-sm">
       <Loader2Icon className="size-5 shrink-0 animate-spin text-primary" aria-hidden />
       <p className="font-medium">Generating your carousel…</p>
-      <p className="text-muted-foreground">
-        Usually 1–3 minutes. You can leave this tab or lock your phone—open the project again if you don&apos;t land here automatically.
-      </p>
+      <p className="text-muted-foreground">Usually a minute or two. Safe to switch tabs.</p>
     </div>
   );
 }
@@ -195,9 +193,7 @@ export function CarouselGeneratingPage({
       <div className="mx-auto max-w-sm space-y-6 px-6 text-center">
         <Loader2Icon className="mx-auto size-12 animate-spin text-primary" />
         <p className="text-sm font-medium text-foreground">Generating your carousel…</p>
-        <p className="text-xs text-muted-foreground">
-          This page stays up until AI or stock backgrounds are written to every frame, then captions are saved (often 2–5 minutes for AI images). You won&apos;t see the editor until that pipeline finishes.
-        </p>
+        <p className="text-xs text-muted-foreground">Hang tight—this usually takes a minute or two.</p>
       </div>
     </div>
   );
