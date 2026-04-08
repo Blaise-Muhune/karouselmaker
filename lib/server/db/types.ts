@@ -31,6 +31,10 @@ export interface Project {
   niche: string | null;
   /** UGC, product_placement, educational, storytelling, or general — drives AI prompts. */
   content_focus?: string;
+  /** UGC: saved series lock / character description for consistent AI people across carousels. */
+  ugc_character_brief?: string | null;
+  /** UGC: optional library asset summarized as face/body lock (not merged into generic style refs). */
+  ugc_character_avatar_asset_id?: string | null;
   tone_preset: string;
   /** ISO 639-1 language code (e.g. en, es). Default en. All carousels in this project use this language. */
   language?: string;

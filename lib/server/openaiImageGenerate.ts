@@ -40,6 +40,10 @@ export type ImagePromptContext = {
   referenceStyleSummary?: string;
   /** One carousel-level paragraph for recurring character/world/palette consistency across AI slides. */
   seriesVisualConsistency?: string;
+  /** UGC: face/body lock (vision summary of user avatar +/or saved brief)—injected even when referenceStyleSummary is set. */
+  ugcCharacterLock?: string;
+  /** UGC: prefer smartphone-candid base wording instead of “professional photo” defaults. */
+  ugcCasualPhoneLook?: boolean;
   /** Desired aspect ratio for generated image. Default 4:5; can be overridden from user notes (e.g. "square", "9:16"). */
   aspectRatio?: "1:1" | "4:5" | "9:16" | "2:3" | "16:9";
   /**
@@ -223,6 +227,7 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
   const subjectFallbackForRefs = "Scene and subject as described by the slide headline, content, and topic below";
   const subjectRaw = q || (hasReferenceStyle ? subjectFallbackForRefs : subjectDefault);
   const subject = hasReferenceStyle ? subjectRaw : softenStylePhrases(subjectRaw);
+  const ugcPhone = Boolean(context?.ugcCasualPhoneLook) && !hasReferenceStyle;
 
   const hasDramaCue = /\b(dramatic|cinematic|golden hour|atmospheric|bokeh|backlight|intense|mysterious|celebratory)\b/i.test(subject);
   const suggestsIndoor = /\b(desk|office|room|indoor|kitchen|interior|workspace|lamp|windowless|inside)\b/i.test(subject);
@@ -233,9 +238,13 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
   /** Image description sent in full—never truncated. With reference style: no app lighting/stock framing—only subject + no text. */
   const base = hasReferenceStyle
     ? `${subject}. No text, no logos.`
-    : subject.length > 50 && (hasDramaCue || /(of|in|with|on|at)\s+\w+/i.test(subject))
-      ? `${subject}. ${lightingCue} No text, no logos.`
-      : `Professional photo: ${subject}. ${lightingCue} Suitable as a background. No text, no logos.`;
+    : ugcPhone
+      ? subject.length > 45
+        ? `iPhone-style candid photo (main-camera realism, natural dynamic range, slight handheld authenticity): ${subject}. Light and angle match the scene as if you stood there with a phone—no studio HDR, no ad gloss. No text, no logos.`
+        : `iPhone-style candid photo, natural light and believable texture: ${subject}. No text, no logos.`
+      : subject.length > 50 && (hasDramaCue || /(of|in|with|on|at)\s+\w+/i.test(subject))
+        ? `${subject}. ${lightingCue} No text, no logos.`
+        : `Professional photo: ${subject}. ${lightingCue} Suitable as a background. No text, no logos.`;
 
   const parts: string[] = [];
 
@@ -250,6 +259,19 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
     parts.push(REFERENCE_STYLE_FIRST_LINE);
     parts.push(
       `Extracted reference style (palette, light, camera, backgrounds, wardrobe—follow closely): ${truncateForContext(refSummary, MAX_REFERENCE_STYLE_IN_PROMPT)}`
+    );
+  }
+
+  const ugcLock = context?.ugcCharacterLock?.trim();
+  if (ugcLock) {
+    parts.push(
+      `Recurring creator / person lock (when this carousel shows a person, match across slides—face, hair, skin tone, body type, age range, casual wardrobe; vary only pose, angle, setting): ${truncateForContext(ugcLock, 520)}`
+    );
+  }
+
+  if (ugcPhone) {
+    parts.push(
+      "Camera: natural phone POV—eye level, slight high or low angle like a real person held the device; plausible focal length (not ultra-wide distortion unless the scene calls for it). No crane, drone, or floating product shots unless the slide content is literally about those. Framing and environment must follow this slide's headline and body so the image feels inevitable for that beat—not a random stock angle."
     );
   }
 
@@ -269,7 +291,15 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
   const seriesConsistency = context?.seriesVisualConsistency?.trim();
   if (seriesConsistency && !hasReferenceStyle) {
     parts.push(
-      `Series consistency (same carousel—follow on every slide unless this slide’s content clearly needs a different scene; carousel notes below override on conflict): ${truncateForContext(seriesConsistency, 520)}`
+      `Series consistency (same carousel—when multiple slides share one environment, match walls, windows, furniture, props, time of day, and light direction until the scene changes; same recurring people stay consistent; carousel notes override on conflict): ${truncateForContext(seriesConsistency, 620)}`
+    );
+  } else if (seriesConsistency && hasReferenceStyle && context?.ugcCasualPhoneLook) {
+    parts.push(
+      `UGC series / same-person & same-place continuity (within the reference look above—carousel notes override on conflict): ${truncateForContext(seriesConsistency, 560)}`
+    );
+  } else if (seriesConsistency && hasReferenceStyle) {
+    parts.push(
+      `Same-environment & series continuity (keep reference palette/camera—also lock recurring rooms and people across slides that share a location; carousel notes override): ${truncateForContext(seriesConsistency, 560)}`
     );
   }
   if (context?.projectImageStyleNotes?.trim()) {
@@ -286,7 +316,9 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
   if (context?.isHookSlide) {
     if (!hasReferenceStyle) {
       parts.push(
-        "First slide (hook): striking, scroll-stopping. Vary—close-up, mid-shot action, scale contrast, or micro-story. Avoid clichés: no person from behind at window, no coffee+notebook, no silhouette at sunrise. Indoor = indoor lighting, not golden hour."
+        ugcPhone
+          ? "First slide (hook): scroll-stopping but still shot like a real phone—candid framing, natural light, one clear moment from the topic. Bold is OK (close face, strong expression, messy real desk) but stay iPhone-plausible—no cinematic crane or staged ad angles. Indoor = indoor light only."
+          : "First slide (hook): striking, scroll-stopping. Vary—close-up, mid-shot action, scale contrast, or micro-story. Avoid clichés: no person from behind at window, no coffee+notebook, no silhouette at sunrise. Indoor = indoor lighting, not golden hour."
       );
     } else {
       parts.push(
@@ -300,7 +332,9 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
     parts.push(
       hasReferenceStyle
         ? "Image must relate to this slide and the topic; avoid generic unrelated imagery."
-        : "Image must relate to this slide and the topic. Avoid generic stock; use a specific moment or detail. Indoor = indoor lighting."
+        : ugcPhone
+          ? "Image must match this slide's headline and body—setting, props, and angle should feel like you snapped it in that exact context; avoid generic interchangeable stock. Indoor = indoor lighting."
+          : "Image must relate to this slide and the topic. Avoid generic stock; use a specific moment or detail. Indoor = indoor lighting."
     );
   }
 

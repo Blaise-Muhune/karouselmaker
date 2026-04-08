@@ -4,7 +4,7 @@ import OpenAI from "openai";
 import { getUser } from "@/lib/server/auth/getUser";
 import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { getSubscription, getEffectivePlanLimits, hasFullProFeatureAccess } from "@/lib/server/subscription";
-import { getProject } from "@/lib/server/db/projects";
+import { getProject, updateProject } from "@/lib/server/db/projects";
 import { getDefaultTemplateForNewCarousel, getDefaultTemplateForNewCarouselImage, getDefaultLinkedInTemplate, getTemplate } from "@/lib/server/db/templates";
 import { createCarousel, getCarousel, updateCarousel, countCarouselsThisMonth, countCarouselsLifetime, countAiGenerateCarouselsThisMonth } from "@/lib/server/db/carousels";
 import { replaceSlides, updateSlide } from "@/lib/server/db/slides";
@@ -37,13 +37,18 @@ import {
   summarizeStyleReferenceImages,
 } from "@/lib/server/ai/summarizeStyleReferenceImages";
 import { buildCarouselSeriesVisualConsistency } from "@/lib/server/ai/carouselSeriesVisualConsistency";
+import { summarizeUgcAvatarForConsistency } from "@/lib/server/ai/summarizeUgcAvatarReference";
 import { preferRecognizablePublicFiguresForImages } from "@/lib/server/ai/topicFictionHeuristic";
 import { extractInputTextFromDocument } from "@/lib/server/documents/extractInputText";
 import { uploadGeneratedImage } from "@/lib/server/storage/uploadGeneratedImage";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
 import { setSlideTemplate } from "@/app/actions/slides/setSlideTemplate";
 import { generateCarouselInputSchema } from "@/lib/validations/carousel";
-import { FREE_FULL_ACCESS_GENERATIONS, AI_GENERATE_LIMIT_PRO } from "@/lib/constants";
+import {
+  FREE_FULL_ACCESS_GENERATIONS,
+  AI_GENERATE_LIMIT_PRO,
+  UGC_CHARACTER_BRIEF_MAX_CHARS,
+} from "@/lib/constants";
 import { buildBodyRewriteVariants } from "@/lib/renderer/bodyRewriteVariants";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 
@@ -57,6 +62,10 @@ const UPDATE_SLIDE_BATCH_SIZE = 10;
 
 const LOG = (step: string, detail?: string) =>
   console.log(`[carousel-gen] ${step}${detail ? ` — ${detail}` : ""}`);
+
+function isAssetUuid(s: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s);
+}
 
 const now = () => Date.now();
 function elapsedMs(start: number): number {
@@ -449,6 +458,7 @@ export async function generateCarousel(formData: FormData): Promise<
   const ctx = {
     tone_preset: project.tone_preset,
     rules: projectRules,
+    content_focus: contentFocusId,
     content_focus_instructions: contentFocusCarouselInstructions(contentFocusId),
     number_of_slides,
     input_type: inputTypeForPrompt as "topic" | "url" | "text",
@@ -746,10 +756,31 @@ export async function generateCarousel(formData: FormData): Promise<
       validated.slides.map((s) => [s.slide_index, s])
     );
 
-    const projectStyleRefIds =
+    const projectUgcAvatarRaw =
+      (project as { ugc_character_avatar_asset_id?: string | null }).ugc_character_avatar_asset_id?.trim() ?? "";
+    const ugcAvatarAssetId =
+      contentFocusId === "ugc" && isAssetUuid(projectUgcAvatarRaw) ? projectUgcAvatarRaw : "";
+    const ugcBriefSaved =
+      (project as { ugc_character_brief?: string | null }).ugc_character_brief?.trim() ?? "";
+
+    const projectStyleRefIdsRaw =
       (project as { ai_style_reference_asset_ids?: string[] | null }).ai_style_reference_asset_ids ?? [];
-    const carouselStyleRefIds = data.ai_style_reference_asset_ids ?? [];
+    const projectStyleRefIds = projectStyleRefIdsRaw.filter((id) => id !== ugcAvatarAssetId);
+    const carouselStyleRefIds = (data.ai_style_reference_asset_ids ?? []).filter((id) => id !== ugcAvatarAssetId);
     const mergedStyleRefIds = mergeStyleReferenceAssetIds(carouselStyleRefIds, projectStyleRefIds);
+
+    let ugcCharacterLock: string | undefined;
+    if (contentFocusId === "ugc") {
+      const lockParts: string[] = [];
+      if (ugcAvatarAssetId) {
+        const avatarSummary = await summarizeUgcAvatarForConsistency(user.id, ugcAvatarAssetId);
+        if (avatarSummary) lockParts.push(avatarSummary);
+      }
+      if (ugcBriefSaved) lockParts.push(ugcBriefSaved);
+      const joined = lockParts.join(" ").trim();
+      if (joined.length > 0) ugcCharacterLock = joined;
+    }
+
     let referenceStyleSummary: string | undefined;
     if (useAiGenerate && mergedStyleRefIds.length > 0) {
       referenceStyleSummary = await summarizeStyleReferenceImages(user.id, mergedStyleRefIds);
@@ -776,17 +807,27 @@ export async function generateCarousel(formData: FormData): Promise<
         .sort((a, b) => a.slide_index - b.slide_index)
         .map((s) => s.headline?.trim() ?? "")
         .filter(Boolean);
-      /** Series “bible” fights user style refs (different angles, invented mascot)—skip when refs are attached. */
-      const seriesVisualConsistency =
-        mergedStyleRefIds.length === 0
-          ? await buildCarouselSeriesVisualConsistency({
-              carouselTitle: validated.title?.trim(),
-              topic: data.input_value?.trim(),
-              slideHeadlines: slideHeadlinesForSeries,
-              slideCount: validated.slides.length,
-              preferRecognizablePublicFigures: preferPublicFigures,
-            })
-          : undefined;
+      const slideContentLinesForSeries = validated.slides
+        .slice()
+        .sort((a, b) => a.slide_index - b.slide_index)
+        .map((s) => {
+          const h = (s.headline ?? "").trim().slice(0, 130);
+          const b = (s.body ?? "").trim().slice(0, 160);
+          if (!h && !b) return "";
+          return `${s.slide_index}. ${h}${b ? ` | ${b}` : ""}`;
+        })
+        .filter(Boolean);
+      /** Series bible for every AI-generate run: character, palette, and same-environment locks (even with style refs—refs define look; series locks place/person continuity). */
+      const seriesVisualConsistency = await buildCarouselSeriesVisualConsistency({
+        carouselTitle: validated.title?.trim(),
+        topic: data.input_value?.trim(),
+        slideHeadlines: slideHeadlinesForSeries,
+        slideContentLines: slideContentLinesForSeries,
+        slideCount: validated.slides.length,
+        preferRecognizablePublicFigures: preferPublicFigures,
+        ugcMode: contentFocusId === "ugc",
+        seedCharacterBrief: ugcBriefSaved || undefined,
+      });
 
       const processOneAiSlide = async ({
         slide,
@@ -808,6 +849,8 @@ export async function generateCarousel(formData: FormData): Promise<
           projectImageStyleNotes: projectRulesForImages.trim() || undefined,
           referenceStyleSummary,
           seriesVisualConsistency,
+          ugcCharacterLock,
+          ugcCasualPhoneLook: contentFocusId === "ugc" || undefined,
           aspectRatio: imageAspectRatio,
           preferRecognizablePublicFigures: preferPublicFigures || undefined,
         };
@@ -848,6 +891,8 @@ export async function generateCarousel(formData: FormData): Promise<
               projectImageStyleNotes: projectRulesForImages.trim() || undefined,
               referenceStyleSummary,
               seriesVisualConsistency,
+              ugcCharacterLock,
+              ugcCasualPhoneLook: contentFocusId === "ugc" || undefined,
               year: slideContext?.year?.trim() || undefined,
               location: slideContext?.location?.trim() || undefined,
               isHookSlide: isHookSlide || undefined,
@@ -878,6 +923,25 @@ export async function generateCarousel(formData: FormData): Promise<
         await Promise.all(chunk.map(processOneAiSlide));
       }
       LOG("backgrounds", "AI generate done");
+
+      if (
+        contentFocusId === "ugc" &&
+        seriesVisualConsistency?.trim() &&
+        !ugcAvatarAssetId &&
+        !ugcBriefSaved
+      ) {
+        try {
+          await updateProject(user.id, data.project_id, {
+            ugc_character_brief: seriesVisualConsistency.trim().slice(0, UGC_CHARACTER_BRIEF_MAX_CHARS),
+          });
+          LOG("project", "saved ugc_character_brief from series lock");
+        } catch (e) {
+          console.warn(
+            "[carousel-gen] could not save ugc_character_brief:",
+            e instanceof Error ? e.message : e
+          );
+        }
+      }
     } else {
       LOG(
         "backgrounds",

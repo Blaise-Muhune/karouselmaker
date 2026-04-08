@@ -1,11 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { useForm, type Resolver } from "react-hook-form";
+import { useForm, useWatch, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useTransition } from "react";
 import Link from "next/link";
 import { createProject } from "@/app/actions/projects/createProject";
+import { BackgroundImagesPickerModal } from "@/components/carousels/BackgroundImagesPickerModal";
+import { UGC_CHARACTER_BRIEF_MAX_CHARS } from "@/lib/constants";
 import { Button } from "@/components/ui/button";
 import { ColorPicker } from "@/components/ui/color-picker";
 import { Input } from "@/components/ui/input";
@@ -32,7 +34,7 @@ import {
 } from "@/lib/validations/project";
 import { CONTENT_FOCUS_OPTIONS } from "@/lib/server/ai/projectContentFocus";
 import { cn } from "@/lib/utils";
-import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, Loader2Icon, Settings2Icon } from "lucide-react";
+import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, ImageIcon, Loader2Icon, Settings2Icon } from "lucide-react";
 
 const TONE_OPTIONS = [
   { value: "neutral", label: "Neutral" },
@@ -62,6 +64,7 @@ export function NewProjectForm({ isAdmin = false }: { isAdmin?: boolean }) {
   const [isPending, startTransition] = useTransition();
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [ugcAvatarPickerOpen, setUgcAvatarPickerOpen] = useState(false);
 
   const form = useForm<ProjectFormInput>({
     resolver: zodResolver(projectFormSchema) as Resolver<ProjectFormInput>,
@@ -69,6 +72,8 @@ export function NewProjectForm({ isAdmin = false }: { isAdmin?: boolean }) {
       name: "",
       niche: "",
       content_focus: "general",
+      ugc_character_brief: "",
+      ugc_character_avatar_asset_id: "",
       tone_preset: "neutral",
       language: "en",
       slide_structure: { number_of_slides: 8 },
@@ -88,11 +93,15 @@ export function NewProjectForm({ isAdmin = false }: { isAdmin?: boolean }) {
     },
   });
 
+  const contentFocus = useWatch({ control: form.control, name: "content_focus" });
+
   function onSubmit(data: ProjectFormInput) {
     const fd = new FormData();
     fd.set("name", data.name);
     fd.set("niche", data.niche ?? "");
     fd.set("content_focus", data.content_focus ?? "general");
+    fd.set("ugc_character_brief", data.ugc_character_brief ?? "");
+    fd.set("ugc_character_avatar_asset_id", data.ugc_character_avatar_asset_id ?? "");
     fd.set("tone_preset", data.tone_preset);
     fd.set("language", data.language ?? "en");
     fd.set("number_of_slides", "8");
@@ -281,6 +290,71 @@ export function NewProjectForm({ isAdmin = false }: { isAdmin?: boolean }) {
                 </FormItem>
               )}
             />
+            {contentFocus === "ugc" && (
+              <div className="space-y-3 rounded-lg border border-primary/20 bg-primary/5 p-3">
+                <p className="text-xs font-medium text-foreground">UGC images (AI generate)</p>
+                <p className="text-muted-foreground text-[11px] leading-relaxed">
+                  We default to natural phone-camera quality and one recurring “creator” across slides. After your first AI carousel (with no face photo below), we save a character lock to this project—you can edit it anytime. Or upload a face/body reference from your library so generations follow you instead of an invented look.
+                </p>
+                <FormField
+                  control={form.control}
+                  name="ugc_character_brief"
+                  render={({ field }) => {
+                    const len = (field.value ?? "").length;
+                    return (
+                      <FormItem>
+                        <FormLabel className="text-xs">Saved character lock (optional)</FormLabel>
+                        <FormControl>
+                          <Textarea
+                            placeholder="Auto-filled after first run, or describe your recurring on-camera person…"
+                            className="min-h-20 text-sm"
+                            maxLength={UGC_CHARACTER_BRIEF_MAX_CHARS}
+                            {...field}
+                          />
+                        </FormControl>
+                        <p className="text-[11px] text-muted-foreground tabular-nums">
+                          {len}/{UGC_CHARACTER_BRIEF_MAX_CHARS}
+                        </p>
+                        <FormMessage />
+                      </FormItem>
+                    );
+                  }}
+                />
+                <FormField
+                  control={form.control}
+                  name="ugc_character_avatar_asset_id"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs">Face / body reference (optional)</FormLabel>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8 text-xs"
+                          onClick={() => setUgcAvatarPickerOpen(true)}
+                        >
+                          <ImageIcon className="mr-1.5 size-3.5" />
+                          {field.value ? "Change library photo" : "Pick from library"}
+                        </Button>
+                        {!!field.value && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 text-xs text-muted-foreground"
+                            onClick={() => field.onChange("")}
+                          >
+                            Clear
+                          </Button>
+                        )}
+                      </div>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            )}
             <div className="space-y-2">
               <Label>Rules or context (optional)</Label>
               <p className="text-muted-foreground text-xs">
@@ -420,6 +494,20 @@ export function NewProjectForm({ isAdmin = false }: { isAdmin?: boolean }) {
             </div>
           </form>
         </Form>
+        <BackgroundImagesPickerModal
+          open={ugcAvatarPickerOpen}
+          onOpenChange={setUgcAvatarPickerOpen}
+          selectedIds={
+            form.watch("ugc_character_avatar_asset_id")?.trim()
+              ? [form.getValues("ugc_character_avatar_asset_id").trim()]
+              : []
+          }
+          onConfirm={(ids) => form.setValue("ugc_character_avatar_asset_id", ids[0] ?? "")}
+          maxSelection={1}
+          allowEmptyConfirm
+          dialogTitle="Face or body reference (UGC)"
+          dialogDescription="Choose one library photo. We summarize visible traits so AI-generated backgrounds keep the same person look across slides."
+        />
       </div>
     </div>
   );

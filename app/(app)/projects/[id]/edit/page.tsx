@@ -41,6 +41,9 @@ export default async function EditProjectPage({
     name: project.name,
     niche: project.niche ?? "",
     content_focus: normalizeContentFocusId(project.content_focus),
+    ugc_character_brief: (project as { ugc_character_brief?: string | null }).ugc_character_brief ?? "",
+    ugc_character_avatar_asset_id:
+      (project as { ugc_character_avatar_asset_id?: string | null }).ugc_character_avatar_asset_id ?? "",
     tone_preset: project.tone_preset as "neutral" | "funny" | "serious" | "savage" | "inspirational",
     language: projectWithLang.language ?? "en",
     slide_structure: { number_of_slides: slideStructure?.number_of_slides ?? 8 },
