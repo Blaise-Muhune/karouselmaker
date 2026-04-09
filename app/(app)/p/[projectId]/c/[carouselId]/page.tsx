@@ -31,6 +31,8 @@ import { slugifyForFilename } from "@/lib/utils";
 import { GenerationPartialBanner } from "@/components/carousels/GenerationPartialBanner";
 import { CarouselGeneratingPage } from "@/components/carousels/CarouselGeneratingTrigger";
 import { SimilarCarouselIdeas } from "@/components/carousels/SimilarCarouselIdeas";
+import { SaveUgcCharacterFromCarouselButton } from "@/components/carousels/SaveUgcCharacterFromCarouselButton";
+import { normalizeContentFocusId } from "@/lib/server/ai/projectContentFocus";
 import { ArrowLeftIcon } from "lucide-react";
 
 function normalizeStoragePathForBucket(path: string | undefined, bucket: string): string | undefined {
@@ -183,6 +185,17 @@ export default async function CarouselEditorPage({
   const similarIdeasLoading =
     generationErrorRecovery && similarCarouselIdeasFromOpts.length === 0 && carouselForGen !== "linkedin";
 
+  const contentFocusId = normalizeContentFocusId(project.content_focus);
+  const ugcSeriesBriefRaw = genOpts.ugc_series_character_brief;
+  const ugcSeriesBrief =
+    typeof ugcSeriesBriefRaw === "string" ? ugcSeriesBriefRaw.trim() : "";
+  const showSaveUgcCharacter =
+    contentFocusId === "ugc" &&
+    useAiBackgroundsCarousel === true &&
+    genOpts.use_ai_generate === true &&
+    ugcSeriesBrief.length >= 40;
+  const projectUgcBrief = (project as { ugc_character_brief?: string | null }).ugc_character_brief?.trim() ?? "";
+
   // Collect Unsplash attributions from slides for credits section
   const unsplashAttributionsMap = new Map<
     string,
@@ -226,6 +239,13 @@ export default async function CarouselEditorPage({
     <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">
       <div className="mx-auto max-w-4xl space-y-6">
         {showGenerationPartial && <GenerationPartialBanner />}
+        {showSaveUgcCharacter && (
+          <SaveUgcCharacterFromCarouselButton
+            projectId={projectId}
+            carouselId={carouselId}
+            hasExistingSavedBrief={projectUgcBrief.length > 0}
+          />
+        )}
         {!subscription.isPro && (
           hasFullAccess ? (
             <p className="text-sm text-muted-foreground">

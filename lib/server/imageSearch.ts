@@ -14,7 +14,12 @@
  */
 
 import { searchBraveImage, isBraveImageSearchConfigured } from "@/lib/server/braveImageSearch";
-import { normalizeQueryForCache, CACHE_TTL_MS, evictCacheBatch } from "@/lib/server/imageSearchUtils";
+import {
+  normalizeQueryForCache,
+  normalizeImageUrlForDedupe,
+  CACHE_TTL_MS,
+  evictCacheBatch,
+} from "@/lib/server/imageSearchUtils";
 import { searchUnsplashPhotoRandom } from "@/lib/server/unsplash";
 
 const DEBUG = process.env.IMAGE_SEARCH_DEBUG === "true" || process.env.IMAGE_SEARCH_DEBUG === "1";
@@ -213,6 +218,11 @@ export type UnsplashAttribution = {
   unsplashUrl: string;
 };
 
+export type SearchImageOptions = {
+  /** Skip URLs already assigned to another slide in the same carousel batch (Brave alternates + refiners). */
+  avoidUrls?: Set<string>;
+};
+
 export type ImageSearchResult = {
   url: string;
   source: ImageSearchSource;
@@ -225,10 +235,33 @@ export type ImageSearchResult = {
   alternates?: string[];
 };
 
+function isUrlAvoided(url: string, avoidUrls?: Set<string>): boolean {
+  return !!avoidUrls?.size && avoidUrls.has(normalizeImageUrlForDedupe(url));
+}
+
+/** Prefer primary + alternates not already used on another slide (same SERP, different pick). */
+function pickUnusedBraveResult(result: ImageSearchResult, avoidUrls: Set<string>): ImageSearchResult | null {
+  const ordered = [result.url, ...(result.alternates ?? [])];
+  for (const url of ordered) {
+    const n = normalizeImageUrlForDedupe(url);
+    if (!avoidUrls.has(n)) {
+      const remaining = ordered
+        .filter((u) => u !== url)
+        .filter((u) => !avoidUrls.has(normalizeImageUrlForDedupe(u)));
+      return {
+        ...result,
+        url,
+        alternates: remaining.length > 0 ? remaining : undefined,
+      };
+    }
+  }
+  return null;
+}
+
 /**
  * Try Brave with optional refiners: original query first, then refiners sequentially (rate-limited) until we get a result.
  */
-async function tryBraveWithRefiners(query: string): Promise<ImageSearchResult | null> {
+async function tryBraveWithRefiners(query: string, avoidUrls?: Set<string>): Promise<ImageSearchResult | null> {
   if (!isBraveImageSearchConfigured()) return null;
 
   const refiners = hasFictionalCharacterIntent(query)
@@ -258,6 +291,11 @@ async function tryBraveWithRefiners(query: string): Promise<ImageSearchResult | 
         ...(result.alternates?.length ? { alternates: result.alternates } : {}),
         ...(hasFictionalCharacterIntent(query) ? { license_hint: "likely_copyrighted" as const } : {}),
       };
+      if (avoidUrls?.size) {
+        const picked = pickUnusedBraveResult(searchResult, avoidUrls);
+        if (!picked) continue;
+        return picked;
+      }
       return searchResult;
     }
   }
@@ -270,10 +308,14 @@ async function tryBraveWithRefiners(query: string): Promise<ImageSearchResult | 
  * - Generic/atmospheric → Unsplash first, then Brave fallback.
  * - Specific / people / fictional → Brave first (with refiners when people/fictional), then Unsplash fallback.
  * Results are cached (24h TTL) by provider + normalized query.
+ * When `avoidUrls` is non-empty, Brave/Unsplash cache is bypassed so picks stay consistent with deduplication.
  *
  * Debug: set IMAGE_SEARCH_DEBUG=true in .env to log search flow.
  */
-export async function searchImage(query: string): Promise<ImageSearchResult | null> {
+export async function searchImage(query: string, options?: SearchImageOptions): Promise<ImageSearchResult | null> {
+  const avoidUrls = options?.avoidUrls;
+  const respectAvoid = !!avoidUrls?.size;
+
   const q = stripGraphicHeavyWords(dedupeWords(query.trim()));
   if (!q) {
     log("skip: empty query");
@@ -286,13 +328,19 @@ export async function searchImage(query: string): Promise<ImageSearchResult | nu
 
   async function tryUnsplash(): Promise<ImageSearchResult | null> {
     const key = cacheKey("unsplash", q);
-    const cached = searchCache.get(key);
-    if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
-      log("Unsplash cache hit");
-      return cached.result;
+    if (!respectAvoid) {
+      const cached = searchCache.get(key);
+      if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
+        log("Unsplash cache hit");
+        if (!isUrlAvoided(cached.result.url, avoidUrls)) return cached.result;
+      }
     }
     const unsplash = await searchUnsplashPhotoRandom(q, UNSPLASH_PAGE_SIZE);
     if (unsplash?.url) {
+      if (isUrlAvoided(unsplash.url, avoidUrls)) {
+        log("Unsplash: skipped (URL in avoidUrls)");
+        return null;
+      }
       log("Unsplash OK:", unsplash.url.slice(0, 60) + "...");
       const result: ImageSearchResult = {
         url: unsplash.url,
@@ -300,8 +348,10 @@ export async function searchImage(query: string): Promise<ImageSearchResult | nu
         unsplashDownloadLocation: unsplash.downloadLocation,
         unsplashAttribution: unsplash.attribution,
       };
-      evictCacheBatch(searchCache);
-      searchCache.set(key, { result, ts: Date.now() });
+      if (!respectAvoid) {
+        evictCacheBatch(searchCache);
+        searchCache.set(key, { result, ts: Date.now() });
+      }
       return result;
     }
     log("Unsplash: no result or error");
@@ -314,13 +364,15 @@ export async function searchImage(query: string): Promise<ImageSearchResult | nu
       return null;
     }
     const key = cacheKey("brave", q);
-    const cached = searchCache.get(key);
-    if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
-      log("Brave cache hit");
-      return cached.result;
+    if (!respectAvoid) {
+      const cached = searchCache.get(key);
+      if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
+        log("Brave cache hit");
+        return cached.result;
+      }
     }
-    const result = await tryBraveWithRefiners(q);
-    if (result) {
+    const result = await tryBraveWithRefiners(q, avoidUrls);
+    if (result && !respectAvoid) {
       evictCacheBatch(searchCache);
       searchCache.set(key, { result, ts: Date.now() });
     }

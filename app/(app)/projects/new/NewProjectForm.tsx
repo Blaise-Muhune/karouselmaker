@@ -7,7 +7,7 @@ import { useTransition } from "react";
 import Link from "next/link";
 import { createProject } from "@/app/actions/projects/createProject";
 import { BackgroundImagesPickerModal } from "@/components/carousels/BackgroundImagesPickerModal";
-import { UGC_CHARACTER_BRIEF_MAX_CHARS } from "@/lib/constants";
+import { MAX_UGC_AVATAR_REFERENCE_ASSETS, UGC_CHARACTER_BRIEF_MAX_CHARS } from "@/lib/constants";
 import { Button } from "@/components/ui/button";
 import { ColorPicker } from "@/components/ui/color-picker";
 import { Input } from "@/components/ui/input";
@@ -73,7 +73,7 @@ export function NewProjectForm({ isAdmin = false }: { isAdmin?: boolean }) {
       niche: "",
       content_focus: "general",
       ugc_character_brief: "",
-      ugc_character_avatar_asset_id: "",
+      ugc_character_avatar_asset_ids: [],
       tone_preset: "neutral",
       language: "en",
       slide_structure: { number_of_slides: 8 },
@@ -101,7 +101,7 @@ export function NewProjectForm({ isAdmin = false }: { isAdmin?: boolean }) {
     fd.set("niche", data.niche ?? "");
     fd.set("content_focus", data.content_focus ?? "general");
     fd.set("ugc_character_brief", data.ugc_character_brief ?? "");
-    fd.set("ugc_character_avatar_asset_id", data.ugc_character_avatar_asset_id ?? "");
+    fd.set("ugc_character_avatar_asset_ids", JSON.stringify(data.ugc_character_avatar_asset_ids ?? []));
     fd.set("tone_preset", data.tone_preset);
     fd.set("language", data.language ?? "en");
     fd.set("number_of_slides", "8");
@@ -294,7 +294,7 @@ export function NewProjectForm({ isAdmin = false }: { isAdmin?: boolean }) {
               <div className="space-y-3 rounded-lg border border-primary/20 bg-primary/5 p-3">
                 <p className="text-xs font-medium text-foreground">UGC images (AI generate)</p>
                 <p className="text-muted-foreground text-[11px] leading-relaxed">
-                  We default to natural phone-camera quality and one recurring “creator” across slides. After your first AI carousel (with no face photo below), we save a character lock to this project—you can edit it anytime. Or upload a face/body reference from your library so generations follow you instead of an invented look.
+                  We default to natural phone-camera quality and one recurring “creator” across slides. After your first AI carousel (with no face photos below), we save a character lock to this project—you can edit it anytime. Or pick up to {MAX_UGC_AVATAR_REFERENCE_ASSETS} library photos of the <strong>same person</strong> (different angles)—we merge them in one vision step; per-slide prompts still vary scenes.
                 </p>
                 <FormField
                   control={form.control}
@@ -322,36 +322,39 @@ export function NewProjectForm({ isAdmin = false }: { isAdmin?: boolean }) {
                 />
                 <FormField
                   control={form.control}
-                  name="ugc_character_avatar_asset_id"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-xs">Face / body reference (optional)</FormLabel>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="h-8 text-xs"
-                          onClick={() => setUgcAvatarPickerOpen(true)}
-                        >
-                          <ImageIcon className="mr-1.5 size-3.5" />
-                          {field.value ? "Change library photo" : "Pick from library"}
-                        </Button>
-                        {!!field.value && (
+                  name="ugc_character_avatar_asset_ids"
+                  render={({ field }) => {
+                    const n = field.value?.length ?? 0;
+                    return (
+                      <FormItem>
+                        <FormLabel className="text-xs">Face / body references (optional)</FormLabel>
+                        <div className="flex flex-wrap items-center gap-2">
                           <Button
                             type="button"
-                            variant="ghost"
+                            variant="outline"
                             size="sm"
-                            className="h-8 text-xs text-muted-foreground"
-                            onClick={() => field.onChange("")}
+                            className="h-8 text-xs"
+                            onClick={() => setUgcAvatarPickerOpen(true)}
                           >
-                            Clear
+                            <ImageIcon className="mr-1.5 size-3.5" />
+                            {n > 0 ? `Manage photos (${n}/${MAX_UGC_AVATAR_REFERENCE_ASSETS})` : "Pick from library"}
                           </Button>
-                        )}
-                      </div>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                          {n > 0 && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 text-xs text-muted-foreground"
+                              onClick={() => field.onChange([])}
+                            >
+                              Clear
+                            </Button>
+                          )}
+                        </div>
+                        <FormMessage />
+                      </FormItem>
+                    );
+                  }}
                 />
               </div>
             )}
@@ -497,16 +500,17 @@ export function NewProjectForm({ isAdmin = false }: { isAdmin?: boolean }) {
         <BackgroundImagesPickerModal
           open={ugcAvatarPickerOpen}
           onOpenChange={setUgcAvatarPickerOpen}
-          selectedIds={
-            form.watch("ugc_character_avatar_asset_id")?.trim()
-              ? [form.getValues("ugc_character_avatar_asset_id").trim()]
-              : []
+          selectedIds={form.watch("ugc_character_avatar_asset_ids") ?? []}
+          onConfirm={(ids) =>
+            form.setValue(
+              "ugc_character_avatar_asset_ids",
+              ids.slice(0, MAX_UGC_AVATAR_REFERENCE_ASSETS)
+            )
           }
-          onConfirm={(ids) => form.setValue("ugc_character_avatar_asset_id", ids[0] ?? "")}
-          maxSelection={1}
+          maxSelection={MAX_UGC_AVATAR_REFERENCE_ASSETS}
           allowEmptyConfirm
-          dialogTitle="Face or body reference (UGC)"
-          dialogDescription="Choose one library photo. We summarize visible traits so AI-generated backgrounds keep the same person look across slides."
+          dialogTitle="Face or body references (UGC)"
+          dialogDescription={`Same person, up to ${MAX_UGC_AVATAR_REFERENCE_ASSETS} library photos. We merge them in one vision call for consistent look across slides.`}
         />
       </div>
     </div>

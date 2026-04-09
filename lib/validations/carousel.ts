@@ -56,6 +56,11 @@ export const generateCarouselInputSchema = z.object({
     .transform((v) => v === "true" || v === "1"),
   /** Target platform: instagram (default) or linkedin. LinkedIn uses B2B-optimized content and disables AI-generated images. */
   carousel_for: z.enum(["instagram", "linkedin"]).optional(),
+  /** UGC: apply project saved character for AI generate. Default true when omitted. */
+  use_saved_ugc_character: z
+    .string()
+    .optional()
+    .transform((v) => v !== "false" && v !== "0"),
 });
 
 export type GenerateCarouselInput = z.output<typeof generateCarouselInputSchema>;

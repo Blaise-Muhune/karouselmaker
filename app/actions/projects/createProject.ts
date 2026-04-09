@@ -4,7 +4,9 @@ import { redirect } from "next/navigation";
 import { getUser } from "@/lib/server/auth/getUser";
 import { createProject as dbCreateProject } from "@/lib/server/db";
 import type { ProjectInsert } from "@/lib/server/db/types";
+import { MAX_UGC_AVATAR_REFERENCE_ASSETS } from "@/lib/constants";
 import { projectFormSchema, projectFormToDbPayload } from "@/lib/validations/project";
+import { z } from "zod";
 import { uploadProjectLogo } from "./uploadProjectLogo";
 
 export async function createProject(formData: FormData) {
@@ -15,7 +17,20 @@ export async function createProject(formData: FormData) {
     niche: (formData.get("niche") as string) ?? "",
     content_focus: (formData.get("content_focus") as string) || "general",
     ugc_character_brief: (formData.get("ugc_character_brief") as string) ?? "",
-    ugc_character_avatar_asset_id: (formData.get("ugc_character_avatar_asset_id") as string) ?? "",
+    ugc_character_avatar_asset_ids: (() => {
+      const v = formData.get("ugc_character_avatar_asset_ids");
+      if (!v || typeof v !== "string") return [] as string[];
+      try {
+        const arr = JSON.parse(v) as unknown;
+        if (!Array.isArray(arr)) return [];
+        const uuid = z.string().uuid();
+        return arr
+          .filter((x): x is string => typeof x === "string" && uuid.safeParse(x).success)
+          .slice(0, MAX_UGC_AVATAR_REFERENCE_ASSETS);
+      } catch {
+        return [];
+      }
+    })(),
     tone_preset: formData.get("tone_preset") as string,
     language: (formData.get("language") as string) || "en",
     number_of_slides: Number(formData.get("number_of_slides")),
@@ -35,7 +50,7 @@ export async function createProject(formData: FormData) {
     niche: raw.niche,
     content_focus: raw.content_focus,
     ugc_character_brief: raw.ugc_character_brief,
-    ugc_character_avatar_asset_id: raw.ugc_character_avatar_asset_id,
+    ugc_character_avatar_asset_ids: raw.ugc_character_avatar_asset_ids,
     tone_preset: raw.tone_preset,
     language: raw.language,
     slide_structure: { number_of_slides: raw.number_of_slides },

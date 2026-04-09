@@ -1,5 +1,9 @@
 import { z } from "zod";
-import { PROJECT_RULES_MAX_CHARS, UGC_CHARACTER_BRIEF_MAX_CHARS } from "@/lib/constants";
+import {
+  PROJECT_RULES_MAX_CHARS,
+  UGC_CHARACTER_BRIEF_MAX_CHARS,
+  MAX_UGC_AVATAR_REFERENCE_ASSETS,
+} from "@/lib/constants";
 import { CONTENT_FOCUS_IDS, type ContentFocusId } from "@/lib/server/ai/projectContentFocus";
 
 const tonePresetEnum = z.enum([
@@ -50,8 +54,12 @@ export const projectFormSchema = z.object({
   content_focus: contentFocusEnum.default("general"),
   /** UGC: recurring “creator” visual lock for AI images (optional; auto-filled after first run). */
   ugc_character_brief: z.string().max(UGC_CHARACTER_BRIEF_MAX_CHARS).optional().default(""),
-  /** UGC: one library image as face/body reference (optional). */
-  ugc_character_avatar_asset_id: z.union([z.string().uuid(), z.literal("")]).optional().default(""),
+  /** UGC: library images as face/body references — same person, multiple angles (optional). */
+  ugc_character_avatar_asset_ids: z
+    .array(z.string().uuid())
+    .max(MAX_UGC_AVATAR_REFERENCE_ASSETS)
+    .optional()
+    .default([]),
   tone_preset: tonePresetEnum.default("neutral"),
   language: languageCode,
   slide_structure: slideStructureSchema.default({ number_of_slides: 8 }),
@@ -80,6 +88,7 @@ export function projectFormToDbPayload(
   niche: string | null;
   content_focus: string;
   ugc_character_brief: string | null;
+  ugc_character_avatar_asset_ids: string[] | null;
   ugc_character_avatar_asset_id: string | null;
   tone_preset: string;
   language: string;
@@ -90,14 +99,22 @@ export function projectFormToDbPayload(
   post_to_platforms: Record<string, boolean>;
 } {
   const p = input.post_to_platforms ?? {};
-  const avatarId = input.ugc_character_avatar_asset_id?.trim() ?? "";
-  const uuidOk = z.string().uuid().safeParse(avatarId).success;
+  const seen = new Set<string>();
+  const avatarIds: string[] = [];
+  for (const id of input.ugc_character_avatar_asset_ids ?? []) {
+    const t = id.trim();
+    if (!z.string().uuid().safeParse(t).success || seen.has(t)) continue;
+    seen.add(t);
+    avatarIds.push(t);
+    if (avatarIds.length >= MAX_UGC_AVATAR_REFERENCE_ASSETS) break;
+  }
   return {
     name: input.name.trim(),
     niche: input.niche?.trim() || null,
     content_focus: input.content_focus ?? "general",
     ugc_character_brief: input.ugc_character_brief?.trim() || null,
-    ugc_character_avatar_asset_id: uuidOk ? avatarId : null,
+    ugc_character_avatar_asset_ids: avatarIds.length > 0 ? avatarIds : null,
+    ugc_character_avatar_asset_id: avatarIds[0] ?? null,
     tone_preset: input.tone_preset,
     language: input.language ?? "en",
     project_rules: {

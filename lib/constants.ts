@@ -23,9 +23,11 @@ export const CAROUSEL_INPUT_MAX_CHARS = 20000;
 export const PROJECT_RULES_MAX_CHARS = 8000;
 /** UGC project: saved recurring character / visual lock for AI images (must match `projectFormSchema`). */
 export const UGC_CHARACTER_BRIEF_MAX_CHARS = 1200;
+/** UGC face/body library refs merged in one vision call (angles of same person). */
+export const MAX_UGC_AVATAR_REFERENCE_ASSETS = 5;
 
 /** Tester account: 500 carousel generations, double pro limits for assets/exports/templates. */
-export const TESTER_EMAIL = "muyumba@andrews.edu";
+export const TESTER_EMAILS: string[] = ["muyumba@andrews.edu", "prudencemange@gmail.com"];
 
 /** Plan limits */
 export const PLAN_LIMITS = {

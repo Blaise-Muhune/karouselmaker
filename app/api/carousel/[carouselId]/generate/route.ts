@@ -75,6 +75,8 @@ export async function POST(
   if (opts.use_stock_photos) formData.set("use_stock_photos", "true");
   if (opts.use_ai_generate) formData.set("use_ai_generate", "true");
   if (opts.use_web_search) formData.set("use_web_search", "true");
+  if (opts.use_saved_ugc_character === false) formData.set("use_saved_ugc_character", "false");
+  else formData.set("use_saved_ugc_character", "true");
   if (opts.notes && typeof opts.notes === "string") formData.set("notes", opts.notes);
   if (opts.template_id && typeof opts.template_id === "string")
     formData.set("template_id", opts.template_id);

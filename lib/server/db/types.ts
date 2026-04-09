@@ -35,6 +35,10 @@ export interface Project {
   ugc_character_brief?: string | null;
   /** UGC: optional library asset summarized as face/body lock (not merged into generic style refs). */
   ugc_character_avatar_asset_id?: string | null;
+  /** UGC: multiple face/body refs (same person); merged in one vision call. */
+  ugc_character_avatar_asset_ids?: string[] | null;
+  /** UGC: when true, AI generate applies saved character brief + avatar (new-carousel toggle). */
+  use_saved_ugc_character?: boolean;
   tone_preset: string;
   /** ISO 639-1 language code (e.g. en, es). Default en. All carousels in this project use this language. */
   language?: string;
@@ -95,6 +99,10 @@ export interface Carousel {
     similar_carousel_ideas?: string[];
     /** Library asset IDs (max 5) for this run—merged with project refs when generating AI images. */
     ai_style_reference_asset_ids?: string[];
+    /** UGC + AI generate: whether project saved character was applied for this run. */
+    use_saved_ugc_character?: boolean;
+    /** UGC + AI generate (invented character): series bible snapshot—can be saved to project `ugc_character_brief`. */
+    ugc_series_character_brief?: string;
   };
   created_at: string;
   updated_at: string;

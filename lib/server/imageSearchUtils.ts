@@ -7,6 +7,17 @@ export function normalizeQueryForCache(q: string): string {
   return q.trim().toLowerCase().slice(0, 200);
 }
 
+/** Strip query string and lowercase host for deduplicating image URLs across slides. */
+export function normalizeImageUrlForDedupe(url: string): string {
+  try {
+    const u = new URL(url);
+    u.search = "";
+    return u.href.toLowerCase();
+  } catch {
+    return url.trim().toLowerCase();
+  }
+}
+
 export const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 export const CACHE_MAX_ENTRIES = 500;
 

@@ -7,6 +7,7 @@ import { getProject, getCarousel, countCarouselsThisMonth, countCarouselsLifetim
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { PLAN_LIMITS, FREE_FULL_ACCESS_GENERATIONS, AI_GENERATE_LIMIT_PRO } from "@/lib/constants";
 import { NewCarouselForm } from "./NewCarouselForm";
+import { normalizeContentFocusId } from "@/lib/server/ai/projectContentFocus";
 import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
 import { Button } from "@/components/ui/button";
 import type { TemplateOption } from "@/components/carousels/TemplateSelectCards";
@@ -64,6 +65,13 @@ export default async function NewCarouselPage({
 
   if (!project) notFound();
   if (regenerateCarouselId && (!regenerateCarousel || regenerateCarousel.project_id !== projectId)) notFound();
+
+  const projectContentFocus = normalizeContentFocusId(project.content_focus);
+  const projectUseSavedUgc = (project as { use_saved_ugc_character?: boolean | null }).use_saved_ugc_character;
+  const initialUseSavedUgcCharacter = regenerateCarousel
+    ? (regenerateCarousel.generation_options as { use_saved_ugc_character?: boolean } | undefined)
+        ?.use_saved_ugc_character !== false
+    : projectUseSavedUgc !== false;
 
   const primaryColor = (project.brand_kit as { primary_color?: string } | null)?.primary_color?.trim() || "#0a0a0a";
 
@@ -140,6 +148,8 @@ export default async function NewCarouselPage({
           defaultLinkedInTemplateId={defaultLinkedInTemplateId}
           defaultLinkedInTemplateConfig={defaultLinkedInTemplateConfig}
           primaryColor={primaryColor}
+          projectContentFocus={projectContentFocus}
+          initialUseSavedUgcCharacter={initialUseSavedUgcCharacter}
         />
       </div>
     </div>

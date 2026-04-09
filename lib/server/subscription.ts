@@ -3,7 +3,7 @@
 import { getProfile } from "@/lib/server/db/profiles";
 import { countCarouselsLifetime } from "@/lib/server/db/carousels";
 import type { Plan } from "@/lib/server/db/types";
-import { PLAN_LIMITS, TESTER_EMAIL, FREE_FULL_ACCESS_GENERATIONS } from "@/lib/constants";
+import { PLAN_LIMITS, TESTER_EMAILS, FREE_FULL_ACCESS_GENERATIONS } from "@/lib/constants";
 
 export type Subscription = {
   plan: Plan;
@@ -21,7 +21,7 @@ export async function getSubscription(
   userId: string,
   email?: string | null
 ): Promise<Subscription> {
-  if (email === TESTER_EMAIL) return { plan: "pro", isPro: true };
+  if (TESTER_EMAILS.includes(email ?? "")) return { plan: "pro", isPro: true };
   const profile = await getProfile(userId);
   const plan = (profile?.plan === "pro" ? "pro" : "free") as Plan;
   return { plan, isPro: plan === "pro" };
@@ -35,7 +35,7 @@ export async function getPlanLimits(
   userId: string,
   email?: string | null
 ): Promise<PlanLimits> {
-  if (email === TESTER_EMAIL) return PLAN_LIMITS.tester;
+  if (TESTER_EMAILS.includes(email ?? "")) return PLAN_LIMITS.tester;
   const { plan } = await getSubscription(userId, email);
   return PLAN_LIMITS[plan];
 }
@@ -48,7 +48,7 @@ export async function hasFullProFeatureAccess(
   userId: string,
   email?: string | null
 ): Promise<boolean> {
-  if (email === TESTER_EMAIL) return true;
+  if (TESTER_EMAILS.includes(email ?? "")) return true;
   const { isPro } = await getSubscription(userId, email);
   if (isPro) return true;
   const lifetimeCount = await countCarouselsLifetime(userId);
@@ -63,7 +63,7 @@ export async function getEffectivePlanLimits(
   userId: string,
   email?: string | null
 ): Promise<PlanLimits> {
-  if (email === TESTER_EMAIL) return PLAN_LIMITS.tester;
+  if (TESTER_EMAILS.includes(email ?? "")) return PLAN_LIMITS.tester;
   const fullAccess = await hasFullProFeatureAccess(userId, email);
   if (fullAccess) return PLAN_LIMITS.pro;
   return PLAN_LIMITS.free;

@@ -10,6 +10,7 @@ import { uploadProjectLogo } from "@/app/actions/projects/uploadProjectLogo";
 import { BackgroundImagesPickerModal } from "@/components/carousels/BackgroundImagesPickerModal";
 import {
   MAX_PROJECT_AI_STYLE_REFERENCE_ASSETS,
+  MAX_UGC_AVATAR_REFERENCE_ASSETS,
   PROJECT_RULES_MAX_CHARS,
   UGC_CHARACTER_BRIEF_MAX_CHARS,
 } from "@/lib/constants";
@@ -102,7 +103,7 @@ export function ProjectEditForm({
     fd.set("niche", data.niche ?? "");
     fd.set("content_focus", data.content_focus ?? "general");
     fd.set("ugc_character_brief", data.ugc_character_brief ?? "");
-    fd.set("ugc_character_avatar_asset_id", data.ugc_character_avatar_asset_id ?? "");
+    fd.set("ugc_character_avatar_asset_ids", JSON.stringify(data.ugc_character_avatar_asset_ids ?? []));
     fd.set("tone_preset", data.tone_preset);
     fd.set("language", data.language ?? "en");
     fd.set("number_of_slides", "8"); // Default; set per carousel on New Carousel page
@@ -281,7 +282,7 @@ export function ProjectEditForm({
           <div className="space-y-3 rounded-lg border border-primary/20 bg-primary/5 p-3">
             <p className="text-xs font-medium text-foreground">UGC images (AI generate)</p>
             <p className="text-muted-foreground text-[11px] leading-relaxed">
-              Natural phone-camera look and one recurring creator across slides. If you don&apos;t add a library photo below, we save an auto character lock after your first AI carousel—you can edit it here. Add a face/body reference to steer generations toward your photo instead.
+              Natural phone-camera look and one recurring creator across slides. If you don&apos;t add library photos below, we save an auto character lock after your first AI carousel—you can edit it here. Add up to {MAX_UGC_AVATAR_REFERENCE_ASSETS} references of the <strong>same person</strong> (different angles) so one vision pass locks their look—per-slide prompts still drive poses and scenes.
             </p>
             <FormField
               control={form.control}
@@ -309,36 +310,39 @@ export function ProjectEditForm({
             />
             <FormField
               control={form.control}
-              name="ugc_character_avatar_asset_id"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-xs">Face / body reference (optional)</FormLabel>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-8 text-xs"
-                      onClick={() => setUgcAvatarPickerOpen(true)}
-                    >
-                      <ImageIcon className="mr-1.5 size-3.5" />
-                      {field.value ? "Change library photo" : "Pick from library"}
-                    </Button>
-                    {!!field.value && (
+              name="ugc_character_avatar_asset_ids"
+              render={({ field }) => {
+                const n = field.value?.length ?? 0;
+                return (
+                  <FormItem>
+                    <FormLabel className="text-xs">Face / body references (optional)</FormLabel>
+                    <div className="flex flex-wrap items-center gap-2">
                       <Button
                         type="button"
-                        variant="ghost"
+                        variant="outline"
                         size="sm"
-                        className="h-8 text-xs text-muted-foreground"
-                        onClick={() => field.onChange("")}
+                        className="h-8 text-xs"
+                        onClick={() => setUgcAvatarPickerOpen(true)}
                       >
-                        Clear
+                        <ImageIcon className="mr-1.5 size-3.5" />
+                        {n > 0 ? `Manage photos (${n}/${MAX_UGC_AVATAR_REFERENCE_ASSETS})` : "Pick from library"}
                       </Button>
-                    )}
-                  </div>
-                  <FormMessage />
-                </FormItem>
-              )}
+                      {n > 0 && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 text-xs text-muted-foreground"
+                          onClick={() => field.onChange([])}
+                        >
+                          Clear
+                        </Button>
+                      )}
+                    </div>
+                    <FormMessage />
+                  </FormItem>
+                );
+              }}
             />
           </div>
         )}
@@ -525,17 +529,18 @@ export function ProjectEditForm({
         <BackgroundImagesPickerModal
           open={ugcAvatarPickerOpen}
           onOpenChange={setUgcAvatarPickerOpen}
-          selectedIds={
-            form.watch("ugc_character_avatar_asset_id")?.trim()
-              ? [form.getValues("ugc_character_avatar_asset_id").trim()]
-              : []
+          selectedIds={form.watch("ugc_character_avatar_asset_ids") ?? []}
+          onConfirm={(ids) =>
+            form.setValue(
+              "ugc_character_avatar_asset_ids",
+              ids.slice(0, MAX_UGC_AVATAR_REFERENCE_ASSETS)
+            )
           }
-          onConfirm={(ids) => form.setValue("ugc_character_avatar_asset_id", ids[0] ?? "")}
-          maxSelection={1}
+          maxSelection={MAX_UGC_AVATAR_REFERENCE_ASSETS}
           allowEmptyConfirm
           contextProjectId={projectId}
-          dialogTitle="Face or body reference (UGC)"
-          dialogDescription="One library photo. We summarize visible traits so AI-generated backgrounds keep the same person look across slides."
+          dialogTitle="Face or body references (UGC)"
+          dialogDescription={`Same person, up to ${MAX_UGC_AVATAR_REFERENCE_ASSETS} library photos (angles/lighting). We merge them in one step so AI backgrounds keep one consistent look across slides.`}
         />
 
         <div className="flex gap-4">

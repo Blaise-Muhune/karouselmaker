@@ -5,7 +5,7 @@ import { z } from "zod";
 import { getUser } from "@/lib/server/auth/getUser";
 import { getProject, updateProject as dbUpdateProject } from "@/lib/server/db";
 import type { ProjectUpdate } from "@/lib/server/db/types";
-import { MAX_PROJECT_AI_STYLE_REFERENCE_ASSETS } from "@/lib/constants";
+import { MAX_PROJECT_AI_STYLE_REFERENCE_ASSETS, MAX_UGC_AVATAR_REFERENCE_ASSETS } from "@/lib/constants";
 import { projectFormSchema, projectFormToDbPayload } from "@/lib/validations/project";
 
 export async function updateProject(projectId: string, formData: FormData) {
@@ -21,7 +21,19 @@ export async function updateProject(projectId: string, formData: FormData) {
     niche: (formData.get("niche") as string) ?? "",
     content_focus: (formData.get("content_focus") as string) || "general",
     ugc_character_brief: (formData.get("ugc_character_brief") as string) ?? "",
-    ugc_character_avatar_asset_id: (formData.get("ugc_character_avatar_asset_id") as string) ?? "",
+    ugc_character_avatar_asset_ids: (() => {
+      const v = formData.get("ugc_character_avatar_asset_ids");
+      if (!v || typeof v !== "string") return [] as string[];
+      try {
+        const arr = JSON.parse(v) as unknown;
+        if (!Array.isArray(arr)) return [];
+        return arr
+          .filter((x): x is string => typeof x === "string" && z.string().uuid().safeParse(x).success)
+          .slice(0, MAX_UGC_AVATAR_REFERENCE_ASSETS);
+      } catch {
+        return [];
+      }
+    })(),
     tone_preset: formData.get("tone_preset") as string,
     language: (formData.get("language") as string) || "en",
     number_of_slides: Number(formData.get("number_of_slides")),
@@ -42,7 +54,7 @@ export async function updateProject(projectId: string, formData: FormData) {
     niche: raw.niche,
     content_focus: raw.content_focus,
     ugc_character_brief: raw.ugc_character_brief,
-    ugc_character_avatar_asset_id: raw.ugc_character_avatar_asset_id,
+    ugc_character_avatar_asset_ids: raw.ugc_character_avatar_asset_ids,
     tone_preset: raw.tone_preset,
     language: raw.language,
     slide_structure: { number_of_slides: raw.number_of_slides },

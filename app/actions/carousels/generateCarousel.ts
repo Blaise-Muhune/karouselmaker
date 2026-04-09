@@ -28,6 +28,8 @@ import {
   buildTemplateContextForPrompt,
 } from "@/lib/server/ai/templateContextForPrompt";
 import { searchImage } from "@/lib/server/imageSearch";
+import { normalizeImageUrlForDedupe, normalizeQueryForCache } from "@/lib/server/imageSearchUtils";
+import { buildWebSearchQueryVariants } from "@/lib/server/webImageQueryDiversify";
 import { searchUnsplashPhotosMultiple, trackUnsplashDownload } from "@/lib/server/unsplash";
 import { searchPixabayPhotos } from "@/lib/server/pixabay";
 import { searchPexelsPhotos } from "@/lib/server/pexels";
@@ -37,7 +39,8 @@ import {
   summarizeStyleReferenceImages,
 } from "@/lib/server/ai/summarizeStyleReferenceImages";
 import { buildCarouselSeriesVisualConsistency } from "@/lib/server/ai/carouselSeriesVisualConsistency";
-import { summarizeUgcAvatarForConsistency } from "@/lib/server/ai/summarizeUgcAvatarReference";
+import { mergeProjectUgcAvatarAssetIds } from "@/lib/server/ai/mergeProjectUgcAvatarAssetIds";
+import { summarizeUgcAvatarReferencesForConsistency } from "@/lib/server/ai/summarizeUgcAvatarReference";
 import { preferRecognizablePublicFiguresForImages } from "@/lib/server/ai/topicFictionHeuristic";
 import { extractInputTextFromDocument } from "@/lib/server/documents/extractInputText";
 import { uploadGeneratedImage } from "@/lib/server/storage/uploadGeneratedImage";
@@ -62,10 +65,6 @@ const UPDATE_SLIDE_BATCH_SIZE = 10;
 
 const LOG = (step: string, detail?: string) =>
   console.log(`[carousel-gen] ${step}${detail ? ` — ${detail}` : ""}`);
-
-function isAssetUuid(s: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s);
-}
 
 const now = () => Date.now();
 function elapsedMs(start: number): number {
@@ -295,6 +294,7 @@ export async function generateCarousel(formData: FormData): Promise<
     use_stock_photos: formData.get("use_stock_photos") ?? undefined,
     use_ai_generate: formData.get("use_ai_generate") ?? undefined,
     use_web_search: formData.get("use_web_search") ?? undefined,
+    use_saved_ugc_character: formData.get("use_saved_ugc_character") ?? undefined,
     notes: ((formData.get("notes") as string | null) ?? "").trim() || undefined,
     template_id: (formData.get("template_id") as string | null)?.trim() || undefined,
     viral_shorts_style: formData.get("viral_shorts_style") ?? undefined,
@@ -376,6 +376,8 @@ export async function generateCarousel(formData: FormData): Promise<
       ? [projectRulesJson?.do_rules && `Do: ${projectRulesJson.do_rules}`, projectRulesJson?.dont_rules && `Don't: ${projectRulesJson.dont_rules}`].filter(Boolean).join("\n\n")
       : "");
   const contentFocusId = normalizeContentFocusId(project.content_focus);
+  const applySavedUgcCharacter =
+    contentFocusId === "ugc" && parsed.data.use_saved_ugc_character !== false;
   const projectRulesForImages = appendContentFocusToProjectRules(projectRules, contentFocusId);
   /** Use only carousel-level value. If omitted (user left field empty), AI decides. Do NOT fall back to project default. */
   const number_of_slides = data.number_of_slides ?? undefined;
@@ -601,6 +603,7 @@ export async function generateCarousel(formData: FormData): Promise<
     use_stock_photos: effectiveUseStockPhotos,
     use_ai_generate: useAiGenerate,
     use_web_search: useWebSearch,
+    use_saved_ugc_character: applySavedUgcCharacter,
     generation_started: false,
     ...(carouselFor && { carousel_for: carouselFor }),
     ...(data.notes?.trim() && { notes: data.notes.trim() }),
@@ -704,6 +707,8 @@ export async function generateCarousel(formData: FormData): Promise<
     : defaultOverlay;
 
   const backgroundsStart = now();
+  /** Set when UGC + AI generate produced a series bible suitable for saving as project character lock. */
+  let ugcSeriesCharacterBriefForCarousel: string | undefined;
   try {
   if (parsed.data.background_asset_ids?.length && createdSlides.length) {
     const assetIds = parsed.data.background_asset_ids;
@@ -756,24 +761,24 @@ export async function generateCarousel(formData: FormData): Promise<
       validated.slides.map((s) => [s.slide_index, s])
     );
 
-    const projectUgcAvatarRaw =
-      (project as { ugc_character_avatar_asset_id?: string | null }).ugc_character_avatar_asset_id?.trim() ?? "";
-    const ugcAvatarAssetId =
-      contentFocusId === "ugc" && isAssetUuid(projectUgcAvatarRaw) ? projectUgcAvatarRaw : "";
-    const ugcBriefSaved =
-      (project as { ugc_character_brief?: string | null }).ugc_character_brief?.trim() ?? "";
+    const ugcAvatarAssetIds =
+      contentFocusId === "ugc" && applySavedUgcCharacter ? mergeProjectUgcAvatarAssetIds(project) : [];
+    const ugcAvatarIdSet = new Set(ugcAvatarAssetIds);
+    const ugcBriefSaved = applySavedUgcCharacter
+      ? ((project as { ugc_character_brief?: string | null }).ugc_character_brief?.trim() ?? "")
+      : "";
 
     const projectStyleRefIdsRaw =
       (project as { ai_style_reference_asset_ids?: string[] | null }).ai_style_reference_asset_ids ?? [];
-    const projectStyleRefIds = projectStyleRefIdsRaw.filter((id) => id !== ugcAvatarAssetId);
-    const carouselStyleRefIds = (data.ai_style_reference_asset_ids ?? []).filter((id) => id !== ugcAvatarAssetId);
+    const projectStyleRefIds = projectStyleRefIdsRaw.filter((id) => !ugcAvatarIdSet.has(id));
+    const carouselStyleRefIds = (data.ai_style_reference_asset_ids ?? []).filter((id) => !ugcAvatarIdSet.has(id));
     const mergedStyleRefIds = mergeStyleReferenceAssetIds(carouselStyleRefIds, projectStyleRefIds);
 
     let ugcCharacterLock: string | undefined;
     if (contentFocusId === "ugc") {
       const lockParts: string[] = [];
-      if (ugcAvatarAssetId) {
-        const avatarSummary = await summarizeUgcAvatarForConsistency(user.id, ugcAvatarAssetId);
+      if (ugcAvatarAssetIds.length > 0) {
+        const avatarSummary = await summarizeUgcAvatarReferencesForConsistency(user.id, ugcAvatarAssetIds);
         if (avatarSummary) lockParts.push(avatarSummary);
       }
       if (ugcBriefSaved) lockParts.push(ugcBriefSaved);
@@ -828,6 +833,15 @@ export async function generateCarousel(formData: FormData): Promise<
         ugcMode: contentFocusId === "ugc",
         seedCharacterBrief: ugcBriefSaved || undefined,
       });
+      if (
+        contentFocusId === "ugc" &&
+        !preferPublicFigures &&
+        seriesVisualConsistency.trim().length >= 40
+      ) {
+        ugcSeriesCharacterBriefForCarousel = seriesVisualConsistency
+          .trim()
+          .slice(0, UGC_CHARACTER_BRIEF_MAX_CHARS);
+      }
 
       const processOneAiSlide = async ({
         slide,
@@ -927,7 +941,7 @@ export async function generateCarousel(formData: FormData): Promise<
       if (
         contentFocusId === "ugc" &&
         seriesVisualConsistency?.trim() &&
-        !ugcAvatarAssetId &&
+        ugcAvatarAssetIds.length === 0 &&
         !ugcBriefSaved
       ) {
         try {
@@ -1103,16 +1117,43 @@ export async function generateCarousel(formData: FormData): Promise<
         }
       } else {
         // Brave (admin only): sequential — 1 req/sec rate limit.
+        /** Dedupe across the whole carousel: same normalized query + cache often yields identical top hits. */
+        const usedBraveImageUrls = new Set<string>();
+        const MAX_VARIANTS_PER_SLIDE = 10;
         for (const job of searchJobs) {
           const { slide, queries } = job;
+          const aiSlide = aiSlideByIndex.get(slide.slide_index);
+          const seenNormQueries = new Set<string>();
+          const orderedQueries: string[] = [];
+          for (const q of queries.slice(0, 4)) {
+            for (const v of buildWebSearchQueryVariants(q, {
+              headline: aiSlide?.headline,
+              body: typeof aiSlide?.body === "string" ? aiSlide.body : undefined,
+              slideIndex: slide.slide_index,
+            })) {
+              const k = normalizeQueryForCache(v);
+              if (seenNormQueries.has(k)) continue;
+              seenNormQueries.add(k);
+              orderedQueries.push(v);
+              if (orderedQueries.length >= MAX_VARIANTS_PER_SLIDE) break;
+            }
+            if (orderedQueries.length >= MAX_VARIANTS_PER_SLIDE) break;
+          }
           const imageResults: ImageResult[] = [];
-          for (const query of queries.slice(0, 4)) {
-            const result = await searchImage(query);
-            if (result) imageResults.push(result as ImageResult);
+          for (const query of orderedQueries) {
+            const result = await searchImage(query, { avoidUrls: usedBraveImageUrls });
+            if (result) {
+              usedBraveImageUrls.add(normalizeImageUrlForDedupe(result.url));
+              imageResults.push(result as ImageResult);
+              if (imageResults.length >= 4) break;
+            }
           }
           if (imageResults.length === 0) {
-            const fallback = await searchImage(topicFallbackBase);
-            if (fallback) imageResults.push(fallback as ImageResult);
+            const fallback = await searchImage(topicFallbackBase, { avoidUrls: usedBraveImageUrls });
+            if (fallback) {
+              usedBraveImageUrls.add(normalizeImageUrlForDedupe(fallback.url));
+              imageResults.push(fallback as ImageResult);
+            }
           }
           await applyImageResultsToSlide(slide, imageResults);
         }
@@ -1164,6 +1205,9 @@ export async function generateCarousel(formData: FormData): Promise<
     ...finalGenerationOptions,
     generation_complete: true,
     ai_backgrounds_pending: false,
+    ...(ugcSeriesCharacterBriefForCarousel
+      ? { ugc_series_character_brief: ugcSeriesCharacterBriefForCarousel }
+      : {}),
   };
   const carouselFinalUpdate: Parameters<typeof updateCarousel>[2] = {
     title: resolvedTitle,
@@ -1298,6 +1342,7 @@ export async function startCarouselGeneration(formData: FormData): Promise<
     use_stock_photos: formData.get("use_stock_photos") ?? undefined,
     use_ai_generate: formData.get("use_ai_generate") ?? undefined,
     use_web_search: formData.get("use_web_search") ?? undefined,
+    use_saved_ugc_character: formData.get("use_saved_ugc_character") ?? undefined,
     notes: ((formData.get("notes") as string | null) ?? "").trim() || undefined,
     template_id: (formData.get("template_id") as string | null)?.trim() || undefined,
     viral_shorts_style: formData.get("viral_shorts_style") ?? undefined,
@@ -1370,6 +1415,7 @@ export async function startCarouselGeneration(formData: FormData): Promise<
     use_stock_photos: useStockStored,
     use_ai_generate: useAiGenStored,
     use_web_search: hasFullAccess && !!data.use_web_search,
+    use_saved_ugc_character: parsed.data.use_saved_ugc_character !== false,
     generation_started: false,
     number_of_slides: data.number_of_slides,
     notes: data.notes,

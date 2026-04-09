@@ -29,9 +29,9 @@ import { OPEN_CONNECTED_ACCOUNTS_EVENT } from "@/lib/constants/connectedAccounts
 import { cn } from "@/lib/utils";
 import type { Project } from "@/lib/server/db/types";
 import { LogoutButtonWithOverlay } from "@/components/auth/LogoutButtonWithOverlay";
-import { ChevronDownIcon, CreditCardIcon, Gem, Loader2Icon, LogOutIcon, MenuIcon, PlusCircleIcon, ShieldIcon, UserIcon } from "lucide-react";
+import { ChevronDownIcon, CreditCardIcon, Gem, Loader2Icon, MenuIcon, PlusCircleIcon, ShieldIcon, UserIcon } from "lucide-react";
+import { ADMIN_EMAILS } from "@/lib/server/auth/isAdmin";
 
-const ADMIN_EMAILS = ["blaisemu007@gmail.com", "muyumba@andrews.edu"];
 
 function ManageSubscriptionButton() {
   const [loading, setLoading] = useState(false);

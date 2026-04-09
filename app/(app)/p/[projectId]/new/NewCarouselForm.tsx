@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { startCarouselGeneration } from "@/app/actions/carousels/generateCarousel";
+import { updateProjectUseSavedUgcCharacter } from "@/app/actions/projects/projectUgcCharacterActions";
 import {
   getProjectTopicSuggestions,
   refreshProjectTopicSuggestions,
@@ -138,6 +139,10 @@ export function NewCarouselForm({
   defaultLinkedInTemplateId = null,
   defaultLinkedInTemplateConfig = null,
   primaryColor = "#0a0a0a",
+  /** Project content style — UGC unlocks “use saved character” for AI generate. */
+  projectContentFocus = "general",
+  /** Persisted project preference: apply saved UGC character brief + avatar when generating. */
+  initialUseSavedUgcCharacter = true,
 }: {
   projectId: string;
   isPro?: boolean;
@@ -177,6 +182,8 @@ export function NewCarouselForm({
   defaultLinkedInTemplateId?: string | null;
   defaultLinkedInTemplateConfig?: TemplateConfig | null;
   primaryColor?: string;
+  projectContentFocus?: string;
+  initialUseSavedUgcCharacter?: boolean;
 }) {
   const router = useRouter();
   const hasFullAccess = hasFullAccessProp ?? isPro;
@@ -227,6 +234,8 @@ export function NewCarouselForm({
   const [upgradeLoading, setUpgradeLoading] = useState(false);
   const [driveFolderImporting, setDriveFolderImporting] = useState(false);
   const [driveFolderError, setDriveFolderError] = useState<string | null>(null);
+  const [useSavedUgcCharacter, setUseSavedUgcCharacter] = useState(initialUseSavedUgcCharacter);
+  const [ugcCharacterPrefError, setUgcCharacterPrefError] = useState<string | null>(null);
   const [showMoreOptions, setShowMoreOptions] = useState(false);
   const [topicSuggestOpen, setTopicSuggestOpen] = useState(false);
   const [topicSuggestLoading, setTopicSuggestLoading] = useState(false);
@@ -305,6 +314,10 @@ export function NewCarouselForm({
   useEffect(() => {
     if (!canUseWebImages && imageSource === "brave") setImageSource("stock");
   }, [canUseWebImages, imageSource]);
+
+  useEffect(() => {
+    setUseSavedUgcCharacter(initialUseSavedUgcCharacter);
+  }, [initialUseSavedUgcCharacter]);
 
   const prevCarouselForRef = useRef<"instagram" | "linkedin">(carouselFor);
   useEffect(() => {
@@ -396,6 +409,9 @@ export function NewCarouselForm({
       if (imageSource === "ai_generate" && canUseAiGenerate && carouselFor !== "linkedin") {
         formData.set("use_ai_generate", "true");
         formData.set("ai_style_reference_asset_ids", JSON.stringify(aiStyleRefIds));
+      }
+      if (projectContentFocus === "ugc") {
+        formData.set("use_saved_ugc_character", useSavedUgcCharacter ? "true" : "false");
       }
       formData.set("carousel_for", carouselFor);
       if (useWebSearch) formData.set("use_web_search", "true");
@@ -863,7 +879,40 @@ export function NewCarouselForm({
                   )}
                 </div>
                 {imageSource === "ai_generate" && canUseAiGenerate && carouselFor !== "linkedin" && (
-                  <div className="rounded-lg border border-border/60 bg-muted/15 px-3 py-3 space-y-2">
+                  <div className="rounded-lg border border-border/60 bg-muted/15 px-3 py-3 space-y-3">
+                    {projectContentFocus === "ugc" && (
+                      <div className="space-y-1">
+                        <label className="flex items-start gap-2.5 cursor-pointer group">
+                          <input
+                            type="checkbox"
+                            checked={useSavedUgcCharacter}
+                            onChange={async (e) => {
+                              const checked = e.target.checked;
+                              const prev = useSavedUgcCharacter;
+                              setUgcCharacterPrefError(null);
+                              setUseSavedUgcCharacter(checked);
+                              const r = await updateProjectUseSavedUgcCharacter(projectId, checked);
+                              if (!r.ok) {
+                                setUseSavedUgcCharacter(prev);
+                                setUgcCharacterPrefError(r.error);
+                              }
+                            }}
+                            className="mt-0.5 rounded border-input accent-primary size-4 shrink-0"
+                          />
+                          <span className="text-sm leading-snug">
+                            <span className="font-medium text-foreground group-hover:text-foreground/90">
+                              Use saved character for this project
+                            </span>
+                            <span className="block text-[11px] text-muted-foreground mt-0.5">
+                              When you have a character saved (or after you save one from a finished carousel), AI images reuse the same person. Turn off for a one-off without changing your saved character. This choice is remembered for the project.
+                            </span>
+                          </span>
+                        </label>
+                        {ugcCharacterPrefError && (
+                          <p className="text-xs text-destructive pl-7">{ugcCharacterPrefError}</p>
+                        )}
+                      </div>
+                    )}
                     <p className="text-xs font-medium text-foreground">Style references (optional)</p>
                     <p className="text-[11px] text-muted-foreground leading-relaxed">
                       Choose up to {MAX_CAROUSEL_AI_STYLE_REFERENCE_ASSETS} library images. We summarize their look so generated backgrounds match that style.{" "}
