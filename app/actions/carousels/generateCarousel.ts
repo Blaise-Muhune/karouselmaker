@@ -288,6 +288,16 @@ export async function generateCarousel(formData: FormData): Promise<
         return undefined;
       }
     })(),
+    ugc_character_reference_asset_ids: (() => {
+      const rawIds = formData.get("ugc_character_reference_asset_ids") as string | null;
+      if (!rawIds) return undefined;
+      try {
+        const arr = JSON.parse(rawIds) as unknown;
+        return Array.isArray(arr) ? arr : undefined;
+      } catch {
+        return undefined;
+      }
+    })(),
     use_ai_backgrounds: formData.get("use_ai_backgrounds") ?? undefined,
     use_stock_photos: formData.get("use_stock_photos") ?? undefined,
     use_ai_generate: formData.get("use_ai_generate") ?? undefined,
@@ -642,6 +652,9 @@ export async function generateCarousel(formData: FormData): Promise<
     ...(data.ai_style_reference_asset_ids != null && {
       ai_style_reference_asset_ids: data.ai_style_reference_asset_ids,
     }),
+    ...(data.ugc_character_reference_asset_ids != null && {
+      ugc_character_reference_asset_ids: data.ugc_character_reference_asset_ids,
+    }),
     ...(validated.similar_ideas?.length && {
       similar_carousel_ideas: validated.similar_ideas,
     }),
@@ -791,7 +804,11 @@ export async function generateCarousel(formData: FormData): Promise<
     );
 
     const ugcAvatarAssetIds =
-      contentFocusId === "ugc" && applySavedUgcCharacter ? mergeProjectUgcAvatarAssetIds(project) : [];
+      contentFocusId === "ugc"
+        ? applySavedUgcCharacter
+          ? mergeProjectUgcAvatarAssetIds(project)
+          : (data.ugc_character_reference_asset_ids ?? [])
+        : [];
     const ugcAvatarIdSet = new Set(ugcAvatarAssetIds);
     const ugcBriefSaved = applySavedUgcCharacter
       ? ((project as { ugc_character_brief?: string | null }).ugc_character_brief?.trim() ?? "")
@@ -1411,6 +1428,16 @@ export async function startCarouselGeneration(formData: FormData): Promise<
         return undefined;
       }
     })(),
+    ugc_character_reference_asset_ids: (() => {
+      const rawIds = formData.get("ugc_character_reference_asset_ids") as string | null;
+      if (!rawIds) return undefined;
+      try {
+        const arr = JSON.parse(rawIds) as unknown;
+        return Array.isArray(arr) ? arr : undefined;
+      } catch {
+        return undefined;
+      }
+    })(),
     use_ai_backgrounds: formData.get("use_ai_backgrounds") ?? undefined,
     use_stock_photos: formData.get("use_stock_photos") ?? undefined,
     use_ai_generate: formData.get("use_ai_generate") ?? undefined,
@@ -1527,6 +1554,7 @@ export async function startCarouselGeneration(formData: FormData): Promise<
     viral_shorts_style: !!parsed.data.viral_shorts_style && userIsAdmin,
     background_asset_ids: data.background_asset_ids,
     ai_style_reference_asset_ids: data.ai_style_reference_asset_ids ?? [],
+    ugc_character_reference_asset_ids: data.ugc_character_reference_asset_ids ?? [],
     ...(parsed.data.carousel_for && { carousel_for: parsed.data.carousel_for }),
   };
 

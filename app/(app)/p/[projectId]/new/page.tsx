@@ -142,6 +142,10 @@ export default async function NewCarouselPage({
             (regenerateCarousel?.generation_options as { ai_style_reference_asset_ids?: string[] } | undefined)
               ?.ai_style_reference_asset_ids
           }
+          initialUgcCharacterReferenceAssetIds={
+            (regenerateCarousel?.generation_options as { ugc_character_reference_asset_ids?: string[] } | undefined)
+              ?.ugc_character_reference_asset_ids
+          }
           templateOptions={templateOptions}
           defaultTemplateId={defaultTemplateId}
           defaultTemplateConfig={defaultTemplateConfig}

@@ -90,6 +90,7 @@ export async function regenerateCarousel(
     carousel_for?: "instagram" | "linkedin";
     notes?: string;
     ai_style_reference_asset_ids?: string[];
+    ugc_character_reference_asset_ids?: string[];
   } | undefined;
   if (opts?.use_stock_photos || opts?.use_unsplash_only || opts?.use_pixabay_only || opts?.use_pexels_only) formData.set("use_stock_photos", "true");
   if (opts?.use_ai_generate) formData.set("use_ai_generate", "true");
@@ -97,5 +98,7 @@ export async function regenerateCarousel(
   if (opts?.notes && typeof opts.notes === "string" && opts.notes.trim()) formData.set("notes", opts.notes.trim());
   if (opts?.ai_style_reference_asset_ids?.length)
     formData.set("ai_style_reference_asset_ids", JSON.stringify(opts.ai_style_reference_asset_ids));
+  if (opts?.ugc_character_reference_asset_ids?.length)
+    formData.set("ugc_character_reference_asset_ids", JSON.stringify(opts.ugc_character_reference_asset_ids));
   return startCarouselGeneration(formData);
 }

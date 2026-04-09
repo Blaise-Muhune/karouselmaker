@@ -14,7 +14,8 @@ import { UGC_CHARACTER_BRIEF_MAX_CHARS } from "@/lib/constants";
 import type { ProjectFormInput } from "@/lib/validations/project";
 import { cn } from "@/lib/utils";
 
-const BRIEF_PLACEHOLDER = `Set the scene in plain language: who's on camera, where you usually film, what the light feels like, what they wear on an ordinary day. Example: "Same person every time—warm side light from a window, messy bun, gold hoops, oversized cream sweatshirt at a cluttered desk; evenings they’re under a soft desk lamp with the monitor glow on their face."`;
+const BRIEF_PLACEHOLDER =
+  "Same person. Note hair, skin tone, build, usual outfit, and typical room/light.";
 
 export function UgcProjectCharacterSection({
   control,
@@ -29,13 +30,7 @@ export function UgcProjectCharacterSection({
     <div className="rounded-xl border border-primary/25 bg-primary/5 p-4 sm:p-5 space-y-4">
       <div className="space-y-1">
         <h3 className="text-sm font-semibold tracking-tight text-foreground">Recurring creator</h3>
-        <p className="text-muted-foreground text-[11px] leading-relaxed">
-          Give the AI a <span className="font-medium text-foreground">written story</span> and/or{" "}
-          <span className="font-medium text-foreground">photos</span>—both are first-class inputs. When you{" "}
-          <span className="font-medium text-foreground">New carousel</span>, pick{" "}
-          <span className="font-medium text-foreground">AI generate</span> and enable{" "}
-          <span className="font-medium text-foreground">Same person from project</span>.
-        </p>
+        <p className="text-muted-foreground text-[11px] leading-relaxed">Add notes and/or photos to keep the same person across slides.</p>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2 lg:gap-5 lg:items-stretch">
@@ -52,9 +47,7 @@ export function UgcProjectCharacterSection({
             <div className="min-w-0 space-y-1">
               <p className="text-sm font-semibold text-foreground">Story &amp; details</p>
               <p className="text-[11px] text-muted-foreground leading-snug">
-                Describe them the way you&apos;d brief a friend: face shape and hair, skin tone, build, age vibe, go-to outfit,
-                and the rooms or light you keep coming back to. Richer sensory detail helps the model stay on-model when
-                there aren&apos;t photos—or reinforces them when there are.
+                Short brief: face, hair, outfit, and usual setting.
               </p>
             </div>
           </div>
@@ -96,9 +89,7 @@ export function UgcProjectCharacterSection({
             <div className="min-w-0 space-y-1">
               <p className="text-sm font-semibold text-foreground">Face &amp; body references</p>
               <p className="text-[11px] text-muted-foreground leading-snug">
-                Up to {maxAvatarAssets} photos of the <span className="font-medium text-foreground">same</span> person from
-                your library—mix close-ups, farther shots, and different expressions. We send them with every AI background
-                so identity comes from pixels, not guesswork.
+                Up to {maxAvatarAssets} photos of the same person.
               </p>
             </div>
           </div>
@@ -116,8 +107,8 @@ export function UgcProjectCharacterSection({
                       </div>
                       <p className="text-[11px] text-muted-foreground max-w-[240px] leading-snug">
                         {n > 0
-                          ? `${n} photo${n !== 1 ? "s" : ""} selected — add or swap anytime.`
-                          : "No references yet — add photos when you’re ready."}
+                          ? `${n} photo${n !== 1 ? "s" : ""} selected.`
+                          : "No photos selected."}
                       </p>
                       <div className="flex flex-wrap items-center justify-center gap-2">
                         <Button

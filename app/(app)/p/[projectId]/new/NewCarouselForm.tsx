@@ -48,6 +48,7 @@ import {
   CAROUSEL_INPUT_MAX_CHARS,
   CAROUSEL_NOTES_MAX_CHARS,
   MAX_CAROUSEL_AI_STYLE_REFERENCE_ASSETS,
+  MAX_UGC_AVATAR_REFERENCE_ASSETS,
 } from "@/lib/constants";
 
 /** Carousel for: Instagram (default) or LinkedIn. LinkedIn uses B2B-optimized content and stock/own images only (no AI generate). */
@@ -133,6 +134,7 @@ export function NewCarouselForm({
   initialCarouselFor,
   initialNotes,
   initialAiStyleReferenceAssetIds,
+  initialUgcCharacterReferenceAssetIds,
   templateOptions = [],
   defaultTemplateId = null,
   defaultTemplateConfig = null,
@@ -174,6 +176,8 @@ export function NewCarouselForm({
   initialNotes?: string;
   /** Per-run style reference asset IDs when regenerating (merged with project refs for AI generate). */
   initialAiStyleReferenceAssetIds?: string[];
+  /** Per-run UGC character refs (used when "Same person from project" is off). */
+  initialUgcCharacterReferenceAssetIds?: string[];
   /** Templates the user can choose before generating (with parsed config for preview). */
   templateOptions?: TemplateOption[];
   defaultTemplateId?: string | null;
@@ -227,7 +231,12 @@ export function NewCarouselForm({
     const raw = initialAiStyleReferenceAssetIds ?? [];
     return Array.isArray(raw) ? raw.slice(0, MAX_CAROUSEL_AI_STYLE_REFERENCE_ASSETS) : [];
   });
+  const [ugcCharacterRefIds, setUgcCharacterRefIds] = useState<string[]>(() => {
+    const raw = initialUgcCharacterReferenceAssetIds ?? [];
+    return Array.isArray(raw) ? raw.slice(0, MAX_UGC_AVATAR_REFERENCE_ASSETS) : [];
+  });
   const [styleRefPickerOpen, setStyleRefPickerOpen] = useState(false);
+  const [characterRefPickerOpen, setCharacterRefPickerOpen] = useState(false);
   const [backgroundPickerOpen, setBackgroundPickerOpen] = useState(false);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(() => {
@@ -420,6 +429,9 @@ export function NewCarouselForm({
       if (imageSource === "ai_generate" && canUseAiGenerate && carouselFor !== "linkedin") {
         formData.set("use_ai_generate", "true");
         formData.set("ai_style_reference_asset_ids", JSON.stringify(aiStyleRefIds));
+        if (projectContentFocus === "ugc" && !useSavedUgcCharacter && ugcCharacterRefIds.length > 0) {
+          formData.set("ugc_character_reference_asset_ids", JSON.stringify(ugcCharacterRefIds));
+        }
       }
       if (projectContentFocus === "ugc") {
         formData.set("use_saved_ugc_character", useSavedUgcCharacter ? "true" : "false");
@@ -938,11 +950,38 @@ export function NewCarouselForm({
                         )}
                       </div>
                     )}
-                    <p className="text-xs font-medium text-foreground">Style references (optional)</p>
-                    <p className="text-[11px] text-muted-foreground">
-                      Up to {MAX_CAROUSEL_AI_STYLE_REFERENCE_ASSETS} library images—overall look for AI backgrounds. Notes override when they conflict.
-                    </p>
-                    <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-xs font-medium text-foreground">References (optional)</p>
+                    <div className="space-y-2">
+                      <p className="text-[11px] text-muted-foreground">Characters</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8 text-xs"
+                          onClick={() => setCharacterRefPickerOpen(true)}
+                          disabled={projectContentFocus === "ugc" && useSavedUgcCharacter}
+                        >
+                          <ImageIcon className="mr-1.5 size-3.5" />
+                          {ugcCharacterRefIds.length
+                            ? `${ugcCharacterRefIds.length} character${ugcCharacterRefIds.length !== 1 ? "s" : ""}`
+                            : "Pick characters"}
+                        </Button>
+                        {ugcCharacterRefIds.length > 0 && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 text-xs text-muted-foreground"
+                            onClick={() => setUgcCharacterRefIds([])}
+                            disabled={projectContentFocus === "ugc" && useSavedUgcCharacter}
+                          >
+                            Clear
+                          </Button>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">Style look</p>
+                      <div className="flex flex-wrap items-center gap-2">
                       <Button
                         type="button"
                         variant="outline"
@@ -967,12 +1006,13 @@ export function NewCarouselForm({
                         </Button>
                       )}
                     </div>
+                    </div>
                   </div>
                 )}
               </div>
             )}
             <div className="pt-3 border-t border-border/50">
-              <p className="text-xs text-muted-foreground mb-2">Your images</p>
+              <p className="text-xs text-muted-foreground mb-2">Product/service images</p>
               <div className={`flex flex-wrap items-center gap-2 ${useAiBackgrounds ? "pointer-events-none opacity-50" : ""}`}>
                 <Button
                   type="button"
@@ -1220,6 +1260,17 @@ export function NewCarouselForm({
           contextProjectId={projectId}
           dialogTitle="Style references for AI-generated backgrounds"
           dialogDescription={`Select up to ${MAX_CAROUSEL_AI_STYLE_REFERENCE_ASSETS} images. Used only to match visual style. Upload or import from Drive here—they’re saved to your library.`}
+        />
+        <BackgroundImagesPickerModal
+          open={characterRefPickerOpen}
+          onOpenChange={setCharacterRefPickerOpen}
+          selectedIds={ugcCharacterRefIds}
+          onConfirm={setUgcCharacterRefIds}
+          maxSelection={MAX_UGC_AVATAR_REFERENCE_ASSETS}
+          allowEmptyConfirm
+          contextProjectId={projectId}
+          dialogTitle="Character references"
+          dialogDescription={`Select up to ${MAX_UGC_AVATAR_REFERENCE_ASSETS} images of the same person.`}
         />
 
         <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center">

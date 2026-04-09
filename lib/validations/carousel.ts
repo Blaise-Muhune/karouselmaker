@@ -25,6 +25,20 @@ export const generateCarouselInputSchema = z.object({
       }
       return out.length ? out : undefined;
     }),
+  /** Optional per-run UGC character refs (max 5). Used when project "same person" lock is off. */
+  ugc_character_reference_asset_ids: z
+    .array(z.string())
+    .max(5)
+    .optional()
+    .transform((arr) => {
+      if (!arr?.length) return undefined;
+      const out: string[] = [];
+      for (const id of arr) {
+        if (z.string().uuid().safeParse(id).success) out.push(id);
+        if (out.length >= 5) break;
+      }
+      return out.length ? out : undefined;
+    }),
   /** When true, AI suggests Unsplash search queries per slide and we fetch those images as backgrounds. */
   use_ai_backgrounds: z
     .string()
