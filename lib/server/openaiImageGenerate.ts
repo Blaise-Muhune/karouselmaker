@@ -314,7 +314,7 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
 
   if (ugcPhone) {
     parts.push(
-      "Camera: natural phone POV—eye level, slight high or low like someone held the device; plausible focal length (not ultra-wide distortion unless the scene calls for it). No crane, drone, or floating product shots unless the slide content is literally about those. Framing and environment must follow this slide's headline and body so the image feels inevitable for that beat—not a random stock angle."
+      "Camera: real-phone energy that still feels **interesting**—vary distance and POV (asymmetrical crop, slight handheld tilt, foreground blur prop, over-shoulder at screen, top-down desk, doorway frame, tight reaction close-up, environmental wide) so it is not the same boring centered medium shot every time. Plausible focal length; avoid ultra-wide face distortion unless the scene fits. No crane, drone, floating product, glam hero low-angle, sunset silhouette, or blockbuster anamorphic polish unless the slide is literally about that. Framing must follow this slide's headline and body—candid and human, not generic stock or obvious AI staging."
     );
     parts.push(ugcAntiConvenienceLine);
   }
@@ -361,7 +361,7 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
     if (!hasReferenceStyle) {
       parts.push(
         ugcPhone
-          ? "First slide (hook): scroll-stopping but still shot like a real phone—candid framing, natural light, one clear moment from the topic. Bold is OK (close face, strong expression, messy real desk) but stay iPhone-plausible—no cinematic crane or staged ad angles. Indoor = indoor light only."
+          ? "First slide (hook): scroll-stopping **and** phone-plausible—strong candid composition (messy desk, tight face reaction, asymmetrical crop, foreground object blur)—not a flat centered portrait. Bold moment from the topic; still iPhone-real—no crane, drone, glam hero, or ad set. Indoor = indoor light only."
           : "First slide (hook): striking, scroll-stopping. Vary—close-up, mid-shot action, scale contrast, or micro-story. Avoid clichés: no person from behind at window, no coffee+notebook, no silhouette at sunrise. Let lighting and time of day fit the scene naturally."
       );
     } else {
@@ -425,7 +425,7 @@ function aspectToOpenAISize(aspect: "1:1" | "4:5" | "9:16" | "2:3" | "16:9"): "1
 
 /** Prepended when using images.edit with UGC reference photos (multimodal identity conditioning). */
 const UGC_IMAGE_EDIT_PREFIX =
-  "The attached image(s) are reference photos of the recurring creator. Preserve their facial identity, hair, skin tone, and approximate build. Generate one NEW photograph for the scene below—different framing and setting than the references, not a crop or collage of the uploads. Match iPhone-main-camera realism in the output (natural grain, soft detail, believable light)—not a beauty-app portrait, CGI avatar, or glossy stock render unless project/carousel notes explicitly request high-end production. ";
+  "The attached image(s) are reference photos of the recurring creator. Preserve their facial identity, hair, skin tone, and approximate build. Generate one NEW photograph for the scene below—**fresh, interesting phone-native framing** (distance, angle, POV) vs the references—not a crop or collage of the uploads; still believable handheld candor, not cinematic crane/glam hero or synthetic stock staging. Match iPhone-main-camera realism (natural grain, soft detail, believable light)—not a beauty-app portrait, CGI avatar, or glossy render unless notes request production polish. ";
 
 const MAX_UGC_REF_IMAGES_EDIT = 8;
 

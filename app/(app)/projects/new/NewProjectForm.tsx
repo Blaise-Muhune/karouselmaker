@@ -7,7 +7,8 @@ import { useTransition } from "react";
 import Link from "next/link";
 import { createProject } from "@/app/actions/projects/createProject";
 import { BackgroundImagesPickerModal } from "@/components/carousels/BackgroundImagesPickerModal";
-import { MAX_UGC_AVATAR_REFERENCE_ASSETS, UGC_CHARACTER_BRIEF_MAX_CHARS } from "@/lib/constants";
+import { MAX_UGC_AVATAR_REFERENCE_ASSETS } from "@/lib/constants";
+import { UgcProjectCharacterSection } from "@/components/projects/UgcProjectCharacterSection";
 import { Button } from "@/components/ui/button";
 import { ColorPicker } from "@/components/ui/color-picker";
 import { Input } from "@/components/ui/input";
@@ -34,7 +35,7 @@ import {
 } from "@/lib/validations/project";
 import { CONTENT_FOCUS_OPTIONS } from "@/lib/server/ai/projectContentFocus";
 import { cn } from "@/lib/utils";
-import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, ImageIcon, Loader2Icon, Settings2Icon } from "lucide-react";
+import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, Loader2Icon, Settings2Icon } from "lucide-react";
 
 const TONE_OPTIONS = [
   { value: "neutral", label: "Neutral" },
@@ -295,72 +296,11 @@ export function NewProjectForm({
               )}
             />
             {contentFocus === "ugc" && (
-              <div className="space-y-3 rounded-lg border border-primary/20 bg-primary/5 p-3">
-                <p className="text-muted-foreground text-[11px] leading-snug">
-                  Same face in AI slides: <strong>AI generate</strong> + <strong>Same person from project</strong> on New carousel. Up to{" "}
-                  {maxUgcAvatarReferenceAssets} photos here helps—optional text lock below.
-                </p>
-                <FormField
-                  control={form.control}
-                  name="ugc_character_brief"
-                  render={({ field }) => {
-                    const len = (field.value ?? "").length;
-                    return (
-                      <FormItem>
-                        <FormLabel className="text-xs">Saved character lock (optional)</FormLabel>
-                        <FormControl>
-                          <Textarea
-                            placeholder="Auto-filled after first run, or describe your recurring on-camera person…"
-                            className="min-h-20 text-sm"
-                            maxLength={UGC_CHARACTER_BRIEF_MAX_CHARS}
-                            {...field}
-                          />
-                        </FormControl>
-                        <p className="text-[11px] text-muted-foreground tabular-nums">
-                          {len}/{UGC_CHARACTER_BRIEF_MAX_CHARS}
-                        </p>
-                        <FormMessage />
-                      </FormItem>
-                    );
-                  }}
-                />
-                <FormField
-                  control={form.control}
-                  name="ugc_character_avatar_asset_ids"
-                  render={({ field }) => {
-                    const n = field.value?.length ?? 0;
-                    return (
-                      <FormItem>
-                        <FormLabel className="text-xs">Face / body references (optional)</FormLabel>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="h-8 text-xs"
-                            onClick={() => setUgcAvatarPickerOpen(true)}
-                          >
-                            <ImageIcon className="mr-1.5 size-3.5" />
-                            {n > 0 ? `Manage photos (${n}/${maxUgcAvatarReferenceAssets})` : "Pick from library"}
-                          </Button>
-                          {n > 0 && (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 text-xs text-muted-foreground"
-                              onClick={() => field.onChange([])}
-                            >
-                              Clear
-                            </Button>
-                          )}
-                        </div>
-                        <FormMessage />
-                      </FormItem>
-                    );
-                  }}
-                />
-              </div>
+              <UgcProjectCharacterSection
+                control={form.control}
+                maxAvatarAssets={maxUgcAvatarReferenceAssets}
+                onOpenAvatarPicker={() => setUgcAvatarPickerOpen(true)}
+              />
             )}
             <div className="space-y-2">
               <Label>Rules or context (optional)</Label>
@@ -513,8 +453,8 @@ export function NewProjectForm({
           }
           maxSelection={maxUgcAvatarReferenceAssets}
           allowEmptyConfirm
-          dialogTitle="Face or body references (UGC)"
-          dialogDescription={`Same person, max ${maxUgcAvatarReferenceAssets} library shots—better face match in AI backgrounds.`}
+          dialogTitle="Face & body references"
+          dialogDescription={`Same person only — up to ${maxUgcAvatarReferenceAssets} library photos (angles, distances, expressions). Used with AI-generated backgrounds when “Same person from project” is on.`}
         />
       </div>
     </div>
