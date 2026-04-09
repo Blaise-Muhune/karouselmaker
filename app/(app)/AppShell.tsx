@@ -7,7 +7,7 @@ import { ContactUsModal } from "@/components/admin/ContactUsModal";
 import { usePathname } from "next/navigation";
 import { signOut } from "@/app/actions/auth";
 import { createCustomerPortalSession } from "@/app/actions/subscription/createCustomerPortalSession";
-import { createCheckoutSession } from "@/app/actions/subscription/createCheckoutSession";
+import { UpgradePlansDialog } from "@/components/subscription/UpgradePlansDialog";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -58,27 +58,15 @@ function ManageSubscriptionButton() {
 }
 
 function GoProButton({ className }: { className?: string }) {
-  const [loading, setLoading] = useState(false);
+  const [plansOpen, setPlansOpen] = useState(false);
   return (
-    <Button
-      variant="default"
-      size="sm"
-      className={className}
-      disabled={loading}
-      onClick={async () => {
-        setLoading(true);
-        const result = await createCheckoutSession();
-        if ("url" in result) {
-          window.location.href = result.url;
-        } else {
-          setLoading(false);
-          alert(result.error ?? "Failed to start checkout");
-        }
-      }}
-    >
-      {loading ? <Loader2Icon className="mr-2 size-4 animate-spin" /> : <Gem className="mr-2 size-4" />}
-      Go Pro
-    </Button>
+    <>
+      <Button variant="default" size="sm" className={className} onClick={() => setPlansOpen(true)}>
+        <Gem className="mr-2 size-4" />
+        View plans
+      </Button>
+      <UpgradePlansDialog open={plansOpen} onOpenChange={setPlansOpen} />
+    </>
   );
 }
 

@@ -5,7 +5,8 @@ import { z } from "zod";
 import { getUser } from "@/lib/server/auth/getUser";
 import { getProject, updateProject as dbUpdateProject } from "@/lib/server/db";
 import type { ProjectUpdate } from "@/lib/server/db/types";
-import { MAX_PROJECT_AI_STYLE_REFERENCE_ASSETS, MAX_UGC_AVATAR_REFERENCE_ASSETS } from "@/lib/constants";
+import { MAX_UGC_AVATAR_REFERENCE_ASSETS } from "@/lib/constants";
+import { getEffectivePlanLimits } from "@/lib/server/subscription";
 import { projectFormSchema, projectFormToDbPayload } from "@/lib/validations/project";
 
 export async function updateProject(projectId: string, formData: FormData) {
@@ -15,6 +16,8 @@ export async function updateProject(projectId: string, formData: FormData) {
   if (!existing) {
     return { error: "Project not found." };
   }
+
+  const limits = await getEffectivePlanLimits(user.id, user.email);
 
   const raw = {
     name: formData.get("name") as string,
@@ -29,7 +32,7 @@ export async function updateProject(projectId: string, formData: FormData) {
         if (!Array.isArray(arr)) return [];
         return arr
           .filter((x): x is string => typeof x === "string" && z.string().uuid().safeParse(x).success)
-          .slice(0, MAX_UGC_AVATAR_REFERENCE_ASSETS);
+          .slice(0, Math.min(MAX_UGC_AVATAR_REFERENCE_ASSETS, limits.maxUgcAvatarReferenceAssets));
       } catch {
         return [];
       }
@@ -90,7 +93,7 @@ export async function updateProject(projectId: string, formData: FormData) {
       const ids = Array.isArray(arr)
         ? arr
             .filter((x): x is string => typeof x === "string" && uuid.safeParse(x).success)
-            .slice(0, MAX_PROJECT_AI_STYLE_REFERENCE_ASSETS)
+            .slice(0, limits.maxProjectStyleReferenceAssets)
         : [];
       styleRefUpdate = { ai_style_reference_asset_ids: ids };
     } catch {

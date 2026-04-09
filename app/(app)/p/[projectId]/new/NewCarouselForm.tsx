@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { startCarouselGeneration } from "@/app/actions/carousels/generateCarousel";
 import { updateProjectUseSavedUgcCharacter } from "@/app/actions/projects/projectUgcCharacterActions";
@@ -23,7 +23,7 @@ import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { ImportTemplateButton } from "@/components/templates/ImportTemplateButton";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { createCheckoutSession } from "@/app/actions/subscription/createCheckoutSession";
+import { UpgradePlansDialog } from "@/components/subscription/UpgradePlansDialog";
 import {
   Gem,
   GlobeIcon,
@@ -122,7 +122,7 @@ export function NewCarouselForm({
   carouselCount = 0,
   carouselLimit = 50,
   aiGenerateUsed = 0,
-  aiGenerateLimit = 2,
+  aiGenerateLimit = 15,
   regenerateCarouselId,
   initialInputType,
   initialInputValue,
@@ -156,7 +156,7 @@ export function NewCarouselForm({
   carouselLimit?: number;
   /** AI-generated images: number of carousels using it this month (Pro only). */
   aiGenerateUsed?: number;
-  /** AI-generated images: max per month for Pro (e.g. 2). */
+  /** AI-generated images: max per month for the user’s effective plan. */
   aiGenerateLimit?: number;
   /** When set, form pre-fills from this carousel and submit regenerates it in place. */
   regenerateCarouselId?: string;
@@ -189,7 +189,8 @@ export function NewCarouselForm({
   const hasFullAccess = hasFullAccessProp ?? isPro;
   /** Web image search (Brave): Pro or first free full-access generations — not admin-only. */
   const canUseWebImages = hasFullAccess;
-  const canUseAiGenerate = isAdminUser || (hasFullAccess && aiGenerateUsed < aiGenerateLimit);
+  const canUseAiGenerate =
+    isAdminUser || (hasFullAccess && aiGenerateLimit > 0 && aiGenerateUsed < aiGenerateLimit);
   const [inputType, setInputType] = useState<"topic" | "url" | "text" | "document">(initialInputType ?? "topic");
   const [inputValue, setInputValue] = useState(initialInputValue ?? "");
   const [inputDocumentFile, setInputDocumentFile] = useState<File | null>(null);
@@ -199,7 +200,7 @@ export function NewCarouselForm({
   const [imageSource, setImageSource] = useState<"stock" | "ai_generate" | "brave">(() => {
     const ha = hasFullAccessProp ?? isPro;
     const canWeb = ha;
-    const canAi = isAdminUser || (ha && aiGenerateUsed < aiGenerateLimit);
+    const canAi = isAdminUser || (ha && aiGenerateLimit > 0 && aiGenerateUsed < aiGenerateLimit);
     if (initialUseAiGenerate && canAi) return "ai_generate";
     if (initialUseStockPhotos) return "stock";
     if (regenerateCarouselId && !initialUseStockPhotos && !initialUseAiGenerate && canWeb) return "brave";
@@ -207,6 +208,19 @@ export function NewCarouselForm({
   });
   const [useWebSearch, setUseWebSearch] = useState(initialUseWebSearch ?? false);
   const [carouselFor, setCarouselFor] = useState<"instagram" | "linkedin">(initialCarouselFor ?? "instagram");
+  /** UGC projects: Instagram/TikTok path uses AI-only backgrounds (stock/web look wrong). LinkedIn still uses stock. */
+  const ugcInstagramImagePolicy = projectContentFocus === "ugc" && carouselFor === "instagram";
+  const imageSourceOptions = useMemo(() => {
+    const out: Array<"stock" | "ai_generate" | "brave"> = [];
+    if (!ugcInstagramImagePolicy) out.push("stock");
+    if (carouselFor !== "linkedin" && (canUseAiGenerate || ugcInstagramImagePolicy)) {
+      out.push("ai_generate");
+    }
+    if (carouselFor !== "linkedin" && canUseWebImages && !ugcInstagramImagePolicy) {
+      out.push("brave");
+    }
+    return out;
+  }, [ugcInstagramImagePolicy, carouselFor, canUseAiGenerate, canUseWebImages]);
   const [viralShortsStyle, setViralShortsStyle] = useState(false);
   const [notes, setNotes] = useState(initialNotes ?? "");
   const [aiStyleRefIds, setAiStyleRefIds] = useState<string[]>(() => {
@@ -231,7 +245,7 @@ export function NewCarouselForm({
   const userLockedTemplateChoiceRef = useRef(false);
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [upgradeLoading, setUpgradeLoading] = useState(false);
+  const [plansOpen, setPlansOpen] = useState(false);
   const [driveFolderImporting, setDriveFolderImporting] = useState(false);
   const [driveFolderError, setDriveFolderError] = useState<string | null>(null);
   const [useSavedUgcCharacter, setUseSavedUgcCharacter] = useState(initialUseSavedUgcCharacter);
@@ -289,22 +303,6 @@ export function NewCarouselForm({
     setTopicSuggestOpen(false);
   }
 
-  const handleUpgrade = async () => {
-    setUpgradeLoading(true);
-    try {
-      const result = await createCheckoutSession();
-      if ("url" in result) {
-        window.location.href = result.url;
-      } else {
-        setUpgradeLoading(false);
-        alert(result.error ?? "Failed to start checkout");
-      }
-    } catch {
-      setUpgradeLoading(false);
-      alert("Something went wrong");
-    }
-  };
-
   useEffect(() => {
     if (carouselFor === "linkedin" && (imageSource === "ai_generate" || imageSource === "brave")) {
       setImageSource("stock");
@@ -314,6 +312,13 @@ export function NewCarouselForm({
   useEffect(() => {
     if (!canUseWebImages && imageSource === "brave") setImageSource("stock");
   }, [canUseWebImages, imageSource]);
+
+  useEffect(() => {
+    if (!ugcInstagramImagePolicy || !useAiBackgrounds) return;
+    if (imageSource === "stock" || imageSource === "brave") {
+      setImageSource("ai_generate");
+    }
+  }, [ugcInstagramImagePolicy, useAiBackgrounds, imageSource]);
 
   useEffect(() => {
     setUseSavedUgcCharacter(initialUseSavedUgcCharacter);
@@ -387,6 +392,12 @@ export function NewCarouselForm({
     }
     if (notes.length > CAROUSEL_NOTES_MAX_CHARS) {
       setError(`Notes are too long (max ${CAROUSEL_NOTES_MAX_CHARS.toLocaleString()} characters).`);
+      return;
+    }
+    if (ugcInstagramImagePolicy && useAiBackgrounds && !canUseAiGenerate) {
+      setError(
+        "This project uses creator (UGC) style, so backgrounds use AI-generated phone-style images only. Stock and web images are turned off for that look. Upgrade or use a free trial run with AI generate, or turn off AI images and pick photos from your library."
+      );
       return;
     }
     setIsPending(true);
@@ -472,9 +483,9 @@ export function NewCarouselForm({
               {error}
             </p>
             {!isPro && (
-              <Button type="button" variant="outline" size="sm" onClick={handleUpgrade} disabled={upgradeLoading}>
-                {upgradeLoading ? <Loader2Icon className="mr-2 size-4 animate-spin" /> : <Gem className="mr-2 size-4" />}
-                Upgrade to Pro
+              <Button type="button" variant="outline" size="sm" onClick={() => setPlansOpen(true)}>
+                <Gem className="mr-2 size-4" />
+                View plans
               </Button>
             )}
           </div>
@@ -772,12 +783,20 @@ export function NewCarouselForm({
               Backgrounds
             </CardTitle>
             <CardDescription className="text-muted-foreground/90">
-              Stock photos work on every plan. Web images and AI generate need Pro or your first {freeGenerationsTotal} free generations. Off = project colors.
-              {hasFullAccess && !isPro && (
-                <span className="block mt-1">
-                  {" "}
-                  <strong>{freeGenerationsTotal - freeGenerationsUsed}/{freeGenerationsTotal} free</strong> generations left with Web images + full editor access.
-                </span>
+              {ugcInstagramImagePolicy ? (
+                <>
+                  This project uses creator (UGC) style: with AI images on, only AI-generated backgrounds are available—stock and web search images stay off so slides don’t look like polished catalog shots. Turn AI images off to use your library instead.
+                </>
+              ) : (
+                <>
+                  Stock photos work on every plan. Web images and AI generate need Pro or your first {freeGenerationsTotal} free generations. Off = project colors.
+                  {hasFullAccess && !isPro && (
+                    <span className="block mt-1">
+                      {" "}
+                      <strong>{freeGenerationsTotal - freeGenerationsUsed}/{freeGenerationsTotal} free</strong> generations left with Web images + full editor access.
+                    </span>
+                  )}
+                </>
               )}
             </CardDescription>
           </CardHeader>
@@ -806,12 +825,13 @@ export function NewCarouselForm({
             {useAiBackgrounds && (
               <div className="space-y-2">
                 <span className="text-xs text-muted-foreground">Image source</span>
+                {projectContentFocus === "ugc" && carouselFor === "linkedin" && (
+                  <p className="text-[11px] text-muted-foreground leading-snug">
+                    LinkedIn carousels still use stock photos here for a professional feed. For phone-style UGC backgrounds, choose Instagram / TikTok above.
+                  </p>
+                )}
                 <div className="grid gap-2 sm:grid-cols-3">
-                  {([
-                    "stock",
-                    ...(carouselFor !== "linkedin" && canUseAiGenerate ? (["ai_generate"] as const) : []),
-                    ...(carouselFor !== "linkedin" && canUseWebImages ? (["brave"] as const) : []),
-                  ] as const).map((src) => {
+                  {imageSourceOptions.map((src) => {
                     const disabled = src === "ai_generate" && !canUseAiGenerate;
                     return (
                       <label
@@ -865,6 +885,11 @@ export function NewCarouselForm({
                     );
                   })}
                 </div>
+                {projectContentFocus === "ugc" && carouselFor !== "linkedin" && imageSource === "ai_generate" && canUseAiGenerate && (
+                  <p className="rounded-md border border-border/70 bg-muted/25 px-3 py-2 text-[11px] text-muted-foreground">
+                    Same face across slides? Turn on <span className="font-medium text-foreground">Same person from project</span> below (face refs in Project → Edit).
+                  </p>
+                )}
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
                   {canUseAiGenerate && imageSource === "ai_generate" && (
                     <span>
@@ -901,10 +926,10 @@ export function NewCarouselForm({
                           />
                           <span className="text-sm leading-snug">
                             <span className="font-medium text-foreground group-hover:text-foreground/90">
-                              Use saved character for this project
+                              Same person from project
                             </span>
                             <span className="block text-[11px] text-muted-foreground mt-0.5">
-                              When you have a character saved (or after you save one from a finished carousel), AI images reuse the same person. Turn off for a one-off without changing your saved character. This choice is remembered for the project.
+                              Uses lock + face refs from Project → Edit. Off = one-off. Saved per project.
                             </span>
                           </span>
                         </label>
@@ -914,11 +939,8 @@ export function NewCarouselForm({
                       </div>
                     )}
                     <p className="text-xs font-medium text-foreground">Style references (optional)</p>
-                    <p className="text-[11px] text-muted-foreground leading-relaxed">
-                      Choose up to {MAX_CAROUSEL_AI_STYLE_REFERENCE_ASSETS} library images. We summarize their look so generated backgrounds match that style.{" "}
-                      <span className="text-foreground/80">
-                        Carousel notes and these refs override project rules when they conflict.
-                      </span>
+                    <p className="text-[11px] text-muted-foreground">
+                      Up to {MAX_CAROUSEL_AI_STYLE_REFERENCE_ASSETS} library images—overall look for AI backgrounds. Notes override when they conflict.
                     </p>
                     <div className="flex flex-wrap items-center gap-2">
                       <Button
@@ -1224,13 +1246,14 @@ export function NewCarouselForm({
             )}
           </Button>
           {carouselCount >= carouselLimit && !isPro && (
-            <Button type="button" variant="default" size="lg" onClick={handleUpgrade} disabled={upgradeLoading}>
-              {upgradeLoading ? <Loader2Icon className="mr-2 size-4 animate-spin" /> : <Gem className="mr-2 size-4" />}
-              Upgrade to Pro
+            <Button type="button" variant="default" size="lg" onClick={() => setPlansOpen(true)}>
+              <Gem className="mr-2 size-4" />
+              View plans
             </Button>
           )}
         </div>
       </form>
+      <UpgradePlansDialog open={plansOpen} onOpenChange={setPlansOpen} />
     </>
   );
 }

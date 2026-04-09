@@ -34,7 +34,9 @@ export default async function AdminUserDetailPage({
             <h1 className="text-xl font-semibold tracking-tight">{u.name}</h1>
             <p className="text-muted-foreground text-sm">{u.email ?? "—"}</p>
             <div className="mt-1 flex items-center gap-2 text-xs">
-              <span className={u.plan === "pro" ? "text-primary font-medium" : "text-muted-foreground"}>
+              <span
+                className={u.plan && u.plan !== "free" ? "text-primary font-medium" : "text-muted-foreground"}
+              >
                 Plan: {u.plan ?? "—"}
               </span>
               {u.createdAt && (

@@ -1,17 +1,67 @@
-/** Pro plan price (display only). Actual price is configured in Stripe. */
-export const PRO_PRICE_DISPLAY = "$15.99";
+import type { PaidPlan } from "@/lib/server/db/types";
+
+/** Display prices — must match Stripe Products. */
+export const STARTER_PRICE_DISPLAY = "$25";
+export const PRO_PRICE_DISPLAY = "$39";
+export const STUDIO_PRICE_DISPLAY = "$59";
+
+/** Landing / upgrade copy: ordered paid tiers. */
+export const PAID_TIER_CARDS: {
+  id: PaidPlan;
+  name: string;
+  priceDisplay: string;
+  blurb: string;
+  highlights: string[];
+}[] = [
+  {
+    id: "starter",
+    name: "Starter",
+    priceDisplay: STARTER_PRICE_DISPLAY,
+    blurb: "Solo creators getting consistent on carousels.",
+    highlights: [
+      "25 carousels / month",
+      "40 exports / month",
+      "40 library images",
+      "5 AI-image carousels / month",
+      "4 custom templates",
+    ],
+  },
+  {
+    id: "pro",
+    name: "Pro",
+    priceDisplay: PRO_PRICE_DISPLAY,
+    blurb: "Most popular — weekly posting + heavier AI use.",
+    highlights: [
+      "50 carousels / month",
+      "100 exports / month",
+      "100 library images",
+      "15 AI-image carousels / month",
+      "10 custom templates",
+    ],
+  },
+  {
+    id: "studio",
+    name: "Studio",
+    priceDisplay: STUDIO_PRICE_DISPLAY,
+    blurb: "High volume and max AI-image allowance (solo).",
+    highlights: [
+      "100 carousels / month",
+      "200 exports / month",
+      "200 library images",
+      "35 AI-image carousels / month",
+      "20 custom templates",
+    ],
+  },
+];
 
 /**
  * Free users get this many carousels (lifetime count) with the same product access as Pro:
- * AI backgrounds, web search, AI image generate (within monthly beta cap), templates, export, editor, and Pro quotas.
+ * AI backgrounds, web search, AI image generate (within monthly cap), templates, export, editor, and paid-tier quotas.
  * Admin-only features stay admin-only. After this count, plan reverts to free limits and feature gates.
  */
 export const FREE_FULL_ACCESS_GENERATIONS = 3;
 
-/** Pro users can use AI-generated images for this many carousels per month (beta). Free users cannot use it. */
-export const AI_GENERATE_LIMIT_PRO = 2;
-
-/** Project settings: max library images saved as AI style references. */
+/** Project settings: max library images saved as AI style references (schema ceiling; plans may be lower). */
 export const MAX_PROJECT_AI_STYLE_REFERENCE_ASSETS = 10;
 /** New carousel form: max extra style references for one generation (merged with project; carousel IDs first). */
 export const MAX_CAROUSEL_AI_STYLE_REFERENCE_ASSETS = 5;
@@ -23,31 +73,59 @@ export const CAROUSEL_INPUT_MAX_CHARS = 20000;
 export const PROJECT_RULES_MAX_CHARS = 8000;
 /** UGC project: saved recurring character / visual lock for AI images (must match `projectFormSchema`). */
 export const UGC_CHARACTER_BRIEF_MAX_CHARS = 1200;
-/** UGC face/body library refs merged in one vision call (angles of same person). */
+/** UGC face/body library refs merged in one vision call (angles of same person) — schema ceiling. */
 export const MAX_UGC_AVATAR_REFERENCE_ASSETS = 5;
 
-/** Tester account: 500 carousel generations, double pro limits for assets/exports/templates. */
+/** Tester accounts: high limits for internal QA. */
 export const TESTER_EMAILS: string[] = ["muyumba@andrews.edu", "prudencemange@gmail.com"];
 
-/** Plan limits */
+/** Per-plan quotas. `tester` is not stored on profiles — applied by email in subscription helpers. */
 export const PLAN_LIMITS = {
   free: {
     assets: 5,
     carouselsPerMonth: 5,
     exportsPerMonth: 5,
     customTemplates: 1,
+    aiGenerateCarouselsPerMonth: 0,
+    maxProjectStyleReferenceAssets: 2,
+    maxUgcAvatarReferenceAssets: 2,
+  },
+  starter: {
+    assets: 40,
+    carouselsPerMonth: 25,
+    exportsPerMonth: 40,
+    customTemplates: 4,
+    aiGenerateCarouselsPerMonth: 5,
+    maxProjectStyleReferenceAssets: 5,
+    maxUgcAvatarReferenceAssets: 3,
   },
   pro: {
     assets: 100,
     carouselsPerMonth: 50,
     exportsPerMonth: 100,
     customTemplates: 10,
+    aiGenerateCarouselsPerMonth: 15,
+    maxProjectStyleReferenceAssets: 10,
+    maxUgcAvatarReferenceAssets: 5,
   },
-  /** Tester: 500 carousels, 2× pro for assets, exports, custom templates */
+  studio: {
+    assets: 200,
+    carouselsPerMonth: 100,
+    exportsPerMonth: 200,
+    customTemplates: 20,
+    aiGenerateCarouselsPerMonth: 35,
+    maxProjectStyleReferenceAssets: 10,
+    maxUgcAvatarReferenceAssets: 5,
+  },
   tester: {
     assets: 200,
     carouselsPerMonth: 500,
     exportsPerMonth: 200,
     customTemplates: 20,
+    aiGenerateCarouselsPerMonth: 999,
+    maxProjectStyleReferenceAssets: 10,
+    maxUgcAvatarReferenceAssets: 5,
   },
 } as const;
+
+export type PlanLimits = (typeof PLAN_LIMITS)[keyof typeof PLAN_LIMITS];

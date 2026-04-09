@@ -11,7 +11,6 @@ const MAX_USES_PER_STYLE_PHRASE = 2;
 
 const REPEATABLE_STYLE_PHRASES: { source: string; flags: string; normalized: string }[] = [
   { source: "\\bdramatic\\s+lighting\\b", flags: "gi", normalized: "dramatic lighting" },
-  { source: "\\bgolden\\s+hour\\b", flags: "gi", normalized: "golden hour" },
   { source: "\\bcinematic\\b", flags: "gi", normalized: "cinematic" },
   { source: "\\batmospheric\\b", flags: "gi", normalized: "atmospheric" },
   { source: "\\bintense\\s+close-?up\\b", flags: "gi", normalized: "intense close-up" },

@@ -2,9 +2,8 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { createCheckoutSession } from "@/app/actions/subscription/createCheckoutSession";
-import { PRO_PRICE_DISPLAY } from "@/lib/constants";
-import { Gem, Loader2Icon } from "lucide-react";
+import { Gem } from "lucide-react";
+import { UpgradePlansDialog } from "@/components/subscription/UpgradePlansDialog";
 
 type UpgradeBannerProps = {
   message?: string;
@@ -12,56 +11,39 @@ type UpgradeBannerProps = {
 };
 
 export function UpgradeBanner({
-  message = "Upgrade to Pro to edit carousels, export, and unlock AI backgrounds.",
+  message = "Upgrade to unlock more carousels, exports, AI-generated images, and editor features.",
   variant = "banner",
 }: UpgradeBannerProps) {
-  const [loading, setLoading] = useState(false);
+  const [plansOpen, setPlansOpen] = useState(false);
 
-  const handleUpgrade = async () => {
-    setLoading(true);
-    try {
-      const result = await createCheckoutSession();
-      if ("url" in result) {
-        window.location.href = result.url;
-      } else {
-        setLoading(false);
-        alert(result.error ?? "Failed to start checkout");
-      }
-    } catch {
-      setLoading(false);
-      alert("Something went wrong");
-    }
-  };
+  const cta = (
+    <Button size="sm" onClick={() => setPlansOpen(true)}>
+      <Gem className="mr-2 size-4" />
+      View plans
+    </Button>
+  );
 
   if (variant === "inline") {
     return (
-      <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4">
-        <p className="text-foreground mb-3 text-sm">{message}</p>
-        <Button size="sm" onClick={handleUpgrade} disabled={loading}>
-          {loading ? (
-            <Loader2Icon className="mr-2 size-4 animate-spin" />
-          ) : (
-            <Gem className="mr-2 size-4" />
-          )}
-          Upgrade to Pro ({PRO_PRICE_DISPLAY}/mo)
-        </Button>
-      </div>
+      <>
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4">
+          <p className="text-foreground mb-3 text-sm">{message}</p>
+          {cta}
+        </div>
+        <UpgradePlansDialog open={plansOpen} onOpenChange={setPlansOpen} />
+      </>
     );
   }
 
   return (
-    <div className="rounded-lg border border-primary/30 bg-primary/5 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-foreground text-sm">{message}</p>
-        <Button size="sm" onClick={handleUpgrade} disabled={loading}>
-          {loading ? (
-            <Loader2Icon className="mr-2 size-4 animate-spin" />
-          ) : (
-            <Gem className="mr-2 size-4" />
-          )}
-          Upgrade to Pro ({PRO_PRICE_DISPLAY}/mo)
-        </Button>
+    <>
+      <div className="rounded-lg border border-primary/30 bg-primary/5 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-foreground text-sm">{message}</p>
+          {cta}
+        </div>
       </div>
-    </div>
+      <UpgradePlansDialog open={plansOpen} onOpenChange={setPlansOpen} />
+    </>
   );
 }

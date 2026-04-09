@@ -82,7 +82,7 @@ const UNSPLASH_GENERIC_STRINGS = [
   "nature", "landscape", "landscapes", "mountain", "mountains", "forest", "ocean", "sunset", "sunrise",
   "peaceful", "serene", "calm", "abstract", "minimal", "inspirational", "encouraging", "bible", "verse", "spiritual",
   "hand holding", "cityscape", "future city", "dawn", "dusk", "horizon", "meadow", "valley", "beach", "lake", "river", "waterfall",
-  "cloud", "clouds", "sky", "light", "light bulb", "light ray", "light beam", "holding light", "soft light", "warm light", "golden hour",
+  "cloud", "clouds", "sky", "light", "light bulb", "light ray", "light beam", "holding light", "soft light", "warm light",
   "misty", "foggy", "autumn", "spring", "winter", "summer", "meditation", "zen", "tranquil", "hopeful", "hopefulness",
 ];
 const UNSPLASH_GENERIC_PATTERNS = UNSPLASH_GENERIC_STRINGS.map((s) => new RegExp(`\\b${s.replace(/\s+/g, "\\s+")}\\b`, "i"));

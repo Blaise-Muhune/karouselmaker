@@ -2,6 +2,12 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
+import type { Plan } from "./types";
+
+function profilePlanLabel(raw: string | null | undefined): Plan | null {
+  if (raw === "free" || raw === "starter" || raw === "pro" || raw === "studio") return raw;
+  return null;
+}
 
 /** Count all users in Supabase Auth (source of truth). Paginates to get accurate total. */
 async function countAuthUsers(supabase: SupabaseClient): Promise<number> {
@@ -27,7 +33,7 @@ export type AdminUserRow = {
   id: string;
   email: string | null;
   name: string;
-  plan: "free" | "pro" | null;
+  plan: Plan | null;
   createdAt: string | null;
   carouselCount: number;
   projectCount: number;
@@ -100,7 +106,7 @@ export async function getAdminUsers(): Promise<AdminUserRow[]> {
       id: u.id,
       email: u.email ?? null,
       name,
-      plan: (profile?.plan === "pro" ? "pro" : profile?.plan === "free" ? "free" : null) ?? null,
+      plan: profilePlanLabel(profile?.plan),
       createdAt: u.created_at,
       carouselCount: carouselByUser.get(u.id) ?? 0,
       projectCount: projectByUser.get(u.id) ?? 0,
@@ -120,7 +126,7 @@ export type AdminUserDetailCarousel = {
 };
 
 export type AdminUserDetails = {
-  user: { id: string; email: string | null; name: string; plan: "free" | "pro" | null; createdAt: string | null };
+  user: { id: string; email: string | null; name: string; plan: Plan | null; createdAt: string | null };
   projects: { id: string; name: string }[];
   carousels: AdminUserDetailCarousel[];
 };
@@ -164,7 +170,7 @@ export async function getAdminUserDetails(userId: string): Promise<AdminUserDeta
       id: userId,
       email: userData?.email ?? null,
       name,
-      plan: (profile?.plan === "pro" ? "pro" : profile?.plan === "free" ? "free" : null) ?? null,
+      plan: profilePlanLabel(profile?.plan),
       createdAt: userData?.created_at ?? null,
     },
     projects,

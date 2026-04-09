@@ -25,9 +25,8 @@ export const CONTENT_FOCUS_OPTIONS: readonly {
   },
   {
     id: "ugc",
-    label: "UGC",
-    description:
-      "Phone-camera authentic feel, one recurring “creator” in images when a person fits—save a character to the project or add a face reference from your library.",
+    label: "Creator / phone (UGC)",
+    description: "Casual creator voice + phone-style images. Same face across slides: use AI generate + optional refs below.",
   },
   {
     id: "product_placement",
@@ -62,8 +61,9 @@ export function contentFocusLabel(id: ContentFocusId): string {
 export function contentFocusCarouselInstructions(id: ContentFocusId): string {
   switch (id) {
     case "ugc":
-      return `CONTENT STYLE — UGC (user-generated content): Write like a real creator talking to the camera or community—not a brand deck. First-person or “you” is welcome where it fits; keep it conversational, specific, and imperfect-in-a-good-way (avoid corporate polish). Hooks should feel like a friend’s take, not a press release. **Default image look = natural iPhone (or phone) photo**—what a real person could actually take: slight sensor grain in medium light, soft focus, muted true-to-life colors, flat practical indoor light when indoors, casual messy-real details—**not** studio HDR, beauty retouch, catalog gloss, or “perfect AI” faces. If carousel or project notes explicitly ask for studio, commercial, cinematic lighting, or high-end production look, follow that instead for images. For image_queries when backgrounds are AI: match **iPhone-main-camera authenticity** for the scene—believable light, realistic skin, natural angles (eye level, slight high/low, arm’s length, mirror selfie only when the setting fits)—**no** crane, drone, or random epic framing unless the slide is literally about that. **Each image_query must match that slide’s headline and body** (setting, props, mood). When a person fits the slide, **one recurring creator** across the deck—same face, hair, skin tone, build, casual wardrobe vibe; vary pose and scene only, not a new model each slide. Mention this UGC angle fairly across hook, several body beats, and image intent.
-LAST SLIDE / CTA (UGC): Always end with slide_type "cta" and a **real** call-to-action—never an empty sign-off. If the topic, project rules, or notes mention something you’re promoting (product, app, service, offer), close with a **natural** next step for that thing in plain words (link in bio, DM, app name, try it)—no URLs on slides; use creator_handle when it fits. If there’s nothing to sell, still CTA in a way that matches the post: follow (with handle if provided), save for when this helps, or share with someone who gets it—**one primary ask**, maybe **one short second line** max; never a robotic stack of orders. The CTA should feel like you’re **naturally** wrapping the convo, not reading ad copy.`;
+      return `CONTENT STYLE — UGC (user-generated content): **Headline and body on every slide** should read like one real creator—not a brand deck or LinkedIn brochure. Conversational, specific, plain language; first-person or direct “you” when it fits the beat. **Do not overdo it**: vary how sentences start; not every slide needs “I” or hype words; list or step slides can stay short and direct without filler slang (“literally”, “insane”, “you guys”) on every line. Keep the same relaxed voice throughout—hook, middle slides, and CTA should feel like the same person, not slide 1 casual and slide 4 corporate.
+**Images (when AI backgrounds):** Natural iPhone-style shots—slight grain in medium light, soft focus, muted colors, practical indoor light when indoors—**not** studio HDR, beauty retouch, catalog gloss, plastic “AI” faces, or fake-perfect staging unless the slide copy clearly calls for it. If notes ask for studio/cinematic, follow that. image_queries: believable light and angles (eye level, arm’s length, mirror/gym only when the copy fits); match each slide’s headline and body. **One recurring creator** when a person appears—same face, hair, skin, build, casual wardrobe; vary pose and scene only.
+LAST SLIDE / CTA (UGC): Always slide_type "cta" with a real next step. If a product/service is in play, plain language (link in bio, DM, try it)—no URLs on slides; creator_handle when it fits. Otherwise follow/save/share in a human way—**one primary ask**, optional short second line; not a billboard stack. Sound like you’re wrapping the convo naturally.`;
     case "product_placement":
       return `CONTENT STYLE — product placement: Integrate the product, app, or brand as a natural part of the story—problem → how it shows up in real life → outcome. Avoid screaming “buy now” on every slide; one or two slides can be more direct, the rest should feel like context and proof. image_queries: show product-in-environment, hands using it, before/after mood, packaging on a real desk—believable integration, not floating packshots unless the slide is explicitly about the pack. Reflect this placement mindset across several slides (fair coverage in headlines, body, and visuals) without repeating the same sales line.
 LAST SLIDE / CTA (product placement): Always end with slide_type "cta" and a **clear** call-to-action. When the input or project rules name (or clearly describe) what you’re promoting, the last slide must invite a **specific** next step for that product/service: try it, start free, link in bio, DM, book a demo—plain language, **no URLs on slides**; use creator_handle when appropriate. When nothing concrete is named, still close with a strong platform CTA (follow/save/share) tuned to the carousel content. Sound **confident and human**, not desperate or repetitive with earlier slides.`;
@@ -96,7 +96,7 @@ export function contentFocusTopicHint(id: ContentFocusId): string {
 export function contentFocusImagePipelineLine(id: ContentFocusId): string {
   switch (id) {
     case "ugc":
-      return "Project content style: UGC—default natural phone photo (slight grain, soft focus, muted colors, practical light; not studio HDR or beauty retouch). Natural angles: eye level / arm’s length / slight tilt; mirror selfie only if scene fits. Strict same-person lock when a human appears: same face shape, hair, skin tone, build, age read, casual outfit palette—vary pose/scene only. Override to studio/cinematic/commercial only if notes explicitly request it.";
+      return "Project content style: UGC—default natural phone photo (slight grain, soft focus, muted colors, practical light; not studio HDR, beauty retouch, or AI-smooth stock look). Avoid overly convenient or synthetic compositions. Natural angles: eye level / arm’s length / slight tilt; mirror selfie only if scene fits. Strict same-person lock when a human appears: same face shape, hair, skin tone, build, age read, casual outfit palette—vary pose/scene only. Override to studio/cinematic/commercial only if notes explicitly request it.";
     case "product_placement":
       return "Project content style: product-in-life—show product or brand in real contexts, hands-on use, believable environments; avoid generic stock unrelated to the topic.";
     case "educational":
@@ -119,7 +119,7 @@ export function appendContentFocusToProjectRules(rules: string, id: ContentFocus
 export function contentFocusHookHint(id: ContentFocusId): string {
   switch (id) {
     case "ugc":
-      return "Content style: UGC—hooks should sound like a real person posting, not a slogan.";
+      return "Content style: UGC—hook and body sound like one creator (natural, not corporate); don’t crank influencer voice to 11.";
     case "product_placement":
       return "Content style: product-friendly—hooks can tease a problem/solution or “what I use” without spammy hype.";
     case "educational":

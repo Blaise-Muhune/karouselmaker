@@ -197,7 +197,8 @@ export function EditorExportSection({
   const enabledVideoPostPlatforms = postToPlatforms
     ? (["facebook", "tiktok", "instagram", "linkedin", "youtube"] as const).filter((k) => postToPlatforms[k])
     : [];
-  const limit = exportsLimit ?? (isPro ? PLAN_LIMITS.pro.exportsPerMonth : PLAN_LIMITS.free.exportsPerMonth);
+  const limit =
+    exportsLimit ?? (isPro ? PLAN_LIMITS.pro.exportsPerMonth : PLAN_LIMITS.free.exportsPerMonth);
   const canExport = exportsUsedThisMonth < limit;
   const router = useRouter();
   const [localExportFormat, setLocalExportFormat] = useState<ExportFormat>(exportFormat);
@@ -1290,8 +1291,8 @@ export function EditorExportSection({
             <UpgradeBanner
               message={
                 exportsUsedThisMonth >= limit
-                  ? `You've used your ${limit} free exports this month. Upgrade to Pro for ${PLAN_LIMITS.pro.exportsPerMonth}/month.`
-                  : `Free: ${exportsUsedThisMonth}/${limit} exports this month. Upgrade to Pro for ${PLAN_LIMITS.pro.exportsPerMonth}/month.`
+                  ? `You've used your ${limit} free exports this month. Paid plans include up to ${PLAN_LIMITS.studio.exportsPerMonth} exports/month (Studio).`
+                  : `Free: ${exportsUsedThisMonth}/${limit} exports this month. View plans for higher export limits.`
               }
               variant="inline"
             />

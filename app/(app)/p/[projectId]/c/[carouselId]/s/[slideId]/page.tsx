@@ -183,7 +183,7 @@ export default async function EditSlidePage({
       {!hasFullAccess && (
         <div className="shrink-0 px-3 py-1.5">
           <UpgradeBanner
-            message="You've used your 3 free generations with full access. Upgrade to Pro to edit template, background, and all carousel features."
+            message="You've used your 3 free generations with full access. Choose a plan to edit template, background, and all carousel features."
             variant="inline"
           />
         </div>

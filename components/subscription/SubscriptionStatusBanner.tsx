@@ -1,19 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { useEffect, useCallback } from "react";
-import { createCheckoutSession } from "@/app/actions/subscription/createCheckoutSession";
 import { CheckIcon, Gem, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { UpgradePlansDialog } from "@/components/subscription/UpgradePlansDialog";
 
 const MESSAGES: Record<string, { message: string; variant: "success" | "info" | "muted"; showUpgrade?: boolean }> = {
   success: {
-    message: "You're now a Pro subscriber. Enjoy 50 carousels/month, 100 exports/month, 100 images, full editing, and AI backgrounds.",
+    message:
+      "You're subscribed. Your plan limits apply right away—open a project to create carousels, exports, and AI-generated backgrounds.",
     variant: "success",
   },
   cancelled: {
-    message: "Checkout was cancelled. You can upgrade anytime when you're ready.",
+    message: "Checkout was cancelled. You can pick a plan anytime when you're ready.",
     variant: "muted",
     showUpgrade: true,
   },
@@ -22,7 +22,7 @@ const MESSAGES: Record<string, { message: string; variant: "success" | "info" | 
     variant: "info",
   },
   expired: {
-    message: "Your Pro subscription has ended. Upgrade again anytime to restore full access.",
+    message: "Your paid plan has ended. Subscribe again anytime to restore full limits.",
     variant: "muted",
     showUpgrade: true,
   },
@@ -33,7 +33,7 @@ export function SubscriptionStatusBanner() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const status = searchParams.get("subscription");
-  const [loading, setLoading] = useState(false);
+  const [plansOpen, setPlansOpen] = useState(false);
 
   const clearParam = useCallback(() => {
     const next = new URLSearchParams(searchParams);
@@ -48,34 +48,17 @@ export function SubscriptionStatusBanner() {
     return () => clearTimeout(timer);
   }, [status, clearParam]);
 
-  // Refresh server data when subscription succeeds/updates so Pro features unlock immediately
   useEffect(() => {
     if (status === "success" || status === "updated") {
-      router.refresh(); // immediate refresh in case webhook already completed
-      const t1 = setTimeout(() => router.refresh(), 800); // webhook typically completes within 1s
-      const t2 = setTimeout(() => router.refresh(), 2500); // fallback for slow webhooks
+      router.refresh();
+      const t1 = setTimeout(() => router.refresh(), 800);
+      const t2 = setTimeout(() => router.refresh(), 2500);
       return () => {
         clearTimeout(t1);
         clearTimeout(t2);
       };
     }
   }, [status, router]);
-
-  const handleUpgrade = async () => {
-    setLoading(true);
-    try {
-      const result = await createCheckoutSession();
-      if ("url" in result) {
-        window.location.href = result.url;
-      } else {
-        setLoading(false);
-        alert(result.error ?? "Failed to start checkout");
-      }
-    } catch {
-      setLoading(false);
-      alert("Something went wrong");
-    }
-  };
 
   const config = status ? MESSAGES[status] : null;
   if (!config) return null;
@@ -87,30 +70,29 @@ export function SubscriptionStatusBanner() {
   };
 
   return (
-    <div
-      className={`mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4 ${variantStyles[config.variant]}`}
-      role="status"
-    >
-      <div className="flex items-center gap-2">
-        {config.variant === "success" && <CheckIcon className="size-5 shrink-0" />}
-        {config.variant === "muted" && status === "cancelled" && <XIcon className="size-5 shrink-0 opacity-70" />}
-        <p className="text-sm font-medium">{config.message}</p>
-      </div>
-      <div className="flex items-center gap-2 shrink-0">
-        {config.showUpgrade && (
-          <Button size="sm" onClick={handleUpgrade} disabled={loading} loading={loading}>
-            {loading ? "Loading…" : (
-              <>
-                <Gem className="mr-2 size-4" />
-                Upgrade to Pro
-              </>
-            )}
+    <>
+      <div
+        className={`mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4 ${variantStyles[config.variant]}`}
+        role="status"
+      >
+        <div className="flex items-center gap-2">
+          {config.variant === "success" && <CheckIcon className="size-5 shrink-0" />}
+          {config.variant === "muted" && status === "cancelled" && <XIcon className="size-5 shrink-0 opacity-70" />}
+          <p className="text-sm font-medium">{config.message}</p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {config.showUpgrade && (
+            <Button size="sm" onClick={() => setPlansOpen(true)}>
+              <Gem className="mr-2 size-4" />
+              View plans
+            </Button>
+          )}
+          <Button variant="ghost" size="sm" onClick={clearParam} aria-label="Dismiss">
+            Dismiss
           </Button>
-        )}
-        <Button variant="ghost" size="sm" onClick={clearParam} aria-label="Dismiss">
-          Dismiss
-        </Button>
+        </div>
       </div>
-    </div>
+      <UpgradePlansDialog open={plansOpen} onOpenChange={setPlansOpen} />
+    </>
   );
 }

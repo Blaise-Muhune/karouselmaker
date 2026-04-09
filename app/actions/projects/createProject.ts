@@ -5,12 +5,14 @@ import { getUser } from "@/lib/server/auth/getUser";
 import { createProject as dbCreateProject } from "@/lib/server/db";
 import type { ProjectInsert } from "@/lib/server/db/types";
 import { MAX_UGC_AVATAR_REFERENCE_ASSETS } from "@/lib/constants";
+import { getEffectivePlanLimits } from "@/lib/server/subscription";
 import { projectFormSchema, projectFormToDbPayload } from "@/lib/validations/project";
 import { z } from "zod";
 import { uploadProjectLogo } from "./uploadProjectLogo";
 
 export async function createProject(formData: FormData) {
   const { user } = await getUser();
+  const limits = await getEffectivePlanLimits(user.id, user.email);
 
   const raw = {
     name: formData.get("name") as string,
@@ -26,7 +28,7 @@ export async function createProject(formData: FormData) {
         const uuid = z.string().uuid();
         return arr
           .filter((x): x is string => typeof x === "string" && uuid.safeParse(x).success)
-          .slice(0, MAX_UGC_AVATAR_REFERENCE_ASSETS);
+          .slice(0, Math.min(MAX_UGC_AVATAR_REFERENCE_ASSETS, limits.maxUgcAvatarReferenceAssets));
       } catch {
         return [];
       }
@@ -73,7 +75,14 @@ export async function createProject(formData: FormData) {
     return { error: parsed.error.flatten().fieldErrors };
   }
 
-  const payload = projectFormToDbPayload(parsed.data);
+  const capped = {
+    ...parsed.data,
+    ugc_character_avatar_asset_ids: (parsed.data.ugc_character_avatar_asset_ids ?? []).slice(
+      0,
+      limits.maxUgcAvatarReferenceAssets
+    ),
+  };
+  const payload = projectFormToDbPayload(capped);
 
   let project;
   try {

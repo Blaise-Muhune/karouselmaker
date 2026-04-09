@@ -75,7 +75,7 @@ export async function countCarouselsLifetime(userId: string): Promise<number> {
   return count ?? 0;
 }
 
-/** Count carousels generated with AI images (use_ai_generate) by this user in the current month. Used to enforce AI_GENERATE_LIMIT_PRO. */
+/** Count carousels generated with AI images (use_ai_generate) by this user in the current month. Enforced per plan via `PLAN_LIMITS.*.aiGenerateCarouselsPerMonth`. */
 export async function countAiGenerateCarouselsThisMonth(userId: string): Promise<number> {
   const supabase = await createClient();
   const startOfMonth = new Date();

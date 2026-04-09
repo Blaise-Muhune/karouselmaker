@@ -4,7 +4,7 @@
  * On safety rejection: retry OpenAI with simplified prompt first; if that fails, then Replicate (Ideogram then FLUX).
  */
 
-import OpenAI from "openai";
+import OpenAI, { toFile } from "openai";
 import { generateImageViaReplicate } from "@/lib/server/replicateImageGenerate";
 
 const IMAGE_MODELS = ["gpt-image-1-mini", "gpt-image-1", "gpt-image-1.5"] as const;
@@ -42,6 +42,11 @@ export type ImagePromptContext = {
   seriesVisualConsistency?: string;
   /** UGC: face/body lock (vision summary of user avatar +/or saved brief)—injected even when referenceStyleSummary is set. */
   ugcCharacterLock?: string;
+  /**
+   * UGC: raw reference photos (same person). When non-empty, OpenAI uses `images.edit` so the model
+   * conditions on pixels—not only the text lock. JPEG/PNG bytes; normalized server-side before upload.
+   */
+  ugcReferenceImageBuffers?: Buffer[];
   /** UGC: prefer smartphone-candid base wording instead of “professional photo” defaults. */
   ugcCasualPhoneLook?: boolean;
   /** Desired aspect ratio for generated image. Default 4:5; can be overridden from user notes (e.g. "square", "9:16"). */
@@ -103,20 +108,6 @@ function isUgcNaturalPhoneLookActive(context?: ImagePromptContext): boolean {
   );
 }
 
-/** Keep cinematic feel but dial back golden hour to a touch—not heavy. */
-function softenStylePhrases(s: string): string {
-  return s
-    .replace(/\bgolden hour\b/gi, "a touch of golden hour")
-    .replace(/\bheavy golden hour\b/gi, "a touch of golden hour")
-    .replace(/\bdeeply cinematic\b/gi, "cinematic")
-    .replace(/\bhighly dramatic\b/gi, "dramatic")
-    .replace(/\bdramatic cinematic\b/gi, "cinematic")
-    .replace(/\bcinematic lighting\b/gi, "subtle cinematic lighting")
-    .replace(/\bvery atmospheric\b/gi, "atmospheric")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-}
-
 /** True when the API error is a 400 safety system rejection (so we can retry with a simplified prompt). */
 function isSafetyRejection(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
@@ -172,14 +163,14 @@ function buildSafeRetryPrompt(
   if (ref) {
     const refBrief = truncateForContext(ref, 480);
     const phone = opts?.ugcNaturalPhone
-      ? " Natural smartphone realism: slight sensor grain in shadows, soft focus, muted colors—like a real phone in that lighting—not studio HDR or beauty retouch."
+      ? " Natural smartphone realism: slight sensor grain in shadows, soft focus, muted colors—like a real phone in that lighting—not studio HDR, beauty retouch, or AI-smooth plastic skin. Avoid stock-catalog staging."
       : "";
-    return `Generate one image that closely matches this user reference style: ${refBrief}. Subject and scene: ${concept}.${phone} No text, no logos. Do not add generic golden-hour or stock lighting—stay faithful to the reference look.${faceLine}`;
+    return `Generate one image that closely matches this user reference style: ${refBrief}. Subject and scene: ${concept}.${phone} No text, no logos. Stay faithful to the reference look; lighting and time of day should follow the reference and the scene.${faceLine}`;
   }
   if (opts?.ugcNaturalPhone) {
-    return `Generate one candid phone-camera image (main-camera realism: natural dynamic range, slight grain OK in medium indoor light, soft not razor-sharp, muted highlights—no ad gloss) that closely resembles: ${concept}. No text, no logos.${faceLine}`;
+    return `Generate one candid phone-camera image (iPhone-style main camera: natural dynamic range, slight grain in shadows, soft not razor-sharp, muted highlights—no ad gloss, no synthetic perfection) that closely resembles: ${concept}. Must look like a real snapshot, not a polished AI still. No text, no logos.${faceLine}`;
   }
-  return `Generate a single professional image that closely resembles the following concept. Same subject, setting, and mood—appropriate for a general audience. No text, no logos. Concept: ${concept}. Soft lighting, subtle cinematic feel, suitable as a background.${faceLine}`;
+  return `Generate a single professional image that closely resembles the following concept. Same subject, setting, and mood—appropriate for a general audience. No text, no logos. Concept: ${concept}. Lighting natural to the scene, suitable as a background.${faceLine}`;
 }
 
 /**
@@ -210,9 +201,9 @@ function buildSafeFallbackPrompt(
     return `Match this reference visual style: ${truncateForContext(ref, 420)}. Subject: ${subject}.${phone} No text, no logos. Preserve palette and camera feel from the style description—avoid generic cinematic stock look.`;
   }
   if (opts?.ugcNaturalPhone) {
-    return `Candid phone-camera image: ${subject}. Natural light for the scene, slight sensor noise, soft focus, muted colors—real person could have taken it. No text, no logos.`;
+    return `Candid phone-camera image: ${subject}. Natural light for the scene, slight sensor noise, soft focus, muted colors—real person could have taken it on a phone; avoid HDR stock look and overly convenient AI composition. No text, no logos.`;
   }
-  return `Professional cinematic image: ${subject}. Atmospheric, dramatic lighting, moody and evocative. No text, no logos. High quality, suitable as a background.`;
+  return `Professional photograph: ${subject}. Lighting and mood that fit the subject and setting. No text, no logos. High quality, suitable as a background.`;
 }
 
 /** True when the prompt is just "Bible as object" (book on table, open Bible, etc.)—we want to replace with character/scene for hook. */
@@ -232,9 +223,9 @@ const MAX_CONTEXT_BLOCK_LEN = 3600;
 /** Room for structured reference-image style brief (vision summary); aligns with summarizeStyleReferenceImages cap. */
 const MAX_REFERENCE_STYLE_IN_PROMPT = 1650;
 
-/** When user attached reference images: dominate the prompt—no house “golden hour / vary angles / stock” defaults. */
+/** When user attached reference images: dominate the prompt—no house stock defaults that fight the refs. */
 const REFERENCE_STYLE_FIRST_LINE =
-  "User attached reference images: match their visual language as closely as possible—palette and color grading, lighting direction and quality, lens/DOF/bokeh, typical camera angles and shot scale, background treatment, and wardrobe/styling level when people appear. Do not substitute generic social-feed defaults (golden hour, forced cinematic drama, rotating shot types just for variety, or stock lighting). Subject and story come from the slide text and topic below; references define HOW the image should look. Carousel notes override only when they explicitly conflict.";
+  "User attached reference images: match their visual language as closely as possible—palette and color grading, lighting direction and quality, lens/DOF/bokeh, typical camera angles and shot scale, background treatment, and wardrobe/styling level when people appear. Do not substitute unrelated generic social-feed looks or forced drama just for variety. Subject and story come from the slide text and topic below; references define HOW the image should look. Carousel notes override only when they explicitly conflict.";
 
 /** Short global line: real people accurate, inclusive. Reused instead of long repeated preamble. */
 const GLOBAL_REAL_PEOPLE_LINE =
@@ -270,17 +261,15 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
   const subjectDefault = "Clean, well-lit photo, clear background, natural lighting";
   const subjectFallbackForRefs = "Scene and subject as described by the slide headline, content, and topic below";
   const subjectRaw = q || (hasReferenceStyle ? subjectFallbackForRefs : subjectDefault);
-  const subject = hasReferenceStyle ? subjectRaw : softenStylePhrases(subjectRaw);
+  const subject = subjectRaw;
   const ugcPhone = isUgcNaturalPhoneLookActive(context);
 
-  const hasDramaCue = /\b(dramatic|cinematic|golden hour|atmospheric|bokeh|backlight|intense|mysterious|celebratory)\b/i.test(subject);
-  const suggestsIndoor = /\b(desk|office|room|indoor|kitchen|interior|workspace|lamp|windowless|inside|gym)\b/i.test(subject);
-  const lightingCue = suggestsIndoor
-    ? "Lighting appropriate for indoor setting (soft window light, lamp, or overhead); no golden hour."
-    : "Subtle cinematic feel; a touch of golden hour only if outdoor/sun fits; not overly heavy.";
-
   const ugcPhoneRealismSuffix =
-    "Natural smartphone look: slight sensor grain in dim areas, soft focus (not razor-sharp), muted true-to-life colors, whites not blown out—like a real phone in that environment. No beauty-retouch skin, no studio HDR or ad gloss.";
+    "iPhone-style realism only (unless carousel/project notes explicitly ask for studio, commercial, or cinematic): slight sensor grain in shadows, soft focus (not razor-sharp), muted true-to-life colors, natural dynamic range—like a real main-camera shot in that room or street. No beauty-retouch or filter skin, no studio HDR, no ad gloss, no suspiciously perfect exposure on every surface.";
+
+  /** Reject “too easy” AI/stock staging; keep output plausible as a phone snapshot. */
+  const ugcAntiConvenienceLine =
+    "Do not make the image 'convenient' in an AI way: avoid plastic-smooth skin, hyper-symmetrical hero framing, empty minimalist sets unless the slide implies that, buttery global HDR, every object perfectly lit, or catalog/stock render vibes. Slightly messy real-world detail, minor exposure quirks, and imperfect composition are desirable. The viewer should believe a person actually held a phone there—not a polished synthetic still.";
 
   /** Image description sent in full—never truncated. With reference style: no app lighting/stock framing—only subject + no text. */
   const base = hasReferenceStyle
@@ -291,9 +280,9 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
       ? subject.length > 45
         ? `Realistic phone photo (main camera, handheld): ${subject}. ${ugcPhoneRealismSuffix} Light and angle match the scene as if someone stood there with a phone—mirror selfie or arm’s-length only when the setting fits (gym, bathroom mirror, etc.). No text, no logos.`
         : `Realistic phone photo: ${subject}. ${ugcPhoneRealismSuffix} No text, no logos.`
-      : subject.length > 50 && (hasDramaCue || /(of|in|with|on|at)\s+\w+/i.test(subject))
-        ? `${subject}. ${lightingCue} No text, no logos.`
-        : `Professional photo: ${subject}. ${lightingCue} Suitable as a background. No text, no logos.`;
+      : subject.length > 50
+        ? `${subject}. No text, no logos.`
+        : `Professional photo: ${subject}. Suitable as a background. No text, no logos.`;
 
   const parts: string[] = [];
 
@@ -311,7 +300,7 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
     );
     if (ugcPhone) {
       parts.push(
-        "UGC default: match the reference, but keep believable phone-captured authenticity—imperfections welcome (light noise, casual framing, practical indoor light). Do not upgrade to glossy commercial or catalog polish unless carousel notes explicitly ask for studio or cinematic lighting."
+        "UGC default: match the reference, but keep believable phone-captured authenticity—imperfections welcome (light noise, casual framing, practical indoor light). Do not upgrade to glossy commercial, catalog polish, or AI-convenient staging unless carousel notes explicitly ask for studio or cinematic lighting."
       );
     }
   }
@@ -327,6 +316,7 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
     parts.push(
       "Camera: natural phone POV—eye level, slight high or low like someone held the device; plausible focal length (not ultra-wide distortion unless the scene calls for it). No crane, drone, or floating product shots unless the slide content is literally about those. Framing and environment must follow this slide's headline and body so the image feels inevitable for that beat—not a random stock angle."
     );
+    parts.push(ugcAntiConvenienceLine);
   }
 
   if (context?.genericFacesOnly) {
@@ -372,7 +362,7 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
       parts.push(
         ugcPhone
           ? "First slide (hook): scroll-stopping but still shot like a real phone—candid framing, natural light, one clear moment from the topic. Bold is OK (close face, strong expression, messy real desk) but stay iPhone-plausible—no cinematic crane or staged ad angles. Indoor = indoor light only."
-          : "First slide (hook): striking, scroll-stopping. Vary—close-up, mid-shot action, scale contrast, or micro-story. Avoid clichés: no person from behind at window, no coffee+notebook, no silhouette at sunrise. Indoor = indoor lighting, not golden hour."
+          : "First slide (hook): striking, scroll-stopping. Vary—close-up, mid-shot action, scale contrast, or micro-story. Avoid clichés: no person from behind at window, no coffee+notebook, no silhouette at sunrise. Let lighting and time of day fit the scene naturally."
       );
     } else {
       parts.push(
@@ -404,14 +394,15 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
     contextBlock = contextBlock.slice(0, MAX_CONTEXT_BLOCK_LEN).trim().replace(/\s+[^\s]*$/, "") + ".";
   }
 
-  const colorGradingLine =
-    "Color: natural, true-to-life grading when it fits the subject; avoid default neon magenta/purple gradients unless the topic is explicitly about that look.";
+  const colorGradingLine = ugcPhone
+    ? "Color: muted, phone-realistic—no pumped saturation, no neon teal-orange blockbuster grade, no Instagram filter glow unless carousel notes ask for it."
+    : "Color: natural, true-to-life grading when it fits the subject; avoid default neon magenta/purple gradients unless the topic is explicitly about that look.";
 
   if (!contextBlock.trim()) {
     return hasReferenceStyle ? base : `${colorGradingLine} ${base}`;
   }
   if (hasReferenceStyle) {
-    return `${contextBlock}. Generate this image: ${base}`;
+    return `${contextBlock}.${ugcPhone ? ` ${colorGradingLine}` : ""} Generate this image: ${base}`;
   }
   return `${contextBlock}. ${colorGradingLine} Generate this image: ${base}`;
 }
@@ -432,6 +423,30 @@ function aspectToOpenAISize(aspect: "1:1" | "4:5" | "9:16" | "2:3" | "16:9"): "1
   return "1024x1536"; // 4:5, 9:16, 2:3 use portrait
 }
 
+/** Prepended when using images.edit with UGC reference photos (multimodal identity conditioning). */
+const UGC_IMAGE_EDIT_PREFIX =
+  "The attached image(s) are reference photos of the recurring creator. Preserve their facial identity, hair, skin tone, and approximate build. Generate one NEW photograph for the scene below—different framing and setting than the references, not a crop or collage of the uploads. Match iPhone-main-camera realism in the output (natural grain, soft detail, believable light)—not a beauty-app portrait, CGI avatar, or glossy stock render unless project/carousel notes explicitly request high-end production. ";
+
+const MAX_UGC_REF_IMAGES_EDIT = 8;
+
+function pickUgcReferenceBuffers(context?: ImagePromptContext): Buffer[] {
+  const raw = context?.ugcReferenceImageBuffers ?? [];
+  return raw.filter((b) => Buffer.isBuffer(b) && b.length > 0).slice(0, MAX_UGC_REF_IMAGES_EDIT);
+}
+
+function extractB64FromImagesResponse(result: { data?: Array<{ b64_json?: string; revised_prompt?: string }> }): {
+  b64: string;
+  revised?: string;
+} | null {
+  const first = result.data?.[0];
+  const b64 = first?.b64_json ?? (first as { b64_json?: string } | undefined)?.b64_json;
+  if (!b64) return null;
+  return {
+    b64,
+    revised: (first as { revised_prompt?: string })?.revised_prompt,
+  };
+}
+
 export async function generateImageFromPrompt(
   query: string,
   options?: { model?: ImageModel; context?: ImagePromptContext }
@@ -446,9 +461,25 @@ export async function generateImageFromPrompt(
   const openaiSize = aspectToOpenAISize(aspect);
 
   const openai = new OpenAI({ apiKey });
-  const prompt = queryToPrompt(query, options?.context);
+  const refBuffers = pickUgcReferenceBuffers(options?.context);
+  const useUgcRefEdit = refBuffers.length > 0;
+  const basePrompt = queryToPrompt(query, options?.context);
+  const prompt = useUgcRefEdit ? `${UGC_IMAGE_EDIT_PREFIX}${basePrompt}` : basePrompt;
   const model = options?.model ?? getDefaultImageModel();
   const quality = model === "gpt-image-1.5" ? "medium" : "low";
+
+  let refFiles: File[] | undefined;
+  if (useUgcRefEdit) {
+    try {
+      refFiles = await Promise.all(
+        refBuffers.map((buf, i) => toFile(buf, `ugc-ref-${i}.jpg`, { type: "image/jpeg" }))
+      );
+    } catch (e) {
+      console.warn("[openaiImageGenerate] Could not prepare UGC reference files:", e instanceof Error ? e.message : e);
+      refFiles = undefined;
+    }
+  }
+  const canEdit = Boolean(refFiles?.length);
 
   console.log(
     "[openaiImageGenerate] Full prompt (" +
@@ -456,61 +487,91 @@ export async function generateImageFromPrompt(
       " chars) | aspect:",
     aspect,
     "| size:",
-    openaiSize +
-      "\n" +
+    openaiSize,
+    "| ugcRefEdit:",
+    canEdit,
+    "\n" +
       prompt +
       "\n"
   );
 
-  try {
+  const tryUgcEdit = async (editPrompt: string): Promise<{ b64: string; revised?: string } | null> => {
+    if (!refFiles?.length) return null;
+    try {
+      const imageArg = refFiles.length === 1 ? refFiles[0]! : refFiles;
+      const out = await openai.images.edit({
+        model,
+        image: imageArg,
+        prompt: editPrompt,
+        n: 1,
+        size: openaiSize,
+        quality,
+        output_format: "jpeg",
+        ...(model === "gpt-image-1" || model === "gpt-image-1.5"
+          ? ({ input_fidelity: "high" } as const)
+          : {}),
+      });
+      return extractB64FromImagesResponse(out);
+    } catch (e) {
+      console.warn("[openaiImageGenerate] images.edit failed:", e instanceof Error ? e.message : e);
+      return null;
+    }
+  };
+
+  const tryGenerate = async (p: string): Promise<{ b64: string; revised?: string } | null> => {
     const result = await openai.images.generate({
       model,
-      prompt,
+      prompt: p,
       n: 1,
       size: openaiSize,
       quality,
       output_format: "jpeg",
     });
+    return extractB64FromImagesResponse(result);
+  };
 
-    const first = result.data?.[0];
-    const b64 = first?.b64_json ?? (first as { b64_json?: string })?.b64_json;
-    if (!b64) {
+  try {
+    let extracted = canEdit ? await tryUgcEdit(prompt) : null;
+    if (!extracted) {
+      extracted = await tryGenerate(basePrompt);
+    }
+    if (!extracted) {
       console.log("[openaiImageGenerate] Failed: No image data in response\n");
       return { ok: false, error: "No image data in response" };
     }
 
-    const buffer = Buffer.from(b64, "base64");
+    const buffer = Buffer.from(extracted.b64, "base64");
     console.log("[openaiImageGenerate] OK\n");
     return {
       ok: true,
       buffer,
-      revisedPrompt: (first as { revised_prompt?: string })?.revised_prompt,
+      revisedPrompt: extracted.revised,
       provider: "openai",
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (isSafetyRejection(err)) {
-      const retryPrompt = buildSafeRetryPrompt(query, {
+      const retryShort = buildSafeRetryPrompt(query, {
         genericFacesOnly: options?.context?.preferRecognizablePublicFigures === true,
         referenceStyleSummary: options?.context?.referenceStyleSummary,
         ugcNaturalPhone: isUgcNaturalPhoneLookActive(options?.context),
       });
-      console.log("[openaiImageGenerate] Safety rejection. Retrying OpenAI with short concept:", retryPrompt, "\n");
+      const retryForEdit = useUgcRefEdit ? `${UGC_IMAGE_EDIT_PREFIX}${retryShort}` : retryShort;
+      console.log("[openaiImageGenerate] Safety rejection. Retrying OpenAI with short concept:", retryForEdit, "\n");
       try {
-        const retryResult = await openai.images.generate({
-          model,
-          prompt: retryPrompt,
-          n: 1,
-          size: openaiSize,
-          quality,
-          output_format: "jpeg",
-        });
-        const first = retryResult.data?.[0];
-        const b64 = first?.b64_json ?? (first as { b64_json?: string })?.b64_json;
-        if (b64) {
-          const buffer = Buffer.from(b64, "base64");
+        let retryExtracted = canEdit ? await tryUgcEdit(retryForEdit) : null;
+        if (!retryExtracted) {
+          retryExtracted = await tryGenerate(retryShort);
+        }
+        if (retryExtracted) {
+          const buffer = Buffer.from(retryExtracted.b64, "base64");
           console.log("[openaiImageGenerate] OK (OpenAI retry)\n");
-          return { ok: true, buffer, revisedPrompt: (first as { revised_prompt?: string })?.revised_prompt, provider: "openai" };
+          return {
+            ok: true,
+            buffer,
+            revisedPrompt: retryExtracted.revised,
+            provider: "openai",
+          };
         }
       } catch {
         // fall through to Replicate

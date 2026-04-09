@@ -8,6 +8,7 @@ import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { ProjectEditForm } from "./ProjectEditForm";
 import { mergeProjectUgcAvatarAssetIds } from "@/lib/server/ai/mergeProjectUgcAvatarAssetIds";
 import { normalizeContentFocusId } from "@/lib/server/ai/projectContentFocus";
+import { getEffectivePlanLimits } from "@/lib/server/subscription";
 import { ArrowLeftIcon } from "lucide-react";
 
 export default async function EditProjectPage({
@@ -18,6 +19,8 @@ export default async function EditProjectPage({
   const project = await getProject(user.id, id);
 
   if (!project) notFound();
+
+  const limits = await getEffectivePlanLimits(user.id, user.email);
 
   const projectRulesJson = project.project_rules as { rules?: string; do_rules?: string; dont_rules?: string } | undefined;
   const rulesValue =
@@ -33,9 +36,11 @@ export default async function EditProjectPage({
     logo_storage_path?: string;
   } | undefined;
   const postTo = project.post_to_platforms as { facebook?: boolean; tiktok?: boolean; instagram?: boolean; linkedin?: boolean; youtube?: boolean } | undefined;
-  const styleRefIds = Array.isArray(project.ai_style_reference_asset_ids)
-    ? project.ai_style_reference_asset_ids.filter((id): id is string => typeof id === "string")
-    : [];
+  const styleRefIds = (
+    Array.isArray(project.ai_style_reference_asset_ids)
+      ? project.ai_style_reference_asset_ids.filter((id): id is string => typeof id === "string")
+      : []
+  ).slice(0, limits.maxProjectStyleReferenceAssets);
 
   const projectWithLang = project as { language?: string };
   const defaultValues = {
@@ -43,7 +48,10 @@ export default async function EditProjectPage({
     niche: project.niche ?? "",
     content_focus: normalizeContentFocusId(project.content_focus),
     ugc_character_brief: (project as { ugc_character_brief?: string | null }).ugc_character_brief ?? "",
-    ugc_character_avatar_asset_ids: mergeProjectUgcAvatarAssetIds(project),
+    ugc_character_avatar_asset_ids: mergeProjectUgcAvatarAssetIds(project).slice(
+      0,
+      limits.maxUgcAvatarReferenceAssets
+    ),
     tone_preset: project.tone_preset as "neutral" | "funny" | "serious" | "savage" | "inspirational",
     language: projectWithLang.language ?? "en",
     slide_structure: { number_of_slides: slideStructure?.number_of_slides ?? 8 },
@@ -89,6 +97,8 @@ export default async function EditProjectPage({
           projectId={project.id}
           defaultValues={defaultValues}
           initialAiStyleReferenceAssetIds={styleRefIds}
+          maxProjectStyleReferenceAssets={limits.maxProjectStyleReferenceAssets}
+          maxUgcAvatarReferenceAssets={limits.maxUgcAvatarReferenceAssets}
           isAdmin={isAdmin(user.email ?? null)}
         />
       </div>

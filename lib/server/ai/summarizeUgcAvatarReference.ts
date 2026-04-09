@@ -15,7 +15,7 @@ const SYSTEM_SINGLE = `The user uploaded a reference photo for their own UGC-sty
 Write ONE dense paragraph (max ~350 characters) the image model can follow. Rules:
 - Describe only visible, neutral traits. No names, no claims this is a real public figure.
 - **Lock** recurring details so they never drift between slides: hair (color, length, style), face shape, skin tone, body type, signature clothing pieces when visible.
-- **Look & camera**: natural smartphone realism like the reference—slight grain in indoor light, soft focus, muted colors, practical lighting—not studio beauty lighting, not retouched skin, not glossy ad polish.
+- **Look & camera**: natural smartphone realism like the reference—slight grain in indoor light, soft focus, muted colors, practical lighting—not studio beauty lighting, not retouched skin, not glossy ad polish. Generated images must read as real iPhone-style snaps, not beauty-filter apps, CGI avatars, or “too perfect” AI stock.
 - Emphasize: same person every time when a person appears; vary only pose, angle, expression, and background.
 - Say explicitly: invented depiction for illustration, not a biometric copy; match the *gist* of look and vibe.
 - No bullet characters. Plain text only.`;
@@ -26,7 +26,7 @@ Write ONE dense paragraph (max ~420 characters) merging what is stable across al
 - Resolve conflicts by favoring **frontal / clearest face** views for facial structure; use other angles only to confirm hair, build, skin tone, and wardrobe.
 - **Lock** identity anchors: face shape, eye area, nose/mouth proportions, hair (color, length, style), skin tone, approximate age, body type, recurring casual clothing colors/silhouette.
 - Ignore background and lighting differences between uploads—describe the **person**, not the rooms.
-- **Look & camera** for generated images: natural smartphone realism—slight grain, soft focus, muted colors, practical light—not studio beauty or ad gloss.
+- **Look & camera** for generated images: natural smartphone realism—slight grain, soft focus, muted colors, practical light—not studio beauty or ad gloss; avoid synthetic perfection and convenient AI staging unless user notes demand production polish.
 - Say explicitly: invented depiction for illustration, not a biometric copy; match the *gist* across angles.
 - No bullet characters. Plain text only.`;
 

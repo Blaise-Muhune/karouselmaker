@@ -1,18 +1,26 @@
 "use server";
 
 import Stripe from "stripe";
+import { z } from "zod";
 import { getUser } from "@/lib/server/auth/getUser";
 import { getProfile, upsertProfile } from "@/lib/server/db/profiles";
+import type { PaidPlan } from "@/lib/server/db/types";
+import { stripePriceIdForPaidPlan } from "@/lib/server/stripe/paidPlanFromPriceId";
 
 const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY;
-const STRIPE_PRICE_ID = process.env.STRIPE_PRO_PRICE_ID;
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
-export async function createCheckoutSession(): Promise<
-  { url: string } | { error: string }
-> {
+const tierSchema = z.enum(["starter", "pro", "studio"]);
+
+export async function createCheckoutSession(
+  tier: PaidPlan = "pro"
+): Promise<{ url: string } | { error: string }> {
   const { user } = await getUser();
-  if (!STRIPE_SECRET || !STRIPE_PRICE_ID) {
+  const parsedTier = tierSchema.safeParse(tier);
+  const plan = parsedTier.success ? parsedTier.data : "pro";
+  const priceId = stripePriceIdForPaidPlan(plan);
+
+  if (!STRIPE_SECRET || !priceId) {
     return { error: "Stripe is not configured" };
   }
 
@@ -47,11 +55,11 @@ export async function createCheckoutSession(): Promise<
   const session = await stripe.checkout.sessions.create({
     customer: customerId,
     mode: "subscription",
-    line_items: [{ price: STRIPE_PRICE_ID, quantity: 1 }],
+    line_items: [{ price: priceId, quantity: 1 }],
     success_url: `${APP_URL}/projects?subscription=success`,
     cancel_url: `${APP_URL}/projects?subscription=cancelled`,
-    metadata: { user_id: user.id },
-    subscription_data: { metadata: { user_id: user.id } },
+    metadata: { user_id: user.id, plan },
+    subscription_data: { metadata: { user_id: user.id, plan } },
   });
 
   const url = session.url;

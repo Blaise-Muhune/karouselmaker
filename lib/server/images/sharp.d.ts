@@ -4,8 +4,9 @@
  */
 declare module "sharp" {
   interface SharpInstance {
+    rotate(): SharpInstance;
     resize(w: number, h: number, opts: unknown): SharpInstance;
-    jpeg(opts: { quality: number }): SharpInstance;
+    jpeg(opts: { quality: number; mozjpeg?: boolean }): SharpInstance;
     toBuffer(): Promise<Buffer>;
   }
   function sharp(input: Buffer, opts?: { failOnError?: boolean }): SharpInstance;

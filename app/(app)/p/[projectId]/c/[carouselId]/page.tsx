@@ -4,7 +4,7 @@ import { getUser } from "@/lib/server/auth/getUser";
 
 /** Ensure router.refresh() always gets fresh data so generating→done transition is visible. */
 export const dynamic = "force-dynamic";
-import { getSubscription } from "@/lib/server/subscription";
+import { getSubscription, getEffectivePlanLimits } from "@/lib/server/subscription";
 import { getCarousel, getProject, listSlides, listTemplatesForUser, listExportsByCarousel, countExportsThisMonth, getAsset, countCarouselsLifetime, getPlatformConnections } from "@/lib/server/db";
 import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
@@ -65,17 +65,19 @@ export default async function CarouselEditorPage({
   const resolvedSearchParams = await searchParams;
   const showGenerationPartial = resolvedSearchParams?.generation === "partial";
 
-  const [carousel, project, slides, templatesRaw, recentExports, subscription, exportCount, lifetimeCarouselCount, connections] = await Promise.all([
-    getCarousel(user.id, carouselId),
-    getProject(user.id, projectId),
-    listSlides(user.id, carouselId),
-    listTemplatesForUser(user.id, { includeSystem: true }),
-    listExportsByCarousel(user.id, carouselId, 3),
-    getSubscription(user.id, user.email),
-    countExportsThisMonth(user.id),
-    countCarouselsLifetime(user.id),
-    getPlatformConnections(user.id),
-  ]);
+  const [carousel, project, slides, templatesRaw, recentExports, subscription, exportCount, lifetimeCarouselCount, connections, limits] =
+    await Promise.all([
+      getCarousel(user.id, carouselId),
+      getProject(user.id, projectId),
+      listSlides(user.id, carouselId),
+      listTemplatesForUser(user.id, { includeSystem: true }),
+      listExportsByCarousel(user.id, carouselId, 3),
+      getSubscription(user.id, user.email),
+      countExportsThisMonth(user.id),
+      countCarouselsLifetime(user.id),
+      getPlatformConnections(user.id),
+      getEffectivePlanLimits(user.id, user.email),
+    ]);
   const connectedPlatforms = new Set(connections.map((c) => c.platform));
   const userIsAdmin = isAdmin(user.email ?? null);
 
@@ -249,10 +251,10 @@ export default async function CarouselEditorPage({
         {!subscription.isPro && (
           hasFullAccess ? (
             <p className="text-sm text-muted-foreground">
-              <strong>{freeGenerationsLeft}</strong> of {FREE_FULL_ACCESS_GENERATIONS} free generations left. Upgrade to Pro for more.
+              <strong>{freeGenerationsLeft}</strong> of {FREE_FULL_ACCESS_GENERATIONS} free generations left. Subscribe for full limits.
             </p>
           ) : (
-            <UpgradeBanner message="You've used all 3 free generations. Upgrade to Pro to edit carousels, export, and unlock AI backgrounds." />
+            <UpgradeBanner message="You've used all 3 free generations. Choose a plan to edit carousels, export, and unlock AI backgrounds." />
           )
         )}
 
@@ -304,6 +306,7 @@ export default async function CarouselEditorPage({
           isPro={hasFullAccess}
           disabled={isGenerating}
           exportsUsedThisMonth={exportCount}
+          exportsLimit={limits.exportsPerMonth}
           exportFormat={getExportFormat(carousel)}
           exportSize={getExportSize(carousel)}
           exportSettingsPath={`/p/${projectId}/c/${carouselId}`}

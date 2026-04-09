@@ -62,7 +62,7 @@ export async function uploadAssets(
     if (remaining <= 0) {
       errors.push({
         fileName: file.name,
-        error: `Asset limit reached (${limits.assets}${isPro || fullAccess ? "" : " on free plan. Upgrade to Pro for more"}).`,
+        error: `Asset limit reached (${limits.assets}${isPro || fullAccess ? "" : " on free plan. Upgrade for more capacity."}).`,
       });
       continue;
     }
@@ -101,7 +101,7 @@ export async function uploadAsset(
   if (currentCount >= limits.assets) {
     return {
       ok: false,
-      error: `Asset limit reached (${limits.assets}${isPro || fullAccess ? "" : " on free plan. Upgrade to Pro for more"}).`,
+      error: `Asset limit reached (${limits.assets}${isPro || fullAccess ? "" : " on free plan. Upgrade for more capacity."}).`,
     };
   }
 

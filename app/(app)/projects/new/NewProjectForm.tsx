@@ -60,7 +60,13 @@ const LANGUAGE_OPTIONS = [
   { value: "ko", label: "Korean" },
 ] as const;
 
-export function NewProjectForm({ isAdmin = false }: { isAdmin?: boolean }) {
+export function NewProjectForm({
+  isAdmin = false,
+  maxUgcAvatarReferenceAssets = MAX_UGC_AVATAR_REFERENCE_ASSETS,
+}: {
+  isAdmin?: boolean;
+  maxUgcAvatarReferenceAssets?: number;
+}) {
   const [isPending, startTransition] = useTransition();
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -262,9 +268,7 @@ export function NewProjectForm({ isAdmin = false }: { isAdmin?: boolean }) {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Content style</FormLabel>
-                  <p className="text-muted-foreground text-xs mb-2">
-                    UGC, product placement, educational, or storytelling—steers generation and topic ideas across the whole carousel.
-                  </p>
+                  <p className="text-muted-foreground text-xs mb-2">Tunes copy + topic ideas for the whole deck.</p>
                   <div className="flex flex-col gap-2">
                     {CONTENT_FOCUS_OPTIONS.map((opt) => {
                       const selected = field.value === opt.id;
@@ -292,9 +296,9 @@ export function NewProjectForm({ isAdmin = false }: { isAdmin?: boolean }) {
             />
             {contentFocus === "ugc" && (
               <div className="space-y-3 rounded-lg border border-primary/20 bg-primary/5 p-3">
-                <p className="text-xs font-medium text-foreground">UGC images (AI generate)</p>
-                <p className="text-muted-foreground text-[11px] leading-relaxed">
-                  We default to natural phone-camera quality and one recurring “creator” across slides. After your first AI carousel (with no face photos below), we save a character lock to this project—you can edit it anytime. Or pick up to {MAX_UGC_AVATAR_REFERENCE_ASSETS} library photos of the <strong>same person</strong> (different angles)—we merge them in one vision step; per-slide prompts still vary scenes.
+                <p className="text-muted-foreground text-[11px] leading-snug">
+                  Same face in AI slides: <strong>AI generate</strong> + <strong>Same person from project</strong> on New carousel. Up to{" "}
+                  {maxUgcAvatarReferenceAssets} photos here helps—optional text lock below.
                 </p>
                 <FormField
                   control={form.control}
@@ -337,7 +341,7 @@ export function NewProjectForm({ isAdmin = false }: { isAdmin?: boolean }) {
                             onClick={() => setUgcAvatarPickerOpen(true)}
                           >
                             <ImageIcon className="mr-1.5 size-3.5" />
-                            {n > 0 ? `Manage photos (${n}/${MAX_UGC_AVATAR_REFERENCE_ASSETS})` : "Pick from library"}
+                            {n > 0 ? `Manage photos (${n}/${maxUgcAvatarReferenceAssets})` : "Pick from library"}
                           </Button>
                           {n > 0 && (
                             <Button
@@ -504,13 +508,13 @@ export function NewProjectForm({ isAdmin = false }: { isAdmin?: boolean }) {
           onConfirm={(ids) =>
             form.setValue(
               "ugc_character_avatar_asset_ids",
-              ids.slice(0, MAX_UGC_AVATAR_REFERENCE_ASSETS)
+              ids.slice(0, maxUgcAvatarReferenceAssets)
             )
           }
-          maxSelection={MAX_UGC_AVATAR_REFERENCE_ASSETS}
+          maxSelection={maxUgcAvatarReferenceAssets}
           allowEmptyConfirm
           dialogTitle="Face or body references (UGC)"
-          dialogDescription={`Same person, up to ${MAX_UGC_AVATAR_REFERENCE_ASSETS} library photos. We merge them in one vision call for consistent look across slides.`}
+          dialogDescription={`Same person, max ${maxUgcAvatarReferenceAssets} library shots—better face match in AI backgrounds.`}
         />
       </div>
     </div>

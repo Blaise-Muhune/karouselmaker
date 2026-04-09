@@ -1,9 +1,18 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { upsertProfileAsAdmin } from "@/lib/server/db/profiles";
+import { planFromStripeSubscription } from "@/lib/server/stripe/planFromStripeSubscription";
 
 const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY;
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
+
+function subscriptionIdFromCheckoutSession(session: Stripe.Checkout.Session): string | null {
+  const sub = session.subscription;
+  if (typeof sub === "string") return sub;
+  if (sub && typeof sub === "object" && "deleted" in sub && sub.deleted) return null;
+  if (sub && typeof sub === "object" && "id" in sub) return sub.id;
+  return null;
+}
 
 export async function POST(request: Request) {
   if (!STRIPE_SECRET || !WEBHOOK_SECRET) {
@@ -16,9 +25,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Missing stripe-signature" }, { status: 400 });
   }
 
+  const stripe = new Stripe(STRIPE_SECRET);
   let event: Stripe.Event;
   try {
-    const stripe = new Stripe(STRIPE_SECRET);
     event = stripe.webhooks.constructEvent(body, sig, WEBHOOK_SECRET);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Invalid signature";
@@ -30,11 +39,13 @@ export async function POST(request: Request) {
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
         const userId = session.metadata?.user_id;
-        const subscriptionId = session.subscription as string | null;
-        if (!userId) break;
+        const subscriptionId = subscriptionIdFromCheckoutSession(session);
+        if (!userId || !subscriptionId) break;
+        const sub = await stripe.subscriptions.retrieve(subscriptionId);
+        const plan = planFromStripeSubscription(sub);
         await upsertProfileAsAdmin(userId, {
-          plan: "pro",
-          stripe_subscription_id: subscriptionId,
+          plan,
+          stripe_subscription_id: sub.id,
         });
         break;
       }
@@ -50,7 +61,7 @@ export async function POST(request: Request) {
           (status === "canceled" && sub.cancel_at_period_end);
         if (isActive) {
           await upsertProfileAsAdmin(userId, {
-            plan: "pro",
+            plan: planFromStripeSubscription(sub),
             stripe_subscription_id: sub.id,
           });
         }
@@ -62,20 +73,18 @@ export async function POST(request: Request) {
         const userId = sub.metadata?.user_id;
         if (!userId) break;
         const status = sub.status;
-        // active, trialing: full access. past_due: payment retrying, keep access. canceled + period_end: keep until end.
         const isActive =
           status === "active" ||
           status === "trialing" ||
           status === "past_due" ||
           (status === "canceled" && sub.cancel_at_period_end);
         await upsertProfileAsAdmin(userId, {
-          plan: isActive ? "pro" : "free",
+          plan: isActive ? planFromStripeSubscription(sub) : "free",
           stripe_subscription_id: isActive ? sub.id : null,
         });
         break;
       }
       default:
-        // Ignore unhandled events
         break;
     }
   } catch (e) {

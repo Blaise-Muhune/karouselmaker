@@ -69,12 +69,16 @@ export function ProjectEditForm({
   projectId,
   defaultValues,
   initialAiStyleReferenceAssetIds = [],
+  maxProjectStyleReferenceAssets = MAX_PROJECT_AI_STYLE_REFERENCE_ASSETS,
+  maxUgcAvatarReferenceAssets = MAX_UGC_AVATAR_REFERENCE_ASSETS,
   isAdmin = false,
 }: {
   projectId: string;
   defaultValues: ProjectFormInput;
-  /** Library images (max 10) used to steer AI-generated slide backgrounds for this project. */
+  /** Library images used to steer AI-generated slide backgrounds for this project. */
   initialAiStyleReferenceAssetIds?: string[];
+  maxProjectStyleReferenceAssets?: number;
+  maxUgcAvatarReferenceAssets?: number;
   isAdmin?: boolean;
 }) {
   const [isPending, setIsPending] = useState(false);
@@ -84,7 +88,7 @@ export function ProjectEditForm({
   const [aiStyleRefPickerOpen, setAiStyleRefPickerOpen] = useState(false);
   const [ugcAvatarPickerOpen, setUgcAvatarPickerOpen] = useState(false);
   const [aiStyleRefIds, setAiStyleRefIds] = useState<string[]>(() =>
-    (initialAiStyleReferenceAssetIds ?? []).slice(0, MAX_PROJECT_AI_STYLE_REFERENCE_ASSETS)
+    (initialAiStyleReferenceAssetIds ?? []).slice(0, maxProjectStyleReferenceAssets)
   );
   const router = useRouter();
 
@@ -250,9 +254,7 @@ export function ProjectEditForm({
           render={({ field }) => (
             <FormItem>
               <FormLabel>Content style</FormLabel>
-              <p className="text-muted-foreground text-xs mb-2">
-                Shapes how carousels read and how topic ideas are suggested—UGC, product-in-context, teaching, or story beats. AI spreads this across slides, not just the hook.
-              </p>
+              <p className="text-muted-foreground text-xs mb-2">Tunes copy + topic ideas for the whole deck.</p>
               <div className="flex flex-col gap-2">
                 {CONTENT_FOCUS_OPTIONS.map((opt) => {
                   const selected = field.value === opt.id;
@@ -280,9 +282,9 @@ export function ProjectEditForm({
         />
         {contentFocus === "ugc" && (
           <div className="space-y-3 rounded-lg border border-primary/20 bg-primary/5 p-3">
-            <p className="text-xs font-medium text-foreground">UGC images (AI generate)</p>
-            <p className="text-muted-foreground text-[11px] leading-relaxed">
-              Natural phone-camera look and one recurring creator across slides. If you don&apos;t add library photos below, we save an auto character lock after your first AI carousel—you can edit it here. Add up to {MAX_UGC_AVATAR_REFERENCE_ASSETS} references of the <strong>same person</strong> (different angles) so one vision pass locks their look—per-slide prompts still drive poses and scenes.
+            <p className="text-muted-foreground text-[11px] leading-snug">
+              Same face in AI slides: <strong>AI generate</strong> + <strong>Same person from project</strong> on New carousel. Up to{" "}
+              {maxUgcAvatarReferenceAssets} photos here helps—optional text lock below.
             </p>
             <FormField
               control={form.control}
@@ -325,7 +327,7 @@ export function ProjectEditForm({
                         onClick={() => setUgcAvatarPickerOpen(true)}
                       >
                         <ImageIcon className="mr-1.5 size-3.5" />
-                        {n > 0 ? `Manage photos (${n}/${MAX_UGC_AVATAR_REFERENCE_ASSETS})` : "Pick from library"}
+                        {n > 0 ? `Manage photos (${n}/${maxUgcAvatarReferenceAssets})` : "Pick from library"}
                       </Button>
                       {n > 0 && (
                         <Button
@@ -418,7 +420,7 @@ export function ProjectEditForm({
         <div className="space-y-2">
           <FormLabel>AI image style references (optional)</FormLabel>
           <p className="text-muted-foreground text-xs">
-            Pick up to {MAX_PROJECT_AI_STYLE_REFERENCE_ASSETS} images from this project&apos;s library. When you use{" "}
+            Pick up to {maxProjectStyleReferenceAssets} images from this project&apos;s library. When you use{" "}
             <strong>AI generate</strong> for backgrounds, we summarize their look (colors, lighting, mood) so new images match
             that style. Per-carousel references (new carousel form) can refine or override for a single run.
           </p>
@@ -520,11 +522,11 @@ export function ProjectEditForm({
           onOpenChange={setAiStyleRefPickerOpen}
           selectedIds={aiStyleRefIds}
           onConfirm={setAiStyleRefIds}
-          maxSelection={MAX_PROJECT_AI_STYLE_REFERENCE_ASSETS}
+          maxSelection={maxProjectStyleReferenceAssets}
           allowEmptyConfirm
           contextProjectId={projectId}
           dialogTitle="Style references for AI-generated backgrounds"
-          dialogDescription={`Select up to ${MAX_PROJECT_AI_STYLE_REFERENCE_ASSETS} images. We use them only to match visual style (not to copy subjects). Upload or import from Drive here—they’re saved to your library.`}
+          dialogDescription={`Select up to ${maxProjectStyleReferenceAssets} images. We use them only to match visual style (not to copy subjects). Upload or import from Drive here—they’re saved to your library.`}
         />
         <BackgroundImagesPickerModal
           open={ugcAvatarPickerOpen}
@@ -533,14 +535,14 @@ export function ProjectEditForm({
           onConfirm={(ids) =>
             form.setValue(
               "ugc_character_avatar_asset_ids",
-              ids.slice(0, MAX_UGC_AVATAR_REFERENCE_ASSETS)
+              ids.slice(0, maxUgcAvatarReferenceAssets)
             )
           }
-          maxSelection={MAX_UGC_AVATAR_REFERENCE_ASSETS}
+          maxSelection={maxUgcAvatarReferenceAssets}
           allowEmptyConfirm
           contextProjectId={projectId}
           dialogTitle="Face or body references (UGC)"
-          dialogDescription={`Same person, up to ${MAX_UGC_AVATAR_REFERENCE_ASSETS} library photos (angles/lighting). We merge them in one step so AI backgrounds keep one consistent look across slides.`}
+          dialogDescription={`Same person, max ${maxUgcAvatarReferenceAssets} library shots—better face match in AI backgrounds.`}
         />
 
         <div className="flex gap-4">

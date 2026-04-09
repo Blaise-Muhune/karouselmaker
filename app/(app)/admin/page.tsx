@@ -173,7 +173,11 @@ export default async function AdminPage() {
                         {u.createdAt ? new Date(u.createdAt).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "—"}
                       </td>
                       <td className="px-4 py-2.5">
-                        <span className={u.plan === "pro" ? "text-primary font-medium" : "text-muted-foreground"}>
+                        <span
+                          className={
+                            u.plan && u.plan !== "free" ? "text-primary font-medium" : "text-muted-foreground"
+                          }
+                        >
                           {u.plan ?? "—"}
                         </span>
                       </td>

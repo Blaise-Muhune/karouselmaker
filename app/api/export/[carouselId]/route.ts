@@ -79,7 +79,7 @@ export async function POST(
   if (exportCount >= limits.exportsPerMonth) {
     return NextResponse.json(
       {
-        error: `Export limit: ${exportCount}/${limits.exportsPerMonth} this month.${isPro || fullAccess ? "" : " Upgrade to Pro for more."}`,
+        error: `Export limit: ${exportCount}/${limits.exportsPerMonth} this month.${isPro || fullAccess ? "" : " Upgrade for a higher limit."}`,
       },
       { status: 403 }
     );

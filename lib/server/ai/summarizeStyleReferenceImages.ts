@@ -41,7 +41,7 @@ Background & environment: studio vs location; seamless/backdrop vs real environm
 Wardrobe & styling: when people appear—formality, silhouette, color palette of clothing, accessories level (minimal vs layered); when no people, note object/product styling if relevant.
 Mood: 2–5 words.
 Look: photorealistic vs illustrated/painterly; editorial vs candid vs commercial; era if obvious.
-Avoid: 4–8 concrete clichés the image model must NOT add (e.g. golden-hour wash, neon gradients, stock "diverse boardroom", generic HDR, random new lighting style) if they would break this reference look.
+Avoid: 4–8 concrete clichés the image model must NOT add (e.g. heavy teal-orange blockbusters grade, neon gradients, stock "diverse boardroom", generic HDR, random new lighting style) if they would break this reference look.
 
 Target 1000–1500 characters total after the "Style match:" line. Be specific and visual; avoid vague words like "nice" or "professional" without qualifiers.`;
 

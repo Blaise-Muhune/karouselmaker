@@ -2,7 +2,10 @@
 
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
-export type Plan = "free" | "pro";
+/** Paid subscription tiers (Stripe). */
+export type PaidPlan = "starter" | "pro" | "studio";
+
+export type Plan = "free" | PaidPlan;
 
 export interface Profile {
   id: string;

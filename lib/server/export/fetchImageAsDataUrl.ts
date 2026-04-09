@@ -8,6 +8,26 @@ const BUCKET = "carousel-assets";
  * Download image from our storage (admin client) and return a data URL.
  * Bypasses signed URLs and fetch — most reliable for export when we have storage_path.
  */
+/** Raw image bytes from storage (admin). Same size cap as data-URL path. */
+export async function downloadStorageImageBuffer(
+  bucket: string,
+  path: string,
+  maxBytes: number = MAX_SIZE_BYTES
+): Promise<Buffer | null> {
+  const normalizedPath = path?.replace(/^\/+/, "").trim();
+  if (!normalizedPath) return null;
+  try {
+    const supabase = createAdminClient();
+    const { data, error } = await supabase.storage.from(bucket).download(normalizedPath);
+    if (error || !data) return null;
+    const buf = await data.arrayBuffer();
+    if (buf.byteLength > maxBytes || buf.byteLength === 0) return null;
+    return Buffer.from(buf);
+  } catch {
+    return null;
+  }
+}
+
 export async function downloadStorageImageAsDataUrl(
   bucket: string,
   path: string

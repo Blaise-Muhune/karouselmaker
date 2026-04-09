@@ -40,6 +40,7 @@ import {
 } from "@/lib/server/ai/summarizeStyleReferenceImages";
 import { buildCarouselSeriesVisualConsistency } from "@/lib/server/ai/carouselSeriesVisualConsistency";
 import { mergeProjectUgcAvatarAssetIds } from "@/lib/server/ai/mergeProjectUgcAvatarAssetIds";
+import { loadUgcAvatarReferenceJpegBuffers } from "@/lib/server/ai/loadUgcAvatarReferenceBuffers";
 import { summarizeUgcAvatarReferencesForConsistency } from "@/lib/server/ai/summarizeUgcAvatarReference";
 import { preferRecognizablePublicFiguresForImages } from "@/lib/server/ai/topicFictionHeuristic";
 import { extractInputTextFromDocument } from "@/lib/server/documents/extractInputText";
@@ -47,11 +48,7 @@ import { uploadGeneratedImage } from "@/lib/server/storage/uploadGeneratedImage"
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
 import { setSlideTemplate } from "@/app/actions/slides/setSlideTemplate";
 import { generateCarouselInputSchema } from "@/lib/validations/carousel";
-import {
-  FREE_FULL_ACCESS_GENERATIONS,
-  AI_GENERATE_LIMIT_PRO,
-  UGC_CHARACTER_BRIEF_MAX_CHARS,
-} from "@/lib/constants";
+import { FREE_FULL_ACCESS_GENERATIONS, UGC_CHARACTER_BRIEF_MAX_CHARS } from "@/lib/constants";
 import { buildBodyRewriteVariants } from "@/lib/renderer/bodyRewriteVariants";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 
@@ -357,7 +354,7 @@ export async function generateCarousel(formData: FormData): Promise<
   ]);
   if (count >= limits.carouselsPerMonth) {
     return {
-      error: `Generation limit: ${count}/${limits.carouselsPerMonth} carousels this month.${isPro ? "" : " Upgrade to Pro for more."}`,
+      error: `Generation limit: ${count}/${limits.carouselsPerMonth} carousels this month.${isPro ? "" : " Upgrade for a higher limit."}`,
     };
   }
   const hasFreeFullAccess = !isPro && lifetimeCount < FREE_FULL_ACCESS_GENERATIONS;
@@ -423,20 +420,51 @@ export async function generateCarousel(formData: FormData): Promise<
   const userIsAdmin = isAdmin(user.email ?? null);
   const fullProFeatures = await hasFullProFeatureAccess(user.id, user.email);
   if (requestedAiGenerate && !userIsAdmin && !fullProFeatures) {
-    return { error: "AI-generated images are only available for Pro. Upgrade to use this feature." };
+    return { error: "AI-generated images are available on paid plans. Choose a plan to use this feature." };
   }
   if (requestedAiGenerate && !userIsAdmin && fullProFeatures) {
     const aiGenerateCount = await countAiGenerateCarouselsThisMonth(user.id);
-    if (aiGenerateCount >= AI_GENERATE_LIMIT_PRO) {
-      return { error: `You've used your ${AI_GENERATE_LIMIT_PRO} AI-generated image carousels this month. Limit resets next month.` };
+    const aiCap = limits.aiGenerateCarouselsPerMonth;
+    if (aiCap > 0 && aiGenerateCount >= aiCap) {
+      return {
+        error: `You've used your ${aiCap} AI-generated image carousels this month. Limit resets next month.`,
+      };
     }
   }
-  const useAiGenerate = requestedAiGenerate && (fullProFeatures || userIsAdmin);
+  let useAiGenerate = requestedAiGenerate && (fullProFeatures || userIsAdmin);
+  const requestedUseAiBackgrounds = !!data.use_ai_backgrounds;
+  /** UGC + Instagram/TikTok: stock and web images clash with creator-style backgrounds; require AI generate (or user turns AI images off). */
+  if (
+    contentFocusId === "ugc" &&
+    requestedUseAiBackgrounds &&
+    carouselFor !== "linkedin" &&
+    !useAiGenerate
+  ) {
+    const eligible = userIsAdmin || fullProFeatures;
+    if (!eligible) {
+      return {
+        error:
+          "This project uses creator (UGC) style. Stock and web images aren’t used for backgrounds—they read as polished stock, not a real phone feed. Turn off AI images and use your library, or use a plan (or your free trial runs) that includes AI-generated backgrounds.",
+      };
+    }
+    if (!userIsAdmin) {
+      const aiGenerateCount = await countAiGenerateCarouselsThisMonth(user.id);
+      const aiCap = limits.aiGenerateCarouselsPerMonth;
+      if (aiCap > 0 && aiGenerateCount >= aiCap) {
+        return {
+          error: `This project uses creator (UGC) style and needs AI-generated backgrounds. You’ve used your ${aiCap} AI image carousels this month. Turn off AI images to use your library, or try again next month.`,
+        };
+      }
+    }
+    useAiGenerate = true;
+  }
   /** Free users without Web-image access who pick "Web images" are served stock instead (UI + API both clamp). LinkedIn never uses web image search. */
   const requestedBravePath = !useStockPhotosRaw && !useAiGenerate;
-  const effectiveUseStockPhotos =
+  let effectiveUseStockPhotos =
     useStockPhotosRaw || (requestedBravePath && (!canUseWebImages || carouselFor === "linkedin"));
-  const requestedUseAiBackgrounds = !!(data.use_ai_backgrounds);
+  if (contentFocusId === "ugc" && requestedUseAiBackgrounds && carouselFor !== "linkedin" && useAiGenerate) {
+    effectiveUseStockPhotos = false;
+  }
   const userAskedWebSearch = !!data.use_web_search;
   const autoNewsWebSearch = hasFullAccess && looksLikeNewsOrTimeSensitive(data.input_value, data.input_type);
   const useWebSearch = hasFullAccess && (userAskedWebSearch || autoNewsWebSearch);
@@ -786,6 +814,12 @@ export async function generateCarousel(formData: FormData): Promise<
       if (joined.length > 0) ugcCharacterLock = joined;
     }
 
+    let ugcReferenceImageBuffers: Buffer[] | undefined;
+    if (contentFocusId === "ugc" && ugcAvatarAssetIds.length > 0) {
+      const rawBufs = await loadUgcAvatarReferenceJpegBuffers(user.id, ugcAvatarAssetIds);
+      if (rawBufs.length > 0) ugcReferenceImageBuffers = rawBufs;
+    }
+
     let referenceStyleSummary: string | undefined;
     if (useAiGenerate && mergedStyleRefIds.length > 0) {
       referenceStyleSummary = await summarizeStyleReferenceImages(user.id, mergedStyleRefIds);
@@ -864,6 +898,7 @@ export async function generateCarousel(formData: FormData): Promise<
           referenceStyleSummary,
           seriesVisualConsistency,
           ugcCharacterLock,
+          ugcReferenceImageBuffers,
           ugcCasualPhoneLook: contentFocusId === "ugc" || undefined,
           aspectRatio: imageAspectRatio,
           preferRecognizablePublicFigures: preferPublicFigures || undefined,
@@ -906,6 +941,7 @@ export async function generateCarousel(formData: FormData): Promise<
               referenceStyleSummary,
               seriesVisualConsistency,
               ugcCharacterLock,
+              ugcReferenceImageBuffers,
               ugcCasualPhoneLook: contentFocusId === "ugc" || undefined,
               year: slideContext?.year?.trim() || undefined,
               location: slideContext?.location?.trim() || undefined,
@@ -1384,7 +1420,7 @@ export async function startCarouselGeneration(formData: FormData): Promise<
   ]);
   if (count >= limits.carouselsPerMonth) {
     return {
-      error: `Generation limit: ${count}/${limits.carouselsPerMonth} carousels this month.${isPro ? "" : " Upgrade to Pro for more."}`,
+      error: `Generation limit: ${count}/${limits.carouselsPerMonth} carousels this month.${isPro ? "" : " Upgrade for a higher limit."}`,
     };
   }
   const hasFreeFullAccess = !isPro && lifetimeCount < FREE_FULL_ACCESS_GENERATIONS;
@@ -1393,21 +1429,52 @@ export async function startCarouselGeneration(formData: FormData): Promise<
   const userIsAdmin = isAdmin(user.email ?? null);
   const fullProFeatures = await hasFullProFeatureAccess(user.id, user.email);
   if (requestedAiGenerate && !userIsAdmin && !fullProFeatures) {
-    return { error: "AI-generated images are only available for Pro. Upgrade to use this feature." };
+    return { error: "AI-generated images are available on paid plans. Choose a plan to use this feature." };
   }
   if (requestedAiGenerate && !userIsAdmin && fullProFeatures) {
     const aiGenerateCount = await countAiGenerateCarouselsThisMonth(user.id);
-    if (aiGenerateCount >= AI_GENERATE_LIMIT_PRO) {
-      return { error: `You've used your ${AI_GENERATE_LIMIT_PRO} AI-generated image carousels this month. Limit resets next month.` };
+    const aiCap = limits.aiGenerateCarouselsPerMonth;
+    if (aiCap > 0 && aiGenerateCount >= aiCap) {
+      return {
+        error: `You've used your ${aiCap} AI-generated image carousels this month. Limit resets next month.`,
+      };
     }
   }
 
   const useAiBg = !!data.use_ai_backgrounds;
   const useStockRaw = !!parsed.data.use_stock_photos;
-  const useAiGenStored = parsed.data.carousel_for !== "linkedin" && !!data.use_ai_generate;
+  let useAiGenStored = parsed.data.carousel_for !== "linkedin" && !!data.use_ai_generate;
+  const contentFocusStored = normalizeContentFocusId(project.content_focus);
+  const carouselForStored =
+    parsed.data.carousel_for === "linkedin" || parsed.data.carousel_for === "instagram"
+      ? parsed.data.carousel_for
+      : undefined;
   /** Match generateCarousel: Web images without entitlement → stock; LinkedIn → stock only. */
   let useStockStored = useStockRaw;
-  if (useAiBg && !useStockRaw && !useAiGenStored && (!hasFullAccess || parsed.data.carousel_for === "linkedin")) {
+  if (useAiBg && contentFocusStored === "ugc" && carouselForStored !== "linkedin") {
+    if (!useAiGenStored) {
+      const eligible = userIsAdmin || fullProFeatures;
+      if (!eligible) {
+        return {
+          error:
+            "This project uses creator (UGC) style. Stock and web images aren’t used for backgrounds—they read as polished stock, not a real phone feed. Turn off AI images and use your library, or use a plan (or your free trial runs) that includes AI-generated backgrounds.",
+        };
+      }
+      if (!userIsAdmin) {
+        const aiGenerateCount = await countAiGenerateCarouselsThisMonth(user.id);
+        const aiCap = limits.aiGenerateCarouselsPerMonth;
+        if (aiCap > 0 && aiGenerateCount >= aiCap) {
+          return {
+            error: `This project uses creator (UGC) style and needs AI-generated backgrounds. You’ve used your ${aiCap} AI image carousels this month. Turn off AI images to use your library, or try again next month.`,
+          };
+        }
+      }
+      useAiGenStored = true;
+      useStockStored = false;
+    } else {
+      useStockStored = false;
+    }
+  } else if (useAiBg && !useStockRaw && !useAiGenStored && (!hasFullAccess || parsed.data.carousel_for === "linkedin")) {
     useStockStored = true;
   }
   const generationOptions: Record<string, unknown> = {

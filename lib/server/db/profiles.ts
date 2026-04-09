@@ -2,7 +2,14 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { Profile } from "./types";
+import type { Plan, Profile } from "./types";
+
+type ProfilePlanPayload = {
+  display_name?: string;
+  plan?: Plan;
+  stripe_customer_id?: string | null;
+  stripe_subscription_id?: string | null;
+};
 
 export async function getProfile(userId: string): Promise<Profile | null> {
   const supabase = await createClient();
@@ -21,7 +28,7 @@ export async function getProfile(userId: string): Promise<Profile | null> {
 
 export async function upsertProfile(
   userId: string,
-  payload: { display_name?: string; plan?: "free" | "pro"; stripe_customer_id?: string | null; stripe_subscription_id?: string | null }
+  payload: ProfilePlanPayload
 ): Promise<Profile> {
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -47,7 +54,7 @@ export async function upsertProfile(
  */
 export async function upsertProfileAsAdmin(
   userId: string,
-  payload: { display_name?: string; plan?: "free" | "pro"; stripe_customer_id?: string | null; stripe_subscription_id?: string | null }
+  payload: ProfilePlanPayload
 ): Promise<Profile> {
   const supabase = createAdminClient();
   const { data, error } = await supabase

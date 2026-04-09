@@ -5,7 +5,7 @@ import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { getSubscription, getEffectivePlanLimits } from "@/lib/server/subscription";
 import { getProject, getCarousel, countCarouselsThisMonth, countCarouselsLifetime, countAiGenerateCarouselsThisMonth, listTemplatesForUser, getDefaultTemplateForNewCarousel, getDefaultLinkedInTemplate } from "@/lib/server/db";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
-import { PLAN_LIMITS, FREE_FULL_ACCESS_GENERATIONS, AI_GENERATE_LIMIT_PRO } from "@/lib/constants";
+import { FREE_FULL_ACCESS_GENERATIONS } from "@/lib/constants";
 import { NewCarouselForm } from "./NewCarouselForm";
 import { normalizeContentFocusId } from "@/lib/server/ai/projectContentFocus";
 import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
@@ -84,11 +84,11 @@ export default async function NewCarouselPage({
     <div className="p-6 md:p-8">
       <div className="mx-auto max-w-xl space-y-6">
         {!subscription.isPro && !hasFullAccess && (
-          <UpgradeBanner message="You've used your 3 free generations with Web images and full editor access. Stock photos and your own images still work — upgrade to Pro for Web images, AI generate, web search, and more." />
+          <UpgradeBanner message="You've used your 3 free generations with Web images and full editor access. Stock photos and your own images still work — choose a paid plan for Web images, AI generate, web search, and higher limits." />
         )}
         {!subscription.isPro && hasFullAccess && freeGenerationsLeft <= 1 && (
           <UpgradeBanner
-            message={`${freeGenerationsLeft} free generation left with Web images and full editor. Upgrade to Pro to keep those perks. Stock photos stay available on every plan.`}
+            message={`${freeGenerationsLeft} free generation left with Web images and full editor. Subscribe to keep those perks. Stock photos stay available on every plan.`}
             variant="inline"
           />
         )}
@@ -125,7 +125,7 @@ export default async function NewCarouselPage({
           carouselCount={carouselCount}
           carouselLimit={carouselLimit}
           aiGenerateUsed={aiGenerateUsed}
-          aiGenerateLimit={AI_GENERATE_LIMIT_PRO}
+          aiGenerateLimit={limits.aiGenerateCarouselsPerMonth}
           regenerateCarouselId={regenerateCarousel?.id}
           initialInputType={regenerateCarousel && (regenerateCarousel.input_type === "url" || regenerateCarousel.input_type === "text") ? regenerateCarousel.input_type : regenerateCarousel ? "topic" : undefined}
           initialInputValue={regenerateCarousel?.input_value ?? topicPrefill?.trim() ?? undefined}
