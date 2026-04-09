@@ -3,7 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getUser } from "@/lib/server/auth/getUser";
-import { getCarousel, deleteCarousel as dbDeleteCarousel, updateCarousel } from "@/lib/server/db/carousels";
+import {
+  getCarousel,
+  deleteCarousel as dbDeleteCarousel,
+  updateCarousel,
+  cloneCarousel,
+} from "@/lib/server/db/carousels";
 import { startCarouselGeneration } from "./generateCarousel";
 
 export type CarouselActionResult = { ok: true } | { ok: false; error: string };
@@ -48,6 +53,22 @@ export async function deleteCarousel(
   if (!result.ok) return result;
   revalidatePath(`/p/${projectId}`);
   redirect(`/p/${projectId}`);
+}
+
+export async function duplicateCarousel(
+  carouselId: string,
+  projectId: string
+): Promise<{ ok: true; carouselId: string } | { ok: false; error: string }> {
+  const { user } = await getUser();
+  try {
+    const copy = await cloneCarousel(user.id, carouselId, projectId);
+    revalidatePath(`/p/${projectId}`);
+    revalidatePath(`/p/${projectId}/c/${copy.id}`);
+    return { ok: true, carouselId: copy.id };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, error: msg };
+  }
 }
 
 export async function toggleCarouselFavorite(

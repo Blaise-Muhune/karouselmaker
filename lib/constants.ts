@@ -64,7 +64,9 @@ export const FREE_FULL_ACCESS_GENERATIONS = 3;
 /** Project settings: max library images saved as AI style references (schema ceiling; plans may be lower). */
 export const MAX_PROJECT_AI_STYLE_REFERENCE_ASSETS = 10;
 /** New carousel form: max extra style references for one generation (merged with project; carousel IDs first). */
-export const MAX_CAROUSEL_AI_STYLE_REFERENCE_ASSETS = 5;
+export const MAX_CAROUSEL_AI_STYLE_REFERENCE_ASSETS = 8;
+/** Characters + style + product/service reference images combined (new carousel AI generate). */
+export const MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS = 8;
 /** Max chars for carousel "Notes" and similar fields (must match `generateCarouselInputSchema`). */
 export const CAROUSEL_NOTES_MAX_CHARS = 8000;
 /** Max chars for carousel topic/URL/paste input (must match `generateCarouselInputSchema`). */

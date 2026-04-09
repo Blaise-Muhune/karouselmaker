@@ -23,12 +23,27 @@ export async function replaceSlides(
 
   await supabase.from("slides").delete().eq("carousel_id", carouselId);
 
-  if (slides.length === 0) return [];
+  if (slides.length === 0) {
+    await supabase
+      .from("carousels")
+      .update({ updated_at: new Date().toISOString() })
+      .eq("id", carouselId)
+      .eq("user_id", userId);
+    return [];
+  }
 
   const rows = slides.map((s) => ({ ...s, carousel_id: carouselId }));
   const { data, error } = await supabase.from("slides").insert(rows).select();
 
   if (error) throw new Error(error.message);
+
+  /** Keep project carousel list sorted by “recent” through long image pipelines (LLM done, assets still generating). */
+  await supabase
+    .from("carousels")
+    .update({ updated_at: new Date().toISOString() })
+    .eq("id", carouselId)
+    .eq("user_id", userId);
+
   return (data ?? []) as Slide[];
 }
 

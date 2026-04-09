@@ -104,6 +104,8 @@ export interface Carousel {
     ai_style_reference_asset_ids?: string[];
     /** UGC per-run character refs (max 5) used when project saved person is turned off. */
     ugc_character_reference_asset_ids?: string[];
+    /** Product / app / service reference images for AI fidelity (combined cap with style + character refs). */
+    product_reference_asset_ids?: string[];
     /** UGC + AI generate: whether project saved character was applied for this run. */
     use_saved_ugc_character?: boolean;
     /** UGC + AI generate (invented character): series bible snapshot—can be saved to project `ugc_character_brief`. */

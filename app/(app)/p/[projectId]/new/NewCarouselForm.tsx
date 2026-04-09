@@ -39,6 +39,7 @@ import {
   LightbulbIcon,
   RefreshCwIcon,
   UploadIcon,
+  PackageIcon,
 } from "lucide-react";
 import { WEB_IMAGES_SOURCE_DESCRIPTION, imageSourceDisplayName } from "@/lib/utils/imageSourceDisplay";
 import { BackgroundSourceBestForHint } from "@/components/carousels/BackgroundSourcePlatformHints";
@@ -47,8 +48,7 @@ import { cn } from "@/lib/utils";
 import {
   CAROUSEL_INPUT_MAX_CHARS,
   CAROUSEL_NOTES_MAX_CHARS,
-  MAX_CAROUSEL_AI_STYLE_REFERENCE_ASSETS,
-  MAX_UGC_AVATAR_REFERENCE_ASSETS,
+  MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS,
 } from "@/lib/constants";
 
 /** Full page reload while generation overlay is open, so long runs can recover / see updated state. */
@@ -138,6 +138,7 @@ export function NewCarouselForm({
   initialNotes,
   initialAiStyleReferenceAssetIds,
   initialUgcCharacterReferenceAssetIds,
+  initialProductReferenceAssetIds,
   templateOptions = [],
   defaultTemplateId = null,
   defaultTemplateConfig = null,
@@ -181,6 +182,8 @@ export function NewCarouselForm({
   initialAiStyleReferenceAssetIds?: string[];
   /** Per-run UGC character refs (used when "Same person from project" is off). */
   initialUgcCharacterReferenceAssetIds?: string[];
+  /** Product / app / service refs for AI image fidelity (PiP-friendly). */
+  initialProductReferenceAssetIds?: string[];
   /** Templates the user can choose before generating (with parsed config for preview). */
   templateOptions?: TemplateOption[];
   defaultTemplateId?: string | null;
@@ -232,15 +235,35 @@ export function NewCarouselForm({
   const [notes, setNotes] = useState(initialNotes ?? "");
   const [aiStyleRefIds, setAiStyleRefIds] = useState<string[]>(() => {
     const raw = initialAiStyleReferenceAssetIds ?? [];
-    return Array.isArray(raw) ? raw.slice(0, MAX_CAROUSEL_AI_STYLE_REFERENCE_ASSETS) : [];
+    return Array.isArray(raw) ? raw.slice(0, MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS) : [];
   });
   const [ugcCharacterRefIds, setUgcCharacterRefIds] = useState<string[]>(() => {
     const raw = initialUgcCharacterReferenceAssetIds ?? [];
-    return Array.isArray(raw) ? raw.slice(0, MAX_UGC_AVATAR_REFERENCE_ASSETS) : [];
+    return Array.isArray(raw) ? raw.slice(0, MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS) : [];
+  });
+  const [productRefIds, setProductRefIds] = useState<string[]>(() => {
+    const raw = initialProductReferenceAssetIds ?? [];
+    return Array.isArray(raw) ? raw.slice(0, MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS) : [];
   });
   const [styleRefPickerOpen, setStyleRefPickerOpen] = useState(false);
   const [characterRefPickerOpen, setCharacterRefPickerOpen] = useState(false);
+  const [productRefPickerOpen, setProductRefPickerOpen] = useState(false);
   const [backgroundPickerOpen, setBackgroundPickerOpen] = useState(false);
+
+  const maxStyleRefPick = Math.max(
+    0,
+    MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS - ugcCharacterRefIds.length - productRefIds.length
+  );
+  const maxUgcCharacterPick = Math.max(
+    0,
+    MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS - aiStyleRefIds.length - productRefIds.length
+  );
+  const maxProductRefPick = Math.max(
+    0,
+    MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS - aiStyleRefIds.length - ugcCharacterRefIds.length
+  );
+  const combinedReferenceCount =
+    aiStyleRefIds.length + ugcCharacterRefIds.length + productRefIds.length;
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(() => {
     const initialPlatform = initialCarouselFor ?? "instagram";
@@ -263,6 +286,8 @@ export function NewCarouselForm({
   const [useSavedUgcCharacter, setUseSavedUgcCharacter] = useState(initialUseSavedUgcCharacter);
   const [ugcCharacterPrefError, setUgcCharacterPrefError] = useState<string | null>(null);
   const [showMoreOptions, setShowMoreOptions] = useState(true);
+  /** When regenerating: if true, omit carousel_id so generation creates a new row and keeps the original. */
+  const [saveAsNewCarousel, setSaveAsNewCarousel] = useState(false);
   const [topicSuggestOpen, setTopicSuggestOpen] = useState(false);
   const [topicSuggestLoading, setTopicSuggestLoading] = useState(false);
   const [topicSuggestRefreshing, setTopicSuggestRefreshing] = useState(false);
@@ -414,6 +439,18 @@ export function NewCarouselForm({
       setError(`Notes are too long (max ${CAROUSEL_NOTES_MAX_CHARS.toLocaleString()} characters).`);
       return;
     }
+    const allRefIds = [...aiStyleRefIds, ...ugcCharacterRefIds, ...productRefIds];
+    const refDedupe = new Set(allRefIds);
+    if (refDedupe.size !== allRefIds.length) {
+      setError("Use each library image in only one row: characters, style, or product.");
+      return;
+    }
+    if (combinedReferenceCount > MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS) {
+      setError(
+        `Too many reference images (${combinedReferenceCount}). Use at most ${MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS} combined across characters, style, and product.`
+      );
+      return;
+    }
     if (ugcInstagramImagePolicy && useAiBackgrounds && !canUseAiGenerate) {
       setError(
         "This project uses creator (UGC) style, so backgrounds use AI-generated phone-style images only. Stock and web images are turned off for that look. Upgrade or use a free trial run with AI generate, or turn off AI images and pick photos from your library."
@@ -424,7 +461,9 @@ export function NewCarouselForm({
     try {
       const formData = new FormData();
       formData.set("project_id", projectId);
-      if (regenerateCarouselId) formData.set("carousel_id", regenerateCarouselId);
+      if (regenerateCarouselId && !saveAsNewCarousel) {
+        formData.set("carousel_id", regenerateCarouselId);
+      }
       formData.set("input_type", inputType);
       formData.set("input_value", inputType === "document" ? (inputDocumentFile?.name ?? "document") : trimmed);
       if (inputType === "document" && inputDocumentFile) {
@@ -442,6 +481,9 @@ export function NewCarouselForm({
         formData.set("ai_style_reference_asset_ids", JSON.stringify(aiStyleRefIds));
         if (projectContentFocus === "ugc" && !useSavedUgcCharacter && ugcCharacterRefIds.length > 0) {
           formData.set("ugc_character_reference_asset_ids", JSON.stringify(ugcCharacterRefIds));
+        }
+        if (productRefIds.length > 0) {
+          formData.set("product_reference_asset_ids", JSON.stringify(productRefIds));
         }
       }
       if (projectContentFocus === "ugc") {
@@ -500,6 +542,27 @@ export function NewCarouselForm({
       )}
 
       <form onSubmit={handleSubmit} className="space-y-8">
+        {regenerateCarouselId && (
+          <div className="rounded-lg border border-border/60 bg-muted/20 px-4 py-3">
+            <label className="flex items-start gap-2.5 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={saveAsNewCarousel}
+                onChange={(e) => setSaveAsNewCarousel(e.target.checked)}
+                className="mt-0.5 rounded border-input accent-primary size-4 shrink-0"
+              />
+              <span className="text-sm leading-snug">
+                <span className="font-medium text-foreground group-hover:text-foreground/90">
+                  Create a new carousel (keep the original)
+                </span>
+                <span className="block text-[11px] text-muted-foreground mt-0.5">
+                  Off = replace frames in the existing carousel. On = add a second carousel with a new run; the current
+                  one stays as-is.
+                </span>
+              </span>
+            </label>
+          </div>
+        )}
         {error && (
           <div className="space-y-2">
             <p className="text-destructive rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm">
@@ -839,6 +902,18 @@ export function NewCarouselForm({
                       </div>
                     )}
                     <p className="text-xs font-medium text-foreground">References (optional)</p>
+                    <p className="text-[11px] text-muted-foreground leading-snug">
+                      Up to{" "}
+                      <span className="font-medium text-foreground tabular-nums">
+                        {MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS}
+                      </span>{" "}
+                      images total across characters, style, and product. AI uses product shots for accurate UI,
+                      packaging, and picture-in-picture style layouts when the slide fits.
+                      <span className="text-foreground/80 tabular-nums">
+                        {" "}
+                        ({combinedReferenceCount}/{MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS} selected)
+                      </span>
+                    </p>
                     <div className="space-y-2">
                       <p className="text-[11px] text-muted-foreground">Characters</p>
                       <div className="flex flex-wrap items-center gap-2">
@@ -848,7 +923,9 @@ export function NewCarouselForm({
                           size="sm"
                           className="h-8 text-xs"
                           onClick={() => setCharacterRefPickerOpen(true)}
-                          disabled={projectContentFocus === "ugc" && useSavedUgcCharacter}
+                          disabled={
+                            (projectContentFocus === "ugc" && useSavedUgcCharacter) || maxUgcCharacterPick === 0
+                          }
                         >
                           <ImageIcon className="mr-1.5 size-3.5" />
                           {ugcCharacterRefIds.length
@@ -876,6 +953,7 @@ export function NewCarouselForm({
                         size="sm"
                         className="h-8 text-xs"
                         onClick={() => setStyleRefPickerOpen(true)}
+                        disabled={maxStyleRefPick === 0}
                       >
                         <ImageIcon className="mr-1.5 size-3.5" />
                         {aiStyleRefIds.length
@@ -894,6 +972,37 @@ export function NewCarouselForm({
                         </Button>
                       )}
                     </div>
+                      <p className="text-[11px] text-muted-foreground">Product or service</p>
+                      <p className="text-[10px] text-muted-foreground/90 leading-snug -mt-1">
+                        App or site screenshots, product on model, packaging—keeps the offering recognizable (often as a
+                        phone/UI inset).
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8 text-xs"
+                          onClick={() => setProductRefPickerOpen(true)}
+                          disabled={maxProductRefPick === 0}
+                        >
+                          <PackageIcon className="mr-1.5 size-3.5" />
+                          {productRefIds.length
+                            ? `${productRefIds.length} product${productRefIds.length !== 1 ? "s" : ""}`
+                            : "Pick product images"}
+                        </Button>
+                        {productRefIds.length > 0 && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 text-xs text-muted-foreground"
+                            onClick={() => setProductRefIds([])}
+                          >
+                            Clear
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )}
@@ -1143,22 +1252,33 @@ export function NewCarouselForm({
           onOpenChange={setStyleRefPickerOpen}
           selectedIds={aiStyleRefIds}
           onConfirm={setAiStyleRefIds}
-          maxSelection={MAX_CAROUSEL_AI_STYLE_REFERENCE_ASSETS}
+          maxSelection={Math.max(maxStyleRefPick, 1)}
           allowEmptyConfirm
           contextProjectId={projectId}
           dialogTitle="Style references for AI-generated backgrounds"
-          dialogDescription={`Select up to ${MAX_CAROUSEL_AI_STYLE_REFERENCE_ASSETS} images. Used only to match visual style. Upload or import from Drive here—they’re saved to your library.`}
+          dialogDescription={`Select up to ${maxStyleRefPick} images (${MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS} max combined with characters + product). Style only—palette, light, camera feel.`}
         />
         <BackgroundImagesPickerModal
           open={characterRefPickerOpen}
           onOpenChange={setCharacterRefPickerOpen}
           selectedIds={ugcCharacterRefIds}
           onConfirm={setUgcCharacterRefIds}
-          maxSelection={MAX_UGC_AVATAR_REFERENCE_ASSETS}
+          maxSelection={Math.max(maxUgcCharacterPick, 1)}
           allowEmptyConfirm
           contextProjectId={projectId}
           dialogTitle="Character references"
-          dialogDescription={`Select up to ${MAX_UGC_AVATAR_REFERENCE_ASSETS} images of the same person.`}
+          dialogDescription={`Select up to ${maxUgcCharacterPick} images of the same person (${MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS} max combined with style + product).`}
+        />
+        <BackgroundImagesPickerModal
+          open={productRefPickerOpen}
+          onOpenChange={setProductRefPickerOpen}
+          selectedIds={productRefIds}
+          onConfirm={setProductRefIds}
+          maxSelection={Math.max(maxProductRefPick, 1)}
+          allowEmptyConfirm
+          contextProjectId={projectId}
+          dialogTitle="Product or service references"
+          dialogDescription={`Select up to ${maxProductRefPick} images (${MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS} max combined). Screenshots, product shots, packaging—AI matches them in generated backgrounds, often as a clear inset or phone UI.`}
         />
 
         {/* More options: frame count, notes — above Generate; open by default */}

@@ -4,10 +4,7 @@
  */
 
 import OpenAI from "openai";
-import {
-  MAX_CAROUSEL_AI_STYLE_REFERENCE_ASSETS,
-  MAX_PROJECT_AI_STYLE_REFERENCE_ASSETS,
-} from "@/lib/constants";
+import { MAX_CAROUSEL_AI_STYLE_REFERENCE_ASSETS, MAX_PROJECT_AI_STYLE_REFERENCE_ASSETS } from "@/lib/constants";
 import { getAsset } from "@/lib/server/db/assets";
 import { downloadStorageImageAsDataUrl } from "@/lib/server/export/fetchImageAsDataUrl";
 

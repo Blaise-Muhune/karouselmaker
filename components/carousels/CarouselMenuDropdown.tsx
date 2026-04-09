@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   deleteCarousel,
+  duplicateCarousel,
   toggleCarouselFavorite,
 } from "@/app/actions/carousels/carouselActions";
 import {
@@ -27,6 +28,7 @@ import {
   StarIcon,
   StarOffIcon,
   RefreshCwIcon,
+  CopyPlusIcon,
   Trash2Icon,
   Loader2Icon,
 } from "lucide-react";
@@ -47,6 +49,7 @@ export function CarouselMenuDropdown({
   const router = useRouter();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [duplicating, setDuplicating] = useState(false);
   const [togglingFavorite, setTogglingFavorite] = useState(false);
   async function handleToggleFavorite() {
     setTogglingFavorite(true);
@@ -59,6 +62,22 @@ export function CarouselMenuDropdown({
 
   function handleRegenerate() {
     router.push(`/p/${projectId}/new?regenerate=${carouselId}`);
+  }
+
+  async function handleDuplicate() {
+    if (duplicating) return;
+    setDuplicating(true);
+    try {
+      const r = await duplicateCarousel(carouselId, projectId);
+      if (r.ok) {
+        router.push(`/p/${projectId}/c/${r.carouselId}`);
+        router.refresh();
+      } else {
+        window.alert(r.error);
+      }
+    } finally {
+      setDuplicating(false);
+    }
   }
 
   async function handleDeleteConfirm() {
@@ -96,6 +115,14 @@ export function CarouselMenuDropdown({
           <DropdownMenuItem onClick={handleRegenerate}>
             <RefreshCwIcon className="size-4" />
             Regenerate
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => void handleDuplicate()} disabled={duplicating}>
+            {duplicating ? (
+              <Loader2Icon className="size-4 animate-spin" />
+            ) : (
+              <CopyPlusIcon className="size-4" />
+            )}
+            Duplicate
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem

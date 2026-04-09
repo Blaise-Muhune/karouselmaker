@@ -38,6 +38,8 @@ export type ImagePromptContext = {
   projectImageStyleNotes?: string;
   /** Vision-derived structured style brief from user reference images (one carousel-level summary). */
   referenceStyleSummary?: string;
+  /** Product / app / service reference summary—PiP-friendly fidelity when the slide is about that offering. */
+  productReferenceSummary?: string;
   /** One carousel-level paragraph for recurring character/world/palette consistency across AI slides. */
   seriesVisualConsistency?: string;
   /** UGC: face/body lock (vision summary of user avatar +/or saved brief)—injected even when referenceStyleSummary is set. */
@@ -142,7 +144,12 @@ function softenForSafety(s: string): string {
  */
 function buildSafeRetryPrompt(
   query: string,
-  opts?: { genericFacesOnly?: boolean; referenceStyleSummary?: string; ugcNaturalPhone?: boolean }
+  opts?: {
+    genericFacesOnly?: boolean;
+    referenceStyleSummary?: string;
+    productReferenceSummary?: string;
+    ugcNaturalPhone?: boolean;
+  }
 ): string {
   const q = query
     .replace(/\b(3000x2000|4k|official photo|wallpaper)\b/gi, "")
@@ -160,17 +167,21 @@ function buildSafeRetryPrompt(
     ? " If people appear: generic invented adults only—no likeness to any real or famous person."
     : "";
   const ref = opts?.referenceStyleSummary?.trim();
+  const prod = opts?.productReferenceSummary?.trim();
+  const prodBit = prod
+    ? ` Product/service fidelity when relevant: ${truncateForContext(prod, 320)}`
+    : "";
   if (ref) {
     const refBrief = truncateForContext(ref, 480);
     const phone = opts?.ugcNaturalPhone
       ? " Natural smartphone realism: slight sensor grain in shadows, soft focus, muted colors—like a real phone in that lighting—not studio HDR, beauty retouch, or AI-smooth plastic skin. Avoid stock-catalog staging."
       : "";
-    return `Generate one image that closely matches this user reference style: ${refBrief}. Subject and scene: ${concept}.${phone} No text, no logos. Stay faithful to the reference look; lighting and time of day should follow the reference and the scene.${faceLine}`;
+    return `Generate one image that closely matches this user reference style: ${refBrief}. Subject and scene: ${concept}.${prodBit}${phone} No text, no logos. Stay faithful to the reference look; lighting and time of day should follow the reference and the scene.${faceLine}`;
   }
   if (opts?.ugcNaturalPhone) {
-    return `Generate one candid phone-camera image (iPhone-style main camera: natural dynamic range, slight grain in shadows, soft not razor-sharp, muted highlights—no ad gloss, no synthetic perfection) that closely resembles: ${concept}. Must look like a real snapshot, not a polished AI still. No text, no logos.${faceLine}`;
+    return `Generate one candid phone-camera image (iPhone-style main camera: natural dynamic range, slight grain in shadows, soft not razor-sharp, muted highlights—no ad gloss, no synthetic perfection) that closely resembles: ${concept}.${prodBit} Must look like a real snapshot, not a polished AI still. No text, no logos.${faceLine}`;
   }
-  return `Generate a single professional image that closely resembles the following concept. Same subject, setting, and mood—appropriate for a general audience. No text, no logos. Concept: ${concept}. Lighting natural to the scene, suitable as a background.${faceLine}`;
+  return `Generate a single professional image that closely resembles the following concept. Same subject, setting, and mood—appropriate for a general audience.${prodBit} No text, no logos. Concept: ${concept}. Lighting natural to the scene, suitable as a background.${faceLine}`;
 }
 
 /**
@@ -180,7 +191,7 @@ function buildSafeRetryPrompt(
  */
 function buildSafeFallbackPrompt(
   query: string,
-  opts?: { referenceStyleSummary?: string; ugcNaturalPhone?: boolean }
+  opts?: { referenceStyleSummary?: string; productReferenceSummary?: string; ugcNaturalPhone?: boolean }
 ): string {
   const q = query
     .replace(/\b(3000x2000|4k|official photo|wallpaper)\b/gi, "")
@@ -194,16 +205,18 @@ function buildSafeFallbackPrompt(
     subject = lastSpace > 100 ? cut.slice(0, lastSpace).trim() : cut.trim();
   }
   const ref = opts?.referenceStyleSummary?.trim();
+  const prod = opts?.productReferenceSummary?.trim();
+  const prodBit = prod ? ` ${truncateForContext(prod, 280)}` : "";
   if (ref) {
     const phone = opts?.ugcNaturalPhone
       ? " Keep smartphone-candid imperfections: light grain, believable indoor light, not over-sharpened."
       : "";
-    return `Match this reference visual style: ${truncateForContext(ref, 420)}. Subject: ${subject}.${phone} No text, no logos. Preserve palette and camera feel from the style description—avoid generic cinematic stock look.`;
+    return `Match this reference visual style: ${truncateForContext(ref, 420)}. Subject: ${subject}.${prodBit}${phone} No text, no logos. Preserve palette and camera feel from the style description—avoid generic cinematic stock look.`;
   }
   if (opts?.ugcNaturalPhone) {
-    return `Candid phone-camera image: ${subject}. Natural light for the scene, slight sensor noise, soft focus, muted colors—real person could have taken it on a phone; avoid HDR stock look and overly convenient AI composition. No text, no logos.`;
+    return `Candid phone-camera image: ${subject}.${prodBit} Natural light for the scene, slight sensor noise, soft focus, muted colors—real person could have taken it on a phone; avoid HDR stock look and overly convenient AI composition. No text, no logos.`;
   }
-  return `Professional photograph: ${subject}. Lighting and mood that fit the subject and setting. No text, no logos. High quality, suitable as a background.`;
+  return `Professional photograph: ${subject}.${prodBit} Lighting and mood that fit the subject and setting. No text, no logos. High quality, suitable as a background.`;
 }
 
 /** True when the prompt is just "Bible as object" (book on table, open Bible, etc.)—we want to replace with character/scene for hook. */
@@ -222,6 +235,7 @@ const MAX_CONTEXT_BLOCK_LEN = 3600;
 
 /** Room for structured reference-image style brief (vision summary); aligns with summarizeStyleReferenceImages cap. */
 const MAX_REFERENCE_STYLE_IN_PROMPT = 1650;
+const MAX_PRODUCT_REFERENCE_IN_PROMPT = 1150;
 
 /** When user attached reference images: dominate the prompt—no house stock defaults that fight the refs. */
 const REFERENCE_STYLE_FIRST_LINE =
@@ -307,6 +321,14 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
         "UGC default: match the reference, but keep believable phone-captured authenticity—imperfections welcome (light noise, casual framing, practical indoor light). Do not upgrade to glossy commercial, catalog polish, or AI-convenient staging unless carousel notes explicitly ask for studio or cinematic lighting."
       );
     }
+  }
+
+  const productSummary = context?.productReferenceSummary?.trim();
+  if (productSummary) {
+    parts.push(
+      "Product / service / app references: when this slide is about the user's offering, match the attached reference description—UI layout, product shape, packaging, colors, and key branding cues. Prefer picture-in-picture style when it fits: phone-in-hand with the app, laptop showing the site, clear product inset, or person wearing/holding the item—so the scene stays readable and on-brand. Do not swap in a different product or invented UI unless the slide is clearly not about this offering."
+    );
+    parts.push(truncateForContext(productSummary, MAX_PRODUCT_REFERENCE_IN_PROMPT));
   }
 
   const ugcLock = context?.ugcCharacterLock?.trim();
@@ -563,6 +585,7 @@ export async function generateImageFromPrompt(
       const retryShort = buildSafeRetryPrompt(query, {
         genericFacesOnly: options?.context?.preferRecognizablePublicFigures === true,
         referenceStyleSummary: options?.context?.referenceStyleSummary,
+        productReferenceSummary: options?.context?.productReferenceSummary,
         ugcNaturalPhone: isUgcNaturalPhoneLookActive(options?.context),
       });
       const retryForEdit = useUgcRefEdit ? `${UGC_IMAGE_EDIT_PREFIX}${retryShort}` : retryShort;
@@ -587,6 +610,7 @@ export async function generateImageFromPrompt(
       }
       const replicatePrompt = buildSafeFallbackPrompt(query, {
         referenceStyleSummary: options?.context?.referenceStyleSummary,
+        productReferenceSummary: options?.context?.productReferenceSummary,
         ugcNaturalPhone: isUgcNaturalPhoneLookActive(options?.context),
       });
       console.log("[openaiImageGenerate] OpenAI retry failed. Using Replicate:", replicatePrompt, "| aspect:", aspect, "\n");

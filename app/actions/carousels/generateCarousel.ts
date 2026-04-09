@@ -39,6 +39,7 @@ import {
   mergeStyleReferenceAssetIds,
   summarizeStyleReferenceImages,
 } from "@/lib/server/ai/summarizeStyleReferenceImages";
+import { summarizeProductReferenceImages } from "@/lib/server/ai/summarizeProductReferenceImages";
 import { buildCarouselSeriesVisualConsistency } from "@/lib/server/ai/carouselSeriesVisualConsistency";
 import { mergeProjectUgcAvatarAssetIds } from "@/lib/server/ai/mergeProjectUgcAvatarAssetIds";
 import { loadUgcAvatarReferenceJpegBuffers } from "@/lib/server/ai/loadUgcAvatarReferenceBuffers";
@@ -290,6 +291,16 @@ export async function generateCarousel(formData: FormData): Promise<
     })(),
     ugc_character_reference_asset_ids: (() => {
       const rawIds = formData.get("ugc_character_reference_asset_ids") as string | null;
+      if (!rawIds) return undefined;
+      try {
+        const arr = JSON.parse(rawIds) as unknown;
+        return Array.isArray(arr) ? arr : undefined;
+      } catch {
+        return undefined;
+      }
+    })(),
+    product_reference_asset_ids: (() => {
+      const rawIds = formData.get("product_reference_asset_ids") as string | null;
       if (!rawIds) return undefined;
       try {
         const arr = JSON.parse(rawIds) as unknown;
@@ -660,6 +671,9 @@ export async function generateCarousel(formData: FormData): Promise<
     ...(data.ugc_character_reference_asset_ids != null && {
       ugc_character_reference_asset_ids: data.ugc_character_reference_asset_ids,
     }),
+    ...(data.product_reference_asset_ids != null && {
+      product_reference_asset_ids: data.product_reference_asset_ids,
+    }),
     ...(validated.similar_ideas?.length && {
       similar_carousel_ideas: validated.similar_ideas,
     }),
@@ -815,14 +829,19 @@ export async function generateCarousel(formData: FormData): Promise<
           : (data.ugc_character_reference_asset_ids ?? [])
         : [];
     const ugcAvatarIdSet = new Set(ugcAvatarAssetIds);
+    const productRefIdSet = new Set(data.product_reference_asset_ids ?? []);
     const ugcBriefSaved = applySavedUgcCharacter
       ? ((project as { ugc_character_brief?: string | null }).ugc_character_brief?.trim() ?? "")
       : "";
 
     const projectStyleRefIdsRaw =
       (project as { ai_style_reference_asset_ids?: string[] | null }).ai_style_reference_asset_ids ?? [];
-    const projectStyleRefIds = projectStyleRefIdsRaw.filter((id) => !ugcAvatarIdSet.has(id));
-    const carouselStyleRefIds = (data.ai_style_reference_asset_ids ?? []).filter((id) => !ugcAvatarIdSet.has(id));
+    const projectStyleRefIds = projectStyleRefIdsRaw.filter(
+      (id) => !ugcAvatarIdSet.has(id) && !productRefIdSet.has(id)
+    );
+    const carouselStyleRefIds = (data.ai_style_reference_asset_ids ?? []).filter(
+      (id) => !ugcAvatarIdSet.has(id) && !productRefIdSet.has(id)
+    );
     const mergedStyleRefIds = mergeStyleReferenceAssetIds(carouselStyleRefIds, projectStyleRefIds);
 
     let ugcCharacterLock: string | undefined;
@@ -848,6 +867,15 @@ export async function generateCarousel(formData: FormData): Promise<
     if (useAiGenerate && mergedStyleRefIds.length > 0) {
       referenceStyleSummary = await summarizeStyleReferenceImages(user.id, mergedStyleRefIds);
       if (referenceStyleSummary) LOG("backgrounds", `AI style refs: summarized ${mergedStyleRefIds.length} image(s)`);
+    }
+
+    let productReferenceSummary: string | undefined;
+    const productRefIdsForGen = data.product_reference_asset_ids ?? [];
+    if (useAiGenerate && productRefIdsForGen.length > 0) {
+      productReferenceSummary = await summarizeProductReferenceImages(user.id, productRefIdsForGen);
+      if (productReferenceSummary) {
+        LOG("backgrounds", `Product refs: summarized ${productRefIdsForGen.length} image(s)`);
+      }
     }
 
     if (useAiGenerate) {
@@ -947,6 +975,7 @@ export async function generateCarousel(formData: FormData): Promise<
           userNotes: data.notes?.trim() || undefined,
           projectImageStyleNotes: projectRulesForImages.trim() || undefined,
           referenceStyleSummary,
+          productReferenceSummary,
           seriesVisualConsistency,
           ugcCharacterLock,
           ugcReferenceImageBuffers: effectiveUgcReferenceBuffers(),
@@ -991,6 +1020,7 @@ export async function generateCarousel(formData: FormData): Promise<
               userNotes: data.notes?.trim() || undefined,
               projectImageStyleNotes: projectRulesForImages.trim() || undefined,
               referenceStyleSummary,
+              productReferenceSummary,
               seriesVisualConsistency,
               ugcCharacterLock,
               ugcReferenceImageBuffers: effectiveUgcReferenceBuffers(),
@@ -1443,6 +1473,16 @@ export async function startCarouselGeneration(formData: FormData): Promise<
         return undefined;
       }
     })(),
+    product_reference_asset_ids: (() => {
+      const rawIds = formData.get("product_reference_asset_ids") as string | null;
+      if (!rawIds) return undefined;
+      try {
+        const arr = JSON.parse(rawIds) as unknown;
+        return Array.isArray(arr) ? arr : undefined;
+      } catch {
+        return undefined;
+      }
+    })(),
     use_ai_backgrounds: formData.get("use_ai_backgrounds") ?? undefined,
     use_stock_photos: formData.get("use_stock_photos") ?? undefined,
     use_ai_generate: formData.get("use_ai_generate") ?? undefined,
@@ -1560,6 +1600,7 @@ export async function startCarouselGeneration(formData: FormData): Promise<
     background_asset_ids: data.background_asset_ids,
     ai_style_reference_asset_ids: data.ai_style_reference_asset_ids ?? [],
     ugc_character_reference_asset_ids: data.ugc_character_reference_asset_ids ?? [],
+    product_reference_asset_ids: data.product_reference_asset_ids ?? [],
     ...(parsed.data.carousel_for && { carousel_for: parsed.data.carousel_for }),
   };
 

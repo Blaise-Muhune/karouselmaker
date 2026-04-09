@@ -1,6 +1,25 @@
 import { z } from "zod";
+import { MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS } from "@/lib/constants";
 
-export const generateCarouselInputSchema = z.object({
+const REF_CAP = MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS;
+
+const uuidArray = (max: number) =>
+  z
+    .array(z.string())
+    .max(max)
+    .optional()
+    .transform((arr) => {
+      if (!arr?.length) return undefined;
+      const out: string[] = [];
+      for (const id of arr) {
+        if (z.string().uuid().safeParse(id).success) out.push(id);
+        if (out.length >= max) break;
+      }
+      return out.length ? out : undefined;
+    });
+
+export const generateCarouselInputSchema = z
+  .object({
   project_id: z.string().uuid(),
   /** When set, regenerate in place instead of creating a new carousel. */
   carousel_id: z.string().uuid().optional(),
@@ -11,34 +30,15 @@ export const generateCarouselInputSchema = z.object({
   number_of_slides: z.coerce.number().int().min(3).max(12).optional(),
   /** Optional asset IDs to use as slide backgrounds (round-robin). Max 30 per carousel (one per slide). */
   background_asset_ids: z.array(z.string().uuid()).max(30).optional(),
-  /** Optional library assets to steer AI-generated image style for this run (max 5; merged with project refs). */
-  ai_style_reference_asset_ids: z
-    .array(z.string())
-    .max(5)
-    .optional()
-    .transform((arr) => {
-      if (!arr?.length) return undefined;
-      const out: string[] = [];
-      for (const id of arr) {
-        if (z.string().uuid().safeParse(id).success) out.push(id);
-        if (out.length >= 5) break;
-      }
-      return out.length ? out : undefined;
-    }),
-  /** Optional per-run UGC character refs (max 5). Used when project "same person" lock is off. */
-  ugc_character_reference_asset_ids: z
-    .array(z.string())
-    .max(5)
-    .optional()
-    .transform((arr) => {
-      if (!arr?.length) return undefined;
-      const out: string[] = [];
-      for (const id of arr) {
-        if (z.string().uuid().safeParse(id).success) out.push(id);
-        if (out.length >= 5) break;
-      }
-      return out.length ? out : undefined;
-    }),
+  /** Optional library assets to steer AI-generated image style for this run (merged with project refs). */
+  ai_style_reference_asset_ids: uuidArray(REF_CAP),
+  /** Optional per-run UGC character refs. Used when project "same person" lock is off. */
+  ugc_character_reference_asset_ids: uuidArray(REF_CAP),
+  /**
+   * Product / app / service reference images (screenshots, packaging, product-on-person).
+   * Summarized for image prompts; favors PiP-friendly compositions when the slide is about that offering.
+   */
+  product_reference_asset_ids: uuidArray(REF_CAP),
   /** When true, AI suggests Unsplash search queries per slide and we fetch those images as backgrounds. */
   use_ai_backgrounds: z
     .string()
@@ -75,6 +75,29 @@ export const generateCarouselInputSchema = z.object({
     .string()
     .optional()
     .transform((v) => v !== "false" && v !== "0"),
-});
+})
+  .superRefine((data, ctx) => {
+    const style = data.ai_style_reference_asset_ids ?? [];
+    const ugc = data.ugc_character_reference_asset_ids ?? [];
+    const product = data.product_reference_asset_ids ?? [];
+    const seen = new Set<string>();
+    for (const id of [...style, ...ugc, ...product]) {
+      if (seen.has(id)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Each reference image can only appear in one category (characters, style, or product).",
+        });
+        return;
+      }
+      seen.add(id);
+    }
+    const n = style.length + ugc.length + product.length;
+    if (n > REF_CAP) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `At most ${REF_CAP} reference images combined (characters + style + product).`,
+      });
+    }
+  });
 
 export type GenerateCarouselInput = z.output<typeof generateCarouselInputSchema>;
