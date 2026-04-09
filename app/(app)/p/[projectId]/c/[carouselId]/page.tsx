@@ -191,11 +191,21 @@ export default async function CarouselEditorPage({
   const ugcSeriesBriefRaw = genOpts.ugc_series_character_brief;
   const ugcSeriesBrief =
     typeof ugcSeriesBriefRaw === "string" ? ugcSeriesBriefRaw.trim() : "";
-  const showSaveUgcCharacter =
+  /** Matches `saveUgcCharacterBriefFromCarousel` minimum length (20). */
+  const saveUgcCharacterCanApply =
     contentFocusId === "ugc" &&
     useAiBackgroundsCarousel === true &&
     genOpts.use_ai_generate === true &&
-    ugcSeriesBrief.length >= 40;
+    ugcSeriesBrief.length >= 20;
+  const saveUgcCharacterDisabledHint = !saveUgcCharacterCanApply
+    ? contentFocusId !== "ugc"
+      ? "Set the project’s content style to Creator (UGC) under Project → Edit."
+      : !useAiBackgroundsCarousel
+        ? "This carousel didn’t use AI backgrounds (or they’re off). Generate with AI images on to capture a character lock."
+        : genOpts.use_ai_generate !== true
+          ? "Needs AI-generated backgrounds—stock or web images don’t store a character lock for this carousel."
+          : "No character description on this run yet (too short or missing). Try regenerating with UGC + AI generate."
+    : "";
   const projectUgcBrief = (project as { ugc_character_brief?: string | null }).ugc_character_brief?.trim() ?? "";
 
   // Collect Unsplash attributions from slides for credits section
@@ -241,13 +251,13 @@ export default async function CarouselEditorPage({
     <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">
       <div className="mx-auto max-w-4xl space-y-6">
         {showGenerationPartial && <GenerationPartialBanner />}
-        {showSaveUgcCharacter && (
-          <SaveUgcCharacterFromCarouselButton
-            projectId={projectId}
-            carouselId={carouselId}
-            hasExistingSavedBrief={projectUgcBrief.length > 0}
-          />
-        )}
+        <SaveUgcCharacterFromCarouselButton
+          projectId={projectId}
+          carouselId={carouselId}
+          hasExistingSavedBrief={projectUgcBrief.length > 0}
+          canSave={saveUgcCharacterCanApply}
+          disabledHint={saveUgcCharacterDisabledHint}
+        />
         {!subscription.isPro && (
           hasFullAccess ? (
             <p className="text-sm text-muted-foreground">
