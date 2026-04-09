@@ -126,7 +126,7 @@ export function NewCarouselForm({
   carouselCount = 0,
   carouselLimit = 50,
   aiGenerateUsed = 0,
-  aiGenerateLimit = 15,
+  aiGenerateLimit = 25,
   regenerateCarouselId,
   initialInputType,
   initialInputValue,
@@ -262,7 +262,7 @@ export function NewCarouselForm({
   const [driveFolderError, setDriveFolderError] = useState<string | null>(null);
   const [useSavedUgcCharacter, setUseSavedUgcCharacter] = useState(initialUseSavedUgcCharacter);
   const [ugcCharacterPrefError, setUgcCharacterPrefError] = useState<string | null>(null);
-  const [showMoreOptions, setShowMoreOptions] = useState(false);
+  const [showMoreOptions, setShowMoreOptions] = useState(true);
   const [topicSuggestOpen, setTopicSuggestOpen] = useState(false);
   const [topicSuggestLoading, setTopicSuggestLoading] = useState(false);
   const [topicSuggestRefreshing, setTopicSuggestRefreshing] = useState(false);
@@ -669,137 +669,6 @@ export function NewCarouselForm({
           </CardContent>
         </Card>
 
-        {/* More options: frame count, notes, template */}
-        <div className="space-y-4">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="text-muted-foreground hover:text-foreground -ml-1"
-            onClick={() => setShowMoreOptions((v) => !v)}
-          >
-            {showMoreOptions ? (
-              <>
-                <ChevronUpIcon className="mr-1.5 size-4" />
-                Fewer options
-              </>
-            ) : (
-              <>
-                <ChevronDownIcon className="mr-1.5 size-4" />
-                More options
-              </>
-            )}
-          </Button>
-
-          {showMoreOptions && (
-            <>
-        <Card className="py-4 gap-4">
-          <CardHeader className="pb-0 px-5">
-            <CardTitle className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
-              Options
-            </CardTitle>
-            <CardDescription>Frame count, instructions, and tone.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-5 px-5 pt-0">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label id="number_of_slides_label" className="text-sm font-medium">Number of frames</Label>
-                <div
-                  id="number_of_slides"
-                  role="group"
-                  aria-labelledby="number_of_slides_label"
-                  className="flex h-10 w-full items-center rounded-lg border border-input bg-background"
-                >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (numberOfSlides === "") return;
-                      const n = parseInt(numberOfSlides, 10);
-                      if (n <= 3) setNumberOfSlides("");
-                      else setNumberOfSlides(String(n - 1));
-                    }}
-                    disabled={numberOfSlides === ""}
-                    className="flex h-full w-10 shrink-0 items-center justify-center border-r border-input text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50 disabled:hover:bg-transparent"
-                    aria-label="Decrease frames"
-                  >
-                    <ChevronDownIcon className="size-5" />
-                  </button>
-                  <span className="flex flex-1 items-center justify-center text-sm font-medium tabular-nums">
-                    {numberOfSlides === "" ? "AI decides" : numberOfSlides}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (numberOfSlides === "") {
-                        setNumberOfSlides("3");
-                        return;
-                      }
-                      const n = parseInt(numberOfSlides, 10);
-                      if (n < 12) setNumberOfSlides(String(n + 1));
-                    }}
-                    disabled={numberOfSlides !== "" && parseInt(numberOfSlides, 10) >= 12}
-                    className="flex h-full w-10 shrink-0 items-center justify-center border-l border-input text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50 disabled:hover:bg-transparent"
-                    aria-label="Increase frames"
-                  >
-                    <ChevronUpIcon className="size-5" />
-                  </button>
-                </div>
-                <p className="text-muted-foreground text-xs">Use arrows or leave as AI decides.</p>
-              </div>
-              <div className="space-y-2 sm:col-span-2 sm:col-start-1">
-                <Label htmlFor="notes" className="text-sm font-medium">Notes (optional)</Label>
-                <Textarea
-                  id="notes"
-                  placeholder="Add more context about your carousel…"
-                  className="min-h-20 resize-y"
-                  value={notes}
-                  maxLength={CAROUSEL_NOTES_MAX_CHARS}
-                  onChange={(e) => setNotes(e.target.value)}
-                />
-                <p
-                  className={cn(
-                    "text-xs tabular-nums text-muted-foreground",
-                    notes.length >= CAROUSEL_NOTES_MAX_CHARS && "font-medium text-destructive"
-                  )}
-                >
-                  {notes.length.toLocaleString()}/{CAROUSEL_NOTES_MAX_CHARS.toLocaleString()} characters
-                  {notes.length >= CAROUSEL_NOTES_MAX_CHARS ? " — limit reached" : ""}
-                </p>
-              </div>
-            </div>
-            <label className={`flex items-center gap-2.5 cursor-pointer group ${hasFullAccess ? "" : "opacity-70"}`}>
-              <input
-                type="checkbox"
-                checked={useWebSearch}
-                onChange={(e) => hasFullAccess && setUseWebSearch(e.target.checked)}
-                disabled={!hasFullAccess}
-                className="rounded border-input accent-primary size-4 shrink-0"
-              />
-              <GlobeIcon className="size-3.5 text-muted-foreground shrink-0" />
-              <span className="text-sm">Web search (URLs, recent topics){!hasFullAccess && " — Pro"}</span>
-            </label>
-            {isAdminUser && (
-              <label className="flex items-start gap-3 rounded-lg border border-transparent p-3 text-sm cursor-pointer hover:bg-muted/40 hover:border-border/50 transition-colors">
-                <input
-                  type="checkbox"
-                  checked={viralShortsStyle}
-                  onChange={(e) => setViralShortsStyle(e.target.checked)}
-                  className="mt-0.5 rounded border-input accent-primary"
-                />
-                <span className="flex flex-col gap-1">
-                  <span className="font-medium text-foreground">Viral Shorts style</span>
-                  <span className="text-muted-foreground text-xs leading-relaxed">
-                    Curiosity-gap or contrarian hook, story build-up, one natural mid-carousel question (e.g. &quot;What would you add?&quot;), payoff, then follow CTA. Not recommended for professional or brand accounts.
-                  </span>
-                </span>
-              </label>
-            )}
-          </CardContent>
-        </Card>
-            </>
-          )}
-        </div>
-
         <Card className="py-4 gap-4 border-primary/10">
           <CardHeader className="pb-2 px-5">
             <CardTitle className="text-sm font-medium text-foreground">
@@ -812,7 +681,15 @@ export function NewCarouselForm({
                 </>
               ) : (
                 <>
-                  Stock photos work on every plan. Web images and AI generate need Pro or your first {freeGenerationsTotal} free generations. Off = project colors.
+                  {!hasFullAccess && !isPro ? (
+                    <>
+                      Stock photos and images from your library work on every plan. AI-generated backgrounds are off without Pro (your free full-access runs are used). Turn off &quot;AI images&quot; below to pick stock or library.
+                    </>
+                  ) : (
+                    <>
+                      Stock photos work on every plan. Web images and AI generate need Pro or your first {freeGenerationsTotal} free generations. Off = project colors.
+                    </>
+                  )}
                   {hasFullAccess && !isPro && (
                     <span className="block mt-1">
                       {" "}
@@ -1023,7 +900,7 @@ export function NewCarouselForm({
               </div>
             )}
             <div className="pt-3 border-t border-border/50">
-              <p className="text-xs text-muted-foreground mb-2">Product/service images</p>
+              <p className="text-xs text-muted-foreground mb-2">Upload your images</p>
               <div className={`flex flex-wrap items-center gap-2 ${useAiBackgrounds ? "pointer-events-none opacity-50" : ""}`}>
                 <Button
                   type="button"
@@ -1283,6 +1160,135 @@ export function NewCarouselForm({
           dialogTitle="Character references"
           dialogDescription={`Select up to ${MAX_UGC_AVATAR_REFERENCE_ASSETS} images of the same person.`}
         />
+
+        {/* More options: frame count, notes — above Generate; open by default */}
+        <div className="space-y-4 pt-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-foreground -ml-1"
+            onClick={() => setShowMoreOptions((v) => !v)}
+          >
+            {showMoreOptions ? (
+              <>
+                <ChevronUpIcon className="mr-1.5 size-4" />
+                Fewer options
+              </>
+            ) : (
+              <>
+                <ChevronDownIcon className="mr-1.5 size-4" />
+                More options
+              </>
+            )}
+          </Button>
+
+          {showMoreOptions && (
+            <Card className="py-4 gap-4">
+              <CardHeader className="pb-0 px-5">
+                <CardTitle className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
+                  Options
+                </CardTitle>
+                <CardDescription>Frame count, instructions, and tone.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5 px-5 pt-0">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label id="number_of_slides_label" className="text-sm font-medium">Number of frames</Label>
+                    <div
+                      id="number_of_slides"
+                      role="group"
+                      aria-labelledby="number_of_slides_label"
+                      className="flex h-10 w-full items-center rounded-lg border border-input bg-background"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (numberOfSlides === "") return;
+                          const n = parseInt(numberOfSlides, 10);
+                          if (n <= 3) setNumberOfSlides("");
+                          else setNumberOfSlides(String(n - 1));
+                        }}
+                        disabled={numberOfSlides === ""}
+                        className="flex h-full w-10 shrink-0 items-center justify-center border-r border-input text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50 disabled:hover:bg-transparent"
+                        aria-label="Decrease frames"
+                      >
+                        <ChevronDownIcon className="size-5" />
+                      </button>
+                      <span className="flex flex-1 items-center justify-center text-sm font-medium tabular-nums">
+                        {numberOfSlides === "" ? "AI decides" : numberOfSlides}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (numberOfSlides === "") {
+                            setNumberOfSlides("3");
+                            return;
+                          }
+                          const n = parseInt(numberOfSlides, 10);
+                          if (n < 12) setNumberOfSlides(String(n + 1));
+                        }}
+                        disabled={numberOfSlides !== "" && parseInt(numberOfSlides, 10) >= 12}
+                        className="flex h-full w-10 shrink-0 items-center justify-center border-l border-input text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50 disabled:hover:bg-transparent"
+                        aria-label="Increase frames"
+                      >
+                        <ChevronUpIcon className="size-5" />
+                      </button>
+                    </div>
+                    <p className="text-muted-foreground text-xs">Use arrows or leave as AI decides.</p>
+                  </div>
+                  <div className="space-y-2 sm:col-span-2 sm:col-start-1">
+                    <Label htmlFor="notes" className="text-sm font-medium">Notes (optional)</Label>
+                    <Textarea
+                      id="notes"
+                      placeholder="Add more context about your carousel…"
+                      className="min-h-20 resize-y"
+                      value={notes}
+                      maxLength={CAROUSEL_NOTES_MAX_CHARS}
+                      onChange={(e) => setNotes(e.target.value)}
+                    />
+                    <p
+                      className={cn(
+                        "text-xs tabular-nums text-muted-foreground",
+                        notes.length >= CAROUSEL_NOTES_MAX_CHARS && "font-medium text-destructive"
+                      )}
+                    >
+                      {notes.length.toLocaleString()}/{CAROUSEL_NOTES_MAX_CHARS.toLocaleString()} characters
+                      {notes.length >= CAROUSEL_NOTES_MAX_CHARS ? " — limit reached" : ""}
+                    </p>
+                  </div>
+                </div>
+                <label className={`flex items-center gap-2.5 cursor-pointer group ${hasFullAccess ? "" : "opacity-70"}`}>
+                  <input
+                    type="checkbox"
+                    checked={useWebSearch}
+                    onChange={(e) => hasFullAccess && setUseWebSearch(e.target.checked)}
+                    disabled={!hasFullAccess}
+                    className="rounded border-input accent-primary size-4 shrink-0"
+                  />
+                  <GlobeIcon className="size-3.5 text-muted-foreground shrink-0" />
+                  <span className="text-sm">Web search (URLs, recent topics){!hasFullAccess && " — Pro"}</span>
+                </label>
+                {isAdminUser && (
+                  <label className="flex items-start gap-3 rounded-lg border border-transparent p-3 text-sm cursor-pointer hover:bg-muted/40 hover:border-border/50 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={viralShortsStyle}
+                      onChange={(e) => setViralShortsStyle(e.target.checked)}
+                      className="mt-0.5 rounded border-input accent-primary"
+                    />
+                    <span className="flex flex-col gap-1">
+                      <span className="font-medium text-foreground">Viral Shorts style</span>
+                      <span className="text-muted-foreground text-xs leading-relaxed">
+                        Curiosity-gap or contrarian hook, story build-up, one natural mid-carousel question (e.g. &quot;What would you add?&quot;), payoff, then follow CTA. Not recommended for professional or brand accounts.
+                      </span>
+                    </span>
+                  </label>
+                )}
+              </CardContent>
+            </Card>
+          )}
+        </div>
 
         <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center">
           <Button

@@ -84,17 +84,17 @@ export default async function NewCarouselPage({
     <div className="p-6 md:p-8">
       <div className="mx-auto max-w-xl space-y-6">
         {!subscription.isPro && !hasFullAccess && (
-          <UpgradeBanner message="You've used your 3 free generations with Web images and full editor access. Stock photos and your own images still work — choose a paid plan for Web images, AI generate, web search, and higher limits." />
+          <UpgradeBanner message="You've used all 3 free full-access generations. Stock photos and images from your library still work on this page. AI-generated backgrounds are off without a plan—upgrade for AI images, web search, and higher limits." />
         )}
         {!subscription.isPro && hasFullAccess && freeGenerationsLeft <= 1 && (
           <UpgradeBanner
-            message={`${freeGenerationsLeft} free generation left with Web images and full editor. Subscribe to keep those perks. Stock photos stay available on every plan.`}
+            message={`${freeGenerationsLeft} free full-access generation left (web images + full editor). After that, stock and library images still work; AI images turn off without a plan.`}
             variant="inline"
           />
         )}
         {!subscription.isPro && hasFullAccess && freeGenerationsLeft > 1 && (
           <p className="rounded-lg border border-border/50 bg-muted/30 px-4 py-2 text-sm text-muted-foreground">
-            You have <strong>{FREE_FULL_ACCESS_GENERATIONS} free generations</strong> with Web images and full editor access. {freeGenerationsLeft} left. Stock photos work on every plan.
+            You have <strong>{FREE_FULL_ACCESS_GENERATIONS} free full-access generations</strong> (web images + full editor). {freeGenerationsLeft} left. Stock and library images always work; AI images need Pro after free runs are used.
           </p>
         )}
         <div className="flex items-center justify-between gap-2">
