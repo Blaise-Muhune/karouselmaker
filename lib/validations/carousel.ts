@@ -36,7 +36,7 @@ export const generateCarouselInputSchema = z
   ugc_character_reference_asset_ids: uuidArray(REF_CAP),
   /**
    * Product / app / service reference images (screenshots, packaging, product-on-person).
-   * Summarized for image prompts; favors PiP-friendly compositions when the slide is about that offering.
+   * Summarized for the LLM; with AI generate, also used for image-to-image conditioning.
    */
   product_reference_asset_ids: uuidArray(REF_CAP),
   /** When true, AI suggests Unsplash search queries per slide and we fetch those images as backgrounds. */

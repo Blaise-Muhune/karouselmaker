@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { deleteAssetsAction } from "@/app/actions/assets/deleteAsset";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -22,7 +24,7 @@ import { LibraryImageImportBar } from "@/components/assets/LibraryImageImportBar
 import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
 import { PLAN_LIMITS } from "@/lib/constants";
 import type { Asset } from "@/lib/server/db/types";
-import { ImageIcon } from "lucide-react";
+import { ImageIcon, Trash2Icon } from "lucide-react";
 
 type AssetLibraryProps = {
   assets: Asset[];
@@ -59,6 +61,12 @@ export function AssetLibrary({
   const urls = initialUrls;
   const [applyError, setApplyError] = useState<string | null>(null);
   const [projectFilter, setProjectFilter] = useState<string>(initialProjectFilter);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const allowBulkSelect = !(pickerMode && slideId);
 
   const atLimit = assetLimit > 0 && assetCount >= assetLimit;
 
@@ -101,6 +109,50 @@ export function AssetLibrary({
         ? assets.filter((a) => a.project_id == null)
         : assets.filter((a) => a.project_id === projectFilter);
 
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [projectFilter]);
+
+  const selectedInView = filteredAssets.filter((a) => selectedIds.has(a.id));
+  const selectedCount = selectedInView.length;
+  const allFilteredSelected =
+    filteredAssets.length > 0 && filteredAssets.every((a) => selectedIds.has(a.id));
+
+  const toggleAssetSelected = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAllFiltered = () => {
+    setSelectedIds(new Set(filteredAssets.map((a) => a.id)));
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const runBulkDelete = async () => {
+    if (selectedCount === 0) return;
+    setDeleteError(null);
+    setIsDeleting(true);
+    const result = await deleteAssetsAction(
+      selectedInView.map((a) => a.id),
+      "/assets"
+    );
+    setIsDeleting(false);
+    if (result.ok) {
+      const removedIds = new Set(selectedInView.map((a) => a.id));
+      setDeleteConfirmOpen(false);
+      clearSelection();
+      setSelectedAsset((cur) => (cur && removedIds.has(cur.id) ? null : cur));
+      startTransition(() => router.refresh());
+      return;
+    }
+    setDeleteError(result.error);
+  };
+
   return (
     <div className="space-y-6">
       {atLimit && !isPro && (
@@ -142,6 +194,49 @@ export function AssetLibrary({
             className="min-w-0 flex-1"
           />
         </div>
+        {allowBulkSelect && filteredAssets.length > 0 && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs"
+              disabled={isPending || isDeleting || allFilteredSelected}
+              onClick={selectAllFiltered}
+            >
+              Select all
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs"
+              disabled={isPending || isDeleting || selectedCount === 0}
+              onClick={clearSelection}
+            >
+              Clear selection
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              className="h-8 text-xs"
+              disabled={isPending || isDeleting || selectedCount === 0}
+              onClick={() => {
+                setDeleteError(null);
+                setDeleteConfirmOpen(true);
+              }}
+            >
+              <Trash2Icon className="mr-1.5 size-3.5" />
+              Delete{selectedCount > 0 ? ` (${selectedCount})` : ""}
+            </Button>
+            {selectedCount > 0 && (
+              <span className="text-muted-foreground text-xs tabular-nums">
+                {selectedCount} selected
+              </span>
+            )}
+          </div>
+        )}
 
       {filteredAssets.length === 0 ? (
         <div className="flex min-h-[220px] flex-col items-center justify-center rounded-2xl border border-dashed border-border/60 bg-muted/20 p-8 text-center">
@@ -155,30 +250,45 @@ export function AssetLibrary({
         </div>
       ) : (
         <ul className="grid gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-          {filteredAssets.map((asset) => (
-            <li key={asset.id}>
-              <button
-                type="button"
-                onClick={() => {
-                  setApplyError(null);
-                  setSelectedAsset(asset);
-                }}
-                className="border-border/50 hover:border-primary/30 flex aspect-square w-full overflow-hidden rounded-lg border bg-muted/10 transition-colors hover:bg-muted/20 focus:outline-none focus:ring-2 focus:ring-primary/50"
-              >
-                {urls[asset.id] ? (
-                  <img
-                    src={urls[asset.id]}
-                    alt={asset.file_name}
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <span className="flex h-full w-full items-center justify-center text-muted-foreground">
-                    <ImageIcon className="size-8" />
-                  </span>
+          {filteredAssets.map((asset) => {
+            const checked = selectedIds.has(asset.id);
+            return (
+              <li key={asset.id} className="relative">
+                {allowBulkSelect && (
+                  <label className="absolute left-2 top-2 z-10 flex cursor-pointer items-center rounded-md border border-border/80 bg-background/90 p-1 shadow-sm backdrop-blur-sm">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleAssetSelected(asset.id)}
+                      disabled={isPending || isDeleting}
+                      className="size-4 rounded border-input accent-primary"
+                      aria-label={`Select ${asset.file_name}`}
+                    />
+                  </label>
                 )}
-              </button>
-            </li>
-          ))}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setApplyError(null);
+                    setSelectedAsset(asset);
+                  }}
+                  className={`border-border/50 hover:border-primary/30 flex aspect-square w-full overflow-hidden rounded-lg border bg-muted/10 transition-colors hover:bg-muted/20 focus:outline-none focus:ring-2 focus:ring-primary/50 ${checked ? "ring-2 ring-primary/40" : ""}`}
+                >
+                  {urls[asset.id] ? (
+                    <img
+                      src={urls[asset.id]}
+                      alt={asset.file_name}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <span className="flex h-full w-full items-center justify-center text-muted-foreground">
+                      <ImageIcon className="size-8" />
+                    </span>
+                  )}
+                </button>
+              </li>
+            );
+          })}
         </ul>
       )}
       </section>
@@ -220,6 +330,36 @@ export function AssetLibrary({
               {applyError}
             </p>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <DialogContent className="max-w-md" showCloseButton>
+          <DialogHeader>
+            <DialogTitle>Delete {selectedCount} image{selectedCount !== 1 ? "s" : ""}?</DialogTitle>
+            <DialogDescription>
+              This removes them from your library and from storage. Slides that used these images may show a missing
+              background until you pick a new one. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          {deleteError && (
+            <p className="text-destructive text-xs rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">
+              {deleteError}
+            </p>
+          )}
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setDeleteConfirmOpen(false)}
+              disabled={isDeleting}
+            >
+              Cancel
+            </Button>
+            <Button type="button" variant="destructive" onClick={runBulkDelete} disabled={isDeleting}>
+              {isDeleting ? "Deleting…" : "Delete"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

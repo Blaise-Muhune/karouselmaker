@@ -43,6 +43,7 @@ import { summarizeProductReferenceImages } from "@/lib/server/ai/summarizeProduc
 import { buildCarouselSeriesVisualConsistency } from "@/lib/server/ai/carouselSeriesVisualConsistency";
 import { mergeProjectUgcAvatarAssetIds } from "@/lib/server/ai/mergeProjectUgcAvatarAssetIds";
 import { loadUgcAvatarReferenceJpegBuffers } from "@/lib/server/ai/loadUgcAvatarReferenceBuffers";
+import { loadProductReferenceJpegBuffers } from "@/lib/server/ai/loadProductReferenceJpegBuffers";
 import { summarizeUgcAvatarReferencesForConsistency } from "@/lib/server/ai/summarizeUgcAvatarReference";
 import { preferRecognizablePublicFiguresForImages } from "@/lib/server/ai/topicFictionHeuristic";
 import { extractInputTextFromDocument } from "@/lib/server/documents/extractInputText";
@@ -496,6 +497,15 @@ export async function generateCarousel(formData: FormData): Promise<
   const useWebSearch = hasFullAccess && (userAskedWebSearch || autoNewsWebSearch);
   const projectLanguage = (project as { language?: string }).language?.trim() || undefined;
 
+  const productRefIdsForRun = data.product_reference_asset_ids ?? [];
+  let productReferenceSummary: string | undefined;
+  if (productRefIdsForRun.length > 0) {
+    productReferenceSummary = await summarizeProductReferenceImages(user.id, productRefIdsForRun);
+    if (productReferenceSummary) {
+      LOG("prompt", `Product refs: summarized ${productRefIdsForRun.length} image(s) for LLM`);
+    }
+  }
+
   // Resolve template for prompt so AI gets zone limits (font size, width, height, has headline/body).
   let templateForPrompt: Awaited<ReturnType<typeof getTemplate>> = null;
   if (data.template_id) {
@@ -530,6 +540,7 @@ export async function generateCarousel(formData: FormData): Promise<
     viral_shorts_style: !!parsed.data.viral_shorts_style && userIsAdmin,
     carousel_for: carouselFor,
     template_context,
+    product_reference_summary: productReferenceSummary,
   };
 
   LOG("AI", useWebSearch ? "calling LLM with web search" : "calling LLM (JSON mode)");
@@ -869,12 +880,12 @@ export async function generateCarousel(formData: FormData): Promise<
       if (referenceStyleSummary) LOG("backgrounds", `AI style refs: summarized ${mergedStyleRefIds.length} image(s)`);
     }
 
-    let productReferenceSummary: string | undefined;
-    const productRefIdsForGen = data.product_reference_asset_ids ?? [];
-    if (useAiGenerate && productRefIdsForGen.length > 0) {
-      productReferenceSummary = await summarizeProductReferenceImages(user.id, productRefIdsForGen);
-      if (productReferenceSummary) {
-        LOG("backgrounds", `Product refs: summarized ${productRefIdsForGen.length} image(s)`);
+    let productReferenceImageBuffers: Buffer[] | undefined;
+    if (useAiGenerate && productRefIdsForRun.length > 0) {
+      const bufs = await loadProductReferenceJpegBuffers(user.id, productRefIdsForRun);
+      if (bufs.length > 0) {
+        productReferenceImageBuffers = bufs;
+        LOG("backgrounds", `Product refs: loaded ${bufs.length} image buffer(s) for image-to-image`);
       }
     }
 
@@ -979,6 +990,7 @@ export async function generateCarousel(formData: FormData): Promise<
           seriesVisualConsistency,
           ugcCharacterLock,
           ugcReferenceImageBuffers: effectiveUgcReferenceBuffers(),
+          productReferenceImageBuffers,
           ugcCasualPhoneLook: contentFocusId === "ugc" || undefined,
           aspectRatio: imageAspectRatio,
           preferRecognizablePublicFigures: preferPublicFigures || undefined,
@@ -1024,6 +1036,7 @@ export async function generateCarousel(formData: FormData): Promise<
               seriesVisualConsistency,
               ugcCharacterLock,
               ugcReferenceImageBuffers: effectiveUgcReferenceBuffers(),
+              productReferenceImageBuffers,
               ugcCasualPhoneLook: contentFocusId === "ugc" || undefined,
               year: slideContext?.year?.trim() || undefined,
               location: slideContext?.location?.trim() || undefined,

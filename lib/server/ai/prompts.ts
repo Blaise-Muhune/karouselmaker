@@ -49,6 +49,8 @@ type PromptContext = {
   carousel_for?: "instagram" | "linkedin";
   /** When set, injected into system prompt so AI respects template text zone limits (headline/body max chars, or omit body if template has no body zone). */
   template_context?: string;
+  /** Vision summary of user product/app/service reference images—steers copy and image_queries when relevant. */
+  product_reference_summary?: string;
 };
 
 export function buildCarouselPrompts(ctx: PromptContext): {
@@ -244,6 +246,10 @@ LinkedIn shape reminder: when carousel_for is linkedin, last slide headline = co
     ? `\nOVERRIDE (highest priority—follow these if they contradict anything, except slide count is still set only by the product): ${ctx.notes.trim()}`
     : "";
 
+  const productRefSection = ctx.product_reference_summary?.trim()
+    ? `\nUser attached reference images of a product, app, or service (vision summary below). When the topic fits, weave this offering into the carousel and into image_queries / visual intent—natural in-context shots (device, environment, packaging), not generic unrelated stock. Summary:\n${ctx.product_reference_summary.trim()}`
+    : "";
+
   const viralShortsUserNote = ctx.viral_shorts_style
     ? " CRITICAL: Viral Shorts style overrides other rules. Title and slide 1 headline do NOT need to match—make both viral/punchy. (1) Hook: curiosity gap, bold claim, contradiction, or micro-story tease. (2) Build-up: story or explanation. (3) ONE mid-carousel engagement slide: natural question with short invite—only slide that may ask for a response. (4) Payoff: deliver on the hook. (5) Last slide: follow/subscribe CTA unless LinkedIn—then conversion CTA per system. 8–12 slides. No format words in slide text."
     : "";
@@ -281,7 +287,7 @@ Input type: ${ctx.input_type}.
 Input value:
 ${ctx.input_value}
 If the topic is vague or ambiguous, assume a reasonable interpretation and deliver a full carousel with real content (examples, a clear take, or a ranked list).${ctx.viral_shorts_style ? " Viral Shorts: the single mid-carousel engagement slide may ask for a response; every other slide must deliver content." : " Do NOT output slides that ask the reader to \"pick\", \"decide\", or \"choose\" anything—give the answer (unless READER-DIRECTED CHALLENGES in the system prompt applies)."} Keep information accurate: no invented facts; use web search when needed. Reader-directed topics (e.g. "Build the best XI"): provide options/candidates per system rules—no meta "how to read" slide; consistent options per slide; minimal body on 3+ option slides.
-${urlNote}${creatorHandleNote}${projectNicheNote}${notesSection}
+${urlNote}${creatorHandleNote}${projectNicheNote}${notesSection}${productRefSection}
 
 ${ctx.use_ai_backgrounds ? (ctx.use_ai_generate
   ? `CRITICAL: Every slide MUST have image_queries. AI image prompts must describe images that are scroll-stopping and on-topic—visually intriguing, not generic stock.${aiGenerateImageQueryUserExtra} AVOID generic stock clichés: no person from behind at window/sunset, no hands writing in notebook with coffee mug, no silhouette against sunrise, no generic 'person looking at city skyline', no steaming coffee by window alone. Let each slide's lighting and mood follow the scene and copy naturally; do not paste one lighting recipe on every slide. Vary compositions. NOT search terms like '4k' or '3000x2000'.`

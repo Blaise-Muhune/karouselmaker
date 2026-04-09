@@ -182,7 +182,7 @@ export function NewCarouselForm({
   initialAiStyleReferenceAssetIds?: string[];
   /** Per-run UGC character refs (used when "Same person from project" is off). */
   initialUgcCharacterReferenceAssetIds?: string[];
-  /** Product / app / service refs for AI image fidelity (PiP-friendly). */
+  /** Product / app / service refs (LLM + image-to-image when using AI generate). */
   initialProductReferenceAssetIds?: string[];
   /** Templates the user can choose before generating (with parsed config for preview). */
   templateOptions?: TemplateOption[];
@@ -250,18 +250,27 @@ export function NewCarouselForm({
   const [productRefPickerOpen, setProductRefPickerOpen] = useState(false);
   const [backgroundPickerOpen, setBackgroundPickerOpen] = useState(false);
 
-  const maxStyleRefPick = Math.max(
-    0,
-    MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS - ugcCharacterRefIds.length - productRefIds.length
-  );
-  const maxUgcCharacterPick = Math.max(
-    0,
-    MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS - aiStyleRefIds.length - productRefIds.length
-  );
-  const maxProductRefPick = Math.max(
-    0,
-    MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS - aiStyleRefIds.length - ugcCharacterRefIds.length
-  );
+  const needsAiGenerateRefs =
+    useAiBackgrounds && imageSource === "ai_generate" && canUseAiGenerate && carouselFor !== "linkedin";
+
+  const maxStyleRefPick = needsAiGenerateRefs
+    ? Math.max(
+        0,
+        MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS - ugcCharacterRefIds.length - productRefIds.length
+      )
+    : 0;
+  const maxUgcCharacterPick = needsAiGenerateRefs
+    ? Math.max(
+        0,
+        MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS - aiStyleRefIds.length - productRefIds.length
+      )
+    : 0;
+  const maxProductRefPick = needsAiGenerateRefs
+    ? Math.max(
+        0,
+        MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS - aiStyleRefIds.length - ugcCharacterRefIds.length
+      )
+    : MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS;
   const combinedReferenceCount =
     aiStyleRefIds.length + ugcCharacterRefIds.length + productRefIds.length;
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
@@ -439,15 +448,24 @@ export function NewCarouselForm({
       setError(`Notes are too long (max ${CAROUSEL_NOTES_MAX_CHARS.toLocaleString()} characters).`);
       return;
     }
-    const allRefIds = [...aiStyleRefIds, ...ugcCharacterRefIds, ...productRefIds];
-    const refDedupe = new Set(allRefIds);
-    if (refDedupe.size !== allRefIds.length) {
-      setError("Use each library image in only one row: characters, style, or product.");
-      return;
-    }
-    if (combinedReferenceCount > MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS) {
+    const needsAiGenerateRefsSubmit =
+      useAiBackgrounds && imageSource === "ai_generate" && canUseAiGenerate && carouselFor !== "linkedin";
+    if (needsAiGenerateRefsSubmit) {
+      const allRefIds = [...aiStyleRefIds, ...ugcCharacterRefIds, ...productRefIds];
+      const refDedupe = new Set(allRefIds);
+      if (refDedupe.size !== allRefIds.length) {
+        setError("Use each library image in only one row: characters, style, or product.");
+        return;
+      }
+      if (combinedReferenceCount > MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS) {
+        setError(
+          `Too many reference images (${combinedReferenceCount}). Use at most ${MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS} combined across characters, style, and product.`
+        );
+        return;
+      }
+    } else if (productRefIds.length > MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS) {
       setError(
-        `Too many reference images (${combinedReferenceCount}). Use at most ${MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS} combined across characters, style, and product.`
+        `Too many product reference images. Use at most ${MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS}.`
       );
       return;
     }
@@ -482,9 +500,9 @@ export function NewCarouselForm({
         if (projectContentFocus === "ugc" && !useSavedUgcCharacter && ugcCharacterRefIds.length > 0) {
           formData.set("ugc_character_reference_asset_ids", JSON.stringify(ugcCharacterRefIds));
         }
-        if (productRefIds.length > 0) {
-          formData.set("product_reference_asset_ids", JSON.stringify(productRefIds));
-        }
+      }
+      if (productRefIds.length > 0) {
+        formData.set("product_reference_asset_ids", JSON.stringify(productRefIds));
       }
       if (projectContentFocus === "ugc") {
         formData.set("use_saved_ugc_character", useSavedUgcCharacter ? "true" : "false");
@@ -907,8 +925,8 @@ export function NewCarouselForm({
                       <span className="font-medium text-foreground tabular-nums">
                         {MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS}
                       </span>{" "}
-                      images total across characters, style, and product. AI uses product shots for accurate UI,
-                      packaging, and picture-in-picture style layouts when the slide fits.
+                      images total across characters, style, and product. Product images add image-to-image conditioning
+                      so UI, packaging, and products stay recognizable in generated scenes.
                       <span className="text-foreground/80 tabular-nums">
                         {" "}
                         ({combinedReferenceCount}/{MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS} selected)
@@ -974,8 +992,8 @@ export function NewCarouselForm({
                     </div>
                       <p className="text-[11px] text-muted-foreground">Product or service</p>
                       <p className="text-[10px] text-muted-foreground/90 leading-snug -mt-1">
-                        App or site screenshots, product on model, packaging—keeps the offering recognizable (often as a
-                        phone/UI inset).
+                        Screenshots, product on model, packaging—image-to-image so the model matches your real pixels, not
+                        only text.
                       </p>
                       <div className="flex flex-wrap items-center gap-2">
                         <Button
@@ -1008,87 +1026,137 @@ export function NewCarouselForm({
                 )}
               </div>
             )}
-            <div className="pt-3 border-t border-border/50">
-              <p className="text-xs text-muted-foreground mb-2">Upload your images</p>
-              <div className={`flex flex-wrap items-center gap-2 ${useAiBackgrounds ? "pointer-events-none opacity-50" : ""}`}>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 text-xs"
-                  onClick={() => setBackgroundPickerOpen(true)}
-                  disabled={useAiBackgrounds || driveFolderImporting}
-                >
-                  <ImageIcon className="mr-1.5 size-3.5" />
-                  {backgroundAssetIds.length ? `${backgroundAssetIds.length} selected` : "Library"}
-                </Button>
-                <GoogleDriveFolderPicker
-                  onFolderPicked={async (folderId, accessToken) => {
-                    setDriveFolderError(null);
-                    setDriveFolderImporting(true);
-                    const result = await importFromGoogleDrive(folderId, accessToken, projectId);
-                    setDriveFolderImporting(false);
-                    if (result.ok && result.assets.length > 0) {
-                      setBackgroundAssetIds(result.assets.map((a) => a.id));
-                    } else if (!result.ok) {
-                      setDriveFolderError(result.error);
-                    } else {
-                      setDriveFolderError("No images found in that folder.");
-                    }
-                  }}
-                  onError={setDriveFolderError}
-                  variant="outline"
-                  size="sm"
-                  className="h-8 text-xs"
-                  disabled={driveFolderImporting || useAiBackgrounds}
-                >
-                  {driveFolderImporting ? (
-                    <Loader2Icon className="mr-1.5 size-3.5 animate-spin" />
-                  ) : (
-                    <ImageIcon className="mr-1.5 size-3.5" />
+            {!useAiBackgrounds && (
+              <>
+                <div className="pt-3 border-t border-border/50">
+                  <p className="text-xs text-muted-foreground mb-2">Slide backgrounds</p>
+                  <p className="text-[11px] text-muted-foreground leading-snug mb-2">
+                    Pick images from your library or Google Drive. These become slide backgrounds (not the same as product
+                    references below).
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs"
+                      onClick={() => setBackgroundPickerOpen(true)}
+                      disabled={driveFolderImporting}
+                    >
+                      <ImageIcon className="mr-1.5 size-3.5" />
+                      {backgroundAssetIds.length ? `${backgroundAssetIds.length} selected` : "Library"}
+                    </Button>
+                    <GoogleDriveFolderPicker
+                      onFolderPicked={async (folderId, accessToken) => {
+                        setDriveFolderError(null);
+                        setDriveFolderImporting(true);
+                        const result = await importFromGoogleDrive(folderId, accessToken, projectId);
+                        setDriveFolderImporting(false);
+                        if (result.ok && result.assets.length > 0) {
+                          setBackgroundAssetIds(result.assets.map((a) => a.id));
+                        } else if (!result.ok) {
+                          setDriveFolderError(result.error);
+                        } else {
+                          setDriveFolderError("No images found in that folder.");
+                        }
+                      }}
+                      onError={setDriveFolderError}
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs"
+                      disabled={driveFolderImporting}
+                    >
+                      {driveFolderImporting ? (
+                        <Loader2Icon className="mr-1.5 size-3.5 animate-spin" />
+                      ) : (
+                        <ImageIcon className="mr-1.5 size-3.5" />
+                      )}
+                      Drive folder
+                    </GoogleDriveFolderPicker>
+                    <GoogleDriveMultiFilePicker
+                      onFilesPicked={async (fileIds, accessToken) => {
+                        setDriveFolderError(null);
+                        setDriveFolderImporting(true);
+                        const result = await importFilesFromGoogleDrive(fileIds, accessToken, projectId);
+                        setDriveFolderImporting(false);
+                        if (result.ok && result.assets.length > 0) {
+                          setBackgroundAssetIds(result.assets.map((a) => a.id));
+                        } else if (!result.ok) {
+                          setDriveFolderError(result.error);
+                        } else {
+                          setDriveFolderError("No images could be imported.");
+                        }
+                      }}
+                      onError={setDriveFolderError}
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs"
+                      disabled={driveFolderImporting}
+                    >
+                      <ImageIcon className="mr-1.5 size-3.5" />
+                      Drive files
+                    </GoogleDriveMultiFilePicker>
+                    {backgroundAssetIds.length > 0 && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 text-xs text-muted-foreground"
+                        onClick={() => setBackgroundAssetIds([])}
+                      >
+                        Clear
+                      </Button>
+                    )}
+                  </div>
+                  {driveFolderError && (
+                    <p className="text-destructive text-xs mt-2">{driveFolderError}</p>
                   )}
-                  Drive folder
-                </GoogleDriveFolderPicker>
-                <GoogleDriveMultiFilePicker
-                  onFilesPicked={async (fileIds, accessToken) => {
-                    setDriveFolderError(null);
-                    setDriveFolderImporting(true);
-                    const result = await importFilesFromGoogleDrive(fileIds, accessToken, projectId);
-                    setDriveFolderImporting(false);
-                    if (result.ok && result.assets.length > 0) {
-                      setBackgroundAssetIds(result.assets.map((a) => a.id));
-                    } else if (!result.ok) {
-                      setDriveFolderError(result.error);
-                    } else {
-                      setDriveFolderError("No images could be imported.");
-                    }
-                  }}
-                  onError={setDriveFolderError}
-                  variant="outline"
-                  size="sm"
-                  className="h-8 text-xs"
-                  disabled={driveFolderImporting || useAiBackgrounds}
-                >
-                  <ImageIcon className="mr-1.5 size-3.5" />
-                  Drive files
-                </GoogleDriveMultiFilePicker>
-                {backgroundAssetIds.length > 0 && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 text-xs text-muted-foreground"
-                    onClick={() => setBackgroundAssetIds([])}
-                    disabled={useAiBackgrounds}
-                  >
-                    Clear
-                  </Button>
-                )}
+                </div>
+                <div className="pt-3 border-t border-border/50 space-y-2">
+                  <p className="text-xs font-medium text-foreground">Product or service (optional)</p>
+                  <p className="text-[11px] text-muted-foreground leading-snug">
+                    App screenshots, product shots, packaging—up to {MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS} images. The AI
+                    uses them to align copy and image search keywords with what you actually sell or ship (no AI-generated
+                    backgrounds in this mode).
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs"
+                      onClick={() => setProductRefPickerOpen(true)}
+                      disabled={maxProductRefPick === 0}
+                    >
+                      <PackageIcon className="mr-1.5 size-3.5" />
+                      {productRefIds.length
+                        ? `${productRefIds.length} product${productRefIds.length !== 1 ? "s" : ""}`
+                        : "Pick product images"}
+                    </Button>
+                    {productRefIds.length > 0 && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 text-xs text-muted-foreground"
+                        onClick={() => setProductRefIds([])}
+                      >
+                        Clear
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+            {useAiBackgrounds && (
+              <div className="pt-3 border-t border-border/50">
+                <p className="text-xs text-muted-foreground leading-snug">
+                  Turn off <span className="font-medium text-foreground">AI images</span> to use your library or Google
+                  Drive as slide backgrounds. With AI generate, add product references under{" "}
+                  <span className="font-medium text-foreground">References</span> above.
+                </p>
               </div>
-              {!useAiBackgrounds && driveFolderError && (
-                <p className="text-destructive text-xs mt-2">{driveFolderError}</p>
-              )}
-            </div>
+            )}
           </CardContent>
         </Card>
 
@@ -1278,7 +1346,11 @@ export function NewCarouselForm({
           allowEmptyConfirm
           contextProjectId={projectId}
           dialogTitle="Product or service references"
-          dialogDescription={`Select up to ${maxProductRefPick} images (${MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS} max combined). Screenshots, product shots, packaging—AI matches them in generated backgrounds, often as a clear inset or phone UI.`}
+          dialogDescription={
+            needsAiGenerateRefs
+              ? `Select up to ${maxProductRefPick} images (${MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS} max combined with characters + style). Used for image-to-image when generating AI backgrounds.`
+              : `Select up to ${maxProductRefPick} images. Used to steer carousel copy and image keywords toward your product, app, or packaging.`
+          }
         />
 
         {/* More options: frame count, notes — above Generate; open by default */}

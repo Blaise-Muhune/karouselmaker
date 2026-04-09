@@ -38,7 +38,7 @@ export type ImagePromptContext = {
   projectImageStyleNotes?: string;
   /** Vision-derived structured style brief from user reference images (one carousel-level summary). */
   referenceStyleSummary?: string;
-  /** Product / app / service reference summary—PiP-friendly fidelity when the slide is about that offering. */
+  /** Product / app / service reference summary—pairs with image-to-image pixel refs when generating. */
   productReferenceSummary?: string;
   /** One carousel-level paragraph for recurring character/world/palette consistency across AI slides. */
   seriesVisualConsistency?: string;
@@ -49,6 +49,11 @@ export type ImagePromptContext = {
    * conditions on pixels—not only the text lock. JPEG/PNG bytes; normalized server-side before upload.
    */
   ugcReferenceImageBuffers?: Buffer[];
+  /**
+   * Product / app / service reference images (JPEG/PNG bytes). Combined with UGC refs for `images.edit` (cap 8 total);
+   * UGC images are listed first in the multimodal request.
+   */
+  productReferenceImageBuffers?: Buffer[];
   /** UGC: prefer smartphone-candid base wording instead of “professional photo” defaults. */
   ugcCasualPhoneLook?: boolean;
   /** Desired aspect ratio for generated image. Default 4:5; can be overridden from user notes (e.g. "square", "9:16"). */
@@ -326,7 +331,7 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
   const productSummary = context?.productReferenceSummary?.trim();
   if (productSummary) {
     parts.push(
-      "Product / service / app references: when this slide is about the user's offering, match the attached reference description—UI layout, product shape, packaging, colors, and key branding cues. Prefer picture-in-picture style when it fits: phone-in-hand with the app, laptop showing the site, clear product inset, or person wearing/holding the item—so the scene stays readable and on-brand. Do not swap in a different product or invented UI unless the slide is clearly not about this offering."
+      "Product / service / app references: when this slide is about the user's offering, match the attached reference description and any pixel references—UI layout, product shape, packaging, colors, and key branding cues. Use image-to-image conditioning: one coherent new photograph with the offering integrated naturally in the scene (device, hands, environment)—not a flat pasted mockup unless the brief explicitly calls for a clean UI crop. Do not swap in a different product or invented UI unless the slide is clearly not about this offering."
     );
     parts.push(truncateForContext(productSummary, MAX_PRODUCT_REFERENCE_IN_PROMPT));
   }
@@ -458,11 +463,36 @@ function aspectToOpenAISize(aspect: "1:1" | "4:5" | "9:16" | "2:3" | "16:9"): "1
 const UGC_IMAGE_EDIT_PREFIX =
   "The attached image(s) are reference photos of the recurring creator. Preserve their facial identity, hairstyle (cut/length/texture/part/hairline), hair color, skin tone, and approximate build. Generate one NEW photograph for the scene below—fresh, interesting phone-native framing vs the references (distance, angle, POV), not a crop or collage of the uploads; still believable handheld candor, not cinematic crane/glam hero or synthetic stock staging. Favor face-visible framing (front or 3/4 view) in most outputs so the viewer connects with the person. Back-of-head or over-shoulder views should be rare and only when the scene explicitly needs that perspective. Do not add tattoos by default; only include tattoos if explicitly requested in notes or clearly present in the provided references. Match iPhone-main-camera realism (natural grain, soft detail, believable light)—not a beauty-app portrait, CGI avatar, or glossy render unless notes request production polish. ";
 
-const MAX_UGC_REF_IMAGES_EDIT = 8;
+/** When product refs are attached after UGC refs in the same `images.edit` call. */
+const PRODUCT_I2I_AFTER_UGC =
+  "Additional attached images are product, app, UI, packaging, or service references. Use them for image-to-image fidelity (shapes, colors, layout, recognizable UI regions) while honoring the creator identity rules above. Produce one new photograph with natural scene integration—not a pasted collage or flat composite. ";
 
-function pickUgcReferenceBuffers(context?: ImagePromptContext): Buffer[] {
-  const raw = context?.ugcReferenceImageBuffers ?? [];
-  return raw.filter((b) => Buffer.isBuffer(b) && b.length > 0).slice(0, MAX_UGC_REF_IMAGES_EDIT);
+/** Product-only `images.edit` (no UGC face refs). */
+const PRODUCT_I2I_PREFIX_ALONE =
+  "The attached image(s) are product, app, UI, packaging, or service references. Use image-to-image conditioning: preserve the offering’s recognizable visual identity (colors, proportions, UI structure, packaging cues) while generating one NEW photograph for the scene described below—believable lighting and context, integrated into the environment rather than a floating overlay. ";
+
+const MAX_EDIT_REFERENCE_IMAGES = 8;
+
+function combineImageEditReferenceBuffers(context?: ImagePromptContext): {
+  buffers: Buffer[];
+  ugcCount: number;
+  productCount: number;
+} {
+  const ugcRaw = context?.ugcReferenceImageBuffers ?? [];
+  const ugc = ugcRaw.filter((b) => Buffer.isBuffer(b) && b.length > 0).slice(0, MAX_EDIT_REFERENCE_IMAGES);
+  const prodRaw = context?.productReferenceImageBuffers ?? [];
+  const prod = prodRaw.filter((b) => Buffer.isBuffer(b) && b.length > 0).slice(0, MAX_EDIT_REFERENCE_IMAGES);
+  const ugcTake = ugc.slice(0, MAX_EDIT_REFERENCE_IMAGES);
+  const room = MAX_EDIT_REFERENCE_IMAGES - ugcTake.length;
+  const productTake = prod.slice(0, Math.max(0, room));
+  return { buffers: [...ugcTake, ...productTake], ugcCount: ugcTake.length, productCount: productTake.length };
+}
+
+function buildImageEditPromptPrefix(ugcCount: number, productCount: number): string {
+  if (ugcCount > 0 && productCount > 0) return UGC_IMAGE_EDIT_PREFIX + PRODUCT_I2I_AFTER_UGC;
+  if (ugcCount > 0) return UGC_IMAGE_EDIT_PREFIX;
+  if (productCount > 0) return PRODUCT_I2I_PREFIX_ALONE;
+  return "";
 }
 
 function extractB64FromImagesResponse(result: { data?: Array<{ b64_json?: string; revised_prompt?: string }> }): {
@@ -492,21 +522,27 @@ export async function generateImageFromPrompt(
   const openaiSize = aspectToOpenAISize(aspect);
 
   const openai = new OpenAI({ apiKey });
-  const refBuffers = pickUgcReferenceBuffers(options?.context);
-  const useUgcRefEdit = refBuffers.length > 0;
+  const { buffers: refBuffers, ugcCount: editUgcCount, productCount: editProductCount } =
+    combineImageEditReferenceBuffers(options?.context);
+  const editPrefix = buildImageEditPromptPrefix(editUgcCount, editProductCount);
+  const useImageRefEdit = refBuffers.length > 0;
   const basePrompt = queryToPrompt(query, options?.context);
-  const prompt = useUgcRefEdit ? `${UGC_IMAGE_EDIT_PREFIX}${basePrompt}` : basePrompt;
+  const prompt = useImageRefEdit ? `${editPrefix}${basePrompt}` : basePrompt;
   const model = options?.model ?? getDefaultImageModel();
   const quality = model === "gpt-image-1.5" ? "medium" : "low";
 
   let refFiles: File[] | undefined;
-  if (useUgcRefEdit) {
+  if (useImageRefEdit) {
     try {
       refFiles = await Promise.all(
-        refBuffers.map((buf, i) => toFile(buf, `ugc-ref-${i}.jpg`, { type: "image/jpeg" }))
+        refBuffers.map((buf, i) => {
+          const name =
+            i < editUgcCount ? `ugc-ref-${i}.jpg` : `product-ref-${i - editUgcCount}.jpg`;
+          return toFile(buf, name, { type: "image/jpeg" });
+        })
       );
     } catch (e) {
-      console.warn("[openaiImageGenerate] Could not prepare UGC reference files:", e instanceof Error ? e.message : e);
+      console.warn("[openaiImageGenerate] Could not prepare reference image files:", e instanceof Error ? e.message : e);
       refFiles = undefined;
     }
   }
@@ -519,7 +555,7 @@ export async function generateImageFromPrompt(
     aspect,
     "| size:",
     openaiSize,
-    "| ugcRefEdit:",
+    "| imageRefEdit:",
     canEdit,
     "\n" +
       prompt +
@@ -588,7 +624,7 @@ export async function generateImageFromPrompt(
         productReferenceSummary: options?.context?.productReferenceSummary,
         ugcNaturalPhone: isUgcNaturalPhoneLookActive(options?.context),
       });
-      const retryForEdit = useUgcRefEdit ? `${UGC_IMAGE_EDIT_PREFIX}${retryShort}` : retryShort;
+      const retryForEdit = editPrefix ? `${editPrefix}${retryShort}` : retryShort;
       console.log("[openaiImageGenerate] Safety rejection. Retrying OpenAI with short concept:", retryForEdit, "\n");
       try {
         let retryExtracted = canEdit ? await tryUgcEdit(retryForEdit) : null;

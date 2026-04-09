@@ -1,6 +1,5 @@
 /**
- * Vision summary of user-provided product / app / service images for AI slide backgrounds.
- * Injected into image prompts so UI, packaging, and products stay recognizable—often via PiP-style framing.
+ * Vision summary of product / app / service reference images (complements image-to-image pixel conditioning).
  */
 
 import OpenAI from "openai";
@@ -17,18 +16,18 @@ function productReferenceVisionModel(): string {
   return "gpt-4o-mini";
 }
 
-const VISION_PROMPT = `These images are PRODUCT / SERVICE / APP references for marketing carousel backgrounds (often shown as picture-in-picture: phone screen, inset screenshot, or product held in frame).
+const VISION_PROMPT = `These images are PRODUCT / SERVICE / APP references for image-to-image marketing visuals (the image model will also see the actual pixels).
 
-Extract what an image generator must preserve when this offering appears:
-- Type: physical product, apparel on body, packaged goods, software UI / website screenshot, dashboard, mobile app screen, logo mark, etc.
+Extract what must stay visually faithful when this offering appears in a newly generated scene:
+- Type: physical product, apparel on body, packaged goods, software UI / website screenshot, dashboard, mobile app screen, logo shapes visible in-image, etc.
 - For UI/screenshots: layout regions, key components (nav, hero, cards, charts), approximate text density (do not transcribe long text), primary accent colors, light vs dark mode, device frame if visible.
 - For products: silhouette, proportions, dominant colors, materials, distinctive branding elements (shapes—not trademark names unless visible as words in the image).
 - For people + product: how the product is held or worn; keep product identity consistent with refs.
 
 Output rules:
 - Start with exactly this prefix on its own line: Product reference:
-- Then one dense paragraph (800–1300 chars): concrete visual anchors the model should match when the slide is about this tool/product/service.
-- Say explicitly when a **picture-in-picture** treatment fits: e.g. "Prefer phone-in-hand showing this UI" or "Product on desk beside subject" when the scene allows—unless the slide clearly needs a full-bleed hero.
+- Then one dense paragraph (800–1300 chars): concrete visual anchors for image-to-image conditioning—what must not drift when the slide is about this tool/product/service.
+- Prefer full-scene integration language (product in context, UI on a believable device, wearable on body)—not "floating overlay" unless the reference itself is a flat UI crop.
 - Do not invent features not visible. No bullet characters.`;
 
 export async function summarizeProductReferenceImages(
