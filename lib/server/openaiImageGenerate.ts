@@ -179,12 +179,12 @@ function buildSafeRetryPrompt(
   if (ref) {
     const refBrief = truncateForContext(ref, 480);
     const phone = opts?.ugcNaturalPhone
-      ? " Natural smartphone realism: slight sensor grain in shadows, soft focus, muted colors—like a real phone in that lighting—not studio HDR, beauty retouch, or AI-smooth plastic skin. Avoid stock-catalog staging."
+      ? " Natural smartphone realism: slight sensor grain in shadows, soft focus, muted **neutral** colors (no default orange cast)—like a real phone in that lighting—not studio HDR, beauty retouch, or AI-smooth plastic skin. Avoid stock-catalog staging."
       : "";
     return `Generate one image that closely matches this user reference style: ${refBrief}. Subject and scene: ${concept}.${prodBit}${phone} No text, no logos. Stay faithful to the reference look; lighting and time of day should follow the reference and the scene.${faceLine}`;
   }
   if (opts?.ugcNaturalPhone) {
-    return `Generate one candid phone-camera image (iPhone-style main camera: natural dynamic range, slight grain in shadows, soft not razor-sharp, muted highlights—no ad gloss, no synthetic perfection) that closely resembles: ${concept}.${prodBit} Must look like a real snapshot, not a polished AI still. No text, no logos.${faceLine}`;
+    return `Generate one candid phone-camera image (iPhone-style main camera: natural dynamic range, **neutral white balance** unless the scene is inherently warm, slight grain in shadows, soft not razor-sharp, muted highlights—no ad gloss, no synthetic perfection, no orange filter cast) that closely resembles: ${concept}.${prodBit} Must look like a real snapshot, not a polished AI still. No text, no logos.${faceLine}`;
   }
   return `Generate a single professional image that closely resembles the following concept. Same subject, setting, and mood—appropriate for a general audience.${prodBit} No text, no logos. Concept: ${concept}. Lighting natural to the scene, suitable as a background.${faceLine}`;
 }
@@ -219,7 +219,7 @@ function buildSafeFallbackPrompt(
     return `Match this reference visual style: ${truncateForContext(ref, 420)}. Subject: ${subject}.${prodBit}${phone} No text, no logos. Preserve palette and camera feel from the style description—avoid generic cinematic stock look.`;
   }
   if (opts?.ugcNaturalPhone) {
-    return `Candid phone-camera image: ${subject}.${prodBit} Natural light for the scene, slight sensor noise, soft focus, muted colors—real person could have taken it on a phone; avoid HDR stock look and overly convenient AI composition. No text, no logos.`;
+    return `Candid phone-camera image: ${subject}.${prodBit} Natural **neutral** light for the scene, slight sensor noise, soft focus, muted colors—no default orange warmth; real person could have taken it on a phone; avoid HDR stock look and overly convenient AI composition. No text, no logos.`;
   }
   return `Professional photograph: ${subject}.${prodBit} Lighting and mood that fit the subject and setting. No text, no logos. High quality, suitable as a background.`;
 }
@@ -284,11 +284,11 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
   const ugcPhone = isUgcNaturalPhoneLookActive(context);
 
   const ugcPhoneRealismSuffix =
-    "iPhone-style realism only (unless carousel/project notes explicitly ask for studio, commercial, or cinematic): slight sensor grain in shadows, soft focus (not razor-sharp), muted true-to-life colors, natural dynamic range—like a real main-camera shot in that room or street. No beauty-retouch or filter skin, no studio HDR, no ad gloss, no suspiciously perfect exposure on every surface.";
+    "iPhone-style realism only (unless carousel/project notes explicitly ask for studio, commercial, or cinematic): slight sensor grain in shadows, **soft or slightly missed focus** common—not every frame tack-sharp on the eyes; **neutral white balance by default**—plain daylight or typical indoor light, **not** a global orange/warm skin cast or golden-hour wash unless the scene clearly is (sunset, tungsten lamp, candlelight, firelight, neon sign, etc.) or reference images are strongly warm-graded; muted true-to-life colors, natural dynamic range—like an unfiltered handheld shot (creators often grade in post). No beauty-retouch or filter skin, no studio HDR, no ad gloss, no suspiciously perfect exposure on every surface.";
 
   /** Reject “too easy” AI/stock staging; keep output plausible as a phone snapshot. */
   const ugcAntiConvenienceLine =
-    "Do not make the image 'convenient' in an AI way: avoid plastic-smooth skin, hyper-symmetrical hero framing, empty minimalist sets unless the slide implies that, buttery global HDR, every object perfectly lit, or catalog/stock render vibes. Slightly messy real-world detail, minor exposure quirks, and imperfect composition are desirable. The viewer should believe a person actually held a phone there—not a polished synthetic still.";
+    "Do not make the image 'convenient' in an AI way: avoid plastic-smooth skin, hyper-symmetrical hero framing, empty minimalist sets unless the slide implies that, buttery global HDR, every object perfectly lit, catalog/stock render vibes, or a **perfectly staged reenactment** of an unlikely moment (e.g. mid-accident, split-second spill) as if a second camera crew set it up. When the slide text implies something awkward or fleeting, prefer a **nearby believable post**—aftermath, reaction, car, couch, walking away, awkward selfie—same story, not literal disaster porn. Slightly messy real-world detail, minor exposure quirks, imperfect composition, mild motion or focus softness are desirable. The viewer should believe someone casually held a phone—not a polished synthetic still.";
 
   /** Image description sent in full—never truncated. With reference style: no app lighting/stock framing—only subject + no text. */
   const base = hasReferenceStyle
@@ -323,7 +323,7 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
     );
     if (ugcPhone) {
       parts.push(
-        "UGC default: match the reference, but keep believable phone-captured authenticity—imperfections welcome (light noise, casual framing, practical indoor light). Do not upgrade to glossy commercial, catalog polish, or AI-convenient staging unless carousel notes explicitly ask for studio or cinematic lighting."
+        "UGC default: match the reference palette and light **when** the references are clearly warm/cool/stylized; if references are neutral, keep **neutral white balance**—do not add extra orange or golden cast. Keep believable phone-captured authenticity—imperfections welcome (light noise, casual framing, practical indoor light). Do not upgrade to glossy commercial, catalog polish, or AI-convenient staging unless carousel notes explicitly ask for studio or cinematic lighting."
       );
     }
   }
@@ -339,7 +339,7 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
   const ugcLock = context?.ugcCharacterLock?.trim();
   if (ugcLock) {
     parts.push(
-      `Recurring creator / person lock (mandatory when a person appears): same identity every slide—face shape, features, hairstyle (cut, length, texture, part, hairline, color) as a high-priority anchor, skin tone, body type, age read, and recurring casual wardrobe pieces (colors/silhouette). Keep those details stable unless carousel notes explicitly request a change. Do not drift to a different model. Vary only pose, expression, framing, and background. ${truncateForContext(ugcLock, 480)}`
+      `Recurring creator / person lock (mandatory when a person appears): same identity every slide—face shape, features, hairstyle (cut, length, texture, part, hairline, color) as a high-priority anchor, skin tone, body type, age read, recurring casual wardrobe (same garment colors/types and dress level), jewelry and accessories (watch, earrings, necklace, glasses) when visible, and stable look for any recurring partner or friend in the story. For one continuous day or outing in the carousel, do not randomize outfit, hair, or companions between slides unless notes or slide text signal a change. Do not drift to a different model. Vary pose, expression, framing, and background. ${truncateForContext(ugcLock, 480)}`
     );
   }
 
@@ -350,7 +350,7 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
         : "Identity details: keep hairstyle continuity precise across slides. Do not invent/add tattoos by default; include tattoos only when explicitly requested in carousel/project notes or clearly visible in provided reference images."
     );
     parts.push(
-      "Camera: real-phone energy that still feels interesting while preserving human connection. Prefer face-visible framing (front or 3/4 view) in most slides, with clear expression and eyes readable when the scene allows. Vary distance and POV using candid options like asymmetrical crop, slight handheld tilt, doorway frame, tight reaction close-up, or environmental wide; avoid repeating one centered medium shot every time. Back-of-head / over-shoulder / top-down-no-face compositions should be rare and only used when the slide meaning explicitly requires them. Plausible focal length; avoid ultra-wide face distortion unless the scene fits. No crane, drone, floating product, glam hero low-angle, sunset silhouette, or blockbuster anamorphic polish unless the slide is literally about that. Framing must follow this slide's headline and body—candid and human, not generic stock or obvious AI staging."
+      "Camera: real-phone energy—interesting but **not** every slide a crisp hero portrait. Often face-visible, but allow environmental shots where the subject is smaller, slight profile, or face softly out of critical focus when it feels like a real casual post. Vary distance and POV: asymmetrical crop, slight handheld tilt, doorway frame, reaction close-up, wide room shot, over-shoulder at phone. Avoid repeating one centered medium shot every time. Back-of-head / over-shoulder / top-down-no-face are fine when they match a believable posting moment—not only for 'literal' story beats. Plausible focal length; avoid ultra-wide face distortion unless the scene fits. No crane, drone, floating product, glam hero low-angle, sunset silhouette, or blockbuster polish unless the slide is literally about that. **Match the emotional beat** of headline/body—same story chapter—without forcing hyper-literal illustration of awkward or unfilmable moments. Candid and human, not generic stock or obvious AI staging."
     );
     parts.push(ugcAntiConvenienceLine);
   }
@@ -371,15 +371,15 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
   const seriesConsistency = context?.seriesVisualConsistency?.trim();
   if (seriesConsistency && !hasReferenceStyle) {
     parts.push(
-      `Series consistency (same carousel—when multiple slides share one environment, match walls, windows, furniture, props, time of day, and light direction until the scene changes; same recurring people stay consistent; carousel notes override on conflict): ${truncateForContext(seriesConsistency, 620)}`
+      `Series consistency (same carousel—when multiple slides share one environment, match walls, windows, furniture, props, time of day, and light direction until the scene changes; when the story is one day or one outing, keep recurring people’s outfit, hair, jewelry, and companions stable until text signals a change; same recurring people stay consistent; carousel notes override on conflict): ${truncateForContext(seriesConsistency, 620)}`
     );
   } else if (seriesConsistency && hasReferenceStyle && isUgcNaturalPhoneLookActive(context)) {
     parts.push(
-      `UGC series / same-person & same-place continuity (within the reference look above—carousel notes override on conflict): ${truncateForContext(seriesConsistency, 560)}`
+      `UGC series / same-person, same-place, and same-outing wardrobe continuity (within the reference look above—carousel notes override on conflict): ${truncateForContext(seriesConsistency, 560)}`
     );
   } else if (seriesConsistency && hasReferenceStyle) {
     parts.push(
-      `Same-environment & series continuity (keep reference palette/camera—also lock recurring rooms and people across slides that share a location; carousel notes override): ${truncateForContext(seriesConsistency, 560)}`
+      `Same-environment & series continuity (keep reference palette/camera—lock recurring rooms, outfit/hair/jewelry for same-day spans, and people across slides that share a location; carousel notes override): ${truncateForContext(seriesConsistency, 560)}`
     );
   }
   if (context?.projectImageStyleNotes?.trim()) {
@@ -413,7 +413,7 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
       hasReferenceStyle
         ? "Image must relate to this slide and the topic; avoid generic unrelated imagery."
         : ugcPhone
-          ? "Image must match this slide's headline and body—setting, props, and angle should feel like you snapped it in that exact context; avoid generic interchangeable stock. Indoor = indoor lighting."
+          ? "Image must fit this slide's **story beat** (mood, situation, relationship to the topic)—like something you might actually upload after or around that moment—not a perfectly staged reenactment of every line of copy. Adjacent beats (car, home, with the other person, post-mess reaction) beat literal unfilmable moments. Avoid generic interchangeable stock. Indoor = indoor lighting."
           : "Image must relate to this slide and the topic. Avoid generic stock; use a specific moment or detail. Indoor = indoor lighting."
     );
   }
@@ -431,7 +431,7 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
   }
 
   const colorGradingLine = ugcPhone
-    ? "Color: muted, phone-realistic—no pumped saturation, no neon teal-orange blockbuster grade, no Instagram filter glow unless carousel notes ask for it."
+    ? "Color: **neutral and plain**—muted, phone-realistic; **do not** default to orange skin tones or warm tungsten cast on neutral scenes; no teal-orange blockbuster grade, no baked-in Instagram-style warmth unless the environment or reference style demands it. No pumped saturation unless the scene calls for it."
     : "Color: natural, true-to-life grading when it fits the subject; avoid default neon magenta/purple gradients unless the topic is explicitly about that look.";
 
   if (!contextBlock.trim()) {
@@ -461,7 +461,7 @@ function aspectToOpenAISize(aspect: "1:1" | "4:5" | "9:16" | "2:3" | "16:9"): "1
 
 /** Prepended when using images.edit with UGC reference photos (multimodal identity conditioning). */
 const UGC_IMAGE_EDIT_PREFIX =
-  "The attached image(s) are reference photos of the recurring creator. Preserve their facial identity, hairstyle (cut/length/texture/part/hairline), hair color, skin tone, and approximate build. Generate one NEW photograph for the scene below—fresh, interesting phone-native framing vs the references (distance, angle, POV), not a crop or collage of the uploads; still believable handheld candor, not cinematic crane/glam hero or synthetic stock staging. Favor face-visible framing (front or 3/4 view) in most outputs so the viewer connects with the person. Back-of-head or over-shoulder views should be rare and only when the scene explicitly needs that perspective. Do not add tattoos by default; only include tattoos if explicitly requested in notes or clearly present in the provided references. Match iPhone-main-camera realism (natural grain, soft detail, believable light)—not a beauty-app portrait, CGI avatar, or glossy render unless notes request production polish. ";
+  "The attached image(s) are reference photos of the recurring creator. Preserve their facial identity, hairstyle (cut/length/texture/part/hairline), hair color, skin tone, and approximate build. **Lighting:** default **neutral** illumination for the new scene—do not force an orange or heavy warm cast unless the described setting or the references’ grading clearly warrant it (creators often re-grade in edit). Generate one NEW photograph for the scene below—fresh, interesting phone-native framing vs the references (distance, angle, POV), not a crop or collage of the uploads; still believable handheld candor, not cinematic crane/glam hero or synthetic stock staging. **Avoid hyper-convenient staging:** do not depict unlikely moments as if professionally set up; when the scene implies something fleeting or awkward, a believable adjacent moment (reaction, environment, after) is better than literal perfection. Often face-visible but not every output needs razor-sharp facial detail—soft focus and casual framing are OK. Back-of-head or over-shoulder are fine when they read as a real post. Do not add tattoos by default; only include tattoos if explicitly requested in notes or clearly present in the provided references. Match iPhone-main-camera realism (natural grain, soft detail, believable light)—not a beauty-app portrait, CGI avatar, or glossy render unless notes request production polish. ";
 
 /** When product refs are attached after UGC refs in the same `images.edit` call. */
 const PRODUCT_I2I_AFTER_UGC =

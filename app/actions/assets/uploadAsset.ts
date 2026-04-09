@@ -7,9 +7,9 @@ import { createAsset, countAssets } from "@/lib/server/db";
 import { uploadUserAsset } from "@/lib/server/storage/upload";
 import { processImageBuffer } from "@/lib/server/images/processImage";
 import { convertHeicToJpeg, isHeicMime } from "@/lib/server/images/convertHeic";
+import { resolveUploadImageMime } from "@/lib/server/images/resolveUploadImageMime";
 
-const MAX_SIZE_BYTES = 20 * 1024 * 1024; // 20MB
-const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif"];
+const MAX_SIZE_BYTES = 20 * 1024 * 1024; // 20MB — keep in sync with next.config serverActions.bodySizeLimit
 
 /** Raw camera extensions we don't support (user should export as JPEG/PNG first). */
 const RAW_EXTENSIONS = [".arw", ".awr", ".cr2", ".cr3", ".nef", ".ner", ".orf", ".raf", ".raw", ".dng"];
@@ -113,19 +113,26 @@ export async function uploadAsset(
     return { ok: false, error: "No file provided" };
   }
 
-  if (!ALLOWED_TYPES.includes(file.type)) {
-    if (isRawFileName(file.name)) {
-      return { ok: false, error: "Raw camera formats (ARW, AWR, CR2, NEF, etc.) are not supported. Please export as JPEG or PNG first." };
-    }
-    return { ok: false, error: "File must be an image (JPEG, PNG, WebP, GIF, or HEIC)" };
-  }
-
   if (file.size > MAX_SIZE_BYTES) {
     return { ok: false, error: "File must be 20MB or smaller" };
   }
 
   let buffer = Buffer.from(await file.arrayBuffer());
-  let mimeToProcess = file.type;
+  let mimeToProcess = resolveUploadImageMime(file, buffer);
+  if (!mimeToProcess) {
+    if (isRawFileName(file.name)) {
+      return {
+        ok: false,
+        error:
+          "Raw camera formats (ARW, AWR, CR2, NEF, etc.) are not supported. Please export as JPEG or PNG first.",
+      };
+    }
+    return {
+      ok: false,
+      error:
+        "Could not recognize this file as an image. Phone uploads often omit file type—try renaming to end in .jpg or .heic, or export as JPEG from Photos.",
+    };
+  }
   if (isHeicMime(file.type)) {
     const jpegBuffer = await convertHeicToJpeg(buffer);
     if (!jpegBuffer) {

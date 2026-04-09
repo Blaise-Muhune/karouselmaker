@@ -10,12 +10,12 @@ const nextConfig: NextConfig = {
     root: projectRoot,
   },
   experimental: {
-    // Allow asset uploads up to 8MB (uploadAsset.ts); 12MB gives FormData overhead headroom
+    // uploadAsset allows 20MB per file; multipart FormData needs headroom above raw file size
     serverActions: {
-      bodySizeLimit: "12mb",
+      bodySizeLimit: "25mb",
     },
     // When proxy runs, request body is buffered; must allow same size as serverActions
-    proxyClientMaxBodySize: "12mb",
+    proxyClientMaxBodySize: "25mb",
   },
 };
 

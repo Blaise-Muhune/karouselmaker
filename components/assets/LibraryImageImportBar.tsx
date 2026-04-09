@@ -69,6 +69,14 @@ export function LibraryImageImportBar({
       } else {
         setMessage(result.error);
       }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const lower = msg.toLowerCase();
+      if (lower.includes("body exceeded") || lower.includes("413") || lower.includes("too large")) {
+        setMessage("Upload too large for the server (max 20MB per image). Try a smaller photo or lower camera resolution.");
+      } else {
+        setMessage(msg || "Upload failed. Check your connection and try again.");
+      }
     } finally {
       setUploading(false);
       if (inputRef.current) inputRef.current.value = "";
