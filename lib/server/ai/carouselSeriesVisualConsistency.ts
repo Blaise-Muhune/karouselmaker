@@ -26,6 +26,22 @@ function parseConsistencyJson(raw: string): string | null {
   }
 }
 
+export function buildDeterministicUgcSeriesBriefForSave(params: {
+  carouselTitle?: string;
+  topic?: string;
+  slideCount: number;
+  seedCharacterBrief?: string;
+}): string {
+  return deterministicFallback({
+    carouselTitle: params.carouselTitle,
+    topic: params.topic,
+    slideCount: params.slideCount,
+    preferRecognizablePublicFigures: false,
+    ugcMode: true,
+    seedCharacterBrief: params.seedCharacterBrief,
+  });
+}
+
 function deterministicFallback(params: {
   carouselTitle?: string;
   topic?: string;

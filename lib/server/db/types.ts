@@ -108,6 +108,8 @@ export interface Carousel {
     use_saved_ugc_character?: boolean;
     /** UGC + AI generate (invented character): series bible snapshot—can be saved to project `ugc_character_brief`. */
     ugc_series_character_brief?: string;
+    /** True when generation merged project `ugc_character_avatar_asset_ids` (library face refs). */
+    ugc_used_project_avatar_refs?: boolean;
   };
   created_at: string;
   updated_at: string;

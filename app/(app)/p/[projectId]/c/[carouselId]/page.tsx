@@ -188,15 +188,23 @@ export default async function CarouselEditorPage({
     generationErrorRecovery && similarCarouselIdeasFromOpts.length === 0 && carouselForGen !== "linkedin";
 
   const contentFocusId = normalizeContentFocusId(project.content_focus);
-  const ugcSeriesBriefRaw = genOpts.ugc_series_character_brief;
-  const ugcSeriesBrief =
-    typeof ugcSeriesBriefRaw === "string" ? ugcSeriesBriefRaw.trim() : "";
-  /** Matches `saveUgcCharacterBriefFromCarousel` minimum length (20). */
+  const usedProjectFaceRefsOnRun = genOpts.ugc_used_project_avatar_refs === true;
+  const hasGeneratedUgcBackdrops = slides.some((s) => {
+    const bg = s.background as { mode?: string; storage_path?: string } | null;
+    const path = bg?.storage_path?.trim() ?? "";
+    return (
+      bg?.mode === "image" &&
+      path.includes(`/generated/${carouselId}/`) &&
+      path.startsWith(`user/${user.id}/`)
+    );
+  });
+  /** UGC + AI images, run did not use project library face refs, and we can copy AI frames + a brief. */
   const saveUgcCharacterCanApply =
     contentFocusId === "ugc" &&
     useAiBackgroundsCarousel === true &&
     genOpts.use_ai_generate === true &&
-    ugcSeriesBrief.length >= 20;
+    !usedProjectFaceRefsOnRun &&
+    hasGeneratedUgcBackdrops;
   const saveUgcCharacterDisabledHint = !saveUgcCharacterCanApply
     ? contentFocusId !== "ugc"
       ? "Set the project’s content style to Creator (UGC) under Project → Edit."
@@ -204,7 +212,11 @@ export default async function CarouselEditorPage({
         ? "This carousel didn’t use AI backgrounds (or they’re off). Generate with AI images on to capture a character lock."
         : genOpts.use_ai_generate !== true
           ? "Needs AI-generated backgrounds—stock or web images don’t store a character lock for this carousel."
-          : "No character description on this run yet (too short or missing). Try regenerating with UGC + AI generate."
+          : usedProjectFaceRefsOnRun
+            ? "This run used your project’s saved face photos already—nothing new to promote from the carousel."
+            : !hasGeneratedUgcBackdrops
+              ? "No AI-generated slide images on this carousel yet—wait for generation to finish or regenerate with AI images."
+              : ""
     : "";
   const projectUgcBrief = (project as { ugc_character_brief?: string | null }).ugc_character_brief?.trim() ?? "";
 

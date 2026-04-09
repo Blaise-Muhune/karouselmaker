@@ -36,13 +36,15 @@ export function SaveUgcCharacterFromCarouselButton({
             <p className="text-sm text-muted-foreground leading-snug">
               {canSave ? (
                 <>
-                  This carousel has a <span className="text-foreground font-medium">UGC character lock</span> you can
-                  save to the project so future AI carousels reuse the same person.
+                  Save this carousel’s <span className="text-foreground font-medium">AI character</span> to the
+                  project: we copy the text lock and a few slide images (face-friendly frames) into your library for the
+                  next run.
                 </>
               ) : (
                 <>
-                  Save a <span className="text-foreground font-medium">UGC character</span> from this carousel to the
-                  project for future AI runs—when this run qualifies, the button activates.
+                  When a UGC carousel is built with <span className="text-foreground font-medium">AI images</span> and{" "}
+                  <span className="text-foreground font-medium">without</span> your project’s saved face photos, you can
+                  save that person here for reuse.
                 </>
               )}
             </p>
@@ -64,7 +66,12 @@ export function SaveUgcCharacterFromCarouselButton({
             startTransition(async () => {
               const r = await saveUgcCharacterBriefFromCarousel(projectId, carouselId);
               if (r.ok) {
-                setMessage({ type: "ok", text: hasExistingSavedBrief ? "Character updated for future carousels." : "Character saved for future carousels." });
+                setMessage({
+                  type: "ok",
+                  text: hasExistingSavedBrief
+                    ? "Character and face references updated for future carousels."
+                    : "Character and face references saved for future carousels.",
+                });
                 router.refresh();
               } else {
                 setMessage({ type: "err", text: r.error });

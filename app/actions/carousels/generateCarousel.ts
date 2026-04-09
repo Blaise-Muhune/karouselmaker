@@ -386,6 +386,10 @@ export async function generateCarousel(formData: FormData): Promise<
   const contentFocusId = normalizeContentFocusId(project.content_focus);
   const applySavedUgcCharacter =
     contentFocusId === "ugc" && parsed.data.use_saved_ugc_character !== false;
+  const projectUgcAvatarIdsForCarousel =
+    contentFocusId === "ugc" && applySavedUgcCharacter ? mergeProjectUgcAvatarAssetIds(project) : [];
+  /** True when this run used project library face refs (not per-carousel one-off uploads). */
+  const ugcUsedProjectAvatarRefs = projectUgcAvatarIdsForCarousel.length > 0;
   const projectRulesForImages = appendContentFocusToProjectRules(projectRules, contentFocusId);
   /** Use only carousel-level value. If omitted (user left field empty), AI decides. Do NOT fall back to project default. */
   const number_of_slides = data.number_of_slides ?? undefined;
@@ -643,6 +647,7 @@ export async function generateCarousel(formData: FormData): Promise<
     use_ai_generate: useAiGenerate,
     use_web_search: useWebSearch,
     use_saved_ugc_character: applySavedUgcCharacter,
+    ugc_used_project_avatar_refs: ugcUsedProjectAvatarRefs,
     generation_started: false,
     ...(carouselFor && { carousel_for: carouselFor }),
     ...(data.notes?.trim() && { notes: data.notes.trim() }),
@@ -916,7 +921,7 @@ export async function generateCarousel(formData: FormData): Promise<
       if (
         contentFocusId === "ugc" &&
         !preferPublicFigures &&
-        seriesVisualConsistency.trim().length >= 40
+        seriesVisualConsistency.trim().length >= 20
       ) {
         ugcSeriesCharacterBriefForCarousel = seriesVisualConsistency
           .trim()
