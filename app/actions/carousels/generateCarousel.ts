@@ -14,6 +14,7 @@ import {
   createCarouselOutputSchema,
   type CarouselOutput,
 } from "@/lib/server/ai/carouselSchema";
+import { ugcSlideLikelyShowsHostFaceForChainRef } from "@/lib/server/ai/ugcSlideLikelyShowsHostFaceForChainRef";
 import {
   buildCarouselPrompts,
   buildValidationRetryPrompt,
@@ -819,6 +820,7 @@ export async function generateCarousel(formData: FormData): Promise<
       const rawBufs = await loadUgcAvatarReferenceJpegBuffers(user.id, ugcAvatarAssetIds);
       if (rawBufs.length > 0) ugcReferenceImageBuffers = rawBufs;
     }
+    const userUploadedUgcRefBuffers: Buffer[] | undefined = ugcReferenceImageBuffers;
 
     let referenceStyleSummary: string | undefined;
     if (useAiGenerate && mergedStyleRefIds.length > 0) {
@@ -827,7 +829,6 @@ export async function generateCarousel(formData: FormData): Promise<
     }
 
     if (useAiGenerate) {
-      LOG("backgrounds", `AI generate: ${aiSlideByIndex.size} slides (concurrency ${AI_IMAGE_CONCURRENCY})`);
       const aiGenJobs: { slide: (typeof createdSlides)[number]; aiSlide: (typeof validated.slides)[number] }[] = [];
       for (const slide of createdSlides) {
         if (slidesWithImage.has(slide.id)) continue;
@@ -840,6 +841,34 @@ export async function generateCarousel(formData: FormData): Promise<
         data.input_value?.trim(),
         validated.title?.trim()
       );
+      const ugcChainedFaceRefMode =
+        contentFocusId === "ugc" &&
+        (userUploadedUgcRefBuffers?.length ?? 0) === 0 &&
+        !preferPublicFigures;
+      if (ugcChainedFaceRefMode) {
+        aiGenJobs.sort((a, b) => a.aiSlide.slide_index - b.aiSlide.slide_index);
+      }
+      LOG(
+        "backgrounds",
+        ugcChainedFaceRefMode
+          ? `AI generate: ${aiGenJobs.length} slides (UGC same-carousel face ref — sequential)`
+          : `AI generate: ${aiGenJobs.length} slides (concurrency ${AI_IMAGE_CONCURRENCY})`
+      );
+      const ugcChainFaceBuf: { current?: Buffer } = {};
+      const effectiveUgcReferenceBuffers = (): Buffer[] | undefined => {
+        if (userUploadedUgcRefBuffers && userUploadedUgcRefBuffers.length > 0) {
+          return userUploadedUgcRefBuffers;
+        }
+        if (ugcChainedFaceRefMode && ugcChainFaceBuf.current) {
+          return [ugcChainFaceBuf.current];
+        }
+        return undefined;
+      };
+      const maybeCaptureUgcChainFaceRef = (buf: Buffer, aiSlide: (typeof validated.slides)[number]) => {
+        if (!ugcChainedFaceRefMode || ugcChainFaceBuf.current) return;
+        if (!ugcSlideLikelyShowsHostFaceForChainRef(aiSlide)) return;
+        ugcChainFaceBuf.current = Buffer.from(buf);
+      };
       const imageAspectRatio = parseAspectRatioFromNotes(data.notes?.trim());
       const slideHeadlinesForSeries = validated.slides
         .slice()
@@ -898,7 +927,7 @@ export async function generateCarousel(formData: FormData): Promise<
           referenceStyleSummary,
           seriesVisualConsistency,
           ugcCharacterLock,
-          ugcReferenceImageBuffers,
+          ugcReferenceImageBuffers: effectiveUgcReferenceBuffers(),
           ugcCasualPhoneLook: contentFocusId === "ugc" || undefined,
           aspectRatio: imageAspectRatio,
           preferRecognizablePublicFigures: preferPublicFigures || undefined,
@@ -917,6 +946,7 @@ export async function generateCarousel(formData: FormData): Promise<
                 overlay: overlayForImageSlide,
               },
             });
+            maybeCaptureUgcChainFaceRef(genResult.buffer, aiSlide);
           }
         }
         if (!genResult.ok || !slidesWithImage.has(slide.id)) {
@@ -941,7 +971,7 @@ export async function generateCarousel(formData: FormData): Promise<
               referenceStyleSummary,
               seriesVisualConsistency,
               ugcCharacterLock,
-              ugcReferenceImageBuffers,
+              ugcReferenceImageBuffers: effectiveUgcReferenceBuffers(),
               ugcCasualPhoneLook: contentFocusId === "ugc" || undefined,
               year: slideContext?.year?.trim() || undefined,
               location: slideContext?.location?.trim() || undefined,
@@ -964,13 +994,20 @@ export async function generateCarousel(formData: FormData): Promise<
                   overlay: overlayForImageSlide,
                 },
               });
+              maybeCaptureUgcChainFaceRef(fallbackResult.buffer, aiSlide);
             }
           }
         }
       };
-      for (let i = 0; i < aiGenJobs.length; i += AI_IMAGE_CONCURRENCY) {
-        const chunk = aiGenJobs.slice(i, i + AI_IMAGE_CONCURRENCY);
-        await Promise.all(chunk.map(processOneAiSlide));
+      if (ugcChainedFaceRefMode) {
+        for (const job of aiGenJobs) {
+          await processOneAiSlide(job);
+        }
+      } else {
+        for (let i = 0; i < aiGenJobs.length; i += AI_IMAGE_CONCURRENCY) {
+          const chunk = aiGenJobs.slice(i, i + AI_IMAGE_CONCURRENCY);
+          await Promise.all(chunk.map(processOneAiSlide));
+        }
       }
       LOG("backgrounds", "AI generate done");
 
