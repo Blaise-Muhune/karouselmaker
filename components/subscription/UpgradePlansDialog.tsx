@@ -14,6 +14,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Loader2Icon } from "lucide-react";
+import type { BillingInterval } from "@/lib/server/stripe/paidPlanFromPriceId";
 
 type UpgradePlansDialogProps = {
   /** When set with `onOpenChange`, dialog is controlled (no trigger). */
@@ -30,11 +31,12 @@ export function UpgradePlansDialog({ open: controlledOpen, onOpenChange, trigger
   const setOpen = controlled ? onOpenChange! : setInternalOpen;
 
   const [loadingTier, setLoadingTier] = useState<PaidPlan | null>(null);
+  const [billingInterval, setBillingInterval] = useState<BillingInterval>("monthly");
 
   async function checkout(tier: PaidPlan) {
     setLoadingTier(tier);
     try {
-      const result = await createCheckoutSession(tier);
+      const result = await createCheckoutSession(tier, billingInterval);
       if ("url" in result) {
         window.location.href = result.url;
       } else {
@@ -58,9 +60,35 @@ export function UpgradePlansDialog({ open: controlledOpen, onOpenChange, trigger
             billing.
           </DialogDescription>
         </DialogHeader>
+        <div className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/15 p-1">
+          <button
+            type="button"
+            onClick={() => setBillingInterval("monthly")}
+            className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition ${
+              billingInterval === "monthly" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
+            }`}
+          >
+            Monthly
+          </button>
+          <button
+            type="button"
+            onClick={() => setBillingInterval("yearly")}
+            className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition ${
+              billingInterval === "yearly" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
+            }`}
+          >
+            Yearly
+            <span className="ml-1 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] text-emerald-700 dark:text-emerald-400">
+              save 15%
+            </span>
+          </button>
+        </div>
         <div className="grid gap-4 sm:grid-cols-3">
           {PAID_TIER_CARDS.map((tier) => {
             const limits = PLAN_LIMITS[tier.id];
+            const monthly = Number(tier.priceDisplay.replace(/[^0-9.]/g, ""));
+            const yearlyMonthly = Math.round(monthly * 0.85);
+            const priceDisplay = billingInterval === "yearly" ? `$${yearlyMonthly}` : tier.priceDisplay;
             return (
               <div
                 key={tier.id}
@@ -73,9 +101,12 @@ export function UpgradePlansDialog({ open: controlledOpen, onOpenChange, trigger
                 )}
                 <h3 className="font-semibold text-foreground">{tier.name}</h3>
                 <p className="mt-1 text-2xl font-bold text-foreground">
-                  {tier.priceDisplay}
+                  {priceDisplay}
                   <span className="text-sm font-normal text-muted-foreground">/mo</span>
                 </p>
+                {billingInterval === "yearly" && (
+                  <p className="mt-1 text-[11px] text-muted-foreground">Billed yearly</p>
+                )}
                 <p className="mt-1 text-xs text-muted-foreground leading-snug">{tier.blurb}</p>
                 <ul className="mt-3 flex-1 space-y-1.5 text-xs text-muted-foreground">
                   <li>

@@ -5,20 +5,24 @@ import { z } from "zod";
 import { getUser } from "@/lib/server/auth/getUser";
 import { getProfile, upsertProfile } from "@/lib/server/db/profiles";
 import type { PaidPlan } from "@/lib/server/db/types";
-import { stripePriceIdForPaidPlan } from "@/lib/server/stripe/paidPlanFromPriceId";
+import { stripePriceIdForPaidPlan, type BillingInterval } from "@/lib/server/stripe/paidPlanFromPriceId";
 
 const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY;
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
 const tierSchema = z.enum(["starter", "pro", "studio"]);
+const intervalSchema = z.enum(["monthly", "yearly"]);
 
 export async function createCheckoutSession(
-  tier: PaidPlan = "pro"
+  tier: PaidPlan = "pro",
+  interval: BillingInterval = "monthly"
 ): Promise<{ url: string } | { error: string }> {
   const { user } = await getUser();
   const parsedTier = tierSchema.safeParse(tier);
+  const parsedInterval = intervalSchema.safeParse(interval);
   const plan = parsedTier.success ? parsedTier.data : "pro";
-  const priceId = stripePriceIdForPaidPlan(plan);
+  const billingInterval = parsedInterval.success ? parsedInterval.data : "monthly";
+  const priceId = stripePriceIdForPaidPlan(plan, billingInterval);
 
   if (!STRIPE_SECRET || !priceId) {
     return { error: "Stripe is not configured" };
@@ -58,8 +62,8 @@ export async function createCheckoutSession(
     line_items: [{ price: priceId, quantity: 1 }],
     success_url: `${APP_URL}/projects?subscription=success`,
     cancel_url: `${APP_URL}/projects?subscription=cancelled`,
-    metadata: { user_id: user.id, plan },
-    subscription_data: { metadata: { user_id: user.id, plan } },
+    metadata: { user_id: user.id, plan, billing_interval: billingInterval },
+    subscription_data: { metadata: { user_id: user.id, plan, billing_interval: billingInterval } },
   });
 
   const url = session.url;

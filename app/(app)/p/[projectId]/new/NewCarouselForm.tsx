@@ -51,6 +51,9 @@ import {
   MAX_UGC_AVATAR_REFERENCE_ASSETS,
 } from "@/lib/constants";
 
+/** Full page reload while generation overlay is open, so long runs can recover / see updated state. */
+const CAROUSEL_GENERATION_OVERLAY_REFRESH_MS = 3 * 60 * 1000 + 30 * 1000;
+
 /** Carousel for: Instagram (default) or LinkedIn. LinkedIn uses B2B-optimized content and stock/own images only (no AI generate). */
 const CAROUSEL_FOR_OPTIONS = [
   { value: "instagram" as const, label: "Instagram / TikTok", icon: ImageIcon },
@@ -333,6 +336,14 @@ export function NewCarouselForm({
     setUseSavedUgcCharacter(initialUseSavedUgcCharacter);
   }, [initialUseSavedUgcCharacter]);
 
+  useEffect(() => {
+    if (!isPending) return;
+    const id = window.setTimeout(() => {
+      window.location.reload();
+    }, CAROUSEL_GENERATION_OVERLAY_REFRESH_MS);
+    return () => window.clearTimeout(id);
+  }, [isPending]);
+
   const prevCarouselForRef = useRef<"instagram" | "linkedin">(carouselFor);
   useEffect(() => {
     if (prevCarouselForRef.current !== carouselFor) {
@@ -482,7 +493,7 @@ export function NewCarouselForm({
               {regenerateCarouselId ? "Regenerating your carousel…" : "Generating your carousel…"}
             </p>
             <p className="text-xs text-muted-foreground">
-              This may take a minute or two.
+              This may take a minute or two. If it runs very long, this page refreshes automatically so you can check progress.
             </p>
           </div>
         </div>
