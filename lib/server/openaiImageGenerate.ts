@@ -288,6 +288,10 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
 
   const notesLower = (context?.userNotes ?? "").toLowerCase();
   const projectStyleLower = (context?.projectImageStyleNotes ?? "").toLowerCase();
+  const allowTattooDetails =
+    /\b(tattoo|tattoos|inked|sleeve tattoo|neck tattoo|forearm tattoo|hand tattoo)\b/i.test(
+      `${context?.userNotes ?? ""}\n${context?.projectImageStyleNotes ?? ""}`
+    );
   const notesAskForStyle =
     /\b(stylized|stylise|artistic|art style|cartoon|illustration|animated|painting|drawing|abstract|creative style|different style)\b/i.test(notesLower) ||
     /\b(stylized|stylise|artistic|art style|cartoon|illustration|animated|painting|drawing|abstract|creative style|different style)\b/i.test(projectStyleLower);
@@ -308,13 +312,18 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
   const ugcLock = context?.ugcCharacterLock?.trim();
   if (ugcLock) {
     parts.push(
-      `Recurring creator / person lock (mandatory when a person appears): same identity every slide—face shape, features, hair color and length, skin tone, body type, age read, and recurring casual wardrobe pieces (colors/silhouette). Do not drift to a different model. Vary only pose, expression, framing, and background. ${truncateForContext(ugcLock, 480)}`
+      `Recurring creator / person lock (mandatory when a person appears): same identity every slide—face shape, features, hairstyle (cut, length, texture, part, hairline, color) as a high-priority anchor, skin tone, body type, age read, and recurring casual wardrobe pieces (colors/silhouette). Keep those details stable unless carousel notes explicitly request a change. Do not drift to a different model. Vary only pose, expression, framing, and background. ${truncateForContext(ugcLock, 480)}`
     );
   }
 
   if (ugcPhone) {
     parts.push(
-      "Camera: real-phone energy that still feels **interesting**—vary distance and POV (asymmetrical crop, slight handheld tilt, foreground blur prop, over-shoulder at screen, top-down desk, doorway frame, tight reaction close-up, environmental wide) so it is not the same boring centered medium shot every time. Plausible focal length; avoid ultra-wide face distortion unless the scene fits. No crane, drone, floating product, glam hero low-angle, sunset silhouette, or blockbuster anamorphic polish unless the slide is literally about that. Framing must follow this slide's headline and body—candid and human, not generic stock or obvious AI staging."
+      allowTattooDetails
+        ? "Identity details: keep hairstyle continuity precise across slides. If tattoos are requested in notes, render them consistently in placement/size/style for the same person."
+        : "Identity details: keep hairstyle continuity precise across slides. Do not invent/add tattoos by default; include tattoos only when explicitly requested in carousel/project notes or clearly visible in provided reference images."
+    );
+    parts.push(
+      "Camera: real-phone energy that still feels interesting while preserving human connection. Prefer face-visible framing (front or 3/4 view) in most slides, with clear expression and eyes readable when the scene allows. Vary distance and POV using candid options like asymmetrical crop, slight handheld tilt, doorway frame, tight reaction close-up, or environmental wide; avoid repeating one centered medium shot every time. Back-of-head / over-shoulder / top-down-no-face compositions should be rare and only used when the slide meaning explicitly requires them. Plausible focal length; avoid ultra-wide face distortion unless the scene fits. No crane, drone, floating product, glam hero low-angle, sunset silhouette, or blockbuster anamorphic polish unless the slide is literally about that. Framing must follow this slide's headline and body—candid and human, not generic stock or obvious AI staging."
     );
     parts.push(ugcAntiConvenienceLine);
   }
@@ -425,7 +434,7 @@ function aspectToOpenAISize(aspect: "1:1" | "4:5" | "9:16" | "2:3" | "16:9"): "1
 
 /** Prepended when using images.edit with UGC reference photos (multimodal identity conditioning). */
 const UGC_IMAGE_EDIT_PREFIX =
-  "The attached image(s) are reference photos of the recurring creator. Preserve their facial identity, hair, skin tone, and approximate build. Generate one NEW photograph for the scene below—**fresh, interesting phone-native framing** (distance, angle, POV) vs the references—not a crop or collage of the uploads; still believable handheld candor, not cinematic crane/glam hero or synthetic stock staging. Match iPhone-main-camera realism (natural grain, soft detail, believable light)—not a beauty-app portrait, CGI avatar, or glossy render unless notes request production polish. ";
+  "The attached image(s) are reference photos of the recurring creator. Preserve their facial identity, hairstyle (cut/length/texture/part/hairline), hair color, skin tone, and approximate build. Generate one NEW photograph for the scene below—fresh, interesting phone-native framing vs the references (distance, angle, POV), not a crop or collage of the uploads; still believable handheld candor, not cinematic crane/glam hero or synthetic stock staging. Favor face-visible framing (front or 3/4 view) in most outputs so the viewer connects with the person. Back-of-head or over-shoulder views should be rare and only when the scene explicitly needs that perspective. Do not add tattoos by default; only include tattoos if explicitly requested in notes or clearly present in the provided references. Match iPhone-main-camera realism (natural grain, soft detail, believable light)—not a beauty-app portrait, CGI avatar, or glossy render unless notes request production polish. ";
 
 const MAX_UGC_REF_IMAGES_EDIT = 8;
 
