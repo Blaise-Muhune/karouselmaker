@@ -787,7 +787,7 @@ export function NewCarouselForm({
                 </div>
                 {projectContentFocus === "ugc" && carouselFor !== "linkedin" && imageSource === "ai_generate" && canUseAiGenerate && (
                   <p className="rounded-md border border-border/70 bg-muted/25 px-3 py-2 text-[11px] text-muted-foreground">
-                    Same face across slides? Turn on <span className="font-medium text-foreground">Same person from project</span> below (face refs in Project → Edit).
+                    Same face across slides? Turn on <span className="font-medium text-foreground">Same person from project</span> below (face refs in Project → Edit) or pick a new character below.
                   </p>
                 )}
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
