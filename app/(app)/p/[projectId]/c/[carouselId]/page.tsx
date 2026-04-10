@@ -416,6 +416,7 @@ export default async function CarouselEditorPage({
 
         <SimilarCarouselIdeas
           projectId={projectId}
+          carouselId={carouselId}
           ideas={similarCarouselIdeasFromOpts}
           loading={similarIdeasLoading}
         />

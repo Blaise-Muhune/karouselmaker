@@ -71,6 +71,8 @@ export const MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS = 8;
 export const CAROUSEL_NOTES_MAX_CHARS = 8000;
 /** Max chars for carousel topic/URL/paste input (must match `generateCarouselInputSchema`). */
 export const CAROUSEL_INPUT_MAX_CHARS = 20000;
+/** Per-slide AI background regeneration: user instruction appended to the image prompt. */
+export const SLIDE_AI_REGEN_INSTRUCTION_MAX_CHARS = 500;
 /** Max chars for project rules textarea (must match `projectFormSchema`). */
 export const PROJECT_RULES_MAX_CHARS = 8000;
 /** UGC project: saved recurring character / visual lock for AI images (must match `projectFormSchema`). */

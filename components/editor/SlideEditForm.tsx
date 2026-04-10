@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { SlidePreview, PREVIEW_FONTS, type SlideBackgroundOverride } from "@/components/renderer/SlidePreview";
 import { FontPickerModal, getFontStack } from "@/components/FontPickerModal";
 import { HighlightModal } from "@/components/editor/HighlightModal";
@@ -38,6 +38,7 @@ import { applyToAllSlides, applyOverlayToAllSlides, applyImageDisplayToAllSlides
 import { clearSlideOverlayShapesAction, setSlideTemplate } from "@/app/actions/slides/setSlideTemplate";
 import { ensureSlideTextVariants } from "@/app/actions/slides/ensureSlideTextVariants";
 import { rewriteHook } from "@/app/actions/slides/rewriteHook";
+import { regenerateSlideAiBackgroundAction } from "@/app/actions/slides/regenerateSlideAiBackground";
 import { createTemplateAction } from "@/app/actions/templates/createTemplate";
 import { updateTemplateAction } from "@/app/actions/templates/updateTemplate";
 import { getTemplateConfigAction } from "@/app/actions/templates/getTemplateConfig";
@@ -103,6 +104,7 @@ import { ColorPicker } from "@/components/ui/color-picker";
 import { StepperWithLongPress } from "@/components/ui/stepper-with-long-press";
 import { HIGHLIGHT_COLORS, expandSelectionToWordBoundaries, normalizeHighlightSpansToWords, clampHighlightSpansToText, buildAutoHighlightSpans, shiftHighlightSpansForBoldInsert, shiftHighlightSpansForBoldRemove, type HighlightSpan } from "@/lib/editor/inlineFormat";
 import { normalizeFullImageRotation, type FullImageRotation } from "@/lib/renderer/fullImageRotation";
+import { SLIDE_AI_REGEN_INSTRUCTION_MAX_CHARS } from "@/lib/constants";
 
 /** Rainbow gradient for custom highlight color picker (circle, same size as preset swatches). */
 const HIGHLIGHT_RAINBOW = "conic-gradient(from 0deg, #ef4444, #f97316, #eab308, #84cc16, #22c55e, #06b6d4, #3b82f6, #8b5cf6, #ec4899, #ef4444)";
@@ -510,6 +512,8 @@ type SlideEditFormProps = {
   initialEditorTab?: "text" | "layout" | "background" | "more";
   /** When true, "Save as template" can offer saving as system template (available to all users). */
   isAdmin?: boolean;
+  /** Carousel was AI-generated: allow regenerating this slide’s stored AI background with optional instructions. */
+  allowRegenerateAiBackground?: boolean;
 };
 
 function getTemplateConfig(
@@ -674,8 +678,10 @@ export function SlideEditForm({
   initialMadeWithText = "",
   initialEditorTab,
   isAdmin = false,
+  allowRegenerateAiBackground = false,
 }: SlideEditFormProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const downloadSlug =
     slugifyForFilename([projectName, carouselTitle].filter(Boolean).join(" - ")) || undefined;
   const [headline, setHeadline] = useState(() => slide.headline);
@@ -1157,6 +1163,9 @@ export function SlideEditForm({
   const [applyingImageDisplay, setApplyingImageDisplay] = useState(false);
   const [applyingImageCount, setApplyingImageCount] = useState(false);
   const [applyingBackground, setApplyingBackground] = useState(false);
+  const [aiRegenInstruction, setAiRegenInstruction] = useState("");
+  const [aiRegenPending, setAiRegenPending] = useState(false);
+  const [aiRegenError, setAiRegenError] = useState<string | null>(null);
   const [applyingClear, setApplyingClear] = useState(false);
   const [applyingHeadlineZone, setApplyingHeadlineZone] = useState(false);
   const [applyingBodyZone, setApplyingBodyZone] = useState(false);
@@ -2735,6 +2744,25 @@ export function SlideEditForm({
     const result = await applyToAllSlides(slide.carousel_id, { background: bgPayload }, editorPath, applyScope);
     setApplyingBackground(false);
     if (result.ok) router.refresh();
+  };
+
+  const handleRegenerateAiBackground = async () => {
+    setAiRegenError(null);
+    setAiRegenPending(true);
+    try {
+      const r = await regenerateSlideAiBackgroundAction(
+        slide.id,
+        aiRegenInstruction.slice(0, SLIDE_AI_REGEN_INSTRUCTION_MAX_CHARS),
+        pathname || editorPath
+      );
+      if (!r.ok) {
+        setAiRegenError(r.error);
+        return;
+      }
+      router.refresh();
+    } finally {
+      setAiRegenPending(false);
+    }
   };
 
   const handleApplyImageDisplayToAll = async () => {
@@ -7165,6 +7193,50 @@ export function SlideEditForm({
                 </>
               )}
             </div>
+            {allowRegenerateAiBackground && isImageMode && isPro && (
+              <div className="rounded-lg border border-primary/25 bg-primary/5 p-3 space-y-2">
+                <p className="text-[11px] font-medium text-foreground">Regenerate AI background</p>
+                <p className="text-[10px] text-muted-foreground leading-snug">
+                  Reuses this carousel&apos;s AI settings (UGC face refs, style refs, product refs, notes). Your current
+                  frame is sent as the baseline for image-to-image so identity and scene stay consistent unless you ask
+                  for a bigger change. Leave blank for a fresh variation on the same beat.
+                </p>
+                <Input
+                  type="text"
+                  value={aiRegenInstruction}
+                  onChange={(e) => setAiRegenInstruction(e.target.value.slice(0, SLIDE_AI_REGEN_INSTRUCTION_MAX_CHARS))}
+                  placeholder="e.g. warmer light, wider shot, less clutter…"
+                  disabled={aiRegenPending}
+                  className="h-9 text-xs"
+                  aria-label="Describe changes for AI background"
+                  maxLength={SLIDE_AI_REGEN_INSTRUCTION_MAX_CHARS}
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-8 gap-1.5 text-xs"
+                    disabled={aiRegenPending}
+                    onClick={() => void handleRegenerateAiBackground()}
+                  >
+                    {aiRegenPending ? (
+                      <Loader2Icon className="size-3.5 animate-spin" aria-hidden />
+                    ) : (
+                      <SparklesIcon className="size-3.5" aria-hidden />
+                    )}
+                    Regenerate image
+                  </Button>
+                  <span className="text-[10px] text-muted-foreground">
+                    {aiRegenInstruction.length}/{SLIDE_AI_REGEN_INSTRUCTION_MAX_CHARS}
+                  </span>
+                </div>
+                {aiRegenError && (
+                  <p className="text-[11px] text-destructive" role="alert">
+                    {aiRegenError}
+                  </p>
+                )}
+              </div>
+            )}
             {isImageMode && (
               <>
               <div className={`rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3 ${!isPro ? "pointer-events-none opacity-60" : ""}`}>

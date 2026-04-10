@@ -54,6 +54,11 @@ export type ImagePromptContext = {
    * UGC images are listed first in the multimodal request.
    */
   productReferenceImageBuffers?: Buffer[];
+  /**
+   * Regenerate one slide: current frame as JPEG, passed **last** to `images.edit` after UGC/product refs so the model
+   * can refine the existing shot while keeping face/product continuity from earlier attachments.
+   */
+  regenerationBaseImageBuffer?: Buffer;
   /** UGC: prefer smartphone-candid base wording instead of “professional photo” defaults. */
   ugcCasualPhoneLook?: boolean;
   /** Desired aspect ratio for generated image. Default 4:5; can be overridden from user notes (e.g. "square", "9:16"). */
@@ -477,22 +482,52 @@ function combineImageEditReferenceBuffers(context?: ImagePromptContext): {
   buffers: Buffer[];
   ugcCount: number;
   productCount: number;
+  hasRegenerationBase: boolean;
 } {
+  const regenRaw = context?.regenerationBaseImageBuffer;
+  const hasRegen =
+    Buffer.isBuffer(regenRaw) && regenRaw.length > 0 ? true : false;
+  const maxPair = MAX_EDIT_REFERENCE_IMAGES - (hasRegen ? 1 : 0);
+
   const ugcRaw = context?.ugcReferenceImageBuffers ?? [];
-  const ugc = ugcRaw.filter((b) => Buffer.isBuffer(b) && b.length > 0).slice(0, MAX_EDIT_REFERENCE_IMAGES);
+  const ugcFiltered = ugcRaw.filter((b) => Buffer.isBuffer(b) && b.length > 0);
+  const ugcTake = ugcFiltered.slice(0, maxPair);
+
   const prodRaw = context?.productReferenceImageBuffers ?? [];
-  const prod = prodRaw.filter((b) => Buffer.isBuffer(b) && b.length > 0).slice(0, MAX_EDIT_REFERENCE_IMAGES);
-  const ugcTake = ugc.slice(0, MAX_EDIT_REFERENCE_IMAGES);
-  const room = MAX_EDIT_REFERENCE_IMAGES - ugcTake.length;
-  const productTake = prod.slice(0, Math.max(0, room));
-  return { buffers: [...ugcTake, ...productTake], ugcCount: ugcTake.length, productCount: productTake.length };
+  const prodFiltered = prodRaw.filter((b) => Buffer.isBuffer(b) && b.length > 0);
+  const roomAfterUgc = Math.max(0, maxPair - ugcTake.length);
+  const productTake = prodFiltered.slice(0, roomAfterUgc);
+
+  const buffers = [...ugcTake, ...productTake, ...(hasRegen ? [Buffer.from(regenRaw!)] : [])];
+  return {
+    buffers,
+    ugcCount: ugcTake.length,
+    productCount: productTake.length,
+    hasRegenerationBase: hasRegen,
+  };
 }
 
-function buildImageEditPromptPrefix(ugcCount: number, productCount: number): string {
-  if (ugcCount > 0 && productCount > 0) return UGC_IMAGE_EDIT_PREFIX + PRODUCT_I2I_AFTER_UGC;
-  if (ugcCount > 0) return UGC_IMAGE_EDIT_PREFIX;
-  if (productCount > 0) return PRODUCT_I2I_PREFIX_ALONE;
-  return "";
+const REGEN_FROM_CURRENT_FRAME_WITH_REFS =
+  " The final attached image is this slide’s current background—use it as the baseline to refine. Preserve identity and continuity from the earlier reference photos; apply the scene and edits described below while staying coherent with the carousel. ";
+
+const REGEN_FROM_CURRENT_FRAME_ALONE =
+  "The attached image is this slide’s current AI background. Produce one revised photograph for the same carousel: preserve recurring character identity, wardrobe, lighting mood, and topic fit unless the instructions below clearly require a larger change. Apply these edits: ";
+
+function buildImageEditPromptPrefix(
+  ugcCount: number,
+  productCount: number,
+  hasRegenerationBase: boolean
+): string {
+  let base = "";
+  if (ugcCount > 0 && productCount > 0) base = UGC_IMAGE_EDIT_PREFIX + PRODUCT_I2I_AFTER_UGC;
+  else if (ugcCount > 0) base = UGC_IMAGE_EDIT_PREFIX;
+  else if (productCount > 0) base = PRODUCT_I2I_PREFIX_ALONE;
+
+  if (hasRegenerationBase) {
+    if (base) base += REGEN_FROM_CURRENT_FRAME_WITH_REFS;
+    else base = REGEN_FROM_CURRENT_FRAME_ALONE;
+  }
+  return base;
 }
 
 function extractB64FromImagesResponse(result: { data?: Array<{ b64_json?: string; revised_prompt?: string }> }): {
@@ -522,9 +557,13 @@ export async function generateImageFromPrompt(
   const openaiSize = aspectToOpenAISize(aspect);
 
   const openai = new OpenAI({ apiKey });
-  const { buffers: refBuffers, ugcCount: editUgcCount, productCount: editProductCount } =
-    combineImageEditReferenceBuffers(options?.context);
-  const editPrefix = buildImageEditPromptPrefix(editUgcCount, editProductCount);
+  const {
+    buffers: refBuffers,
+    ugcCount: editUgcCount,
+    productCount: editProductCount,
+    hasRegenerationBase: editHasRegenBase,
+  } = combineImageEditReferenceBuffers(options?.context);
+  const editPrefix = buildImageEditPromptPrefix(editUgcCount, editProductCount, editHasRegenBase);
   const useImageRefEdit = refBuffers.length > 0;
   const basePrompt = queryToPrompt(query, options?.context);
   const prompt = useImageRefEdit ? `${editPrefix}${basePrompt}` : basePrompt;
@@ -537,7 +576,11 @@ export async function generateImageFromPrompt(
       refFiles = await Promise.all(
         refBuffers.map((buf, i) => {
           const name =
-            i < editUgcCount ? `ugc-ref-${i}.jpg` : `product-ref-${i - editUgcCount}.jpg`;
+            i < editUgcCount
+              ? `ugc-ref-${i}.jpg`
+              : i < editUgcCount + editProductCount
+                ? `product-ref-${i - editUgcCount}.jpg`
+                : "slide-regen-base.jpg";
           return toFile(buf, name, { type: "image/jpeg" });
         })
       );

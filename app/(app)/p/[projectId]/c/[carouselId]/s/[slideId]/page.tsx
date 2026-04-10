@@ -8,6 +8,7 @@ import { resolveBrandKitLogo } from "@/lib/server/brandKit";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
 import { httpsDisplayImageUrl } from "@/lib/server/storage/signedUrlUtils";
 import { SlideEditForm, type TemplateWithConfig } from "@/components/editor/SlideEditForm";
+import { isAiGeneratedSlideStoragePath } from "@/lib/server/slides/regenerateSlideAiBackground";
 import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
 import type { BrandKit } from "@/lib/renderer/renderModel";
 import { FREE_FULL_ACCESS_GENERATIONS } from "@/lib/constants";
@@ -171,6 +172,20 @@ export default async function EditSlidePage({
   const carouselIncludeFirst = (carousel as { include_first_slide?: boolean }).include_first_slide;
   const carouselIncludeLast = (carousel as { include_last_slide?: boolean }).include_last_slide;
 
+  const genOptsCarousel = (carousel.generation_options ?? {}) as Record<string, unknown>;
+  const useAiGenCarousel =
+    genOptsCarousel.use_ai_generate === true && genOptsCarousel.use_ai_backgrounds === true;
+  let allowRegenerateAiBackground = false;
+  if (hasFullAccess && useAiGenCarousel && bg?.mode === "image") {
+    const multi = Array.isArray(bg.images) && bg.images.length > 1;
+    if (!multi) {
+      const path =
+        bg.storage_path?.trim() ||
+        (Array.isArray(bg.images) && bg.images.length === 1 ? bg.images[0]?.storage_path?.trim() : undefined);
+      allowRegenerateAiBackground = isAiGeneratedSlideStoragePath(user.id, carouselId, slideId, path ?? null);
+    }
+  }
+
   return (
     <div className="min-h-0 flex flex-col p-0 lg:h-[calc(100dvh-3.5rem)] lg:overflow-hidden">
       {hasFullAccess && !isPro && (
@@ -218,6 +233,7 @@ export default async function EditSlidePage({
           initialSecondaryBackgroundImageUrl={initialSecondaryBackgroundImageUrl}
           initialMadeWithText={defaultMadeWithSuffix}
           isAdmin={isAdmin(user.email)}
+          allowRegenerateAiBackground={allowRegenerateAiBackground}
         />
       </div>
     </div>

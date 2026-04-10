@@ -21,11 +21,28 @@ export default async function NewCarouselPage({
   searchParams,
 }: Readonly<{
   params: Promise<{ projectId: string }>;
-  searchParams: Promise<{ regenerate?: string; topic?: string }>;
+  searchParams: Promise<{
+    regenerate?: string | string[];
+    topic?: string | string[];
+    fromCarousel?: string | string[];
+  }>;
 }>) {
   const { user } = await getUser();
   const { projectId } = await params;
-  const { regenerate: regenerateCarouselId, topic: topicPrefill } = await searchParams;
+  const sp = await searchParams;
+  const regenerateCarouselIdRaw = sp.regenerate;
+  const regenerateCarouselId =
+    typeof regenerateCarouselIdRaw === "string"
+      ? regenerateCarouselIdRaw.trim()
+      : Array.isArray(regenerateCarouselIdRaw)
+        ? regenerateCarouselIdRaw[0]?.trim() ?? ""
+        : "";
+  const topicRaw = sp.topic;
+  const topicPrefill = typeof topicRaw === "string" ? topicRaw.trim() : Array.isArray(topicRaw) ? topicRaw[0]?.trim() ?? "" : "";
+  const fromRaw = sp.fromCarousel;
+  const fromCarouselId =
+    typeof fromRaw === "string" ? fromRaw.trim() : Array.isArray(fromRaw) ? fromRaw[0]?.trim() ?? "" : "";
+
   const [project, subscription, limits, carouselCount, lifetimeCarouselCount, aiGenerateUsed, regenerateCarousel, templatesRaw, defaultTemplate, defaultLinkedInTemplate] = await Promise.all([
     getProject(user.id, projectId),
     getSubscription(user.id, user.email),
@@ -66,11 +83,52 @@ export default async function NewCarouselPage({
   if (!project) notFound();
   if (regenerateCarouselId && (!regenerateCarousel || regenerateCarousel.project_id !== projectId)) notFound();
 
+  let carrySettingsCarousel: Awaited<ReturnType<typeof getCarousel>> = null;
+  if (!regenerateCarouselId && fromCarouselId) {
+    const c = await getCarousel(user.id, fromCarouselId);
+    if (c && c.project_id === projectId) carrySettingsCarousel = c;
+  }
+
+  const settingsSourceCarousel = regenerateCarousel ?? carrySettingsCarousel;
+  type GenOpts = {
+    use_stock_photos?: boolean;
+    use_unsplash_only?: boolean;
+    use_pixabay_only?: boolean;
+    use_pexels_only?: boolean;
+    notes?: string;
+    carousel_for?: "instagram" | "linkedin";
+    template_id?: string;
+    background_asset_ids?: unknown;
+    number_of_slides?: unknown;
+    viral_shorts_style?: boolean;
+    use_saved_ugc_character?: boolean;
+  };
+  const genOpts = (settingsSourceCarousel?.generation_options ?? undefined) as GenOpts | undefined;
+  const initialUseStockPhotosFromOpts =
+    genOpts == null
+      ? undefined
+      : genOpts.use_stock_photos ??
+        !!(genOpts.use_unsplash_only || genOpts.use_pixabay_only || genOpts.use_pexels_only);
+
+  const templateIdFromOpts = typeof genOpts?.template_id === "string" ? genOpts.template_id.trim() : "";
+  const backgroundIdsFromOpts = Array.isArray(genOpts?.background_asset_ids)
+    ? (genOpts!.background_asset_ids as unknown[]).filter((id): id is string => typeof id === "string" && id.length > 0)
+    : undefined;
+  const rawNumSlides = genOpts?.number_of_slides;
+  const parsedNumSlides =
+    typeof rawNumSlides === "number"
+      ? rawNumSlides
+      : typeof rawNumSlides === "string"
+        ? parseInt(rawNumSlides, 10)
+        : NaN;
+  const initialNumberOfSlides =
+    Number.isFinite(parsedNumSlides) && parsedNumSlides >= 1 && parsedNumSlides <= 12 ? Math.floor(parsedNumSlides) : undefined;
+
   const projectContentFocus = normalizeContentFocusId(project.content_focus);
   const projectUseSavedUgc = (project as { use_saved_ugc_character?: boolean | null }).use_saved_ugc_character;
-  const initialUseSavedUgcCharacter = regenerateCarousel
-    ? (regenerateCarousel.generation_options as { use_saved_ugc_character?: boolean } | undefined)
-        ?.use_saved_ugc_character !== false
+  const userIsAdmin = isAdmin(user.email ?? null);
+  const initialUseSavedUgcCharacter = settingsSourceCarousel
+    ? genOpts?.use_saved_ugc_character !== false
     : projectUseSavedUgc !== false;
 
   const primaryColor = (project.brand_kit as { primary_color?: string } | null)?.primary_color?.trim() || "#0a0a0a";
@@ -115,10 +173,10 @@ export default async function NewCarouselPage({
           </span>
         </div>
         <NewCarouselForm
-          key={`${regenerateCarousel?.id ?? "new"}:${topicPrefill?.trim() ?? ""}`}
+          key={`${regenerateCarousel?.id ?? "new"}:${topicPrefill}:${fromCarouselId}`}
           projectId={projectId}
           isPro={subscription.isPro}
-          isAdmin={isAdmin(user.email ?? null)}
+          isAdmin={userIsAdmin}
           hasFullAccess={hasFullAccess}
           freeGenerationsUsed={freeGenerationsUsed}
           freeGenerationsTotal={FREE_FULL_ACCESS_GENERATIONS}
@@ -127,27 +185,39 @@ export default async function NewCarouselPage({
           aiGenerateUsed={aiGenerateUsed}
           aiGenerateLimit={limits.aiGenerateCarouselsPerMonth}
           regenerateCarouselId={regenerateCarousel?.id}
-          initialInputType={regenerateCarousel && (regenerateCarousel.input_type === "url" || regenerateCarousel.input_type === "text") ? regenerateCarousel.input_type : regenerateCarousel ? "topic" : undefined}
-          initialInputValue={regenerateCarousel?.input_value ?? topicPrefill?.trim() ?? undefined}
-          initialUseAiBackgrounds={regenerateCarousel?.generation_options?.use_ai_backgrounds}
-          initialUseStockPhotos={(() => {
-            const opts = regenerateCarousel?.generation_options as { use_stock_photos?: boolean; use_unsplash_only?: boolean; use_pixabay_only?: boolean; use_pexels_only?: boolean } | undefined;
-            return opts?.use_stock_photos ?? !!(opts?.use_unsplash_only || opts?.use_pixabay_only || opts?.use_pexels_only);
-          })()}
-          initialUseAiGenerate={regenerateCarousel?.generation_options?.use_ai_generate}
-          initialUseWebSearch={regenerateCarousel?.generation_options?.use_web_search}
-          initialCarouselFor={(regenerateCarousel?.generation_options as { carousel_for?: "instagram" | "linkedin" } | undefined)?.carousel_for}
-          initialNotes={(regenerateCarousel?.generation_options as { notes?: string } | undefined)?.notes}
+          initialSettingsCarriedFromCarousel={!!carrySettingsCarousel && !regenerateCarousel}
+          initialSelectedTemplateId={templateIdFromOpts || undefined}
+          initialBackgroundAssetIds={backgroundIdsFromOpts}
+          initialViralShortsStyle={userIsAdmin && genOpts?.viral_shorts_style === true}
+          initialNumberOfSlides={initialNumberOfSlides}
+          initialInputType={
+            regenerateCarousel && (regenerateCarousel.input_type === "url" || regenerateCarousel.input_type === "text")
+              ? regenerateCarousel.input_type
+              : regenerateCarousel
+                ? "topic"
+                : carrySettingsCarousel
+                  ? "topic"
+                  : undefined
+          }
+          initialInputValue={regenerateCarousel?.input_value ?? (topicPrefill || undefined)}
+          initialUseAiBackgrounds={settingsSourceCarousel?.generation_options?.use_ai_backgrounds}
+          initialUseStockPhotos={initialUseStockPhotosFromOpts}
+          initialUseAiGenerate={settingsSourceCarousel?.generation_options?.use_ai_generate}
+          initialUseWebSearch={settingsSourceCarousel?.generation_options?.use_web_search}
+          initialCarouselFor={genOpts?.carousel_for}
+          initialNotes={
+            regenerateCarousel ? genOpts?.notes : carrySettingsCarousel ? "" : undefined
+          }
           initialAiStyleReferenceAssetIds={
-            (regenerateCarousel?.generation_options as { ai_style_reference_asset_ids?: string[] } | undefined)
+            (settingsSourceCarousel?.generation_options as { ai_style_reference_asset_ids?: string[] } | undefined)
               ?.ai_style_reference_asset_ids
           }
           initialUgcCharacterReferenceAssetIds={
-            (regenerateCarousel?.generation_options as { ugc_character_reference_asset_ids?: string[] } | undefined)
+            (settingsSourceCarousel?.generation_options as { ugc_character_reference_asset_ids?: string[] } | undefined)
               ?.ugc_character_reference_asset_ids
           }
           initialProductReferenceAssetIds={
-            (regenerateCarousel?.generation_options as { product_reference_asset_ids?: string[] } | undefined)
+            (settingsSourceCarousel?.generation_options as { product_reference_asset_ids?: string[] } | undefined)
               ?.product_reference_asset_ids
           }
           templateOptions={templateOptions}

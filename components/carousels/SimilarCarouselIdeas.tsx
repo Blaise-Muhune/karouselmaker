@@ -4,10 +4,13 @@ import { LightbulbIcon, Loader2Icon } from "lucide-react";
 
 export function SimilarCarouselIdeas({
   projectId,
+  carouselId,
   ideas,
   loading = false,
 }: {
   projectId: string;
+  /** Source carousel — used so “new” form can reuse generation settings (AI images, refs, etc.) with notes cleared. */
+  carouselId: string;
   ideas: string[];
   /** Show a placeholder while topics are still being saved or hydrated. */
   loading?: boolean;
@@ -52,7 +55,10 @@ export function SimilarCarouselIdeas({
         {list.map((idea) => (
           <li key={idea} className="min-w-0">
             <Button variant="secondary" size="sm" className="h-auto max-w-full justify-start whitespace-normal py-1.5 text-left text-sm" asChild>
-              <Link href={`/p/${projectId}/new?topic=${encodeURIComponent(idea)}`} title={`New carousel: ${idea}`}>
+              <Link
+                href={`/p/${projectId}/new?topic=${encodeURIComponent(idea)}&fromCarousel=${encodeURIComponent(carouselId)}`}
+                title={`New carousel: ${idea}`}
+              >
                 {idea}
               </Link>
             </Button>

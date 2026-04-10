@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { startCarouselGeneration } from "@/app/actions/carousels/generateCarousel";
 import { updateProjectUseSavedUgcCharacter } from "@/app/actions/projects/projectUgcCharacterActions";
@@ -139,6 +139,12 @@ export function NewCarouselForm({
   initialAiStyleReferenceAssetIds,
   initialUgcCharacterReferenceAssetIds,
   initialProductReferenceAssetIds,
+  /** When opening /new from “Similar ideas” on another carousel — reuse that run’s image/template/ref settings; notes stay empty. */
+  initialSettingsCarriedFromCarousel = false,
+  initialSelectedTemplateId,
+  initialBackgroundAssetIds,
+  initialViralShortsStyle,
+  initialNumberOfSlides,
   templateOptions = [],
   defaultTemplateId = null,
   defaultTemplateConfig = null,
@@ -184,6 +190,14 @@ export function NewCarouselForm({
   initialUgcCharacterReferenceAssetIds?: string[];
   /** Product / app / service refs (LLM + image-to-image when using AI generate). */
   initialProductReferenceAssetIds?: string[];
+  /** True when `fromCarousel` loaded — enables same image-source inference as regenerate (e.g. web images). */
+  initialSettingsCarriedFromCarousel?: boolean;
+  /** Pre-fill template from source carousel `generation_options.template_id`. */
+  initialSelectedTemplateId?: string | null;
+  initialBackgroundAssetIds?: string[];
+  initialViralShortsStyle?: boolean;
+  /** 1–12 when source run fixed slide count; empty string in form means AI decides. */
+  initialNumberOfSlides?: number;
   /** Templates the user can choose before generating (with parsed config for preview). */
   templateOptions?: TemplateOption[];
   defaultTemplateId?: string | null;
@@ -204,8 +218,15 @@ export function NewCarouselForm({
   const [inputType, setInputType] = useState<"topic" | "url" | "text" | "document">(initialInputType ?? "topic");
   const [inputValue, setInputValue] = useState(initialInputValue ?? "");
   const [inputDocumentFile, setInputDocumentFile] = useState<File | null>(null);
-  const [numberOfSlides, setNumberOfSlides] = useState<string>("");
-  const [backgroundAssetIds, setBackgroundAssetIds] = useState<string[]>([]);
+  const [numberOfSlides, setNumberOfSlides] = useState<string>(() => {
+    const n = initialNumberOfSlides;
+    if (typeof n === "number" && Number.isFinite(n) && n >= 1 && n <= 12) return String(Math.floor(n));
+    return "";
+  });
+  const [backgroundAssetIds, setBackgroundAssetIds] = useState<string[]>(() => {
+    const raw = initialBackgroundAssetIds ?? [];
+    return Array.isArray(raw) ? raw.filter((id): id is string => typeof id === "string" && id.length > 0) : [];
+  });
   const [useAiBackgrounds, setUseAiBackgrounds] = useState(initialUseAiBackgrounds ?? (!!regenerateCarouselId));
   const [imageSource, setImageSource] = useState<"stock" | "ai_generate" | "brave">(() => {
     const ha = hasFullAccessProp ?? isPro;
@@ -213,7 +234,13 @@ export function NewCarouselForm({
     const canAi = isAdminUser || (ha && aiGenerateLimit > 0 && aiGenerateUsed < aiGenerateLimit);
     if (initialUseAiGenerate && canAi) return "ai_generate";
     if (initialUseStockPhotos) return "stock";
-    if (regenerateCarouselId && !initialUseStockPhotos && !initialUseAiGenerate && canWeb) return "brave";
+    if (
+      (regenerateCarouselId || initialSettingsCarriedFromCarousel) &&
+      !initialUseStockPhotos &&
+      !initialUseAiGenerate &&
+      canWeb
+    )
+      return "brave";
     return "stock";
   });
   const [useWebSearch, setUseWebSearch] = useState(initialUseWebSearch ?? false);
@@ -231,7 +258,9 @@ export function NewCarouselForm({
     }
     return out;
   }, [ugcInstagramImagePolicy, carouselFor, canUseAiGenerate, canUseWebImages]);
-  const [viralShortsStyle, setViralShortsStyle] = useState(false);
+  const [viralShortsStyle, setViralShortsStyle] = useState(
+    () => isAdminUser && (initialViralShortsStyle === true)
+  );
   const [notes, setNotes] = useState(initialNotes ?? "");
   const [aiStyleRefIds, setAiStyleRefIds] = useState<string[]>(() => {
     const raw = initialAiStyleReferenceAssetIds ?? [];
@@ -277,16 +306,29 @@ export function NewCarouselForm({
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(() => {
     const initialPlatform = initialCarouselFor ?? "instagram";
     const wantImageTemplate = initialUseAiBackgrounds ?? (!!regenerateCarouselId);
+    const carried = initialSelectedTemplateId?.trim();
+    const carriedOk = Boolean(carried && templateOptions.some((t) => t.id === carried));
     return pickTemplateIdForBackgroundMode(templateOptions, {
       carouselFor: initialPlatform,
       wantImageTemplate,
-      preferredId: initialPlatform === "linkedin" ? defaultLinkedInTemplateId : defaultTemplateId,
+      preferredId: carriedOk
+        ? carried!
+        : initialPlatform === "linkedin"
+          ? defaultLinkedInTemplateId
+          : defaultTemplateId,
       fallbackDefaultId: initialPlatform === "linkedin" ? defaultLinkedInTemplateId : defaultTemplateId,
-      respectUserPreferred: false,
+      respectUserPreferred: carriedOk,
     });
   });
   /** After user picks a template in the modal, keep it—do not auto-replace when AI background toggles. */
   const userLockedTemplateChoiceRef = useRef(false);
+
+  useLayoutEffect(() => {
+    const tid = initialSelectedTemplateId?.trim();
+    if (tid && templateOptions.some((t) => t.id === tid)) {
+      userLockedTemplateChoiceRef.current = true;
+    }
+  }, [initialSelectedTemplateId, templateOptions]);
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [plansOpen, setPlansOpen] = useState(false);
