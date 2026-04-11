@@ -11,6 +11,7 @@ import {
 } from "@/lib/renderer/templatePreviewImages";
 import { CheckIcon, LayoutTemplateIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getSlidePreviewSpreadFromTemplateConfig } from "@/lib/renderer/templateDefaultsForSlidePreview";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -225,26 +226,6 @@ export function TemplateSelectCards({
     setVisibleCount(TEMPLATE_PAGE_SIZE);
   }, [platformFilter, layoutFilter]);
 
-  /** Build zone + font overrides from template defaults so user-saved templates display correctly. */
-  const getOverridesFromConfig = (config: TemplateConfig) => {
-    const meta = config.defaults?.meta;
-    if (!meta || typeof meta !== "object") return {};
-    const headlineZone = meta.headline_zone_override && typeof meta.headline_zone_override === "object" && Object.keys(meta.headline_zone_override).length > 0 ? meta.headline_zone_override : undefined;
-    const bodyZone = meta.body_zone_override && typeof meta.body_zone_override === "object" && Object.keys(meta.body_zone_override).length > 0 ? meta.body_zone_override : undefined;
-    const zoneOverrides =
-      headlineZone || bodyZone
-        ? { headline: headlineZone as Record<string, unknown>, body: bodyZone as Record<string, unknown> }
-        : undefined;
-    const fontOverrides =
-      meta.headline_font_size != null || meta.body_font_size != null
-        ? {
-            ...(meta.headline_font_size != null && { headline_font_size: Number(meta.headline_font_size) }),
-            ...(meta.body_font_size != null && { body_font_size: Number(meta.body_font_size) }),
-          }
-        : undefined;
-    return { zoneOverrides, fontOverrides };
-  };
-
   /** Build imageDisplay from template defaults so PIP and full templates render exactly as designed. */
   const getImageDisplayFromConfig = (config: TemplateConfig): ComponentProps<typeof SlidePreview>["imageDisplay"] => {
     const raw =
@@ -371,7 +352,7 @@ export function TemplateSelectCards({
                 showWatermarkOverride={false}
                 exportSize="1080x1350"
                 imageDisplay={getImageDisplayFromConfig(t.parsedConfig)}
-                {...getOverridesFromConfig(t.parsedConfig)}
+                {...getSlidePreviewSpreadFromTemplateConfig(t.parsedConfig)}
               />
             </div>
           </div>
@@ -483,7 +464,7 @@ export function TemplateSelectCards({
                   showWatermarkOverride={false}
                   exportSize="1080x1350"
                   imageDisplay={getImageDisplayFromConfig(effectiveDefaultTemplateConfig)}
-                  {...getOverridesFromConfig(effectiveDefaultTemplateConfig)}
+                  {...getSlidePreviewSpreadFromTemplateConfig(effectiveDefaultTemplateConfig)}
                 />
               </div>
             ) : (

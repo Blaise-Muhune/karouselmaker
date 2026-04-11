@@ -1,6 +1,4 @@
 import { FFmpeg } from "@ffmpeg/ffmpeg";
-import { generateImpactWav, generateRiserWav } from "@/lib/video/soundEffects";
-import { generateWhooshWav } from "@/lib/video/whooshSfx";
 
 export const SECONDS_PER_SLIDE = 4;
 /** Minimum total video duration when using voiceover (e.g. 30s). */
@@ -36,91 +34,6 @@ async function getFFmpeg(): Promise<FFmpeg> {
   if (ffmpegInstance) return ffmpegInstance;
   if (!ffmpegLoadPromise) preloadFFmpeg();
   return ffmpegLoadPromise!;
-}
-
-const MAX_SOUND_EFFECT_DURATION_SEC = 7;
-
-/**
- * Get duration of an audio or video file in the browser (for validation before upload).
- */
-export function getMediaDuration(file: File): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const isVideo = file.type.startsWith("video/");
-    if (isVideo) {
-      const video = document.createElement("video");
-      video.preload = "metadata";
-      video.onloadedmetadata = () => {
-        URL.revokeObjectURL(url);
-        resolve(video.duration);
-      };
-      video.onerror = () => {
-        URL.revokeObjectURL(url);
-        reject(new Error("Could not load video"));
-      };
-      video.src = url;
-    } else {
-      const audio = document.createElement("audio");
-      audio.preload = "metadata";
-      audio.onloadedmetadata = () => {
-        URL.revokeObjectURL(url);
-        resolve(audio.duration);
-      };
-      audio.onerror = () => {
-        URL.revokeObjectURL(url);
-        reject(new Error("Could not load audio"));
-      };
-      audio.src = url;
-    }
-  });
-}
-
-/**
- * Extract audio from a video file (or return audio file as-is) for sound effect upload.
- * Returns WAV for video (FFmpeg extraction), or original buffer for audio with ext from type.
- * Duration must be ≤ MAX_SOUND_EFFECT_DURATION_SEC; validate with getMediaDuration first.
- */
-export async function extractAudioForSoundEffect(
-  file: File,
-  onProgress?: (msg: string) => void
-): Promise<{ buffer: ArrayBuffer; durationSec: number; ext: "wav" | "mp3" }> {
-  const durationSec = await getMediaDuration(file);
-  if (durationSec <= 0 || durationSec > MAX_SOUND_EFFECT_DURATION_SEC) {
-    throw new Error(`Duration must be between 0 and ${MAX_SOUND_EFFECT_DURATION_SEC} seconds`);
-  }
-
-  if (file.type.startsWith("video/")) {
-    onProgress?.("Extracting audio from video…");
-    const ffmpeg = await getFFmpeg();
-    const inputName = "input_video";
-    const buf = await file.arrayBuffer();
-    await ffmpeg.writeFile(inputName, new Uint8Array(buf));
-    await ffmpeg.exec([
-      "-i", inputName,
-      "-vn",
-      "-acodec", "pcm_s16le",
-      "-ar", "44100",
-      "-ac", "2",
-      "output.wav",
-    ]);
-    const out = await ffmpeg.readFile("output.wav");
-    const raw =
-      out instanceof ArrayBuffer
-        ? new Uint8Array(out)
-        : out instanceof Uint8Array
-          ? out
-          : new Uint8Array(typeof out === "string" ? Uint8Array.from(atob(out), (c) => c.charCodeAt(0)) : (out as ArrayBuffer));
-    const outBuf = raw.buffer.slice(0) as ArrayBuffer;
-    try {
-      await ffmpeg.deleteFile(inputName);
-      await ffmpeg.deleteFile("output.wav");
-    } catch { /* ignore */ }
-    return { buffer: outBuf, durationSec, ext: "wav" };
-  }
-
-  const buffer = await file.arrayBuffer();
-  const ext = file.type.includes("mpeg") || file.type.includes("mp3") ? "mp3" : "wav";
-  return { buffer, durationSec, ext };
 }
 
 /**
@@ -316,20 +229,6 @@ export type CreateVideoOptions = {
   captionCues?: CaptionCue[];
   /** Where to draw captions. */
   captionPosition?: CaptionPosition;
-  /** Add whoosh/transition sound effects at slide changes to keep viewers hooked. Only used when audioBuffer is set. */
-  soundEffects?: boolean;
-  /** Play a short riser (tension build) at video start when sound effects are on. Default true. */
-  soundEffectIntroRiser?: boolean;
-  /** Transition SFX: "whoosh" or "impact". Default "whoosh". */
-  soundEffectTransition?: "whoosh" | "impact";
-  /** Custom intro sound (WAV/MP3 buffer). When set, used instead of built-in riser. */
-  customIntroAudioBuffer?: ArrayBuffer;
-  /** Extension for custom intro (so FFmpeg picks correct decoder). Default "wav". */
-  customIntroAudioExt?: "wav" | "mp3";
-  /** Custom transition sound (WAV/MP3 buffer). When set, used instead of whoosh/impact. */
-  customTransitionAudioBuffer?: ArrayBuffer;
-  /** Extension for custom transition. Default "wav". */
-  customTransitionAudioExt?: "wav" | "mp3";
   /** Optional step label callback for UI progress (e.g. "Preparing…", "Encoding video…"). */
   onStep?: (step: string) => void;
 };
@@ -540,47 +439,6 @@ export async function createVideoFromLayeredSlides(
   if (options?.audioBuffer) {
     await ffmpeg.writeFile("voiceover.mp3", new Uint8Array(options.audioBuffer));
   }
-  const useSoundEffects = !!(options?.soundEffects && options?.audioBuffer);
-  const introRiser = options?.soundEffectIntroRiser !== false;
-  const transitionType = options?.soundEffectTransition ?? "whoosh";
-  const transitionTimesSec: number[] = [];
-  let wroteRiser = false;
-  let wroteWhoosh = false;
-  let wroteImpact = false;
-  const introExt = options?.customIntroAudioExt ?? "wav";
-  const transitionExt = options?.customTransitionAudioExt ?? "wav";
-  const introFileName = `riser.${introExt}`;
-  const transitionFileName = options?.customTransitionAudioBuffer
-    ? `whoosh.${transitionExt}`
-    : transitionType === "impact"
-      ? "impact.wav"
-      : "whoosh.wav";
-  if (useSoundEffects) {
-    transitionTimesSec.push(0);
-    let cumul = 0;
-    for (let i = 0; i < n - 1; i++) {
-      cumul += Math.max(0.1, secPerSlideArray[i]! - FADE_DURATION_SEC);
-      transitionTimesSec.push(cumul);
-    }
-    if (introRiser) {
-      if (options?.customIntroAudioBuffer) {
-        await ffmpeg.writeFile(introFileName, new Uint8Array(options.customIntroAudioBuffer));
-      } else {
-        await ffmpeg.writeFile("riser.wav", new Uint8Array(generateRiserWav()));
-      }
-      wroteRiser = true;
-    }
-    if (options?.customTransitionAudioBuffer) {
-      await ffmpeg.writeFile(transitionFileName, new Uint8Array(options.customTransitionAudioBuffer));
-      wroteWhoosh = true;
-    } else if (transitionType === "impact") {
-      await ffmpeg.writeFile("impact.wav", new Uint8Array(generateImpactWav()));
-      wroteImpact = true;
-    } else {
-      await ffmpeg.writeFile("whoosh.wav", new Uint8Array(generateWhooshWav()));
-      wroteWhoosh = true;
-    }
-  }
   const captionCuesFiltered = (options?.captionCues ?? []).filter((c) => c.text.replace(/\s/g, "").length > 0);
   const scaledCaptionCues =
     voiceSpeed !== 1 && captionCuesFiltered.length > 0
@@ -683,20 +541,6 @@ export async function createVideoFromLayeredSlides(
   if (options?.audioBuffer) {
     inputArgs.push("-i", "voiceover.mp3");
   }
-  if (useSoundEffects) {
-    const introInputFile = introRiser && options?.customIntroAudioBuffer ? introFileName : "riser.wav";
-    if (introRiser) {
-      inputArgs.push("-i", introInputFile);
-      for (let i = 0; i < transitionTimesSec.length - 1; i++) {
-        inputArgs.push("-i", transitionFileName);
-      }
-    } else {
-      for (let i = 0; i < transitionTimesSec.length; i++) {
-        inputArgs.push("-i", transitionFileName);
-      }
-    }
-  }
-  const totalInputs = videoInputIndex + writtenCaptions.length + (options?.audioBuffer ? 1 : 0) + transitionTimesSec.length;
   const audioInputIndex = options?.audioBuffer ? videoInputIndex + writtenCaptions.length : -1;
 
   const filters: string[] = [];
@@ -823,22 +667,9 @@ export async function createVideoFromLayeredSlides(
   const useAtempo = !!options?.audioBuffer && voiceSpeed !== 1;
   let audioFilter = "";
   if (options?.audioBuffer) {
-    if (useSoundEffects && transitionTimesSec.length > 0) {
-      const voPart = useAtempo ? `[${audioInputIndex}:a]atempo=${voiceSpeed}[vo]` : `[${audioInputIndex}:a]anull[vo]`;
-      const whooshParts: string[] = [];
-      for (let i = 0; i < transitionTimesSec.length; i++) {
-        const ms = Math.round(transitionTimesSec[i]! * 1000);
-        whooshParts.push(`[${audioInputIndex + 1 + i}:a]adelay=${ms}|${ms}[w${i}]`);
-      }
-      // Always use [vo] so anull/atempo output is connected to amix
-      const mixInputs = "[vo]" + whooshParts.map((_, i) => `[w${i}]`).join("");
-      audioFilter =
-        ";" + voPart + ";" + whooshParts.join(";") + ";" + mixInputs + "amix=inputs=" + (transitionTimesSec.length + 1) + ":duration=longest:dropout_transition=0[aout]";
-    } else {
-      audioFilter = useAtempo ? `;[${audioInputIndex}:a]atempo=${voiceSpeed}[aout]` : "";
-    }
+    audioFilter = useAtempo ? `;[${audioInputIndex}:a]atempo=${voiceSpeed}[aout]` : "";
   }
-  const audioMap = options?.audioBuffer ? (useSoundEffects && transitionTimesSec.length > 0 ? "[aout]" : useAtempo ? "[aout]" : `${audioInputIndex}:a:0`) : undefined;
+  const audioMap = options?.audioBuffer ? (useAtempo ? "[aout]" : `${audioInputIndex}:a:0`) : undefined;
   const filterComplex = filters.join(";") + (audioFilter || "");
   const args = options?.audioBuffer
     ? [
@@ -903,12 +734,6 @@ export async function createVideoFromLayeredSlides(
   }
   if (options?.audioBuffer) {
     try { await ffmpeg.deleteFile("voiceover.mp3"); } catch { /* ignore */ }
-  }
-  if (wroteRiser) {
-    try { await ffmpeg.deleteFile(options?.customIntroAudioBuffer ? introFileName : "riser.wav"); } catch { /* ignore */ }
-  }
-  if (wroteWhoosh || wroteImpact) {
-    try { await ffmpeg.deleteFile(transitionFileName); } catch { /* ignore */ }
   }
   if (hasCaptions) {
     try { await ffmpeg.deleteFile("captions.srt"); } catch { /* ignore */ }

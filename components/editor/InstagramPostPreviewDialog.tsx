@@ -80,6 +80,8 @@ export function InstagramPostPreviewDialog({
     try {
       const res = await fetch(`/api/carousel/${carouselId}/render-for-video`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image_overlay: true }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {

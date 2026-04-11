@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect } from "react";
 import { updateExportSettings } from "@/app/actions/carousels/updateExportFormat";
 import type { ExportFormat, ExportSize } from "@/lib/server/db/types";
 import { useRouter } from "next/navigation";
@@ -12,22 +12,18 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-  DialogFooter,
 } from "@/components/ui/dialog";
 import { CarouselVideoPlayer } from "@/components/carousels/CarouselVideoPlayer";
 import {
   createVideoFromImages,
   createVideoFromLayeredSlides,
   preloadFFmpeg,
-  getMediaDuration,
-  extractAudioForSoundEffect,
   type CaptionPosition,
   type LayeredSlideInput,
 } from "@/lib/video/createVideoFromImages";
 import { ADAM_VOICE_ID, VOICE_PRESETS } from "@/lib/video/voices";
-import { DownloadIcon, ExternalLinkIcon, Loader2Icon, PlayIcon, PlusIcon, RefreshCwIcon, Trash2Icon, VideoIcon } from "lucide-react";
+import { DownloadIcon, ExternalLinkIcon, Loader2Icon, PlayIcon, RefreshCwIcon, VideoIcon } from "lucide-react";
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -52,36 +48,6 @@ export type ExportRowDisplay = {
   storage_path: string | null;
   created_at: string;
 };
-
-export type SoundEffectPreset = "riser" | "whoosh" | "impact";
-
-export type SoundEffectItem = {
-  id: string;
-  name: string;
-  preset?: SoundEffectPreset;
-  /** User-uploaded: storage path and duration (saved to DB, ≤7s). */
-  storage_path?: string;
-  duration_sec?: number;
-  role?: "intro" | "transition";
-};
-
-/** Row from GET /api/sound-effects (user-uploaded, saved to DB). */
-export type UserSoundEffectRow = {
-  id: string;
-  name: string;
-  storage_path: string;
-  duration_sec: number;
-  role: "intro" | "transition";
-  created_at: string;
-};
-
-const MAX_SFX_DURATION_SEC = 7;
-
-const DEFAULT_SOUND_EFFECTS: SoundEffectItem[] = [
-  { id: "se-riser", name: "Riser", preset: "riser" },
-  { id: "se-whoosh", name: "Whoosh", preset: "whoosh" },
-  { id: "se-impact", name: "Impact", preset: "impact" },
-];
 
 /** Video output size (preview + download). Includes 16:9 and 5:4. */
 export type VideoSize = "1080x1080" | "1080x864" | "1080x1350" | "1080x1920" | "1920x1080";
@@ -203,6 +169,8 @@ export function EditorExportSection({
   const router = useRouter();
   const [localExportFormat, setLocalExportFormat] = useState<ExportFormat>(exportFormat);
   const [localExportSize, setLocalExportSize] = useState<ExportSize>(exportSize);
+  /** When true, ZIP/PDF raster uses gradient + tint on image backgrounds (matches editor). */
+  const [imageOverlayOnExport, setImageOverlayOnExport] = useState(true);
   const [updatingExportSettings, setUpdatingExportSettings] = useState(false);
 
   useEffect(() => {
@@ -263,31 +231,8 @@ export function EditorExportSection({
   const [videoDownloadError, setVideoDownloadError] = useState<string | null>(null);
   const [captionPosition, setCaptionPosition] = useState<CaptionPosition>("safe_lower");
   const [withCaption, setWithCaption] = useState(false);
-  const [withSoundEffects, setWithSoundEffects] = useState(true);
-  const [customSoundEffects, setCustomSoundEffects] = useState<UserSoundEffectRow[]>([]);
-  const [soundEffectList, setSoundEffectList] = useState<SoundEffectItem[]>([]);
-  const allSoundEffects = useMemo<SoundEffectItem[]>(
-    () => [
-      ...DEFAULT_SOUND_EFFECTS,
-      ...customSoundEffects.map((c) => ({
-        id: c.id,
-        name: c.name,
-        storage_path: c.storage_path,
-        duration_sec: c.duration_sec,
-        role: c.role,
-      })),
-      ...soundEffectList,
-    ],
-    [customSoundEffects, soundEffectList]
-  );
-  const [introSoundId, setIntroSoundId] = useState<string | null>(() => DEFAULT_SOUND_EFFECTS[0]!.id);
-  const [transitionSoundId, setTransitionSoundId] = useState<string>(() => DEFAULT_SOUND_EFFECTS[1]!.id);
-  const [addSfxOpen, setAddSfxOpen] = useState(false);
-  const [addSfxName, setAddSfxName] = useState("");
-  const [addSfxPreset, setAddSfxPreset] = useState<SoundEffectPreset>("whoosh");
-  const [editingSfxId, setEditingSfxId] = useState<string | null>(null);
-  const [sfxUploading, setSfxUploading] = useState(false);
-  const [sfxUploadError, setSfxUploadError] = useState<string | null>(null);
+  /** When true, video background layer includes the same dim/gradient as the editor. */
+  const [imageOverlayOnVideo, setImageOverlayOnVideo] = useState(true);
   const [zipDownloading, setZipDownloading] = useState(false);
   const [withVoiceover, setWithVoiceover] = useState(true);
   const [selectedVoiceId, setSelectedVoiceId] = useState(ADAM_VOICE_ID);
@@ -322,25 +267,19 @@ export function EditorExportSection({
     if (!withVoiceover) setWithCaption(false);
   }, [withVoiceover]);
 
-  // Load user-uploaded sound effects (saved to DB, ≤7s audio or extracted from video)
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/sound-effects")
-      .then((r) => (r.ok ? r.json() : []))
-      .then((data: UserSoundEffectRow[]) => {
-        if (!cancelled) setCustomSoundEffects(Array.isArray(data) ? data : []);
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, []);
-
-  // Changing format or voice/caption/sound-effect settings invalidates the generated video; user must regenerate
+  // Changing format, overlay, or voice/caption settings invalidates the generated video; user must regenerate
   useEffect(() => {
     if (generatedVideoUrl) {
       setGeneratedVideoUrl(null);
       setGeneratedVideoBlob(null);
     }
-  }, [videoSize, withVoiceover, withCaption, withSoundEffects, introSoundId, transitionSoundId, allSoundEffects, captionPosition, selectedVoiceId, voiceSpeed]);
+  }, [videoSize, withVoiceover, withCaption, captionPosition, selectedVoiceId, voiceSpeed, imageOverlayOnVideo]);
+
+  useEffect(() => {
+    setSlideUrls([]);
+    setSlideVideoData(null);
+    videoRenderRunIdRef.current = null;
+  }, [imageOverlayOnVideo]);
 
   /** Clean up stored export files when user navigates away or after delay. */
   const cleanupExportStorageRef = useRef<{ exportId: string; timeoutId: ReturnType<typeof setTimeout> } | null>(null);
@@ -352,7 +291,11 @@ export function EditorExportSection({
     setSlideUrls([]);
     setSlideVideoData(null);
     try {
-      const res = await fetch(`/api/export/${carouselId}`, { method: "POST" });
+      const res = await fetch(`/api/export/${carouselId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image_overlay: imageOverlayOnExport }),
+      });
       const contentType = res.headers.get("content-type") ?? "";
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -425,7 +368,11 @@ export function EditorExportSection({
     const promise = (async () => {
       setVideoUrlsLoading(true);
       try {
-        const res = await fetch(`/api/carousel/${carouselId}/render-for-video`, { method: "POST" });
+        const res = await fetch(`/api/carousel/${carouselId}/render-for-video`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image_overlay: imageOverlayOnVideo }),
+        });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
           throw new Error(data.error ?? "Failed to prepare frames for video");
@@ -482,59 +429,36 @@ export function EditorExportSection({
       let slideDurationsSec: number[] | undefined;
       let captionCues: { text: string; start: number; end: number }[] | undefined;
       if (withVoiceover) {
-        const ttsRes = await fetch("/api/tts", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            carouselId,
-            voiceId: selectedVoiceId,
-            timestamps: true,
-          }),
-        });
-        if (!ttsRes.ok) {
-          const err = await ttsRes.json().catch(() => ({}));
-          throw new Error(err.error ?? "Voiceover failed. Add ELEVENLABS_API_KEY in env.");
-        }
-        const ttsData = (await ttsRes.json()) as {
-          audioBase64?: string;
-          captionCues?: { text: string; start: number; end: number }[];
-          slideDurationsSec?: number[];
-        };
-        if (ttsData.audioBase64) {
-          const binary = atob(ttsData.audioBase64);
-          const bytes = new Uint8Array(binary.length);
-          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-          audioBuffer = bytes.buffer;
-          slideDurationsSec = ttsData.slideDurationsSec;
-          if (withCaption) captionCues = ttsData.captionCues;
-        }
-      }
-      const introEff = allSoundEffects.find((e) => e.id === introSoundId);
-      const transitionEff = allSoundEffects.find((e) => e.id === transitionSoundId);
-      const useCustomIntro = !!(introEff?.storage_path);
-      const useCustomTransition = !!(transitionEff?.storage_path);
-      let customIntroBuffer: ArrayBuffer | undefined;
-      let customTransitionBuffer: ArrayBuffer | undefined;
-      let customIntroExt: "wav" | "mp3" = "wav";
-      let customTransitionExt: "wav" | "mp3" = "wav";
-      if (withVoiceover && withSoundEffects && (useCustomIntro || useCustomTransition)) {
-        if (useCustomIntro && introEff?.id) {
-          const urlRes = await fetch(`/api/sound-effects/${introEff.id}/url`);
-          if (urlRes.ok) {
-            const { url } = (await urlRes.json()) as { url: string };
-            const ab = await (await fetch(url)).arrayBuffer();
-            customIntroBuffer = ab;
-            customIntroExt = introEff.storage_path?.endsWith(".mp3") ? "mp3" : "wav";
+        try {
+          const ttsRes = await fetch("/api/tts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              carouselId,
+              voiceId: selectedVoiceId,
+              timestamps: true,
+            }),
+          });
+          if (ttsRes.ok) {
+            const ttsData = (await ttsRes.json()) as {
+              audioBase64?: string;
+              captionCues?: { text: string; start: number; end: number }[];
+              slideDurationsSec?: number[];
+            };
+            if (ttsData.audioBase64) {
+              const binary = atob(ttsData.audioBase64);
+              const bytes = new Uint8Array(binary.length);
+              for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+              audioBuffer = bytes.buffer;
+              slideDurationsSec = ttsData.slideDurationsSec;
+              if (withCaption) captionCues = ttsData.captionCues;
+            }
           }
+        } catch {
+          /* network / parse — fall through to silent video */
         }
-        if (useCustomTransition && transitionEff?.id) {
-          const urlRes = await fetch(`/api/sound-effects/${transitionEff.id}/url`);
-          if (urlRes.ok) {
-            const { url } = (await urlRes.json()) as { url: string };
-            const ab = await (await fetch(url)).arrayBuffer();
-            customTransitionBuffer = ab;
-            customTransitionExt = transitionEff.storage_path?.endsWith(".mp3") ? "mp3" : "wav";
-          }
+        if (!audioBuffer) {
+          setVideoDownloadStep("Voiceover unavailable — creating video without narration.");
         }
       }
       const blob = videoData?.every((s) => s.backgroundUrls?.length)
@@ -548,12 +472,7 @@ export function EditorExportSection({
                   audioBuffer,
                   slideDurationsSec,
                   voiceSpeed,
-                  soundEffects: withSoundEffects,
-                  soundEffectIntroRiser: useCustomIntro || !!(introEff && introEff.preset === "riser"),
-                  soundEffectTransition: (transitionEff?.preset === "impact" ? "impact" : "whoosh") as "whoosh" | "impact",
-                  ...(customIntroBuffer && { customIntroAudioBuffer: customIntroBuffer, customIntroAudioExt: customIntroExt }),
-                  ...(customTransitionBuffer && { customTransitionAudioBuffer: customTransitionBuffer, customTransitionAudioExt: customTransitionExt }),
-                  ...(withCaption && captionCues
+                  ...(withCaption && captionCues?.length
                     ? { captionCues, captionPosition }
                     : {}),
                   onStep: setVideoDownloadStep,
@@ -670,6 +589,23 @@ export function EditorExportSection({
               ))}
             </SelectContent>
           </Select>
+        </div>
+        <div className="flex items-center gap-2 pt-1 sm:pt-0 sm:items-end">
+          <input
+            type="checkbox"
+            id="export-image-overlay"
+            checked={imageOverlayOnExport}
+            onChange={(e) => setImageOverlayOnExport(e.target.checked)}
+            disabled={!isPro || disabled || updatingExportSettings || exporting}
+            className="rounded border-input accent-primary"
+          />
+          <Label
+            htmlFor="export-image-overlay"
+            className="text-sm font-medium cursor-pointer leading-snug max-w-[220px]"
+            title="When off, exported image slides show the photo without the darkening gradient or tint (text and template chrome stay on)."
+          >
+            Overlay on photos
+          </Label>
         </div>
       </div>
       {localExportFormat === "pdf" && (
@@ -806,6 +742,23 @@ export function EditorExportSection({
                     aria-disabled={videoDownloading}
                   >
                     <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="video-image-overlay"
+                        checked={imageOverlayOnVideo}
+                        onChange={(e) => setImageOverlayOnVideo(e.target.checked)}
+                        disabled={videoDownloading}
+                        className="rounded border-input accent-primary"
+                      />
+                      <Label
+                        htmlFor="video-image-overlay"
+                        className="text-sm font-medium cursor-pointer"
+                        title="When off, the video background is the raw photo (no dim gradient); text is still composited on top."
+                      >
+                        Photo overlay
+                      </Label>
+                    </div>
+                    <div className="flex items-center gap-2">
                       <Label htmlFor="video-size" className="text-sm text-muted-foreground whitespace-nowrap">
                         Format
                       </Label>
@@ -852,222 +805,6 @@ export function EditorExportSection({
                         With caption
                       </Label>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        id="with-sound-effects"
-                        checked={withSoundEffects}
-                        disabled={!withVoiceover || videoDownloading}
-                        onChange={(e) => setWithSoundEffects(e.target.checked)}
-                        className="rounded border-input accent-primary disabled:opacity-50"
-                      />
-                      <Label htmlFor="with-sound-effects" className={`text-sm font-medium cursor-pointer ${!withVoiceover ? "text-muted-foreground" : ""}`} title="Riser + whoosh/impact to keep viewers hooked">
-                        Sound effects
-                      </Label>
-                    </div>
-                    {withVoiceover && withSoundEffects && (
-                      <>
-                        <div className="flex flex-col gap-2">
-                          <div className="flex items-center justify-between gap-2">
-                            <Label className="text-sm font-medium">Sound effects</Label>
-                            <Dialog open={addSfxOpen} onOpenChange={setAddSfxOpen}>
-                              <DialogTrigger asChild>
-                                <Button type="button" variant="outline" size="sm" className="gap-1" disabled={videoDownloading}>
-                                  <PlusIcon className="size-3.5" />
-                                  Add
-                                </Button>
-                              </DialogTrigger>
-                              <DialogContent className="sm:max-w-xs" showCloseButton>
-                                <DialogHeader>
-                                  <DialogTitle>Add sound effect</DialogTitle>
-                                </DialogHeader>
-                                <div className="grid gap-3 py-2">
-                                  <div className="grid gap-1.5">
-                                    <Label className="text-sm">Upload audio or video (max {MAX_SFX_DURATION_SEC}s)</Label>
-                                    <input
-                                      type="file"
-                                      accept="audio/*,video/*"
-                                      className="file:mr-2 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-sm file:text-primary-foreground"
-                                      disabled={sfxUploading}
-                                      onChange={async (e) => {
-                                        const file = e.target.files?.[0];
-                                        e.target.value = "";
-                                        if (!file) return;
-                                        setSfxUploadError(null);
-                                        setSfxUploading(true);
-                                        try {
-                                          const duration = await getMediaDuration(file);
-                                          if (duration > MAX_SFX_DURATION_SEC) {
-                                            setSfxUploadError(`Max duration is ${MAX_SFX_DURATION_SEC} seconds. This file is ${duration.toFixed(1)}s.`);
-                                            return;
-                                          }
-                                          const { buffer, durationSec, ext } = await extractAudioForSoundEffect(file, setVideoDownloadStep);
-                                          const form = new FormData();
-                                          form.set("file", new Blob([buffer], { type: ext === "mp3" ? "audio/mpeg" : "audio/wav" }), ext === "mp3" ? "sound.mp3" : "sound.wav");
-                                          form.set("name", file.name.replace(/\.[^.]*$/, "") || "My sound");
-                                          form.set("role", addSfxPreset === "riser" ? "intro" : "transition"); // used when uploading so effect appears in correct dropdown
-                                          form.set("duration_sec", String(durationSec));
-                                          const res = await fetch("/api/sound-effects", { method: "POST", body: form });
-                                          if (!res.ok) {
-                                            const err = await res.json().catch(() => ({}));
-                                            throw new Error(err.error ?? "Upload failed");
-                                          }
-                                          const row = (await res.json()) as UserSoundEffectRow;
-                                          setCustomSoundEffects((prev) => [row, ...prev]);
-                                          setAddSfxOpen(false);
-                                        } catch (err) {
-                                          setSfxUploadError(err instanceof Error ? err.message : "Upload failed");
-                                        } finally {
-                                          setSfxUploading(false);
-                                        }
-                                      }}
-                                    />
-                                    {sfxUploading && <p className="text-xs text-muted-foreground flex items-center gap-1"><Loader2Icon className="size-3 animate-spin" /> Uploading…</p>}
-                                    {sfxUploadError && <p className="text-xs text-destructive">{sfxUploadError}</p>}
-                                  </div>
-                                  <div className="relative">
-                                    <div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div>
-                                    <div className="relative flex justify-center text-xs uppercase text-muted-foreground"><span className="bg-background px-2">Or add preset</span></div>
-                                  </div>
-                                  <div className="grid gap-1.5">
-                                    <Label htmlFor="add-sfx-name" className="text-sm">Name</Label>
-                                    <Input
-                                      id="add-sfx-name"
-                                      placeholder="e.g. Dramatic whoosh"
-                                      value={addSfxName}
-                                      onChange={(e) => setAddSfxName(e.target.value)}
-                                    />
-                                  </div>
-                                  <div className="grid gap-1.5">
-                                    <Label htmlFor="add-sfx-preset" className="text-sm">Type</Label>
-                                    <Select value={addSfxPreset} onValueChange={(v) => setAddSfxPreset(v as SoundEffectPreset)}>
-                                      <SelectTrigger id="add-sfx-preset">
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="riser">Riser</SelectItem>
-                                        <SelectItem value="whoosh">Whoosh</SelectItem>
-                                        <SelectItem value="impact">Impact</SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                </div>
-                                <DialogFooter showCloseButton={false}>
-                                  <Button type="button" variant="outline" onClick={() => { setAddSfxOpen(false); setSfxUploadError(null); }}>
-                                    Cancel
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    onClick={() => {
-                                      const name = addSfxName.trim() || (addSfxPreset === "riser" ? "Riser" : addSfxPreset === "impact" ? "Impact" : "Whoosh");
-                                      setSoundEffectList((prev) => [
-                                        ...prev,
-                                        { id: `se-${Date.now()}`, name, preset: addSfxPreset },
-                                      ]);
-                                      setAddSfxName("");
-                                      setAddSfxPreset("whoosh");
-                                      setSfxUploadError(null);
-                                      setAddSfxOpen(false);
-                                    }}
-                                  >
-                                    Add preset
-                                  </Button>
-                                </DialogFooter>
-                              </DialogContent>
-                            </Dialog>
-                          </div>
-                          <ul className="flex flex-col gap-1.5 max-h-32 overflow-y-auto rounded-md border bg-muted/30 p-2">
-                            {allSoundEffects.map((sfx) => (
-                              <li key={sfx.id} className="flex items-center gap-2 text-sm">
-                                {editingSfxId === sfx.id && !sfx.storage_path ? (
-                                  <Input
-                                    className="h-7 flex-1 text-sm"
-                                    value={soundEffectList.find((e) => e.id === sfx.id)?.name ?? sfx.name}
-                                    onChange={(e) =>
-                                      setSoundEffectList((prev) =>
-                                        prev.map((x) => (x.id === sfx.id ? { ...x, name: e.target.value } : x))
-                                      )
-                                    }
-                                    onBlur={() => setEditingSfxId(null)}
-                                    onKeyDown={(e) => {
-                                      if (e.key === "Enter") setEditingSfxId(null);
-                                    }}
-                                    autoFocus
-                                  />
-                                ) : (
-                                  <button
-                                    type="button"
-                                    className="flex-1 min-w-0 text-left truncate rounded px-1.5 py-0.5 hover:bg-muted"
-                                    onClick={() => !sfx.storage_path && setEditingSfxId(sfx.id)}
-                                    title={sfx.storage_path ? "Uploaded sound" : "Click to rename"}
-                                  >
-                                    {sfx.name}
-                                  </button>
-                                )}
-                                <span className="shrink-0 text-xs text-muted-foreground capitalize">{sfx.preset ?? (sfx.role === "intro" ? "intro" : "transition")}</span>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="size-6 shrink-0"
-                                  disabled={allSoundEffects.length <= 1 || videoDownloading}
-                                  onClick={() => {
-                                    if (customSoundEffects.some((c) => c.id === sfx.id)) {
-                                      setCustomSoundEffects((prev) => prev.filter((e) => e.id !== sfx.id));
-                                    } else {
-                                      setSoundEffectList((prev) => prev.filter((e) => e.id !== sfx.id));
-                                    }
-                                    const next = allSoundEffects.filter((e) => e.id !== sfx.id);
-                                    if (introSoundId === sfx.id) setIntroSoundId(next.find((e) => e.preset === "riser" || e.role === "intro")?.id ?? null);
-                                    if (transitionSoundId === sfx.id) setTransitionSoundId(next.find((e) => e.preset === "whoosh" || e.preset === "impact" || e.role === "transition")?.id ?? "se-whoosh");
-                                  }}
-                                  title="Remove"
-                                >
-                                  <Trash2Icon className="size-3" />
-                                </Button>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Label htmlFor="intro-sound" className="text-sm text-muted-foreground whitespace-nowrap">
-                            Intro
-                          </Label>
-                          <Select
-                            value={introSoundId ?? "none"}
-                            onValueChange={(v) => setIntroSoundId(v === "none" ? null : v)}
-                          >
-                            <SelectTrigger id="intro-sound" className="w-[140px]" disabled={videoDownloading}>
-                              <SelectValue placeholder="None" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">None</SelectItem>
-                              {allSoundEffects.filter((e) => e.preset === "riser" || e.role === "intro").map((e) => (
-                                <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Label htmlFor="transition-sound" className="text-sm text-muted-foreground whitespace-nowrap">
-                            Transition
-                          </Label>
-                          <Select
-                            value={transitionSoundId}
-                            onValueChange={setTransitionSoundId}
-                          >
-                            <SelectTrigger id="transition-sound" className="w-[140px]" disabled={videoDownloading}>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {allSoundEffects.filter((e) => e.preset === "whoosh" || e.preset === "impact" || e.role === "transition").map((e) => (
-                                <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </>
-                    )}
                     {withVoiceover && (
                       <>
                         <div className="flex items-center gap-2">

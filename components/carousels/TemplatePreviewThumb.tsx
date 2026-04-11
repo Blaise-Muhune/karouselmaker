@@ -8,6 +8,7 @@ import {
   getTemplatePreviewImageUrls,
   getTemplateIntendedBackgroundImageSlotCount,
 } from "@/lib/renderer/templatePreviewImages";
+import { getSlidePreviewSpreadFromTemplateConfig } from "@/lib/renderer/templateDefaultsForSlidePreview";
 import { LayoutTemplateIcon } from "lucide-react";
 
 /** Build imageDisplay from template defaults so PIP and full templates render exactly as designed. */
@@ -42,40 +43,6 @@ const SAMPLE_SLIDE = {
   slide_index: 1,
   slide_type: "point" as const,
 };
-
-function getOverridesFromConfig(config: TemplateConfig) {
-  const meta = config.defaults?.meta;
-  if (!meta || typeof meta !== "object") return { zoneOverrides: undefined, fontOverrides: undefined, chromeOverrides: undefined };
-  const headlineZone = meta.headline_zone_override && typeof meta.headline_zone_override === "object" && Object.keys(meta.headline_zone_override).length > 0 ? meta.headline_zone_override : undefined;
-  const bodyZone = meta.body_zone_override && typeof meta.body_zone_override === "object" && Object.keys(meta.body_zone_override).length > 0 ? meta.body_zone_override : undefined;
-  const zoneOverrides =
-    headlineZone || bodyZone
-      ? { headline: headlineZone as Record<string, unknown>, body: bodyZone as Record<string, unknown> }
-      : undefined;
-  const fontOverrides =
-    meta.headline_font_size != null || meta.body_font_size != null
-      ? {
-          ...(meta.headline_font_size != null && { headline_font_size: Number(meta.headline_font_size) }),
-          ...(meta.body_font_size != null && { body_font_size: Number(meta.body_font_size) }),
-        }
-      : undefined;
-  const counterRaw = meta.counter_zone_override;
-  const watermarkRaw = meta.watermark_zone_override;
-  const madeWithRaw = meta.made_with_zone_override;
-  const counter = counterRaw && typeof counterRaw === "object" && counterRaw !== null && Object.keys(counterRaw).length > 0 ? { ...(counterRaw.top != null && { top: Number(counterRaw.top) }), ...(counterRaw.right != null && { right: Number(counterRaw.right) }), ...(counterRaw.fontSize != null && { fontSize: Number(counterRaw.fontSize) }) } : undefined;
-  const watermark = watermarkRaw && typeof watermarkRaw === "object" && watermarkRaw !== null && Object.keys(watermarkRaw).length > 0 ? { ...(watermarkRaw.position ? { position: watermarkRaw.position as "top_left" | "top_right" | "bottom_left" | "bottom_right" | "custom" } : {}), ...(watermarkRaw.logoX != null && { logoX: Number(watermarkRaw.logoX) }), ...(watermarkRaw.logoY != null && { logoY: Number(watermarkRaw.logoY) }), ...(watermarkRaw.fontSize != null && { fontSize: Number(watermarkRaw.fontSize) }), ...(watermarkRaw.maxWidth != null && { maxWidth: Number(watermarkRaw.maxWidth) }), ...(watermarkRaw.maxHeight != null && { maxHeight: Number(watermarkRaw.maxHeight) }) } : undefined;
-  const madeWith =
-    madeWithRaw && typeof madeWithRaw === "object" && madeWithRaw !== null && Object.keys(madeWithRaw).length > 0
-      ? {
-          ...(madeWithRaw.fontSize != null && { fontSize: Number(madeWithRaw.fontSize) }),
-          ...(madeWithRaw.x != null && { x: Number(madeWithRaw.x) }),
-          ...(madeWithRaw.y != null && { y: Number(madeWithRaw.y) }),
-          ...((madeWithRaw as { y?: number }).y == null && { bottom: (madeWithRaw as { bottom?: number }).bottom != null ? Number((madeWithRaw as { bottom: number }).bottom) : 16 }),
-        }
-      : undefined;
-  const chromeOverrides = (counter && Object.keys(counter).length > 0) || (watermark && Object.keys(watermark).length > 0) || (madeWith && Object.keys(madeWith).length > 0) ? { counter, watermark, madeWith } : undefined;
-  return { zoneOverrides, fontOverrides, chromeOverrides };
-}
 
 export type TemplatePreviewThumbProps = {
   config: TemplateConfig | null;
@@ -166,7 +133,7 @@ export function TemplatePreviewThumb({
           showWatermarkOverride={false}
           exportSize="1080x1350"
           imageDisplay={getImageDisplayFromConfig(config)}
-          {...getOverridesFromConfig(config)}
+          {...getSlidePreviewSpreadFromTemplateConfig(config)}
         />
       </div>
     </div>

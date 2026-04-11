@@ -2759,6 +2759,11 @@ export function SlideEditForm({
         setAiRegenError(r.error);
         return;
       }
+      /** New signed URL: same storage path is upserted, so RSC refresh alone kept stale `imageUrls` from mount. */
+      setBackgroundImageUrlForPreview(r.backgroundImageUrl);
+      setImageUrls((rows) =>
+        rows.length === 1 ? [{ ...rows[0]!, url: r.backgroundImageUrl }] : rows
+      );
       router.refresh();
     } finally {
       setAiRegenPending(false);
@@ -2820,7 +2825,11 @@ export function SlideEditForm({
     setExportingFull(true);
     setExportFullError(null);
     try {
-      const res = await fetch(`/api/export/${carouselId}`, { method: "POST" });
+      const res = await fetch(`/api/export/${carouselId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image_overlay: true }),
+      });
       const contentType = res.headers.get("content-type") ?? "";
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };

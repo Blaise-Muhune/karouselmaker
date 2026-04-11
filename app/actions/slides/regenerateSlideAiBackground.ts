@@ -10,7 +10,7 @@ export async function regenerateSlideAiBackgroundAction(
   slideId: string,
   instruction: string,
   revalidatePathname: string
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true; backgroundImageUrl: string } | { ok: false; error: string }> {
   const { user } = await getUser();
   if (!user?.id) return { ok: false, error: "Not signed in" };
 

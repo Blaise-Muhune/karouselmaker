@@ -15,6 +15,7 @@ import { getVideoRenderStoragePaths } from "@/lib/server/db/exports";
 import { renderSlideHtml } from "@/lib/server/renderer/renderSlideHtml";
 import { resolveBrandKitLogo } from "@/lib/server/brandKit";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
+import { buildSlideBackgroundOverrideForRasterExport } from "@/lib/server/export/buildSlideBackgroundOverride";
 import {
   normalizeSlideMetaForRender,
   mergeWithTemplateDefaults,
@@ -44,6 +45,20 @@ export async function POST(
   _request: Request,
   context: { params: Promise<{ carouselId: string }> }
 ) {
+  let imageOverlay = true;
+  try {
+    const ct = _request.headers.get("content-type") ?? "";
+    if (ct.includes("application/json")) {
+      const body: unknown = await _request.json();
+      if (body && typeof body === "object" && "image_overlay" in body) {
+        const v = (body as { image_overlay?: unknown }).image_overlay;
+        if (typeof v === "boolean") imageOverlay = v;
+      }
+    }
+  } catch {
+    /* non-JSON or empty */
+  }
+
   const { carouselId } = await context.params;
   const supabase = await createClient();
   const {
@@ -127,7 +142,17 @@ export async function POST(
             storage_path?: string;
             secondary_image_url?: string;
             secondary_storage_path?: string;
-            overlay?: { direction?: string; color?: string; darken?: number; extent?: number; solidSize?: number; gradient?: boolean; tintColor?: string; tintOpacity?: number };
+            overlay?: {
+              enabled?: boolean;
+              direction?: string;
+              color?: string;
+              darken?: number;
+              extent?: number;
+              solidSize?: number;
+              gradient?: boolean;
+              tintColor?: string;
+              tintOpacity?: number;
+            };
             image_display?: Record<string, unknown>;
           }
         | null
@@ -136,16 +161,19 @@ export async function POST(
       const effectiveStyle = slideBg?.style;
       const effectivePattern = slideBg?.pattern;
       const effectiveColor = /^#([0-9A-Fa-f]{3}){1,2}$/.test(slideBg?.color ?? "") ? slideBg!.color! : "#0a0a0a";
-      const backgroundOverrideForVideo = slideBg
-        ? {
-            style: (effectiveStyle === "solid" || effectiveStyle === "gradient" || effectiveStyle === "pattern" ? effectiveStyle : undefined) as "solid" | "gradient" | "pattern" | undefined,
-            pattern: effectivePattern,
-            color: effectiveColor,
-            overlayEnabled: false,
-            gradientOn: false,
-            tintOpacity: 0,
-          }
-        : undefined;
+      const slideMeta = (slide.meta ?? null) as Record<string, unknown> | null;
+      const backgroundOverrideForVideo = imageOverlay
+        ? buildSlideBackgroundOverrideForRasterExport(slideBg, videoTemplateConfig, slideMeta, true)
+        : slideBg
+          ? {
+              style: (effectiveStyle === "solid" || effectiveStyle === "gradient" || effectiveStyle === "pattern" ? effectiveStyle : undefined) as "solid" | "gradient" | "pattern" | undefined,
+              pattern: effectivePattern,
+              color: effectiveColor,
+              overlayEnabled: false,
+              gradientOn: false,
+              tintOpacity: 0,
+            }
+          : undefined;
 
       let backgroundImageUrl: string | null = null;
       let backgroundImageUrls: string[] | null = null;
@@ -191,7 +219,6 @@ export async function POST(
         }
       }
       const borderedFrame = !!(backgroundImageUrl || (backgroundImageUrls?.length ?? 0) > 0);
-      const slideMeta = (slide.meta ?? null) as Record<string, unknown> | null;
       const normalized = normalizeSlideMetaForRender(slideMeta);
       const templateDefaults = getTemplateDefaultOverrides(videoTemplateConfig);
       const merged = mergeWithTemplateDefaults(normalized, templateDefaults);

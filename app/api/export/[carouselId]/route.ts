@@ -17,8 +17,6 @@ import { getDefaultTemplateId } from "@/lib/server/db/templates";
 import { getSubscription, getEffectivePlanLimits, hasFullProFeatureAccess } from "@/lib/server/subscription";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { renderSlideHtml } from "@/lib/server/renderer/renderSlideHtml";
-import { getContrastingTextColor } from "@/lib/editor/colorUtils";
-import { getTemplatePreviewBackgroundOverride } from "@/lib/renderer/getTemplatePreviewBackground";
 import { resolveBrandKitLogo } from "@/lib/server/brandKit";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
 import { createProxyImageUrl } from "@/lib/server/proxyImageUrl";
@@ -28,12 +26,8 @@ import {
   getTemplateDefaultOverrides,
   mergeWithTemplateDefaults,
 } from "@/lib/server/export/normalizeSlideMetaForRender";
-import {
-  resolveOverlayTint,
-  resolveBackgroundColorFromMeta,
-  resolveImageDisplay,
-  resolveOverlayEnabled,
-} from "@/lib/server/export/resolveSlideBackgroundFromTemplate";
+import { buildSlideBackgroundOverrideForRasterExport } from "@/lib/server/export/buildSlideBackgroundOverride";
+import { resolveImageDisplay } from "@/lib/server/export/resolveSlideBackgroundFromTemplate";
 import {
   downloadStorageImageAsDataUrl,
   fetchImageAsDataUrl,
@@ -52,10 +46,26 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
+async function readImageOverlayFromRequest(request: Request): Promise<boolean> {
+  try {
+    const ct = request.headers.get("content-type") ?? "";
+    if (!ct.includes("application/json")) return true;
+    const body: unknown = await request.json();
+    if (body && typeof body === "object" && "image_overlay" in body) {
+      const v = (body as { image_overlay?: unknown }).image_overlay;
+      if (typeof v === "boolean") return v;
+    }
+  } catch {
+    /* empty or non-JSON body */
+  }
+  return true;
+}
+
 export async function POST(
   _request: Request,
   context: { params: Promise<{ carouselId: string }> }
 ) {
+  const imageOverlay = await readImageOverlayFromRequest(_request);
   const { carouselId } = await context.params;
   const supabase = await createClient();
   const {
@@ -223,81 +233,12 @@ export async function POST(
 
         const templateCfg = config.data;
         const slideMetaForBg = (slide.meta ?? null) as Record<string, unknown> | null;
-        const imageDisplayMerged = resolveImageDisplay(config.data, slideBg, slideMetaForBg);
-        const isPip = imageDisplayMerged?.mode === "pip";
-        const { tintOpacity: effectiveTintOpacity, tintColor: effectiveTintColor } = resolveOverlayTint(
+        const backgroundOverride = buildSlideBackgroundOverrideForRasterExport(
           slideBg,
-          slideMetaForBg,
           templateCfg,
-          isPip
+          slideMetaForBg,
+          imageOverlay
         );
-        const overlayEnabled = resolveOverlayEnabled(slideBg);
-        const metaBgColor = resolveBackgroundColorFromMeta(slideMetaForBg, templateCfg);
-        const templateDefaultColor =
-          (templateCfg?.defaults?.background as { color?: string } | undefined)?.color ?? metaBgColor ?? "#0a0a0a";
-
-        const dir = slideBg?.overlay?.direction ?? templateCfg?.overlays?.gradient?.direction;
-        const gradientDirection: "top" | "bottom" | "left" | "right" =
-          dir === "top" || dir === "bottom" || dir === "left" || dir === "right" ? dir : "bottom";
-        const gradientColor =
-          slideBg?.overlay?.color ?? (templateCfg?.overlays?.gradient?.color || "#0a0a0a");
-        const templateStrength = templateCfg?.overlays?.gradient?.strength ?? 0.5;
-        const gradientStrength =
-          slideBg?.overlay?.darken != null && slideBg.overlay.darken !== 0.5
-            ? slideBg.overlay.darken
-            : templateStrength;
-        const templateExtent = templateCfg?.overlays?.gradient?.extent ?? 50;
-        const templateSolidSize = templateCfg?.overlays?.gradient?.solidSize ?? 25;
-        const gradientExtent = slideBg?.overlay?.extent != null ? slideBg.overlay.extent : templateExtent;
-        const gradientSolidSize = slideBg?.overlay?.solidSize != null ? slideBg.overlay.solidSize : templateSolidSize;
-        const overlayFields = {
-          gradientStrength,
-          gradientColor,
-          textColor: getContrastingTextColor(gradientColor),
-          gradientDirection,
-          gradientExtent,
-          gradientSolidSize,
-          overlayEnabled,
-          ...(effectiveTintOpacity > 0 ? { tintColor: effectiveTintColor, tintOpacity: effectiveTintOpacity } : {}),
-        };
-        // Match editor preview: when template defaultStyle is "none" or "blur" and slide has image, no gradient
-        const hasBackgroundImage =
-          slideBg?.mode === "image" &&
-          (!!slideBg.images?.length || !!slideBg.image_url || !!slideBg.storage_path || !!slideBg.asset_id);
-        const defaultStyle = templateCfg?.backgroundRules?.defaultStyle;
-        /** Prefer slide's explicit gradient choice; otherwise use template defaultStyle. */
-        const gradientOn =
-          hasBackgroundImage
-            ? overlayEnabled && (
-                (slideBg?.gradientOn === true || slideBg?.overlay?.gradient === true)
-                  ? true
-                  : (slideBg?.gradientOn === false || slideBg?.overlay?.gradient === false)
-                    ? false
-                    : (defaultStyle !== "none" && defaultStyle !== "blur")
-              )
-            : (slideBg?.gradientOn ?? slideBg?.overlay?.gradient ?? true);
-        const templateBg = getTemplatePreviewBackgroundOverride(templateCfg);
-        const effectiveStyle =
-          !hasBackgroundImage ? (slideBg?.style ?? templateBg.style ?? "solid") : slideBg?.style;
-        const effectivePattern =
-          !hasBackgroundImage && effectiveStyle === "pattern"
-            ? (slideBg?.pattern ?? templateBg.pattern)
-            : slideBg?.pattern;
-        const effectiveColorRaw =
-          !hasBackgroundImage ? (slideBg?.color ?? templateBg.color ?? metaBgColor) : (slideBg?.color ?? templateBg.color ?? metaBgColor);
-        const effectiveColor = /^#([0-9A-Fa-f]{3}){1,2}$/.test(effectiveColorRaw ?? "") ? effectiveColorRaw! : "#0a0a0a";
-        const effectiveDecoration = !hasBackgroundImage ? templateBg.decoration : undefined;
-        const effectiveDecorationColor = !hasBackgroundImage ? templateBg.decorationColor : undefined;
-        const backgroundOverride = slideBg
-          ? {
-              style: effectiveStyle,
-              pattern: effectivePattern,
-              color: effectiveColor,
-              ...(effectiveDecoration && { decoration: effectiveDecoration, ...(effectiveDecorationColor && { decorationColor: effectiveDecorationColor }) }),
-              gradientOn,
-              ...overlayFields,
-            }
-          : undefined;
 
         let backgroundImageUrl: string | null = null;
         let backgroundImageUrls: string[] | null = null;

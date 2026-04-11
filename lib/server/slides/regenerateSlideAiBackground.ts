@@ -6,6 +6,7 @@
 import { getCarousel, getProject, getSlide, listSlides, updateSlide } from "@/lib/server/db";
 import type { Json } from "@/lib/server/db/types";
 import { downloadStorageImageBuffer } from "@/lib/server/export/fetchImageAsDataUrl";
+import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
 import { generateImageFromPrompt, parseAspectRatioFromNotes } from "@/lib/server/openaiImageGenerate";
 import { uploadGeneratedImage } from "@/lib/server/storage/uploadGeneratedImage";
 import { mergeStyleReferenceAssetIds, summarizeStyleReferenceImages } from "@/lib/server/ai/summarizeStyleReferenceImages";
@@ -50,7 +51,7 @@ function primaryBackgroundStoragePath(bg: Record<string, unknown> | null | undef
 }
 
 export type RegenerateSlideAiBackgroundResult =
-  | { ok: true }
+  | { ok: true; backgroundImageUrl: string }
   | { ok: false; error: string };
 
 export async function regenerateSlideAiBackgroundForUser(params: {
@@ -259,5 +260,15 @@ export async function regenerateSlideAiBackgroundForUser(params: {
     background: mergedBg as Json,
   });
 
-  return { ok: true };
+  let backgroundImageUrl: string;
+  try {
+    backgroundImageUrl = await getSignedImageUrl(BUCKET, newPath, 3600);
+  } catch {
+    return {
+      ok: false,
+      error: "Image was saved but preview could not be refreshed. Reload the page to see it.",
+    };
+  }
+
+  return { ok: true, backgroundImageUrl };
 }
