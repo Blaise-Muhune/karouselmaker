@@ -50,6 +50,21 @@ export function normalizeContentFocusId(raw: string | null | undefined): Content
   return (CONTENT_FOCUS_IDS as readonly string[]).includes(t) ? (t as ContentFocusId) : "general";
 }
 
+/**
+ * When true and the user did not upload avatar refs, slide N’s generated image can chain as a face
+ * reference for slide N+1—helps recurring invented cast (story, tutorial host, product demo, UGC).
+ * Skipped when `preferRecognizablePublicFiguresForImages` is true (e.g. nonfiction with different real people per slide).
+ */
+export function contentFocusUsesChainedGeneratedFaceRef(id: ContentFocusId): boolean {
+  return (
+    id === "ugc" ||
+    id === "storytelling" ||
+    id === "educational" ||
+    id === "product_placement" ||
+    id === "general"
+  );
+}
+
 /** Short label for prompt lines. */
 export function contentFocusLabel(id: ContentFocusId): string {
   return CONTENT_FOCUS_OPTIONS.find((o) => o.id === id)?.label ?? "General creator";
@@ -98,11 +113,11 @@ export function contentFocusImagePipelineLine(id: ContentFocusId): string {
     case "ugc":
       return "Project content style: UGC—default natural phone photo (slight grain, soft focus, muted colors, practical light; not studio HDR, beauty retouch, or AI-smooth stock look). Avoid overly convenient or synthetic compositions. Natural angles: eye level / arm’s length / slight tilt; mirror selfie only if scene fits. Strict same-person lock when a human appears: same face shape, hair, skin tone, build, age read, casual outfit palette—vary pose/scene only. Override to studio/cinematic/commercial only if notes explicitly request it.";
     case "product_placement":
-      return "Project content style: product-in-life—show product or brand in real contexts, hands-on use, believable environments; avoid generic stock unrelated to the topic.";
+      return "Project content style: product-in-life—show product or brand in real contexts, hands-on use, believable environments; avoid generic stock unrelated to the topic. When the same presenter or customer story recurs, keep one consistent invented person (face, hair, outfit) across those slides.";
     case "educational":
-      return "Project content style: educational—clear, calm, readable visuals that support teaching (notes, objects, simple metaphors); not chaotic or meme-noise unless the slide needs it.";
+      return "Project content style: educational—clear, calm, readable visuals that support teaching (notes, objects, simple metaphors); not chaotic or meme-noise unless the slide needs it. When the same invented host, student, or guide appears across slides, keep one stable face/hair/wardrobe read until the copy changes character or time.";
     case "storytelling":
-      return "Project content style: storytelling—coherent mood and setting across slides where possible; scenes that imply a moment or emotion matching the slide beat.";
+      return "Project content style: storytelling—coherent mood and setting across slides where possible; scenes that imply a moment or emotion matching the slide beat. When one protagonist or couple carries the arc, keep the same invented look (face, hair, wardrobe) across those slides unless copy jumps time or character.";
     default:
       return "Project content style: general creator—strong on-topic visuals per slide; match tone to niche and notes.";
   }

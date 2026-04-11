@@ -191,7 +191,7 @@ export async function regenerateSlideAiBackgroundForUser(params: {
     slideContentLines: slideContentLinesForSeries,
     slideCount: sorted.length,
     preferRecognizablePublicFigures: preferPublicFigures,
-    ugcMode: contentFocusId === "ugc",
+    ugcPhoneAestheticMode: contentFocusId === "ugc",
     seedCharacterBrief:
       (applySavedUgcCharacter
         ? (project as { ugc_character_brief?: string | null }).ugc_character_brief?.trim()

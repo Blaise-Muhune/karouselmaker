@@ -22,6 +22,7 @@ import {
 import {
   appendContentFocusToProjectRules,
   contentFocusCarouselInstructions,
+  contentFocusUsesChainedGeneratedFaceRef,
   normalizeContentFocusId,
 } from "@/lib/server/ai/projectContentFocus";
 import { postProcessAiGeneratedImageQueries } from "@/lib/server/ai/sanitizeImageQueries";
@@ -902,17 +903,17 @@ export async function generateCarousel(formData: FormData): Promise<
         data.input_value?.trim(),
         validated.title?.trim()
       );
-      const ugcChainedFaceRefMode =
-        contentFocusId === "ugc" &&
+      const chainedGeneratedFaceRefMode =
+        contentFocusUsesChainedGeneratedFaceRef(contentFocusId) &&
         (userUploadedUgcRefBuffers?.length ?? 0) === 0 &&
         !preferPublicFigures;
-      if (ugcChainedFaceRefMode) {
+      if (chainedGeneratedFaceRefMode) {
         aiGenJobs.sort((a, b) => a.aiSlide.slide_index - b.aiSlide.slide_index);
       }
       LOG(
         "backgrounds",
-        ugcChainedFaceRefMode
-          ? `AI generate: ${aiGenJobs.length} slides (UGC same-carousel face ref — sequential)`
+        chainedGeneratedFaceRefMode
+          ? `AI generate: ${aiGenJobs.length} slides (same-carousel face ref chain — sequential)`
           : `AI generate: ${aiGenJobs.length} slides (concurrency ${AI_IMAGE_CONCURRENCY})`
       );
       const ugcChainFaceBuf: { current?: Buffer } = {};
@@ -920,13 +921,13 @@ export async function generateCarousel(formData: FormData): Promise<
         if (userUploadedUgcRefBuffers && userUploadedUgcRefBuffers.length > 0) {
           return userUploadedUgcRefBuffers;
         }
-        if (ugcChainedFaceRefMode && ugcChainFaceBuf.current) {
+        if (chainedGeneratedFaceRefMode && ugcChainFaceBuf.current) {
           return [ugcChainFaceBuf.current];
         }
         return undefined;
       };
       const maybeCaptureUgcChainFaceRef = (buf: Buffer, aiSlide: (typeof validated.slides)[number]) => {
-        if (!ugcChainedFaceRefMode || ugcChainFaceBuf.current) return;
+        if (!chainedGeneratedFaceRefMode || ugcChainFaceBuf.current) return;
         if (!ugcSlideLikelyShowsHostFaceForChainRef(aiSlide)) return;
         ugcChainFaceBuf.current = Buffer.from(buf);
       };
@@ -954,11 +955,11 @@ export async function generateCarousel(formData: FormData): Promise<
         slideContentLines: slideContentLinesForSeries,
         slideCount: validated.slides.length,
         preferRecognizablePublicFigures: preferPublicFigures,
-        ugcMode: contentFocusId === "ugc",
+        ugcPhoneAestheticMode: contentFocusId === "ugc",
         seedCharacterBrief: ugcBriefSaved || undefined,
       });
       if (
-        contentFocusId === "ugc" &&
+        contentFocusUsesChainedGeneratedFaceRef(contentFocusId) &&
         !preferPublicFigures &&
         seriesVisualConsistency.trim().length >= 20
       ) {
@@ -1064,7 +1065,7 @@ export async function generateCarousel(formData: FormData): Promise<
           }
         }
       };
-      if (ugcChainedFaceRefMode) {
+      if (chainedGeneratedFaceRefMode) {
         for (const job of aiGenJobs) {
           await processOneAiSlide(job);
         }
@@ -1076,11 +1077,14 @@ export async function generateCarousel(formData: FormData): Promise<
       }
       LOG("backgrounds", "AI generate done");
 
+      const savedCharacterBriefOnProject =
+        ((project as { ugc_character_brief?: string | null }).ugc_character_brief?.trim() ?? "");
       if (
-        contentFocusId === "ugc" &&
+        contentFocusUsesChainedGeneratedFaceRef(contentFocusId) &&
+        !preferPublicFigures &&
         seriesVisualConsistency?.trim() &&
         ugcAvatarAssetIds.length === 0 &&
-        !ugcBriefSaved
+        !savedCharacterBriefOnProject
       ) {
         try {
           await updateProject(user.id, data.project_id, {
