@@ -98,7 +98,7 @@ export async function POST(
   const carouselExportFormat = (carousel as { export_format?: string }).export_format ?? "png";
   const carouselExportSize = (carousel as { export_size?: string }).export_size ?? "1080x1350";
   const exportMode = carouselExportFormat === "pdf" ? "pdf" : carouselExportFormat === "jpeg" ? "jpeg" : "png";
-  /** Raster type for screenshots and ZIP slide files. PDF exports still render slides as PNG for quality + PDF embedding. */
+  /** Raster type for screenshots. PDF exports render slides as PNG, embed in a single PDF download (no ZIP). */
   const rasterFormat = exportMode === "pdf" ? "png" : exportMode;
   const dimensions =
     carouselExportSize === "1080x1350"
@@ -233,11 +233,13 @@ export async function POST(
 
         const templateCfg = config.data;
         const slideMetaForBg = (slide.meta ?? null) as Record<string, unknown> | null;
+        const pictureCompositionOnly = slideMetaForBg?.picture_composition_only === true;
         const backgroundOverride = buildSlideBackgroundOverrideForRasterExport(
           slideBg,
           templateCfg,
           slideMetaForBg,
-          imageOverlay
+          imageOverlay,
+          pictureCompositionOnly
         );
 
         let backgroundImageUrl: string | null = null;
@@ -399,6 +401,7 @@ export async function POST(
           dimensions,
           undefined,
           undefined,
+          pictureCompositionOnly,
           undefined,
           slideMeta
         );
@@ -470,6 +473,55 @@ export async function POST(
       pdfBytes = await buildCarouselPdfFromPngPages(slideBuffers, dimensions.w, dimensions.h);
     }
 
+    const assetSlug =
+      slugifyForFilename([project.name, carousel.title].filter(Boolean).join(" - ")) || "carousel";
+
+    // Store slide images so Post to Facebook/Instagram can use them (same for PNG/JPEG/PDF).
+    const paths = getExportStoragePaths(userId, carouselId, exportId);
+    const rasterContentType = rasterFormat === "jpeg" ? "image/jpeg" : "image/png";
+    for (let i = 0; i < slideBuffers.length; i++) {
+      const buf = slideBuffers[i];
+      if (buf) {
+        const storagePath = paths.slidePath(i);
+        const { error: uploadError } = await supabase.storage
+          .from(BUCKET)
+          .upload(storagePath, buf, { contentType: rasterContentType, upsert: true });
+        if (uploadError) {
+          try {
+            await updateExport(userId, exportId, { status: "failed" });
+          } catch {
+            // ignore
+          }
+          return NextResponse.json(
+            { error: `Failed to store slide image: ${uploadError.message}` },
+            { status: 500 }
+          );
+        }
+      }
+    }
+    await updateExport(userId, exportId, { status: "ready", storage_path: paths.slidesDir });
+
+    if (exportMode === "pdf") {
+      if (!pdfBytes?.length) {
+        try {
+          await updateExport(userId, exportId, { status: "failed" });
+        } catch {
+          // ignore
+        }
+        return NextResponse.json({ error: "PDF export produced no pages." }, { status: 500 });
+      }
+      const pdfFilename = `${assetSlug}-linkedin-carousel.pdf`;
+      return new NextResponse(Buffer.from(pdfBytes), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `attachment; filename="${pdfFilename}"`,
+          "X-Suggested-Filename": pdfFilename,
+          "X-Export-Id": exportId,
+        },
+      });
+    }
+
     const zip = new JSZip();
     for (let i = 0; i < slideBuffers.length; i++) {
       const buf = slideBuffers[i];
@@ -477,9 +529,6 @@ export async function POST(
         const filename = `${String(i + 1).padStart(2, "0")}.${rasterFormat === "jpeg" ? "jpg" : "png"}`;
         zip.file(filename, buf);
       }
-    }
-    if (pdfBytes) {
-      zip.file("linkedin-carousel.pdf", Buffer.from(pdfBytes));
     }
     if (captionText.trim()) zip.file("caption.txt", captionText.trim());
     const hasAnyCredits = unsplashAttributions.size > 0 || pixabayAttributions.size > 0 || pexelsAttributions.size > 0;
@@ -511,35 +560,7 @@ export async function POST(
     }
 
     const zipBuffer = await zip.generateAsync({ type: "nodebuffer" });
-
-    // Store slide images so Post to Facebook/Instagram can use them
-    const paths = getExportStoragePaths(userId, carouselId, exportId);
-    const contentType = rasterFormat === "jpeg" ? "image/jpeg" : "image/png";
-    for (let i = 0; i < slideBuffers.length; i++) {
-      const buf = slideBuffers[i];
-      if (buf) {
-        const storagePath = paths.slidePath(i);
-        const { error: uploadError } = await supabase.storage
-          .from(BUCKET)
-          .upload(storagePath, buf, { contentType, upsert: true });
-        if (uploadError) {
-          try {
-            await updateExport(userId, exportId, { status: "failed" });
-          } catch {
-            // ignore
-          }
-          return NextResponse.json(
-            { error: `Failed to store slide image: ${uploadError.message}` },
-            { status: 500 }
-          );
-        }
-      }
-    }
-    await updateExport(userId, exportId, { status: "ready", storage_path: paths.slidesDir });
-
-    const zipSlug =
-      slugifyForFilename([project.name, carousel.title].filter(Boolean).join(" - ")) || "carousel";
-    const zipFilename = `${zipSlug}.zip`;
+    const zipFilename = `${assetSlug}.zip`;
 
     return new NextResponse(new Uint8Array(zipBuffer), {
       status: 200,

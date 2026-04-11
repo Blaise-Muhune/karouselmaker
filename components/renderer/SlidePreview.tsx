@@ -467,6 +467,10 @@ export type SlidePreviewProps = {
   editScale?: number;
   /** When true (edit slide page), only show move/resize container for text zones; no inline editing, toolbar, highlight, or rewrite in preview. */
   positionAndSizeOnly?: boolean;
+  /**
+   * When true with a photo background: show images only (no text, chrome, shapes, gradient on photo). PiP and image positioning unchanged.
+   */
+  photoCompositionOnly?: boolean;
   /** How portrait viewport is filled: cover (crop sides) or contain (no crop). */
   viewportFit?: "cover" | "contain";
   /** Extra shapes from slide meta (drawn above template overlayShapes). Ignored when `slideOverlayShapesResolved` is set. */
@@ -665,6 +669,7 @@ export function SlidePreview({
   onChromeFocus,
   editScale = 1,
   positionAndSizeOnly = false,
+  photoCompositionOnly = false,
   viewportFit = "cover",
   onBackgroundImagePositionChange,
   onPipPositionChange,
@@ -1285,20 +1290,24 @@ export function SlidePreview({
   const useGradient = hasBackgroundImage
     ? overlayEnabled && baseUseGradient && (templateAllowsOverlay || userExplicitlyEnabledGradient)
     : baseUseGradient;
+  const photoCompositionEffective =
+    !!photoCompositionOnly && hasBackgroundImage && !positionAndSizeOnly;
+  const useGradientVisible = photoCompositionEffective ? false : useGradient;
   const useBlur = hasBackgroundImage && defaultStyle === "blur";
   const gradientDir = gradientDirectionToCss(
     backgroundOverride?.gradientDirection,
     model.background.gradientDirection
   );
   const gradientStrengthOverride = backgroundOverride?.gradientStrength;
-  const gradientOpacity = useGradient
+  const gradientOpacity = useGradientVisible
     ? gradientStrengthOverride ?? (model.background.gradientStrength ?? 0.55)
     : 0;
   const gradientColorHex = backgroundOverride?.gradientColor ?? (model.background as { gradientColor?: string }).gradientColor ?? "#000000";
   const gradientRgba = hexToRgba(gradientColorHex, gradientOpacity);
-  const textColor = getContrastingTextColor(useGradient ? gradientColorHex : (backgroundColor ?? "#0a0a0a"));
+  const textColor = getContrastingTextColor(useGradientVisible ? gradientColorHex : (backgroundColor ?? "#0a0a0a"));
 
-  const showCounter = showCounterOverride ?? model.chrome.showCounter;
+  const showCounter =
+    !photoCompositionEffective && (showCounterOverride ?? model.chrome.showCounter);
 
   /** Scale chrome (counter, logo, watermark text) with canvas height so they stay proportional in 4:5 and 9:16. */
   const chromeScale = canvasH / CANVAS_SIZE;
@@ -1427,7 +1436,7 @@ export function SlidePreview({
               ...fullImageRotationStyle(normalizeFullImageRotation(imageDisplay?.fullImageRotation)),
             }}
           />
-          {(backgroundOverride?.tintOpacity ?? 0) > 0 && (
+          {!photoCompositionEffective && (backgroundOverride?.tintOpacity ?? 0) > 0 && (
             <div
               className="absolute inset-0 pointer-events-none"
               style={{
@@ -1436,7 +1445,7 @@ export function SlidePreview({
               }}
             />
           )}
-          {useGradient && (() => {
+          {useGradientVisible && (() => {
             const extent = backgroundOverride?.gradientExtent ?? (model.background as { gradientExtent?: number }).gradientExtent ?? 50;
             const solidSize = backgroundOverride?.gradientSolidSize ?? (model.background as { gradientSolidSize?: number }).gradientSolidSize ?? 25;
             const transitionEnd = 100 - extent + (extent * (100 - solidSize)) / 100;
@@ -2314,7 +2323,10 @@ export function SlidePreview({
         })()
       )}
       {/* Color tint overlay (template/brand color on top of image at reduced opacity; not gated by "Apply overlay"). When PIP, put at very back so any stray tint never shows on top. */}
-      {hasBackgroundImage && (backgroundOverride?.tintOpacity ?? 0) > 0 && !useFullCanvasBackground && (
+      {hasBackgroundImage &&
+        !photoCompositionEffective &&
+        (backgroundOverride?.tintOpacity ?? 0) > 0 &&
+        !useFullCanvasBackground && (
         <div
           className="absolute inset-0 pointer-events-none"
           style={{
@@ -2347,7 +2359,7 @@ export function SlidePreview({
       )}
 
       {/* Gradient overlay */}
-      {useGradient && !useFullCanvasBackground && (() => {
+      {useGradientVisible && !useFullCanvasBackground && (() => {
         const extent = backgroundOverride?.gradientExtent ?? (model.background as { gradientExtent?: number }).gradientExtent ?? 50;
         const solidSize = backgroundOverride?.gradientSolidSize ?? (model.background as { gradientSolidSize?: number }).gradientSolidSize ?? 25;
         const transitionEnd = 100 - extent + (extent * (100 - solidSize)) / 100;
@@ -2365,17 +2377,18 @@ export function SlidePreview({
         );
       })()}
 
-      {slideOverlayShapesResolved !== undefined ? (
-        (slideOverlayShapesResolved?.length ?? 0) > 0 && (
-          <OverlayShapesLayer shapes={slideOverlayShapesResolved} layerZIndex={2} />
-        )
-      ) : (
-        <>
-          <OverlayShapesLayer shapes={templateConfig.overlayShapes} />
-          {(slideOverlayShapes?.length ?? 0) > 0 && <OverlayShapesLayer shapes={slideOverlayShapes} layerZIndex={3} />}
-        </>
-      )}
-      {slideOverlayShapesEditable != null && (
+      {!photoCompositionEffective &&
+        (slideOverlayShapesResolved !== undefined ? (
+          (slideOverlayShapesResolved?.length ?? 0) > 0 && (
+            <OverlayShapesLayer shapes={slideOverlayShapesResolved} layerZIndex={2} />
+          )
+        ) : (
+          <>
+            <OverlayShapesLayer shapes={templateConfig.overlayShapes} />
+            {(slideOverlayShapes?.length ?? 0) > 0 && <OverlayShapesLayer shapes={slideOverlayShapes} layerZIndex={3} />}
+          </>
+        ))}
+      {!photoCompositionEffective && slideOverlayShapesEditable != null && (
         <SlideOverlayShapesEditLayer
           shapes={slideOverlayShapesEditable.shapes}
           onShapesChange={slideOverlayShapesEditable.onShapesChange}
@@ -2389,7 +2402,8 @@ export function SlidePreview({
       )}
 
       {/* Text zones (positioned in 1080x1080 space). When onHeadlineChange/onBodyChange provided, render editable textareas. */}
-      {model.textBlocks.map((block) => {
+      {!photoCompositionEffective &&
+        model.textBlocks.map((block) => {
         const templateZone = templateConfig.textZones.find((z) => z.id === block.zone.id);
         const effectiveAlign = (block.zone.align ?? templateZone?.align ?? "left") as "left" | "center" | "right" | "justify";
         const fontSizeOverride =
@@ -3459,7 +3473,7 @@ export function SlidePreview({
       </div>
 
       {/* Chrome: swipe hint in viewport space so it stays visible in all formats (1:1, 4:5, 9:16) */}
-      {model.chrome.showSwipe && (() => {
+      {!photoCompositionEffective && model.chrome.showSwipe && (() => {
         const pos = model.chrome.swipePosition ?? "bottom_center";
         const isRightPreset = pos === "bottom_right" || pos === "top_right" || pos === "center_right";
         const useCustomPos =
@@ -3760,7 +3774,9 @@ export function SlidePreview({
         </div>
       )}
 
-      {((model.chrome.watermark.text || model.chrome.watermark.logoUrl) && (showWatermarkOverride === undefined ? model.chrome.watermark.enabled : showWatermarkOverride)) && (
+      {!photoCompositionEffective &&
+        ((model.chrome.watermark.text || model.chrome.watermark.logoUrl) &&
+          (showWatermarkOverride === undefined ? model.chrome.watermark.enabled : showWatermarkOverride)) && (
         (() => {
           const isDraggingWatermark = chromeDragType === "watermark" && chromeWatermarkDragBase;
           const wBase = chromeWatermarkDragBase;
@@ -3882,7 +3898,7 @@ export function SlidePreview({
         })()
       )}
 
-      {showMadeWithOverride !== false && (() => {
+      {!photoCompositionEffective && showMadeWithOverride !== false && (() => {
         const madeWithLabel = model.chrome.madeWithText?.trim() ?? "";
         if (!madeWithLabel && !editChromeMadeWith) return null;
         const isDraggingMadeWith = chromeDragType === "madeWith" && chromeMadeWithDragBase;

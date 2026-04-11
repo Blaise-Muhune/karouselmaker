@@ -125,11 +125,13 @@ export async function GET(
 
   const slideMeta = (slide.meta ?? null) as Record<string, unknown> | null;
   const templateCfg = config.data;
+  const pictureCompositionOnly = slideMeta?.picture_composition_only === true;
   const backgroundOverride = buildSlideBackgroundOverrideForRasterExport(
     slideBg,
     templateCfg,
     slideMeta,
-    imageOverlay
+    imageOverlay,
+    pictureCompositionOnly
   );
 
   let backgroundImageUrl: string | null = null;
@@ -263,6 +265,7 @@ export async function GET(
     dimensions,
     undefined,
     undefined,
+    pictureCompositionOnly,
     undefined,
     slideMeta
   );

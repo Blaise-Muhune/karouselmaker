@@ -233,6 +233,8 @@ export function EditorExportSection({
   const [withCaption, setWithCaption] = useState(false);
   /** When true, video background layer includes the same dim/gradient as the editor. */
   const [imageOverlayOnVideo, setImageOverlayOnVideo] = useState(true);
+  /** When true, video uses photos-only frames where applicable (per-slide meta or this global flag); captions turn off. */
+  const [photoCompositionOnlyOnVideo, setPhotoCompositionOnlyOnVideo] = useState(false);
   const [zipDownloading, setZipDownloading] = useState(false);
   const [withVoiceover, setWithVoiceover] = useState(true);
   const [selectedVoiceId, setSelectedVoiceId] = useState(ADAM_VOICE_ID);
@@ -267,19 +269,32 @@ export function EditorExportSection({
     if (!withVoiceover) setWithCaption(false);
   }, [withVoiceover]);
 
+  useEffect(() => {
+    if (photoCompositionOnlyOnVideo) setWithCaption(false);
+  }, [photoCompositionOnlyOnVideo]);
+
   // Changing format, overlay, or voice/caption settings invalidates the generated video; user must regenerate
   useEffect(() => {
     if (generatedVideoUrl) {
       setGeneratedVideoUrl(null);
       setGeneratedVideoBlob(null);
     }
-  }, [videoSize, withVoiceover, withCaption, captionPosition, selectedVoiceId, voiceSpeed, imageOverlayOnVideo]);
+  }, [
+    videoSize,
+    withVoiceover,
+    withCaption,
+    captionPosition,
+    selectedVoiceId,
+    voiceSpeed,
+    imageOverlayOnVideo,
+    photoCompositionOnlyOnVideo,
+  ]);
 
   useEffect(() => {
     setSlideUrls([]);
     setSlideVideoData(null);
     videoRenderRunIdRef.current = null;
-  }, [imageOverlayOnVideo]);
+  }, [imageOverlayOnVideo, photoCompositionOnlyOnVideo]);
 
   /** Clean up stored export files when user navigates away or after delay. */
   const cleanupExportStorageRef = useRef<{ exportId: string; timeoutId: ReturnType<typeof setTimeout> } | null>(null);
@@ -302,12 +317,15 @@ export function EditorExportSection({
         setError(data.error ?? "Export failed");
         return;
       }
-      if (contentType.includes("application/zip")) {
+      if (contentType.includes("application/zip") || contentType.includes("application/pdf")) {
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = res.headers.get("X-Suggested-Filename") || `${downloadSlug}.zip`;
+        const suggested = res.headers.get("X-Suggested-Filename");
+        a.download =
+          suggested ||
+          (contentType.includes("application/pdf") ? `${downloadSlug}.pdf` : `${downloadSlug}.zip`);
         a.click();
         URL.revokeObjectURL(url);
         router.refresh();
@@ -371,7 +389,10 @@ export function EditorExportSection({
         const res = await fetch(`/api/carousel/${carouselId}/render-for-video`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ image_overlay: imageOverlayOnVideo }),
+          body: JSON.stringify({
+            image_overlay: imageOverlayOnVideo,
+            photo_composition_only: photoCompositionOnlyOnVideo,
+          }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
@@ -610,7 +631,7 @@ export function EditorExportSection({
       </div>
       {localExportFormat === "pdf" && (
         <p className="text-muted-foreground text-xs mb-3 max-w-xl">
-          Full export ZIP includes linkedin-carousel.pdf (one page per slide for LinkedIn document carousels) and PNG slides for Instagram and other platforms.
+          Export downloads a single PDF (one page per slide) for LinkedIn document carousels. PNG/JPEG formats download a ZIP with slide images plus captions and credits.
         </p>
       )}
       {exporting && (
@@ -747,15 +768,32 @@ export function EditorExportSection({
                         id="video-image-overlay"
                         checked={imageOverlayOnVideo}
                         onChange={(e) => setImageOverlayOnVideo(e.target.checked)}
-                        disabled={videoDownloading}
+                        disabled={videoDownloading || photoCompositionOnlyOnVideo}
                         className="rounded border-input accent-primary"
                       />
                       <Label
                         htmlFor="video-image-overlay"
-                        className="text-sm font-medium cursor-pointer"
-                        title="When off, the video background is the raw photo (no dim gradient); text is still composited on top."
+                        className={`text-sm font-medium cursor-pointer ${photoCompositionOnlyOnVideo ? "text-muted-foreground" : ""}`}
+                        title="When off, the video background is the raw photo (no dim gradient). Disabled when Photos only is on."
                       >
                         Photo overlay
+                      </Label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="video-photo-composition-only"
+                        checked={photoCompositionOnlyOnVideo}
+                        onChange={(e) => setPhotoCompositionOnlyOnVideo(e.target.checked)}
+                        disabled={videoDownloading}
+                        className="rounded border-input accent-primary"
+                      />
+                      <Label
+                        htmlFor="video-photo-composition-only"
+                        className="text-sm font-medium cursor-pointer"
+                        title="Slides with a photo export as image-only (no on-slide text, chrome, or shapes). Captions turn off. PiP layout is kept."
+                      >
+                        Photos only
                       </Label>
                     </div>
                     <div className="flex items-center gap-2">
@@ -797,11 +835,14 @@ export function EditorExportSection({
                         type="checkbox"
                         id="with-caption"
                         checked={withCaption}
-                        disabled={!withVoiceover || videoDownloading}
+                        disabled={!withVoiceover || videoDownloading || photoCompositionOnlyOnVideo}
                         onChange={(e) => setWithCaption(e.target.checked)}
                         className="rounded border-input accent-primary disabled:opacity-50"
                       />
-                      <Label htmlFor="with-caption" className={`text-sm font-medium cursor-pointer ${!withVoiceover ? "text-muted-foreground" : ""}`}>
+                      <Label
+                        htmlFor="with-caption"
+                        className={`text-sm font-medium cursor-pointer ${!withVoiceover || photoCompositionOnlyOnVideo ? "text-muted-foreground" : ""}`}
+                      >
                         With caption
                       </Label>
                     </div>
@@ -856,7 +897,11 @@ export function EditorExportSection({
                             value={captionPosition}
                             onValueChange={(v) => setCaptionPosition(v as CaptionPosition)}
                           >
-                            <SelectTrigger id="caption-pos" className="w-[160px]" disabled={videoDownloading}>
+                            <SelectTrigger
+                              id="caption-pos"
+                              className="w-[160px]"
+                              disabled={videoDownloading || photoCompositionOnlyOnVideo}
+                            >
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>

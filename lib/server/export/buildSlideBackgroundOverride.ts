@@ -47,11 +47,25 @@ export type SlideBgForRasterOverride = {
  * Build `backgroundOverride` for `renderSlideHtml` so export and video match the editor.
  * When `imageOverlay` is false and the slide uses a photo background, gradient + tint scrims are disabled (clean image under text).
  */
+export function slideBackgroundHasPhotoForExport(
+  slideBg: SlideBgForRasterOverride | undefined | null
+): boolean {
+  if (!slideBg || slideBg.mode !== "image") return false;
+  return !!(
+    (slideBg.images && slideBg.images.length > 0) ||
+    (typeof slideBg.image_url === "string" && slideBg.image_url.length > 0) ||
+    (typeof slideBg.storage_path === "string" && slideBg.storage_path.trim().length > 0) ||
+    (typeof slideBg.asset_id === "string" && slideBg.asset_id.length > 0)
+  );
+}
+
 export function buildSlideBackgroundOverrideForRasterExport(
   slideBg: SlideBgForRasterOverride | undefined,
   templateCfg: TemplateConfig,
   slideMeta: Record<string, unknown> | null,
-  imageOverlay: boolean
+  imageOverlay: boolean,
+  /** When true with a photo background, strip gradient/tint on the image (same as overlay off for scrims). */
+  pictureCompositionOnly?: boolean
 ): SlideBackgroundOverride | undefined {
   if (!slideBg) return undefined;
 
@@ -133,7 +147,7 @@ export function buildSlideBackgroundOverrideForRasterExport(
     ...overlayFields,
   };
 
-  if (!imageOverlay && hasBackgroundImage) {
+  if ((!imageOverlay || pictureCompositionOnly) && hasBackgroundImage) {
     return {
       style: backgroundOverride.style,
       pattern: backgroundOverride.pattern,

@@ -304,6 +304,11 @@ export const slideMetaSchema = z.object({
    * Set when the user edits shapes that originated from the template in the slide editor.
    */
   overlay_shapes_replace_template: z.boolean().optional(),
+  /**
+   * When true and the slide uses a photo background: preview/export/video show images only (no text, chrome, template shapes, gradient on photo).
+   * PiP layout and image positioning are kept. Ignored when there is no image background.
+   */
+  picture_composition_only: z.boolean().optional(),
 });
 
 export const updateSlideInputSchema = z.object({

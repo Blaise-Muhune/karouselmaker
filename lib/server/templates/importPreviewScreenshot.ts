@@ -108,6 +108,7 @@ export async function captureImportTemplatePreviewPng(config: TemplateConfig): P
     undefined,
     undefined,
     undefined,
+    undefined,
     config.defaults?.meta ?? null
   );
 

@@ -21,6 +21,7 @@ import { reorderSlides } from "@/app/actions/slides/reorderSlides";
 import { shuffleSlideBackgrounds } from "@/app/actions/slides/shuffleCarouselBackgrounds";
 import { deleteSlide as deleteSlideAction } from "@/app/actions/slides/deleteSlide";
 import { createSlide as createSlideAction } from "@/app/actions/slides/createSlide";
+import { updateSlide as updateSlideAction } from "@/app/actions/slides/updateSlide";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
 import type { BrandKit } from "@/lib/renderer/renderModel";
 import type { SlideBackgroundOverride } from "@/components/renderer/SlidePreview";
@@ -33,6 +34,23 @@ import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, DownloadIcon, GripVertica
 import { cn } from "@/lib/utils";
 
 const PREVIEW_SCALE = 0.25;
+
+function slideHasPhotoBackground(slide: Slide): boolean {
+  const bg = slide.background as {
+    mode?: string;
+    images?: unknown[];
+    image_url?: string;
+    storage_path?: string;
+    asset_id?: string;
+  } | null | undefined;
+  if (!bg || bg.mode !== "image") return false;
+  return !!(
+    (Array.isArray(bg.images) && bg.images.length > 0) ||
+    (typeof bg.image_url === "string" && bg.image_url.length > 0) ||
+    (typeof bg.storage_path === "string" && bg.storage_path.trim().length > 0) ||
+    (typeof bg.asset_id === "string" && bg.asset_id.length > 0)
+  );
+}
 
 function getPreviewDimensions(exportSize: string): { w: number; h: number; contentW: number; contentH: number; scale: number; translateX: number; translateY: number } {
   const dims = exportSize === "1080x1350"
@@ -662,6 +680,15 @@ export function SlideGrid({
   const isBulkTemplateOpen = bulkApplyTemplateIds != null && bulkApplyTemplateIds.length > 0;
   const isTemplateDialogOpen = templateModalSlideId != null || isBulkTemplateOpen;
 
+  const eligibleSelectedSlides = slidesOrder.filter(
+    (s) => selectedSlideIds.has(s.id) && slideHasPhotoBackground(s)
+  );
+  const photosOnlyAllSelectedOn =
+    eligibleSelectedSlides.length > 0 &&
+    eligibleSelectedSlides.every(
+      (s) => (s.meta as { picture_composition_only?: boolean } | null)?.picture_composition_only === true
+    );
+
   return (
     <>
       {canEdit && (
@@ -687,6 +714,47 @@ export function SlideGrid({
                   <LayoutTemplateIcon className="size-4 mr-1.5" aria-hidden />
                 )}
                 Apply template
+              </Button>
+              <Button
+                type="button"
+                variant={photosOnlyAllSelectedOn ? "secondary" : "outline"}
+                size="sm"
+                disabled={bulkActionPending || eligibleSelectedSlides.length === 0}
+                title="For selected frames that use a photo: show only images (no text, chrome, or shapes). PiP and positioning stay. Frames without a photo get this flag cleared."
+                onClick={() => {
+                  const ids = Array.from(selectedSlideIds);
+                  const nextVal = !photosOnlyAllSelectedOn;
+                  setBulkActionPending(true);
+                  startTransition(async () => {
+                    try {
+                      for (const id of ids) {
+                        const s = slidesOrder.find((x) => x.id === id);
+                        if (!s) continue;
+                        const prev = (s.meta ?? {}) as Record<string, unknown>;
+                        await updateSlideAction(
+                          {
+                            slide_id: id,
+                            meta: {
+                              ...prev,
+                              picture_composition_only: slideHasPhotoBackground(s) ? nextVal : false,
+                            },
+                          },
+                          editorPath
+                        );
+                      }
+                    } finally {
+                      setBulkActionPending(false);
+                      router.refresh();
+                    }
+                  });
+                }}
+              >
+                {bulkActionPending ? (
+                  <Loader2Icon className="size-4 mr-1.5 animate-spin" aria-hidden />
+                ) : (
+                  <Images className="size-4 mr-1.5" aria-hidden />
+                )}
+                Photos only
               </Button>
               <Button
                 type="button"
@@ -876,6 +944,10 @@ export function SlideGrid({
                             allowBackgroundImageOverride={allowBackgroundImageOverride}
                             imageDisplay={imageDisplayForSlide}
                             exportSize={exportSize}
+                            photoCompositionOnly={
+                              (slide.meta as { picture_composition_only?: boolean } | null)
+                                ?.picture_composition_only === true
+                            }
                             slideOverlayShapesResolved={resolveOverlayShapesForRender(effectiveTemplateConfig.overlayShapes, slide.meta)}
                             {...getBoldWeights(slide)}
                           />
@@ -980,6 +1052,10 @@ export function SlideGrid({
                             allowBackgroundImageOverride={allowBackgroundImageOverride}
                             imageDisplay={imageDisplayForSlide}
                             exportSize={exportSize}
+                            photoCompositionOnly={
+                              (slide.meta as { picture_composition_only?: boolean } | null)
+                                ?.picture_composition_only === true
+                            }
                             slideOverlayShapesResolved={resolveOverlayShapesForRender(effectiveTemplateConfig.overlayShapes, slide.meta)}
                             {...getBoldWeights(slide)}
                           />

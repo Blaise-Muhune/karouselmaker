@@ -302,6 +302,11 @@ export function renderSlideHtml(
   transparentBackground?: boolean,
   /** When true, render only background (no text, no counter, no watermark). For video voiceover so captions can be burned in separately. */
   backgroundOnly?: boolean,
+  /**
+   * When true and the slide has a photo background: no text, chrome, template overlay shapes, or gradient on the photo (PiP and image layout unchanged).
+   * No effect on slides without a resolved photo. Ignored when `transparentBackground` is true.
+   */
+  photoCompositionOnly?: boolean,
   /** Per-slide shapes from slide meta; merged after template overlayShapes when `slideMeta` is not passed. */
   slideOverlayShapes?: OverlayShape[] | null,
   /** When set, resolves overlay shapes from meta (supports `overlay_shapes_replace_template`). Overrides merge with `slideOverlayShapes`. */
@@ -309,7 +314,6 @@ export function renderSlideHtml(
 ): string {
   const { w: dimW, h: dimH } = dimensions ?? { w: 1080, h: 1080 };
   const overlayOnly = !!transparentBackground;
-  const noTextOrChrome = !!backgroundOnly;
 
   const textScale = getTextScaleForDimensions(dimW, dimH);
   // When picture-in-picture is on, scale text down so it doesn't overlap the image
@@ -350,6 +354,17 @@ export function renderSlideHtml(
     hasZoneOverrides ? { zoneOverridesForWrap: mergedZoneOverrides } : undefined
   );
 
+  const hasImageForOverlay = !!(backgroundImageUrl ?? model.background.backgroundImageUrl) || (backgroundImageUrls?.length ?? 0) >= 2;
+  const pictureOnlyActive = !!photoCompositionOnly && hasImageForOverlay && !overlayOnly;
+  const noTextOrChrome = !!backgroundOnly || pictureOnlyActive;
+
+  const overlayShapesList =
+    slideMeta != null && typeof slideMeta === "object"
+      ? resolveOverlayShapesForRender(templateConfig.overlayShapes, slideMeta)
+      : mergeTemplateAndSlideOverlayShapes(templateConfig.overlayShapes, slideOverlayShapes ?? undefined);
+  const overlayShapesHtml =
+    !overlayOnly && !pictureOnlyActive && overlayShapesList.length > 0 ? getOverlayShapesHtml(overlayShapesList, escapeHtml) : "";
+
   const backgroundColor = overlayOnly
     ? "transparent"
     : (backgroundOverride?.color ?? model.background.backgroundColor);
@@ -373,18 +388,12 @@ export function renderSlideHtml(
         escapeHtml
       )
     : "";
-  const overlayShapesList =
-    slideMeta != null && typeof slideMeta === "object"
-      ? resolveOverlayShapesForRender(templateConfig.overlayShapes, slideMeta)
-      : mergeTemplateAndSlideOverlayShapes(templateConfig.overlayShapes, slideOverlayShapes ?? undefined);
-  const overlayShapesHtml =
-    !overlayOnly && overlayShapesList.length > 0 ? getOverlayShapesHtml(overlayShapesList, escapeHtml) : "";
-  const hasImageForOverlay = !!(backgroundImageUrl ?? model.background.backgroundImageUrl) || (backgroundImageUrls?.length ?? 0) >= 2;
   /** Only when there is a background image: gate gradient/tint on top of the picture. */
   const overlayEnabled = backgroundOverride?.overlayEnabled !== false;
   const useGradient = hasImageForOverlay
     ? overlayEnabled && (backgroundOverride?.gradientOn !== undefined ? backgroundOverride.gradientOn : model.background.useGradient)
     : (backgroundOverride?.gradientOn !== undefined ? backgroundOverride.gradientOn : model.background.useGradient);
+  const useGradientRendered = pictureOnlyActive ? false : useGradient;
   const gradientDir = gradientDirectionToCss(
     backgroundOverride?.gradientDirection,
     model.background.gradientDirection
@@ -392,12 +401,12 @@ export function renderSlideHtml(
   const gradientStrength =
     backgroundOverride?.gradientStrength ??
     (model.background.gradientStrength ?? 0.55);
-  const gradientOpacity = useGradient ? gradientStrength : 0;
+  const gradientOpacity = useGradientRendered ? gradientStrength : 0;
   const gradientColorHex = backgroundOverride?.gradientColor ?? (model.background as { gradientColor?: string }).gradientColor ?? "#000000";
   const gradientRgba = hexToRgba(gradientColorHex, gradientOpacity);
   // For overlay-only we use design background/gradient for contrast so text and chrome match the full slide
   const contrastBase =
-    useGradient ? gradientColorHex : overlayOnly ? (model.background.backgroundColor ?? "#0a0a0a") : (backgroundColor ?? "#0a0a0a");
+    useGradientRendered ? gradientColorHex : overlayOnly ? (model.background.backgroundColor ?? "#0a0a0a") : (backgroundColor ?? "#0a0a0a");
   const textColor = getContrastingTextColor(contrastBase);
 
   const showCounter = showCounterOverride ?? false;
@@ -803,7 +812,7 @@ export function renderSlideHtml(
   const gradientExtent = backgroundOverride?.gradientExtent ?? (model.background as { gradientExtent?: number }).gradientExtent ?? 50;
   const gradientSolidSize = backgroundOverride?.gradientSolidSize ?? (model.background as { gradientSolidSize?: number }).gradientSolidSize ?? 25;
   const gradientTransitionEnd = 100 - gradientExtent + (gradientExtent * (100 - gradientSolidSize)) / 100;
-  const gradientStyle = useGradient
+  const gradientStyle = useGradientRendered
     ? (gradientSolidSize >= 100
         ? `linear-gradient(${gradientDir}, transparent 0%, transparent ${100 - gradientExtent}%, ${gradientRgba} ${100 - gradientExtent}%, ${gradientRgba} 100%)`
         : gradientExtent >= 100 && gradientSolidSize <= 0
@@ -857,7 +866,7 @@ export function renderSlideHtml(
 <body>
   <div class="slide-wrap">
   ${(() => { const preloadUrls = [resolvedBgUrl, ...(multiUrls ?? []), ...(multiUrlsCandidate ?? []), secondaryBackgroundImageUrl].filter(Boolean) as string[]; const seen = new Set<string>(); const deduped = preloadUrls.filter((u) => (seen.has(u) ? false : (seen.add(u), true))); return deduped.length ? deduped.map((url) => `<img src="${escapeHtml(url)}" alt="" decoding="async" class="slide-preload-img" style="position:absolute;width:0;height:0;opacity:0;pointer-events:none;visibility:hidden" />`).join("") : ""; })()}
-  ${useFullCanvasBackground ? `<div class="slide-fullcanvas-bg" style="position:absolute;left:0;top:0;width:${dimW}px;height:${dimH}px;overflow:hidden;z-index:0"><img src="${escapeHtml(resolvedBgUrl!)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:${singleBgPosition};display:block${fullImgRotateSuffix}" />${!noTextOrChrome && (backgroundOverride?.tintOpacity ?? 0) > 0 ? `<div style="position:absolute;inset:0;background-color:${escapeHtml(backgroundOverride?.tintColor ?? backgroundColor ?? "#0a0a0a")};opacity:${Math.min(1, Math.max(0, backgroundOverride?.tintOpacity ?? 0))};pointer-events:none"></div>` : ""}${!noTextOrChrome && useGradient ? `<div style="position:absolute;inset:0;background:${gradientStyle};pointer-events:none"></div>` : ""}</div>` : ""}
+  ${useFullCanvasBackground ? `<div class="slide-fullcanvas-bg" style="position:absolute;left:0;top:0;width:${dimW}px;height:${dimH}px;overflow:hidden;z-index:0"><img src="${escapeHtml(resolvedBgUrl!)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:${singleBgPosition};display:block${fullImgRotateSuffix}" />${!noTextOrChrome && (backgroundOverride?.tintOpacity ?? 0) > 0 ? `<div style="position:absolute;inset:0;background-color:${escapeHtml(backgroundOverride?.tintColor ?? backgroundColor ?? "#0a0a0a")};opacity:${Math.min(1, Math.max(0, backgroundOverride?.tintOpacity ?? 0))};pointer-events:none"></div>` : ""}${!noTextOrChrome && useGradientRendered ? `<div style="position:absolute;inset:0;background:${gradientStyle};pointer-events:none"></div>` : ""}</div>` : ""}
   <div class="slide">
   <div class="slide-inner">
     ${decorationHtml}

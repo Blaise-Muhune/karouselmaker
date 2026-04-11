@@ -169,6 +169,7 @@ export async function cloneCarousel(
     source.status === "generating" ? "draft" : source.status === "generated" ? "generated" : source.status;
 
   const supabase = await createClient();
+  /** Base row only: older DBs may not have `include_first_slide` / `include_last_slide` (migration 020). */
   const insertRow = {
     user_id: userId,
     project_id: projectId,
@@ -181,8 +182,6 @@ export async function cloneCarousel(
     export_format: source.export_format ?? "png",
     export_size: source.export_size ?? "1080x1350",
     is_favorite: false,
-    include_first_slide: source.include_first_slide ?? true,
-    include_last_slide: source.include_last_slide ?? true,
     generation_options: goRaw,
   };
 
@@ -197,6 +196,26 @@ export async function cloneCarousel(
   }
 
   const newId = (newCarousel as Carousel).id;
+
+  const copyIncludeFirst = source.include_first_slide ?? true;
+  const copyIncludeLast = source.include_last_slide ?? true;
+  /** Skip when defaults match: avoids UPDATE on DBs missing migration 020 (PostgREST schema cache error). */
+  if (copyIncludeFirst !== true || copyIncludeLast !== true) {
+    const { error: scopeErr } = await supabase
+      .from("carousels")
+      .update({
+        include_first_slide: copyIncludeFirst,
+        include_last_slide: copyIncludeLast,
+      })
+      .eq("id", newId)
+      .eq("user_id", userId);
+    if (scopeErr && /include_first_slide|include_last_slide|schema cache/i.test(scopeErr.message)) {
+      // Database without these columns; duplicate row is still valid (apply-scope not persisted).
+    } else if (scopeErr) {
+      await supabase.from("carousels").delete().eq("id", newId).eq("user_id", userId);
+      throw new Error(scopeErr.message);
+    }
+  }
 
   if (slides.length > 0) {
     const rows = slides.map((s) => ({

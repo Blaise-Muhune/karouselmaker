@@ -15,7 +15,10 @@ import { getVideoRenderStoragePaths } from "@/lib/server/db/exports";
 import { renderSlideHtml } from "@/lib/server/renderer/renderSlideHtml";
 import { resolveBrandKitLogo } from "@/lib/server/brandKit";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
-import { buildSlideBackgroundOverrideForRasterExport } from "@/lib/server/export/buildSlideBackgroundOverride";
+import {
+  buildSlideBackgroundOverrideForRasterExport,
+  slideBackgroundHasPhotoForExport,
+} from "@/lib/server/export/buildSlideBackgroundOverride";
 import {
   normalizeSlideMetaForRender,
   mergeWithTemplateDefaults,
@@ -46,6 +49,7 @@ export async function POST(
   context: { params: Promise<{ carouselId: string }> }
 ) {
   let imageOverlay = true;
+  let photoCompositionOnlyGlobal = false;
   try {
     const ct = _request.headers.get("content-type") ?? "";
     if (ct.includes("application/json")) {
@@ -53,6 +57,10 @@ export async function POST(
       if (body && typeof body === "object" && "image_overlay" in body) {
         const v = (body as { image_overlay?: unknown }).image_overlay;
         if (typeof v === "boolean") imageOverlay = v;
+      }
+      if (body && typeof body === "object" && "photo_composition_only" in body) {
+        const v = (body as { photo_composition_only?: unknown }).photo_composition_only;
+        if (typeof v === "boolean") photoCompositionOnlyGlobal = v;
       }
     }
   } catch {
@@ -162,8 +170,18 @@ export async function POST(
       const effectivePattern = slideBg?.pattern;
       const effectiveColor = /^#([0-9A-Fa-f]{3}){1,2}$/.test(slideBg?.color ?? "") ? slideBg!.color! : "#0a0a0a";
       const slideMeta = (slide.meta ?? null) as Record<string, unknown> | null;
+      const slidePhotoMeta = slideMeta?.picture_composition_only === true;
+      const hasPhotoForSlide = slideBackgroundHasPhotoForExport(slideBg);
+      const effectivePhotoOnly =
+        (photoCompositionOnlyGlobal || slidePhotoMeta) && hasPhotoForSlide;
       const backgroundOverrideForVideo = imageOverlay
-        ? buildSlideBackgroundOverrideForRasterExport(slideBg, videoTemplateConfig, slideMeta, true)
+        ? buildSlideBackgroundOverrideForRasterExport(
+            slideBg,
+            videoTemplateConfig,
+            slideMeta,
+            true,
+            effectivePhotoOnly
+          )
         : slideBg
           ? {
               style: (effectiveStyle === "solid" || effectiveStyle === "gradient" || effectiveStyle === "pattern" ? effectiveStyle : undefined) as "solid" | "gradient" | "pattern" | undefined,
@@ -233,9 +251,11 @@ export async function POST(
         slideBg?.image_display != null && typeof slideBg.image_display === "object" && !Array.isArray(slideBg.image_display)
           ? (slideBg.image_display as Record<string, unknown>)
           : undefined;
-      // Video uses full-bleed image (no PiP) so the frame works with burned-in captions and voiceover.
+      // Video normally flattens PiP to full-bleed for captions/voiceover; keep PiP when exporting photos-only (no captions).
+      const usePipInVideo =
+        imageDisplayParam?.mode === "pip" && (photoCompositionOnlyGlobal || slidePhotoMeta);
       const imageDisplayForVideo =
-        imageDisplayParam?.mode === "pip"
+        !usePipInVideo && imageDisplayParam?.mode === "pip"
           ? { ...imageDisplayParam, mode: "full" as const }
           : imageDisplayParam;
 
@@ -271,6 +291,7 @@ export async function POST(
         dimensions,
         undefined,
         undefined,
+        effectivePhotoOnly,
         undefined,
         slideMeta
       );
@@ -322,6 +343,7 @@ export async function POST(
         dimensions,
         true,
         undefined,
+        false,
         undefined,
         slideMeta
         );
@@ -370,6 +392,7 @@ export async function POST(
             dimensions,
             undefined,
             true,
+            false,
             undefined,
             slideMeta
           );

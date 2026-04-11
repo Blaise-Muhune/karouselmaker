@@ -2836,12 +2836,17 @@ export function SlideEditForm({
         setExportFullError(data.error ?? "Export failed");
         return;
       }
-      if (contentType.includes("application/zip")) {
+      if (contentType.includes("application/zip") || contentType.includes("application/pdf")) {
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = res.headers.get("X-Suggested-Filename") || `${downloadSlug || "carousel"}.zip`;
+        const suggested = res.headers.get("X-Suggested-Filename");
+        a.download =
+          suggested ||
+          (contentType.includes("application/pdf")
+            ? `${downloadSlug || "carousel"}.pdf`
+            : `${downloadSlug || "carousel"}.zip`);
         a.click();
         URL.revokeObjectURL(url);
         router.refresh();
@@ -4210,6 +4215,10 @@ export function SlideEditForm({
                 imageDisplay={isImageMode ? effectiveImageDisplay : undefined}
                 exportSize={exportSize}
                 viewportFit="cover"
+                photoCompositionOnly={
+                  isImageMode &&
+                  (slide.meta as { picture_composition_only?: boolean } | null)?.picture_composition_only === true
+                }
                 slideOverlayShapesResolved={resolvedOverlayShapesForPreview}
                 slideOverlayShapesEditable={slideOverlayShapesEditable}
                 onHeadlineChange={setHeadline}
@@ -5135,6 +5144,10 @@ export function SlideEditForm({
                         allowBackgroundImageOverride={allowBackgroundImageOverrideForPreview}
                         imageDisplay={isImageMode ? effectiveImageDisplay : undefined}
                         exportSize={exportSize}
+                        photoCompositionOnly={
+                          isImageMode &&
+                          (slide.meta as { picture_composition_only?: boolean } | null)?.picture_composition_only === true
+                        }
                         slideOverlayShapesResolved={resolvedOverlayShapesForPreview}
                         slideOverlayShapesEditable={slideOverlayShapesEditable}
                         positionAndSizeOnly
@@ -8228,8 +8241,10 @@ export function SlideEditForm({
               </Select>
               </div>
               <p className="text-muted-foreground text-[11px]">
-                Size applies to all frames. ZIP includes slide images, captions (short/medium/long), and credits.
-                {exportFormat === "pdf" ? " With PDF selected, the ZIP also includes linkedin-carousel.pdf (one page per slide) for LinkedIn document carousels." : ""}
+                Size applies to all frames.
+                {exportFormat === "pdf"
+                  ? " With PDF selected, you download a single PDF (one page per slide) for LinkedIn document posts."
+                  : " ZIP includes slide images, captions (short/medium/long), and credits."}
               </p>
               <Button
                 type="button"
@@ -8240,7 +8255,11 @@ export function SlideEditForm({
                 disabled={!isPro || exportingFull}
               >
                 {exportingFull ? <Loader2Icon className="size-3.5 animate-spin" /> : <DownloadIcon className="size-3.5" />}
-                {exportingFull ? "Exporting…" : "Download export (ZIP)"}
+                {exportingFull
+                  ? "Exporting…"
+                  : exportFormat === "pdf"
+                    ? "Download export (PDF)"
+                    : "Download export (ZIP)"}
               </Button>
               {exportFullError && (
                 <p className="text-destructive text-[11px]" role="alert">{exportFullError}</p>
