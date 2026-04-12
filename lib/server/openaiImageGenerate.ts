@@ -16,6 +16,21 @@ function getDefaultImageModel(): ImageModel {
   return "gpt-image-1.5";
 }
 
+/** Server terminal: step-by-step image gen (i2i vs generate, timings, ref counts). Set `IMAGE_GEN_DEBUG=1` in `.env`. */
+function isImageGenDebug(): boolean {
+  const v = process.env.IMAGE_GEN_DEBUG?.trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes";
+}
+
+function imageGenDebug(message: string, extra?: Record<string, unknown>): void {
+  if (!isImageGenDebug()) return;
+  if (extra && Object.keys(extra).length > 0) {
+    console.log(`[openaiImageGenerate:debug] ${message}`, extra);
+  } else {
+    console.log(`[openaiImageGenerate:debug] ${message}`);
+  }
+}
+
 /** Optional context so the image matches era, location, topic, and the current slide. */
 export type ImagePromptContext = {
   /** Carousel title (e.g. "Why Mbappé Left Real Madrid") */
@@ -120,17 +135,28 @@ function isUgcNaturalPhoneLookActive(context?: ImagePromptContext): boolean {
   );
 }
 
-/** True when the API error is a 400 safety system rejection (so we can retry with a simplified prompt). */
-function isSafetyRejection(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
+/** True when an API error message indicates OpenAI safety/moderation (edit or generate). */
+function isSafetyRejectionMessage(msg: string): boolean {
+  const m = msg.toLowerCase();
   return (
     msg.includes("rejected by the safety system") ||
-    (msg.includes("400") && msg.toLowerCase().includes("safety")) ||
-    msg.includes("content policy")
+    (msg.includes("400") && m.includes("safety")) ||
+    msg.includes("content policy") ||
+    m.includes("safety_violations")
   );
 }
 
-/** Soften words that often trigger safety filters so the retry is more likely to pass. */
+/** True when the API error is a 400 safety system rejection (so we can retry with a simplified prompt). */
+function isSafetyRejection(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return isSafetyRejectionMessage(msg);
+}
+
+/**
+ * Soften words that often trigger safety filters so the retry is more likely to pass.
+ * Also tones down ambiguous phrasing that moderators often read as sexual/violent in benign UGC prompts
+ * (community guidance: shorter, neutral, professional wording; avoid double meanings).
+ */
 function softenForSafety(s: string): string {
   return s
     .replace(/\bviolent\b/gi, "intense")
@@ -143,6 +169,9 @@ function softenForSafety(s: string): string {
     .replace(/\bblood\b/gi, "dramatic")
     .replace(/\bweapon\b/gi, "prop")
     .replace(/\bweapons\b/gi, "props")
+    .replace(/\b(sexy|seductive|sensual|erotic)\b/gi, "striking")
+    .replace(/\b(lingerie|nude|naked)\b/gi, "modest everyday clothing")
+    .replace(/\bshirtless\b/gi, "casual athletic look")
     .replace(/\s{2,}/g, " ")
     .trim();
 }
@@ -590,6 +619,20 @@ export async function generateImageFromPrompt(
     }
   }
   const canEdit = Boolean(refFiles?.length);
+  const refTotalBytes = refBuffers.reduce((sum, b) => sum + b.length, 0);
+  imageGenDebug("request prepared", {
+    model,
+    quality,
+    openaiSize,
+    aspect,
+    path: canEdit ? "i2i (OpenAI images.edit + refs)" : "text2img (OpenAI images.generate only)",
+    refBuffers: refBuffers.length,
+    ugcRefSlots: editUgcCount,
+    productRefSlots: editProductCount,
+    regenerationBase: editHasRegenBase,
+    refTotalBytes,
+    queryPreview: query.slice(0, 160),
+  });
 
   console.log(
     "[openaiImageGenerate] Full prompt (" +
@@ -605,9 +648,14 @@ export async function generateImageFromPrompt(
       "\n"
   );
 
-  const tryUgcEdit = async (editPrompt: string): Promise<{ b64: string; revised?: string } | null> => {
-    if (!refFiles?.length) return null;
+  /** Single images.edit attempt; returns API error text when the call fails so callers can retry edit on safety only. */
+  const runUgcEdit = async (
+    editPrompt: string
+  ): Promise<{ extracted: { b64: string; revised?: string } | null; errorMessage?: string }> => {
+    if (!refFiles?.length) return { extracted: null };
     try {
+      imageGenDebug("calling OpenAI images.edit", { refFiles: refFiles.length, editPromptChars: editPrompt.length });
+      const t0 = Date.now();
       const imageArg = refFiles.length === 1 ? refFiles[0]! : refFiles;
       const out = await openai.images.edit({
         model,
@@ -621,14 +669,26 @@ export async function generateImageFromPrompt(
           ? ({ input_fidelity: "high" } as const)
           : {}),
       });
-      return extractB64FromImagesResponse(out);
+      const extracted = extractB64FromImagesResponse(out);
+      imageGenDebug(`images.edit finished in ${Date.now() - t0}ms`, { ok: !!extracted });
+      if (!extracted) {
+        return { extracted: null, errorMessage: "No image data in images.edit response" };
+      }
+      return { extracted };
     } catch (e) {
-      console.warn("[openaiImageGenerate] images.edit failed:", e instanceof Error ? e.message : e);
-      return null;
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn("[openaiImageGenerate] images.edit failed:", msg);
+      imageGenDebug("images.edit error detail", {
+        message: msg,
+        ...(e instanceof Error && e.stack ? { stack: e.stack.slice(0, 2000) } : {}),
+      });
+      return { extracted: null, errorMessage: msg };
     }
   };
 
   const tryGenerate = async (p: string): Promise<{ b64: string; revised?: string } | null> => {
+    imageGenDebug("calling OpenAI images.generate", { promptChars: p.length });
+    const t0 = Date.now();
     const result = await openai.images.generate({
       model,
       prompt: p,
@@ -637,12 +697,46 @@ export async function generateImageFromPrompt(
       quality,
       output_format: "jpeg",
     });
-    return extractB64FromImagesResponse(result);
+    const extracted = extractB64FromImagesResponse(result);
+    imageGenDebug(`images.generate finished in ${Date.now() - t0}ms`, { ok: !!extracted });
+    return extracted;
   };
 
   try {
-    let extracted = canEdit ? await tryUgcEdit(prompt) : null;
+    let extracted: { b64: string; revised?: string } | null = null;
+    if (canEdit) {
+      const first = await runUgcEdit(prompt);
+      extracted = first.extracted;
+      if (
+        !extracted &&
+        first.errorMessage &&
+        isSafetyRejectionMessage(first.errorMessage)
+      ) {
+        const retryShort = buildSafeRetryPrompt(query, {
+          genericFacesOnly: options?.context?.preferRecognizablePublicFigures === true,
+          referenceStyleSummary: options?.context?.referenceStyleSummary,
+          productReferenceSummary: options?.context?.productReferenceSummary,
+          ugcNaturalPhone: isUgcNaturalPhoneLookActive(options?.context),
+        });
+        const retryEditPrompt = editPrefix ? `${editPrefix}${retryShort}` : retryShort;
+        console.log(
+          "[openaiImageGenerate] images.edit safety rejection — retrying images.edit with shortened, neutral prompt (same reference images; aligns with OpenAI moderation guidance: avoid ambiguous wording, keep instructions general-audience).\n"
+        );
+        imageGenDebug("images.edit safety retry", { promptChars: retryEditPrompt.length });
+        const second = await runUgcEdit(retryEditPrompt);
+        extracted = second.extracted;
+        if (!extracted && second.errorMessage) {
+          console.warn("[openaiImageGenerate] images.edit retry failed:", second.errorMessage);
+        }
+      }
+      if (extracted) {
+        imageGenDebug("using i2i result (images.edit); skipping images.generate");
+      }
+    }
     if (!extracted) {
+      if (canEdit) {
+        imageGenDebug("i2i exhausted; falling back to images.generate with base prompt only (reference pixels not sent)");
+      }
       extracted = await tryGenerate(basePrompt);
     }
     if (!extracted) {
@@ -670,7 +764,11 @@ export async function generateImageFromPrompt(
       const retryForEdit = editPrefix ? `${editPrefix}${retryShort}` : retryShort;
       console.log("[openaiImageGenerate] Safety rejection. Retrying OpenAI with short concept:", retryForEdit, "\n");
       try {
-        let retryExtracted = canEdit ? await tryUgcEdit(retryForEdit) : null;
+        let retryExtracted: { b64: string; revised?: string } | null = null;
+        if (canEdit) {
+          const editRetry = await runUgcEdit(retryForEdit);
+          retryExtracted = editRetry.extracted;
+        }
         if (!retryExtracted) {
           retryExtracted = await tryGenerate(retryShort);
         }
