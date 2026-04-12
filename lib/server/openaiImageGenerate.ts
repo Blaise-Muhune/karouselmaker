@@ -146,6 +146,11 @@ function isSafetyRejectionMessage(msg: string): boolean {
   );
 }
 
+/** True when OpenAI flagged sexual content (prompt and/or input image)—use stricter edit retry wording. */
+function isSexualSafetyViolation(msg: string): boolean {
+  return /\bsexual\b/i.test(msg) && /safety_violation|safety system|rejected by the safety/i.test(msg);
+}
+
 /** True when the API error is a 400 safety system rejection (so we can retry with a simplified prompt). */
 function isSafetyRejection(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
@@ -174,6 +179,31 @@ function softenForSafety(s: string): string {
     .replace(/\bshirtless\b/gi, "casual athletic look")
     .replace(/\s{2,}/g, " ")
     .trim();
+}
+
+/**
+ * Extra pass after `softenForSafety` when moderation flagged sexual content: neutralize beach/fitness/intimacy
+ * wording that often trips false positives while staying policy-compliant (modest, professional scenes).
+ */
+function softenForSexualSafety(s: string): string {
+  let t = softenForSafety(s);
+  t = t
+    .replace(/\b(bikini|swimwear|swimsuit|speedo|beach body|beachwear|pool party)\b/gi, "casual outdoor clothing")
+    .replace(/\b(beach|poolside|by the pool|in the pool|sunbathing)\b/gi, "park or sidewalk cafe")
+    .replace(/\b(hot|sexy|babe|hunk|spicy)\b/gi, "")
+    .replace(/\bthirst\s*trap\b/gi, "friendly portrait")
+    .replace(/\b(abs|six-pack|six pack|ripped|shredded|toned body|muscle show)\b/gi, "healthy active look")
+    .replace(/\b(revealing|skimpy|sheer|see-through|low-cut|low cut|cleavage|plunging|crop top alone)\b/gi, "modest layered outfit")
+    .replace(/\b(tight\s*fitting|skin-tight|form-fitting)\b/gi, "comfortable relaxed fit")
+    .replace(/\b(bedroom|boudoir|intimate|romantic evening|kissing|cuddling|embrace)\b/gi, "bright neutral indoor space")
+    .replace(/\b(underwear|bra only|sports bra only)\b/gi, "full athletic outfit with top")
+    .replace(/\b(lingerie|nightgown|negligee)\b/gi, "daytime casual wear")
+    .replace(/\b(yoga\s*pants\s*only|leggings\s*only)\b/gi, "activewear with full-length top")
+    .replace(/\b(model pose|pin-up|pinup)\b/gi, "natural standing pose")
+    .replace(/\s{2,}/g, " ")
+    .replace(/^\s*,\s*/g, "")
+    .trim();
+  return t;
 }
 
 /**
@@ -256,6 +286,75 @@ function buildSafeFallbackPrompt(
     return `Candid phone-camera image: ${subject}.${prodBit} Natural **neutral** light for the scene, slight sensor noise, soft focus, muted colors—no default orange warmth; real person could have taken it on a phone; avoid HDR stock look and overly convenient AI composition. No text, no logos.`;
   }
   return `Professional photograph: ${subject}.${prodBit} Lighting and mood that fit the subject and setting. No text, no logos. High quality, suitable as a background.`;
+}
+
+const SEXUAL_SAFE_EDIT_PREAMBLE =
+  "STRICT general-audience edit: output one photograph suitable for a Fortune 500 homepage or LinkedIn article hero. " +
+  "Everyone fully clothed in business-casual or everyday modest attire (long pants or knee-length skirt, shirt with sleeves; no swimwear, sleepwear, visible underwear, athletic bra alone, or bare midriff). " +
+  "Poses: standing, seated at desk, walking, holding phone or coffee, or relaxed conversation at arm's length—no reclining pairs, no close intimate framing, no glamor or boudoir staging. " +
+  "Lighting: bright neutral daylight or soft office—avoid moody bedroom or club lighting. ";
+
+/**
+ * `images.edit` retry text after `safety_violations=[sexual]`: short concept + hard wardrobe/pose rules so the model steers modest while keeping refs.
+ */
+function buildSexualSafeImageEditRetryPrompt(
+  query: string,
+  opts?: {
+    genericFacesOnly?: boolean;
+    referenceStyleSummary?: string;
+    productReferenceSummary?: string;
+    ugcNaturalPhone?: boolean;
+  }
+): string {
+  const q = query
+    .replace(/\b(3000x2000|4k|official photo|wallpaper)\b/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  const maxLen = 64;
+  let subjectRaw = q?.trim() || "a professional everyday moment";
+  if (subjectRaw.length > maxLen) {
+    const cut = subjectRaw.slice(0, maxLen);
+    const lastSpace = cut.lastIndexOf(" ");
+    subjectRaw = lastSpace > 32 ? cut.slice(0, lastSpace).trim() : cut.trim();
+  }
+  const concept = softenForSexualSafety(subjectRaw);
+  const faceLine = opts?.genericFacesOnly
+    ? " People: generic invented adults only—no real-person likeness."
+    : "";
+  const ref = opts?.referenceStyleSummary?.trim();
+  const prod = opts?.productReferenceSummary?.trim();
+  const prodBit = prod ? ` Product context (keep modest staging): ${truncateForContext(prod, 200)}.` : "";
+  const phone = opts?.ugcNaturalPhone
+    ? " Camera: plain smartphone snapshot look, neutral white balance, slight natural grain—still fully modest wardrobe and poses."
+    : "";
+  if (ref) {
+    return (
+      SEXUAL_SAFE_EDIT_PREAMBLE +
+      `Match reference palette, lens, and grading only; interpret wardrobe as modest office-appropriate even if references look casual.${faceLine}${phone} ` +
+      `Style hints: ${truncateForContext(ref, 220)}. ` +
+      `Scene to depict (tame): ${concept}.${prodBit} No text, no logos.`
+    );
+  }
+  return (
+    SEXUAL_SAFE_EDIT_PREAMBLE +
+    `Create one coherent photograph.${faceLine}${phone} Subject: ${concept}.${prodBit} No text, no logos.`
+  );
+}
+
+/** Last-chance `images.edit` after sexual rejection twice: minimal scene hint + maximum modesty instructions. */
+function buildUltraModestImageEditRetryPrompt(query: string, genericFacesOnly?: boolean): string {
+  const q = query
+    .replace(/\b(3000x2000|4k|official photo|wallpaper)\b/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  const tiny = softenForSexualSafety(q.slice(0, 48).trim() || "professional portrait");
+  const face = genericFacesOnly ? " Invented generic adult; no celebrity." : "";
+  return (
+    "Final modest edit: preserve identity from earlier reference photos only as far as face and hairstyle; re-clothe everyone in business casual (button shirt, slacks or jeans). " +
+    "Setting: bright office lobby or daytime sidewalk. Subject stands or sits upright, hands visible (phone, laptop, or neutral). " +
+    face +
+    ` Minimal scene hint: ${tiny}. No text, no logos, no swimwear or athletic undress.`
+  );
 }
 
 /** True when the prompt is just "Bible as object" (book on table, open Bible, etc.)—we want to replace with character/scene for hook. */
@@ -712,20 +811,49 @@ export async function generateImageFromPrompt(
         first.errorMessage &&
         isSafetyRejectionMessage(first.errorMessage)
       ) {
-        const retryShort = buildSafeRetryPrompt(query, {
+        const retryOpts = {
           genericFacesOnly: options?.context?.preferRecognizablePublicFigures === true,
           referenceStyleSummary: options?.context?.referenceStyleSummary,
           productReferenceSummary: options?.context?.productReferenceSummary,
           ugcNaturalPhone: isUgcNaturalPhoneLookActive(options?.context),
-        });
+        };
+        const sexualFirst = isSexualSafetyViolation(first.errorMessage);
+        const retryShort = sexualFirst
+          ? buildSexualSafeImageEditRetryPrompt(query, retryOpts)
+          : buildSafeRetryPrompt(query, retryOpts);
         const retryEditPrompt = editPrefix ? `${editPrefix}${retryShort}` : retryShort;
         console.log(
-          "[openaiImageGenerate] images.edit safety rejection — retrying images.edit with shortened, neutral prompt (same reference images; aligns with OpenAI moderation guidance: avoid ambiguous wording, keep instructions general-audience).\n"
+          sexualFirst
+            ? "[openaiImageGenerate] images.edit sexual safety flag — retrying with strict modesty + shortened scene (same reference images).\n"
+            : "[openaiImageGenerate] images.edit safety rejection — retrying images.edit with shortened, neutral prompt (same reference images).\n"
         );
-        imageGenDebug("images.edit safety retry", { promptChars: retryEditPrompt.length });
+        imageGenDebug("images.edit safety retry", {
+          promptChars: retryEditPrompt.length,
+          sexualStrict: sexualFirst,
+        });
         const second = await runUgcEdit(retryEditPrompt);
         extracted = second.extracted;
-        if (!extracted && second.errorMessage) {
+        if (
+          !extracted &&
+          second.errorMessage &&
+          isSexualSafetyViolation(second.errorMessage) &&
+          canEdit
+        ) {
+          const ultraShort = buildUltraModestImageEditRetryPrompt(
+            query,
+            retryOpts.genericFacesOnly
+          );
+          const ultraPrompt = editPrefix ? `${editPrefix}${ultraShort}` : ultraShort;
+          console.log(
+            "[openaiImageGenerate] sexual safety retry failed — third images.edit with ultra-modest wardrobe/scene instructions.\n"
+          );
+          imageGenDebug("images.edit ultra-modest retry", { promptChars: ultraPrompt.length });
+          const third = await runUgcEdit(ultraPrompt);
+          extracted = third.extracted;
+          if (!extracted && third.errorMessage) {
+            console.warn("[openaiImageGenerate] images.edit ultra-modest retry failed:", third.errorMessage);
+          }
+        } else if (!extracted && second.errorMessage) {
           console.warn("[openaiImageGenerate] images.edit retry failed:", second.errorMessage);
         }
       }
@@ -755,19 +883,42 @@ export async function generateImageFromPrompt(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (isSafetyRejection(err)) {
-      const retryShort = buildSafeRetryPrompt(query, {
+      const retryOptsOuter = {
         genericFacesOnly: options?.context?.preferRecognizablePublicFigures === true,
         referenceStyleSummary: options?.context?.referenceStyleSummary,
         productReferenceSummary: options?.context?.productReferenceSummary,
         ugcNaturalPhone: isUgcNaturalPhoneLookActive(options?.context),
-      });
+      };
+      const sexualOuter = isSexualSafetyViolation(msg);
+      const retryShort = sexualOuter
+        ? buildSexualSafeImageEditRetryPrompt(query, retryOptsOuter)
+        : buildSafeRetryPrompt(query, retryOptsOuter);
       const retryForEdit = editPrefix ? `${editPrefix}${retryShort}` : retryShort;
-      console.log("[openaiImageGenerate] Safety rejection. Retrying OpenAI with short concept:", retryForEdit, "\n");
+      console.log(
+        "[openaiImageGenerate] Safety rejection. Retrying OpenAI with",
+        sexualOuter ? "sexual-safe modest prompt:" : "short concept:",
+        retryForEdit,
+        "\n"
+      );
       try {
         let retryExtracted: { b64: string; revised?: string } | null = null;
         if (canEdit) {
           const editRetry = await runUgcEdit(retryForEdit);
           retryExtracted = editRetry.extracted;
+          if (
+            !retryExtracted &&
+            editRetry.errorMessage &&
+            isSexualSafetyViolation(editRetry.errorMessage)
+          ) {
+            const ultraShort = buildUltraModestImageEditRetryPrompt(
+              query,
+              retryOptsOuter.genericFacesOnly
+            );
+            const ultraPrompt = editPrefix ? `${editPrefix}${ultraShort}` : ultraShort;
+            console.log("[openaiImageGenerate] Outer safety path: ultra-modest images.edit retry.\n");
+            const thirdOuter = await runUgcEdit(ultraPrompt);
+            retryExtracted = thirdOuter.extracted;
+          }
         }
         if (!retryExtracted) {
           retryExtracted = await tryGenerate(retryShort);
