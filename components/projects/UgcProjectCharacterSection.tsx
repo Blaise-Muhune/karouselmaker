@@ -15,7 +15,7 @@ import type { ProjectFormInput } from "@/lib/validations/project";
 import { cn } from "@/lib/utils";
 
 const BRIEF_PLACEHOLDER =
-  "Same person. Note hair, skin tone, build, usual outfit, and typical room/light.";
+  "Same character. Note hair, skin tone, build, usual outfit, and typical setting.";
 
 export function UgcProjectCharacterSection({
   control,
@@ -29,8 +29,11 @@ export function UgcProjectCharacterSection({
   return (
     <div className="rounded-xl border border-primary/25 bg-primary/5 p-4 sm:p-5 space-y-4">
       <div className="space-y-1">
-        <h3 className="text-sm font-semibold tracking-tight text-foreground">Recurring creator</h3>
-        <p className="text-muted-foreground text-[11px] leading-relaxed">Add notes and/or photos to keep the same person across slides.</p>
+        <h3 className="text-sm font-semibold tracking-tight text-foreground">Recurring character</h3>
+        <p className="text-muted-foreground text-[11px] leading-relaxed">
+          Optional for any content style: lock a face, host, or mascot when you use AI-generated backgrounds (Instagram /
+          TikTok). Same fields power “Same character from project” on new carousels.
+        </p>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2 lg:gap-5 lg:items-stretch">
@@ -89,7 +92,7 @@ export function UgcProjectCharacterSection({
             <div className="min-w-0 space-y-1">
               <p className="text-sm font-semibold text-foreground">Face &amp; body references</p>
               <p className="text-[11px] text-muted-foreground leading-snug">
-                Up to {maxAvatarAssets} photos of the same person.
+                Up to {maxAvatarAssets} photos of the same character.
               </p>
             </div>
           </div>

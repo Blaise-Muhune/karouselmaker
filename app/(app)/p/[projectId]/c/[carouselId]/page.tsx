@@ -32,7 +32,6 @@ import { GenerationPartialBanner } from "@/components/carousels/GenerationPartia
 import { CarouselGeneratingPage } from "@/components/carousels/CarouselGeneratingTrigger";
 import { SimilarCarouselIdeas } from "@/components/carousels/SimilarCarouselIdeas";
 import { SaveUgcCharacterFromCarouselButton } from "@/components/carousels/SaveUgcCharacterFromCarouselButton";
-import { normalizeContentFocusId } from "@/lib/server/ai/projectContentFocus";
 import { ArrowLeftIcon } from "lucide-react";
 
 function normalizeStoragePathForBucket(path: string | undefined, bucket: string): string | undefined {
@@ -187,7 +186,6 @@ export default async function CarouselEditorPage({
   const similarIdeasLoading =
     generationErrorRecovery && similarCarouselIdeasFromOpts.length === 0 && carouselForGen !== "linkedin";
 
-  const contentFocusId = normalizeContentFocusId(project.content_focus);
   const usedProjectFaceRefsOnRun = genOpts.ugc_used_project_avatar_refs === true;
   const hasGeneratedUgcBackdrops = slides.some((s) => {
     const bg = s.background as { mode?: string; storage_path?: string } | null;
@@ -198,20 +196,20 @@ export default async function CarouselEditorPage({
       path.startsWith(`user/${user.id}/`)
     );
   });
-  /** UGC + AI images, run did not use project library face refs, and we can copy AI frames + a brief. */
+  /** AI images, run did not use project library face refs, and we can copy AI frames + a brief. */
   const saveUgcCharacterCanApply =
-    contentFocusId === "ugc" &&
     useAiBackgroundsCarousel === true &&
     genOpts.use_ai_generate === true &&
+    carouselForGen !== "linkedin" &&
     !usedProjectFaceRefsOnRun &&
     hasGeneratedUgcBackdrops;
   const saveUgcCharacterDisabledHint = !saveUgcCharacterCanApply
-    ? contentFocusId !== "ugc"
-      ? "Set the project’s content style to Creator (UGC) under Project → Edit."
-      : !useAiBackgroundsCarousel
-        ? "This carousel didn’t use AI backgrounds (or they’re off). Generate with AI images on to capture a character lock."
-        : genOpts.use_ai_generate !== true
-          ? "Needs AI-generated backgrounds—stock or web images don’t store a character lock for this carousel."
+    ? !useAiBackgroundsCarousel
+      ? "This carousel didn’t use AI backgrounds (or they’re off). Generate with AI images on to capture a character lock."
+      : genOpts.use_ai_generate !== true
+        ? "Needs AI-generated backgrounds—stock or web images don’t store a character lock for this carousel."
+        : carouselForGen === "linkedin"
+          ? "LinkedIn carousels use stock images here—save character is for Instagram/TikTok-style AI runs."
           : usedProjectFaceRefsOnRun
             ? "This run used your project’s saved face photos already—nothing new to promote from the carousel."
             : !hasGeneratedUgcBackdrops

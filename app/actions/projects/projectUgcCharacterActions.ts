@@ -2,7 +2,6 @@
 
 import { revalidatePath } from "next/cache";
 import { buildDeterministicUgcSeriesBriefForSave } from "@/lib/server/ai/carouselSeriesVisualConsistency";
-import { normalizeContentFocusId } from "@/lib/server/ai/projectContentFocus";
 import { getUser } from "@/lib/server/auth/getUser";
 import { UGC_CHARACTER_BRIEF_MAX_CHARS } from "@/lib/constants";
 import { getCarousel } from "@/lib/server/db/carousels";
@@ -24,7 +23,7 @@ export async function updateProjectUseSavedUgcCharacter(
 }
 
 /**
- * Saves the carousel’s UGC character lock to the project: text brief + a few AI slide images
+ * Saves the carousel’s recurring character lock to the project: text brief + a few AI slide images
  * copied into library as face references (when this run did not use the project’s saved face refs).
  */
 export async function saveUgcCharacterBriefFromCarousel(
@@ -34,10 +33,6 @@ export async function saveUgcCharacterBriefFromCarousel(
   const { user } = await getUser();
   const project = await getProject(user.id, projectId);
   if (!project) return { ok: false, error: "Project not found" };
-
-  if (normalizeContentFocusId(project.content_focus) !== "ugc") {
-    return { ok: false, error: "This project is not set to Creator (UGC) style." };
-  }
 
   const carousel = await getCarousel(user.id, carouselId);
   if (!carousel || carousel.project_id !== projectId) {

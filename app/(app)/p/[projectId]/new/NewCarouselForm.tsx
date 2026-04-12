@@ -151,9 +151,8 @@ export function NewCarouselForm({
   defaultLinkedInTemplateId = null,
   defaultLinkedInTemplateConfig = null,
   primaryColor = "#0a0a0a",
-  /** Project content style — UGC unlocks “use saved character” for AI generate. */
   projectContentFocus = "general",
-  /** Persisted project preference: apply saved UGC character brief + avatar when generating. */
+  /** Persisted project preference: apply saved recurring character (brief + face refs) when generating with AI images. */
   initialUseSavedUgcCharacter = true,
 }: {
   projectId: string;
@@ -186,7 +185,7 @@ export function NewCarouselForm({
   initialNotes?: string;
   /** Per-run style reference asset IDs when regenerating (merged with project refs for AI generate). */
   initialAiStyleReferenceAssetIds?: string[];
-  /** Per-run UGC character refs (used when "Same person from project" is off). */
+  /** Per-run character refs (used when “Same character from project” is off). */
   initialUgcCharacterReferenceAssetIds?: string[];
   /** Product / app / service refs (LLM + image-to-image when using AI generate). */
   initialProductReferenceAssetIds?: string[];
@@ -539,15 +538,13 @@ export function NewCarouselForm({
       if (imageSource === "ai_generate" && canUseAiGenerate && carouselFor !== "linkedin") {
         formData.set("use_ai_generate", "true");
         formData.set("ai_style_reference_asset_ids", JSON.stringify(aiStyleRefIds));
-        if (projectContentFocus === "ugc" && !useSavedUgcCharacter && ugcCharacterRefIds.length > 0) {
+        if (!useSavedUgcCharacter && ugcCharacterRefIds.length > 0) {
           formData.set("ugc_character_reference_asset_ids", JSON.stringify(ugcCharacterRefIds));
         }
       }
+      formData.set("use_saved_ugc_character", useSavedUgcCharacter ? "true" : "false");
       if (productRefIds.length > 0) {
         formData.set("product_reference_asset_ids", JSON.stringify(productRefIds));
-      }
-      if (projectContentFocus === "ugc") {
-        formData.set("use_saved_ugc_character", useSavedUgcCharacter ? "true" : "false");
       }
       formData.set("carousel_for", carouselFor);
       if (useWebSearch) formData.set("use_web_search", "true");
@@ -908,9 +905,11 @@ export function NewCarouselForm({
                     );
                   })}
                 </div>
-                {projectContentFocus === "ugc" && carouselFor !== "linkedin" && imageSource === "ai_generate" && canUseAiGenerate && (
+                {carouselFor !== "linkedin" && imageSource === "ai_generate" && canUseAiGenerate && (
                   <p className="rounded-md border border-border/70 bg-muted/25 px-3 py-2 text-[11px] text-muted-foreground">
-                    Same face across slides? Turn on <span className="font-medium text-foreground">Same person from project</span> below (face refs in Project → Edit) or pick a new character below.
+                    Same face across slides? Turn on{" "}
+                    <span className="font-medium text-foreground">Same character from project</span> below (Project → Edit)
+                    or pick one-off character refs here.
                   </p>
                 )}
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
@@ -928,39 +927,38 @@ export function NewCarouselForm({
                 </div>
                 {imageSource === "ai_generate" && canUseAiGenerate && carouselFor !== "linkedin" && (
                   <div className="rounded-lg border border-border/60 bg-muted/15 px-3 py-3 space-y-3">
-                    {projectContentFocus === "ugc" && (
-                      <div className="space-y-1">
-                        <label className="flex items-start gap-2.5 cursor-pointer group">
-                          <input
-                            type="checkbox"
-                            checked={useSavedUgcCharacter}
-                            onChange={async (e) => {
-                              const checked = e.target.checked;
-                              const prev = useSavedUgcCharacter;
-                              setUgcCharacterPrefError(null);
-                              setUseSavedUgcCharacter(checked);
-                              const r = await updateProjectUseSavedUgcCharacter(projectId, checked);
-                              if (!r.ok) {
-                                setUseSavedUgcCharacter(prev);
-                                setUgcCharacterPrefError(r.error);
-                              }
-                            }}
-                            className="mt-0.5 rounded border-input accent-primary size-4 shrink-0"
-                          />
-                          <span className="text-sm leading-snug">
-                            <span className="font-medium text-foreground group-hover:text-foreground/90">
-                              Same person from project
-                            </span>
-                            <span className="block text-[11px] text-muted-foreground mt-0.5">
-                              Uses lock + face refs from Project → Edit. Off = one-off. Saved per project.
-                            </span>
+                    <div className="space-y-1">
+                      <label className="flex items-start gap-2.5 cursor-pointer group">
+                        <input
+                          type="checkbox"
+                          checked={useSavedUgcCharacter}
+                          onChange={async (e) => {
+                            const checked = e.target.checked;
+                            const prev = useSavedUgcCharacter;
+                            setUgcCharacterPrefError(null);
+                            setUseSavedUgcCharacter(checked);
+                            const r = await updateProjectUseSavedUgcCharacter(projectId, checked);
+                            if (!r.ok) {
+                              setUseSavedUgcCharacter(prev);
+                              setUgcCharacterPrefError(r.error);
+                            }
+                          }}
+                          className="mt-0.5 rounded border-input accent-primary size-4 shrink-0"
+                        />
+                        <span className="text-sm leading-snug">
+                          <span className="font-medium text-foreground group-hover:text-foreground/90">
+                            Same character from project
                           </span>
-                        </label>
-                        {ugcCharacterPrefError && (
-                          <p className="text-xs text-destructive pl-7">{ugcCharacterPrefError}</p>
-                        )}
-                      </div>
-                    )}
+                          <span className="block text-[11px] text-muted-foreground mt-0.5">
+                            Uses recurring character notes + face refs from Project → Edit. Off = pick different refs below
+                            for this run only. Saved per project.
+                          </span>
+                        </span>
+                      </label>
+                      {ugcCharacterPrefError && (
+                        <p className="text-xs text-destructive pl-7">{ugcCharacterPrefError}</p>
+                      )}
+                    </div>
                     <p className="text-xs font-medium text-foreground">References (optional)</p>
                     <p className="text-[11px] text-muted-foreground leading-snug">
                       Up to{" "}
@@ -983,9 +981,7 @@ export function NewCarouselForm({
                           size="sm"
                           className="h-8 text-xs"
                           onClick={() => setCharacterRefPickerOpen(true)}
-                          disabled={
-                            (projectContentFocus === "ugc" && useSavedUgcCharacter) || maxUgcCharacterPick === 0
-                          }
+                          disabled={useSavedUgcCharacter || maxUgcCharacterPick === 0}
                         >
                           <ImageIcon className="mr-1.5 size-3.5" />
                           {ugcCharacterRefIds.length
@@ -999,7 +995,7 @@ export function NewCarouselForm({
                             size="sm"
                             className="h-8 text-xs text-muted-foreground"
                             onClick={() => setUgcCharacterRefIds([])}
-                            disabled={projectContentFocus === "ugc" && useSavedUgcCharacter}
+                            disabled={useSavedUgcCharacter}
                           >
                             Clear
                           </Button>
@@ -1377,7 +1373,7 @@ export function NewCarouselForm({
           allowEmptyConfirm
           contextProjectId={projectId}
           dialogTitle="Character references"
-          dialogDescription={`Select up to ${maxUgcCharacterPick} images of the same person (${MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS} max combined with style + product).`}
+          dialogDescription={`Select up to ${maxUgcCharacterPick} images of the same character (${MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS} max combined with style + product).`}
         />
         <BackgroundImagesPickerModal
           open={productRefPickerOpen}

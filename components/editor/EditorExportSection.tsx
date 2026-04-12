@@ -169,8 +169,6 @@ export function EditorExportSection({
   const router = useRouter();
   const [localExportFormat, setLocalExportFormat] = useState<ExportFormat>(exportFormat);
   const [localExportSize, setLocalExportSize] = useState<ExportSize>(exportSize);
-  /** When true, ZIP/PDF raster uses gradient + tint on image backgrounds (matches editor). */
-  const [imageOverlayOnExport, setImageOverlayOnExport] = useState(true);
   const [updatingExportSettings, setUpdatingExportSettings] = useState(false);
 
   useEffect(() => {
@@ -231,9 +229,7 @@ export function EditorExportSection({
   const [videoDownloadError, setVideoDownloadError] = useState<string | null>(null);
   const [captionPosition, setCaptionPosition] = useState<CaptionPosition>("safe_lower");
   const [withCaption, setWithCaption] = useState(false);
-  /** When true, video background layer includes the same dim/gradient as the editor. */
-  const [imageOverlayOnVideo, setImageOverlayOnVideo] = useState(true);
-  /** When true, video uses photos-only frames where applicable (per-slide meta or this global flag); captions turn off. */
+  /** When true, video uses photo-only frames (no on-slide text/chrome); per-slide meta can also set this. Captions turn off. Photo scrims are off for those slides. */
   const [photoCompositionOnlyOnVideo, setPhotoCompositionOnlyOnVideo] = useState(false);
   const [zipDownloading, setZipDownloading] = useState(false);
   const [withVoiceover, setWithVoiceover] = useState(true);
@@ -273,7 +269,7 @@ export function EditorExportSection({
     if (photoCompositionOnlyOnVideo) setWithCaption(false);
   }, [photoCompositionOnlyOnVideo]);
 
-  // Changing format, overlay, or voice/caption settings invalidates the generated video; user must regenerate
+  // Changing format, photos-only mode, or voice/caption settings invalidates the generated video; user must regenerate
   useEffect(() => {
     if (generatedVideoUrl) {
       setGeneratedVideoUrl(null);
@@ -286,7 +282,6 @@ export function EditorExportSection({
     captionPosition,
     selectedVoiceId,
     voiceSpeed,
-    imageOverlayOnVideo,
     photoCompositionOnlyOnVideo,
   ]);
 
@@ -294,7 +289,7 @@ export function EditorExportSection({
     setSlideUrls([]);
     setSlideVideoData(null);
     videoRenderRunIdRef.current = null;
-  }, [imageOverlayOnVideo, photoCompositionOnlyOnVideo]);
+  }, [photoCompositionOnlyOnVideo]);
 
   /** Clean up stored export files when user navigates away or after delay. */
   const cleanupExportStorageRef = useRef<{ exportId: string; timeoutId: ReturnType<typeof setTimeout> } | null>(null);
@@ -309,7 +304,7 @@ export function EditorExportSection({
       const res = await fetch(`/api/export/${carouselId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image_overlay: imageOverlayOnExport }),
+        body: JSON.stringify({ image_overlay: true }),
       });
       const contentType = res.headers.get("content-type") ?? "";
       if (!res.ok) {
@@ -390,7 +385,7 @@ export function EditorExportSection({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            image_overlay: imageOverlayOnVideo,
+            image_overlay: true,
             photo_composition_only: photoCompositionOnlyOnVideo,
           }),
         });
@@ -611,23 +606,6 @@ export function EditorExportSection({
             </SelectContent>
           </Select>
         </div>
-        <div className="flex items-center gap-2 pt-1 sm:pt-0 sm:items-end">
-          <input
-            type="checkbox"
-            id="export-image-overlay"
-            checked={imageOverlayOnExport}
-            onChange={(e) => setImageOverlayOnExport(e.target.checked)}
-            disabled={!isPro || disabled || updatingExportSettings || exporting}
-            className="rounded border-input accent-primary"
-          />
-          <Label
-            htmlFor="export-image-overlay"
-            className="text-sm font-medium cursor-pointer leading-snug max-w-[220px]"
-            title="When off, exported image slides show the photo without the darkening gradient or tint (text and template chrome stay on)."
-          >
-            Overlay on photos
-          </Label>
-        </div>
       </div>
       {localExportFormat === "pdf" && (
         <p className="text-muted-foreground text-xs mb-3 max-w-xl">
@@ -765,23 +743,6 @@ export function EditorExportSection({
                     <div className="flex items-center gap-2">
                       <input
                         type="checkbox"
-                        id="video-image-overlay"
-                        checked={imageOverlayOnVideo}
-                        onChange={(e) => setImageOverlayOnVideo(e.target.checked)}
-                        disabled={videoDownloading || photoCompositionOnlyOnVideo}
-                        className="rounded border-input accent-primary"
-                      />
-                      <Label
-                        htmlFor="video-image-overlay"
-                        className={`text-sm font-medium cursor-pointer ${photoCompositionOnlyOnVideo ? "text-muted-foreground" : ""}`}
-                        title="When off, the video background is the raw photo (no dim gradient). Disabled when Photos only is on."
-                      >
-                        Photo overlay
-                      </Label>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
                         id="video-photo-composition-only"
                         checked={photoCompositionOnlyOnVideo}
                         onChange={(e) => setPhotoCompositionOnlyOnVideo(e.target.checked)}
@@ -791,7 +752,7 @@ export function EditorExportSection({
                       <Label
                         htmlFor="video-photo-composition-only"
                         className="text-sm font-medium cursor-pointer"
-                        title="Slides with a photo export as image-only (no on-slide text, chrome, or shapes). Captions turn off. PiP layout is kept."
+                        title="When on, slides with a photo render as the photo only—no on-slide text, chrome, or shapes, and no dimming gradient on the image. Captions turn off. PiP layout is kept. When off, full slides match the editor (including photo overlay)."
                       >
                         Photos only
                       </Label>

@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { useForm, useWatch, type Resolver } from "react-hook-form";
+import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { updateProject } from "@/app/actions/projects/updateProject";
@@ -96,8 +96,6 @@ export function ProjectEditForm({
     resolver: zodResolver(projectFormSchema) as Resolver<ProjectFormInput>,
     defaultValues,
   });
-
-  const contentFocus = useWatch({ control: form.control, name: "content_focus" });
 
   async function onSubmit(data: ProjectFormInput) {
     setSubmitError(null);
@@ -280,13 +278,11 @@ export function ProjectEditForm({
             </FormItem>
           )}
         />
-        {contentFocus === "ugc" && (
-          <UgcProjectCharacterSection
-            control={form.control}
-            maxAvatarAssets={maxUgcAvatarReferenceAssets}
-            onOpenAvatarPicker={() => setUgcAvatarPickerOpen(true)}
-          />
-        )}
+        <UgcProjectCharacterSection
+          control={form.control}
+          maxAvatarAssets={maxUgcAvatarReferenceAssets}
+          onOpenAvatarPicker={() => setUgcAvatarPickerOpen(true)}
+        />
         <p className="text-muted-foreground text-xs">Default number of frames per carousel is set when you create a new carousel.</p>
         {isAdmin && (
           <div className="space-y-2">
@@ -481,7 +477,7 @@ export function ProjectEditForm({
           allowEmptyConfirm
           contextProjectId={projectId}
           dialogTitle="Face & body references"
-          dialogDescription={`Same person only — up to ${maxUgcAvatarReferenceAssets} library photos (angles, distances, expressions). Used with AI-generated backgrounds when “Same person from project” is on.`}
+          dialogDescription={`Same character only — up to ${maxUgcAvatarReferenceAssets} library photos (angles, distances, expressions). Used for AI-generated backgrounds when “Same character from project” is on (Instagram / TikTok).`}
         />
 
         <div className="flex gap-4">

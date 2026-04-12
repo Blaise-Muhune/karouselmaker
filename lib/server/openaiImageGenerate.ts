@@ -65,6 +65,11 @@ export type ImagePromptContext = {
    */
   ugcReferenceImageBuffers?: Buffer[];
   /**
+   * UGC carousel generation: previous slide’s output (JPEG). Appended after library UGC refs in `images.edit`
+   * (within the 8-image cap) so slide N+1 matches slide N’s person.
+   */
+  ugcCarouselChainFaceBuffer?: Buffer;
+  /**
    * Product / app / service reference images (JPEG/PNG bytes). Combined with UGC refs for `images.edit` (cap 8 total);
    * UGC images are listed first in the multimodal request.
    */
@@ -472,7 +477,7 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
   const ugcLock = context?.ugcCharacterLock?.trim();
   if (ugcLock) {
     parts.push(
-      `Recurring creator / person lock (mandatory when a person appears): same identity every slide—face shape, features, hairstyle (cut, length, texture, part, hairline, color) as a high-priority anchor, skin tone, body type, age read, recurring casual wardrobe (same garment colors/types and dress level), jewelry and accessories (watch, earrings, necklace, glasses) when visible, and stable look for any recurring partner or friend in the story. For one continuous day or outing in the carousel, do not randomize outfit, hair, or companions between slides unless notes or slide text signal a change. Do not drift to a different model. Vary pose, expression, framing, and background. ${truncateForContext(ugcLock, 480)}`
+      `Recurring character / person lock (mandatory when a person appears): same identity every slide—face shape, features, hairstyle (cut, length, texture, part, hairline, color) as a high-priority anchor, skin tone, body type, age read, recurring casual wardrobe (same garment colors/types and dress level), jewelry and accessories (watch, earrings, necklace, glasses) when visible, and stable look for any recurring partner or friend in the story. For one continuous day or outing in the carousel, do not randomize outfit, hair, or companions between slides unless notes or slide text signal a change. Do not drift to a different model. Vary pose, expression, framing, and background. ${truncateForContext(ugcLock, 480)}`
     );
   }
 
@@ -594,7 +599,7 @@ function aspectToOpenAISize(aspect: "1:1" | "4:5" | "9:16" | "2:3" | "16:9"): "1
 
 /** Prepended when using images.edit with UGC reference photos (multimodal identity conditioning). */
 const UGC_IMAGE_EDIT_PREFIX =
-  "The attached image(s) are reference photos of the recurring creator. Preserve their facial identity, hairstyle (cut/length/texture/part/hairline), hair color, skin tone, and approximate build. **Lighting:** default **neutral** illumination for the new scene—do not force an orange or heavy warm cast unless the described setting or the references’ grading clearly warrant it (creators often re-grade in edit). Generate one NEW photograph for the scene below—fresh, interesting phone-native framing vs the references (distance, angle, POV), not a crop or collage of the uploads; still believable handheld candor, not cinematic crane/glam hero or synthetic stock staging. **Avoid hyper-convenient staging:** do not depict unlikely moments as if professionally set up; when the scene implies something fleeting or awkward, a believable adjacent moment (reaction, environment, after) is better than literal perfection. Often face-visible but not every output needs razor-sharp facial detail—soft focus and casual framing are OK. Back-of-head or over-shoulder are fine when they read as a real post. Do not add tattoos by default; only include tattoos if explicitly requested in notes or clearly present in the provided references. Match iPhone-main-camera realism (natural grain, soft detail, believable light)—not a beauty-app portrait, CGI avatar, or glossy render unless notes request production polish. ";
+  "The attached image(s) are reference photos of the recurring character. Preserve their facial identity, hairstyle (cut/length/texture/part/hairline), hair color, skin tone, and approximate build. **Lighting:** default **neutral** illumination for the new scene—do not force an orange or heavy warm cast unless the described setting or the references’ grading clearly warrant it (creators often re-grade in edit). Generate one NEW photograph for the scene below—fresh, interesting phone-native framing vs the references (distance, angle, POV), not a crop or collage of the uploads; still believable handheld candor, not cinematic crane/glam hero or synthetic stock staging. **Avoid hyper-convenient staging:** do not depict unlikely moments as if professionally set up; when the scene implies something fleeting or awkward, a believable adjacent moment (reaction, environment, after) is better than literal perfection. Often face-visible but not every output needs razor-sharp facial detail—soft focus and casual framing are OK. Back-of-head or over-shoulder are fine when they read as a real post. Do not add tattoos by default; only include tattoos if explicitly requested in notes or clearly present in the provided references. Match iPhone-main-camera realism (natural grain, soft detail, believable light)—not a beauty-app portrait, CGI avatar, or glossy render unless notes request production polish. ";
 
 /** When product refs are attached after UGC refs in the same `images.edit` call. */
 const PRODUCT_I2I_AFTER_UGC =
@@ -606,32 +611,45 @@ const PRODUCT_I2I_PREFIX_ALONE =
 
 const MAX_EDIT_REFERENCE_IMAGES = 8;
 
+/** When the last UGC attachment is the previous slide JPEG from the same carousel run. */
+const UGC_IMAGE_EDIT_CHAIN_SLIDE_SUFFIX =
+  " The final character reference image may be the immediately previous slide from this same carousel—treat it as the **same person** as in the earlier reference photo(s): same face shape, features, hairstyle, skin tone, and build. Do not introduce a different actor. ";
+
 function combineImageEditReferenceBuffers(context?: ImagePromptContext): {
   buffers: Buffer[];
   ugcCount: number;
   productCount: number;
   hasRegenerationBase: boolean;
+  carouselChainAppended: boolean;
 } {
   const regenRaw = context?.regenerationBaseImageBuffer;
   const hasRegen =
     Buffer.isBuffer(regenRaw) && regenRaw.length > 0 ? true : false;
   const maxPair = MAX_EDIT_REFERENCE_IMAGES - (hasRegen ? 1 : 0);
 
+  const chainRaw = context?.ugcCarouselChainFaceBuffer;
+  const hasChain = Buffer.isBuffer(chainRaw) && chainRaw.length > 0;
+  const reserveChainSlot = hasChain ? 1 : 0;
+
   const ugcRaw = context?.ugcReferenceImageBuffers ?? [];
   const ugcFiltered = ugcRaw.filter((b) => Buffer.isBuffer(b) && b.length > 0);
-  const ugcTake = ugcFiltered.slice(0, maxPair);
+  const maxForStaticUgc = Math.max(0, maxPair - reserveChainSlot);
+  const ugcTake = ugcFiltered.slice(0, maxForStaticUgc);
 
   const prodRaw = context?.productReferenceImageBuffers ?? [];
   const prodFiltered = prodRaw.filter((b) => Buffer.isBuffer(b) && b.length > 0);
-  const roomAfterUgc = Math.max(0, maxPair - ugcTake.length);
-  const productTake = prodFiltered.slice(0, roomAfterUgc);
+  const roomForProduct = Math.max(0, maxPair - ugcTake.length - reserveChainSlot);
+  const productTake = prodFiltered.slice(0, roomForProduct);
 
-  const buffers = [...ugcTake, ...productTake, ...(hasRegen ? [Buffer.from(regenRaw!)] : [])];
+  const ugcWithChain = hasChain ? [...ugcTake, Buffer.from(chainRaw!)] : ugcTake;
+
+  const buffers = [...ugcWithChain, ...productTake, ...(hasRegen ? [Buffer.from(regenRaw!)] : [])];
   return {
     buffers,
-    ugcCount: ugcTake.length,
+    ugcCount: ugcWithChain.length,
     productCount: productTake.length,
     hasRegenerationBase: hasRegen,
+    carouselChainAppended: hasChain,
   };
 }
 
@@ -644,12 +662,17 @@ const REGEN_FROM_CURRENT_FRAME_ALONE =
 function buildImageEditPromptPrefix(
   ugcCount: number,
   productCount: number,
-  hasRegenerationBase: boolean
+  hasRegenerationBase: boolean,
+  carouselChainAppended?: boolean
 ): string {
   let base = "";
   if (ugcCount > 0 && productCount > 0) base = UGC_IMAGE_EDIT_PREFIX + PRODUCT_I2I_AFTER_UGC;
   else if (ugcCount > 0) base = UGC_IMAGE_EDIT_PREFIX;
   else if (productCount > 0) base = PRODUCT_I2I_PREFIX_ALONE;
+
+  if (ugcCount > 0 && carouselChainAppended) {
+    base += UGC_IMAGE_EDIT_CHAIN_SLIDE_SUFFIX;
+  }
 
   if (hasRegenerationBase) {
     if (base) base += REGEN_FROM_CURRENT_FRAME_WITH_REFS;
@@ -690,8 +713,14 @@ export async function generateImageFromPrompt(
     ugcCount: editUgcCount,
     productCount: editProductCount,
     hasRegenerationBase: editHasRegenBase,
+    carouselChainAppended: editCarouselChainAppended,
   } = combineImageEditReferenceBuffers(options?.context);
-  const editPrefix = buildImageEditPromptPrefix(editUgcCount, editProductCount, editHasRegenBase);
+  const editPrefix = buildImageEditPromptPrefix(
+    editUgcCount,
+    editProductCount,
+    editHasRegenBase,
+    editCarouselChainAppended
+  );
   const useImageRefEdit = refBuffers.length > 0;
   const basePrompt = queryToPrompt(query, options?.context);
   const prompt = useImageRefEdit ? `${editPrefix}${basePrompt}` : basePrompt;

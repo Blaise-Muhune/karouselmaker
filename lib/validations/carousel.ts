@@ -32,7 +32,7 @@ export const generateCarouselInputSchema = z
   background_asset_ids: z.array(z.string().uuid()).max(30).optional(),
   /** Optional library assets to steer AI-generated image style for this run (merged with project refs). */
   ai_style_reference_asset_ids: uuidArray(REF_CAP),
-  /** Optional per-run UGC character refs. Used when project "same person" lock is off. */
+  /** Optional per-run character refs. Used when project “same character from project” is off. */
   ugc_character_reference_asset_ids: uuidArray(REF_CAP),
   /**
    * Product / app / service reference images (screenshots, packaging, product-on-person).

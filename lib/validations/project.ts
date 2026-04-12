@@ -54,7 +54,7 @@ export const projectFormSchema = z.object({
   content_focus: contentFocusEnum.default("general"),
   /** UGC: recurring “creator” visual lock for AI images (optional; auto-filled after first run). */
   ugc_character_brief: z.string().max(UGC_CHARACTER_BRIEF_MAX_CHARS).optional().default(""),
-  /** UGC: library images as face/body references — same person, multiple angles (optional). */
+  /** Recurring character: library face/body refs — same character, multiple angles (optional). */
   ugc_character_avatar_asset_ids: z
     .array(z.string().uuid())
     .max(MAX_UGC_AVATAR_REFERENCE_ASSETS)

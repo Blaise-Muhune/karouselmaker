@@ -42,9 +42,9 @@ export function SaveUgcCharacterFromCarouselButton({
                 </>
               ) : (
                 <>
-                  When a UGC carousel is built with <span className="text-foreground font-medium">AI images</span> and{" "}
-                  <span className="text-foreground font-medium">without</span> your project’s saved face photos, you can
-                  save that person here for reuse.
+                  When a carousel is built with <span className="text-foreground font-medium">AI images</span> (Instagram /
+                  TikTok) and <span className="text-foreground font-medium">without</span> your project’s saved face
+                  photos, you can save that character here for reuse.
                 </>
               )}
             </p>

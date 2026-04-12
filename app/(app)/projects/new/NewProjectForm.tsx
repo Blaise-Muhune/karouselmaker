@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useForm, useWatch, type Resolver } from "react-hook-form";
+import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useTransition } from "react";
 import Link from "next/link";
@@ -99,8 +99,6 @@ export function NewProjectForm({
       },
     },
   });
-
-  const contentFocus = useWatch({ control: form.control, name: "content_focus" });
 
   function onSubmit(data: ProjectFormInput) {
     const fd = new FormData();
@@ -295,13 +293,11 @@ export function NewProjectForm({
                 </FormItem>
               )}
             />
-            {contentFocus === "ugc" && (
-              <UgcProjectCharacterSection
-                control={form.control}
-                maxAvatarAssets={maxUgcAvatarReferenceAssets}
-                onOpenAvatarPicker={() => setUgcAvatarPickerOpen(true)}
-              />
-            )}
+            <UgcProjectCharacterSection
+              control={form.control}
+              maxAvatarAssets={maxUgcAvatarReferenceAssets}
+              onOpenAvatarPicker={() => setUgcAvatarPickerOpen(true)}
+            />
             <div className="space-y-2">
               <Label>Rules or context (optional)</Label>
               <p className="text-muted-foreground text-xs">
@@ -454,7 +450,7 @@ export function NewProjectForm({
           maxSelection={maxUgcAvatarReferenceAssets}
           allowEmptyConfirm
           dialogTitle="Face & body references"
-          dialogDescription={`Same person only — up to ${maxUgcAvatarReferenceAssets} library photos (angles, distances, expressions). Used with AI-generated backgrounds when “Same person from project” is on.`}
+          dialogDescription={`Same character only — up to ${maxUgcAvatarReferenceAssets} library photos (angles, distances, expressions). Used for AI-generated backgrounds when “Same character from project” is on (Instagram / TikTok).`}
         />
       </div>
     </div>

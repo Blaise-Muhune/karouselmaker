@@ -99,6 +99,12 @@ export async function regenerateSlideAiBackgroundForUser(params: {
 
   const contentFocusId = normalizeContentFocusId(project.content_focus);
   const applySavedUgcCharacter = genOpts.use_saved_ugc_character !== false;
+  const carouselForGen =
+    genOpts.carousel_for === "linkedin" || genOpts.carousel_for === "instagram"
+      ? (genOpts.carousel_for as "linkedin" | "instagram")
+      : undefined;
+  const aiCharacterPipelineActive =
+    genOpts.use_ai_generate === true && carouselForGen !== "linkedin";
   const projectRulesJson = project.project_rules as {
     rules?: string;
     do_rules?: string;
@@ -116,12 +122,11 @@ export async function regenerateSlideAiBackgroundForUser(params: {
       : "");
   const projectRulesForImages = appendContentFocusToProjectRules(projectRules, contentFocusId);
 
-  const ugcAvatarAssetIds =
-    contentFocusId === "ugc"
-      ? applySavedUgcCharacter
-        ? mergeProjectUgcAvatarAssetIds(project)
-        : ((genOpts.ugc_character_reference_asset_ids as string[] | undefined) ?? [])
-      : [];
+  const ugcAvatarAssetIds = aiCharacterPipelineActive
+    ? applySavedUgcCharacter
+      ? mergeProjectUgcAvatarAssetIds(project)
+      : ((genOpts.ugc_character_reference_asset_ids as string[] | undefined) ?? [])
+    : [];
   const ugcAvatarIdSet = new Set(ugcAvatarAssetIds);
   const productRefIdsForRun = (genOpts.product_reference_asset_ids as string[] | undefined) ?? [];
   const productRefIdSet = new Set(productRefIdsForRun);
@@ -137,7 +142,7 @@ export async function regenerateSlideAiBackgroundForUser(params: {
   const mergedStyleRefIds = mergeStyleReferenceAssetIds(carouselStyleRefIds, projectStyleRefIds);
 
   let ugcCharacterLock: string | undefined;
-  if (contentFocusId === "ugc") {
+  if (aiCharacterPipelineActive) {
     const lockParts: string[] = [];
     if (ugcAvatarAssetIds.length > 0) {
       const avatarSummary = await summarizeUgcAvatarReferencesForConsistency(params.userId, ugcAvatarAssetIds);
@@ -152,7 +157,7 @@ export async function regenerateSlideAiBackgroundForUser(params: {
   }
 
   let ugcReferenceImageBuffers: Buffer[] | undefined;
-  if (contentFocusId === "ugc" && ugcAvatarAssetIds.length > 0) {
+  if (aiCharacterPipelineActive && ugcAvatarAssetIds.length > 0) {
     const rawBufs = await loadUgcAvatarReferenceJpegBuffers(params.userId, ugcAvatarAssetIds);
     if (rawBufs.length > 0) ugcReferenceImageBuffers = rawBufs;
   }
