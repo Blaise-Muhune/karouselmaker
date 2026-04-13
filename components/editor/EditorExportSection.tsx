@@ -229,7 +229,7 @@ export function EditorExportSection({
   const [videoDownloadError, setVideoDownloadError] = useState<string | null>(null);
   const [captionPosition, setCaptionPosition] = useState<CaptionPosition>("safe_lower");
   const [withCaption, setWithCaption] = useState(false);
-  /** When true, video uses photo-only frames (no on-slide text/chrome); per-slide meta can also set this. Captions turn off. Photo scrims are off for those slides. */
+  /** When true, video uses photo-only frames (no on-slide text/chrome); per-slide meta can also set this. Photo scrims are off for those slides. */
   const [photoCompositionOnlyOnVideo, setPhotoCompositionOnlyOnVideo] = useState(false);
   const [zipDownloading, setZipDownloading] = useState(false);
   const [withVoiceover, setWithVoiceover] = useState(true);
@@ -264,10 +264,6 @@ export function EditorExportSection({
   useEffect(() => {
     if (!withVoiceover) setWithCaption(false);
   }, [withVoiceover]);
-
-  useEffect(() => {
-    if (photoCompositionOnlyOnVideo) setWithCaption(false);
-  }, [photoCompositionOnlyOnVideo]);
 
   // Changing format, photos-only mode, or voice/caption settings invalidates the generated video; user must regenerate
   useEffect(() => {
@@ -752,7 +748,7 @@ export function EditorExportSection({
                       <Label
                         htmlFor="video-photo-composition-only"
                         className="text-sm font-medium cursor-pointer"
-                        title="When on, slides with a photo render as the photo only—no on-slide text, chrome, or shapes, and no dimming gradient on the image. Captions turn off. PiP layout is kept. When off, full slides match the editor (including photo overlay)."
+                        title="When on, slides with a photo render as the photo only—no on-slide text, chrome, or shapes, and no dimming gradient on the image. PiP layout is kept. When off, full slides match the editor (including photo overlay)."
                       >
                         Photos only
                       </Label>
@@ -796,13 +792,13 @@ export function EditorExportSection({
                         type="checkbox"
                         id="with-caption"
                         checked={withCaption}
-                        disabled={!withVoiceover || videoDownloading || photoCompositionOnlyOnVideo}
+                        disabled={!withVoiceover || videoDownloading}
                         onChange={(e) => setWithCaption(e.target.checked)}
                         className="rounded border-input accent-primary disabled:opacity-50"
                       />
                       <Label
                         htmlFor="with-caption"
-                        className={`text-sm font-medium cursor-pointer ${!withVoiceover || photoCompositionOnlyOnVideo ? "text-muted-foreground" : ""}`}
+                        className={`text-sm font-medium cursor-pointer ${!withVoiceover ? "text-muted-foreground" : ""}`}
                       >
                         With caption
                       </Label>
@@ -861,7 +857,7 @@ export function EditorExportSection({
                             <SelectTrigger
                               id="caption-pos"
                               className="w-[160px]"
-                              disabled={videoDownloading || photoCompositionOnlyOnVideo}
+                              disabled={videoDownloading || !withCaption}
                             >
                               <SelectValue />
                             </SelectTrigger>

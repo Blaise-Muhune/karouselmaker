@@ -460,6 +460,7 @@ export async function generateCarousel(formData: FormData): Promise<
   }
   let useAiGenerate = requestedAiGenerate && (fullProFeatures || userIsAdmin);
   const requestedUseAiBackgrounds = !!data.use_ai_backgrounds;
+  const productRefIdsForRun = data.product_reference_asset_ids ?? [];
   /** UGC + Instagram/TikTok: stock and web images clash with creator-style backgrounds; require AI generate (or user turns AI images off). */
   if (
     contentFocusId === "ugc" &&
@@ -480,6 +481,31 @@ export async function generateCarousel(formData: FormData): Promise<
       if (aiCap > 0 && aiGenerateCount >= aiCap) {
         return {
           error: `This project uses creator (UGC) style and needs AI-generated backgrounds. You’ve used your ${aiCap} AI image carousels this month. Turn off AI images to use your library, or try again next month.`,
+        };
+      }
+    }
+    useAiGenerate = true;
+  }
+  /** Product references should use image-to-image for pixel fidelity when AI backgrounds are on. */
+  if (
+    productRefIdsForRun.length > 0 &&
+    requestedUseAiBackgrounds &&
+    carouselFor !== "linkedin" &&
+    !useAiGenerate
+  ) {
+    const eligible = userIsAdmin || fullProFeatures;
+    if (!eligible) {
+      return {
+        error:
+          "Product references require AI image-to-image for accurate product rendering. Upgrade (or use available trial runs), or remove product references.",
+      };
+    }
+    if (!userIsAdmin) {
+      const aiGenerateCount = await countAiGenerateCarouselsThisMonth(user.id);
+      const aiCap = limits.aiGenerateCarouselsPerMonth;
+      if (aiCap > 0 && aiGenerateCount >= aiCap) {
+        return {
+          error: `Product references require AI image-to-image. You’ve used your ${aiCap} AI image carousels this month. Remove product references or try again next month.`,
         };
       }
     }
@@ -507,7 +533,6 @@ export async function generateCarousel(formData: FormData): Promise<
   /** True when this run used project library face refs (not per-carousel one-off uploads). */
   const ugcUsedProjectAvatarRefs = projectUgcAvatarIdsForCarousel.length > 0;
 
-  const productRefIdsForRun = data.product_reference_asset_ids ?? [];
   let productReferenceSummary: string | undefined;
   if (productRefIdsForRun.length > 0) {
     productReferenceSummary = await summarizeProductReferenceImages(user.id, productRefIdsForRun);
@@ -791,6 +816,8 @@ export async function generateCarousel(formData: FormData): Promise<
   const backgroundsStart = now();
   /** Set when UGC + AI generate produced a series bible suitable for saving as project character lock. */
   let ugcSeriesCharacterBriefForCarousel: string | undefined;
+  /** True only when this run had an explicit single-character lock source (refs or saved brief). */
+  let ugcSingleCharacterModeForCarousel = false;
   try {
   if (parsed.data.background_asset_ids?.length && createdSlides.length) {
     const assetIds = parsed.data.background_asset_ids;
@@ -853,6 +880,8 @@ export async function generateCarousel(formData: FormData): Promise<
     const ugcBriefSaved = applySavedUgcCharacter
       ? ((project as { ugc_character_brief?: string | null }).ugc_character_brief?.trim() ?? "")
       : "";
+    const hasExplicitCharacterLockForRun =
+      aiCharacterPipelineActive && (ugcAvatarAssetIds.length > 0 || ugcBriefSaved.length > 0);
 
     const projectStyleRefIdsRaw =
       (project as { ai_style_reference_asset_ids?: string[] | null }).ai_style_reference_asset_ids ?? [];
@@ -911,6 +940,7 @@ export async function generateCarousel(formData: FormData): Promise<
         data.input_value?.trim(),
         validated.title?.trim()
       );
+      ugcSingleCharacterModeForCarousel = hasExplicitCharacterLockForRun && !preferPublicFigures;
       const chainedGeneratedFaceRefMode =
         contentFocusUsesChainedGeneratedFaceRef(contentFocusId) &&
         (userUploadedUgcRefBuffers?.length ?? 0) === 0 &&
@@ -1419,6 +1449,7 @@ export async function generateCarousel(formData: FormData): Promise<
     ...finalGenerationOptions,
     generation_complete: true,
     ai_backgrounds_pending: false,
+    ugc_single_character_mode: ugcSingleCharacterModeForCarousel,
     ...(ugcSeriesCharacterBriefForCarousel
       ? { ugc_series_character_brief: ugcSeriesCharacterBriefForCarousel }
       : {}),
@@ -1642,6 +1673,7 @@ export async function startCarouselGeneration(formData: FormData): Promise<
   const useAiBg = !!data.use_ai_backgrounds;
   const useStockRaw = !!parsed.data.use_stock_photos;
   let useAiGenStored = parsed.data.carousel_for !== "linkedin" && !!data.use_ai_generate;
+  const productRefIdsForStart = data.product_reference_asset_ids ?? [];
   const contentFocusStored = normalizeContentFocusId(project.content_focus);
   const carouselForStored =
     parsed.data.carousel_for === "linkedin" || parsed.data.carousel_for === "instagram"
@@ -1674,6 +1706,31 @@ export async function startCarouselGeneration(formData: FormData): Promise<
     }
   } else if (useAiBg && !useStockRaw && !useAiGenStored && (!hasFullAccess || parsed.data.carousel_for === "linkedin")) {
     useStockStored = true;
+  }
+  if (
+    productRefIdsForStart.length > 0 &&
+    useAiBg &&
+    carouselForStored !== "linkedin" &&
+    !useAiGenStored
+  ) {
+    const eligible = userIsAdmin || fullProFeatures;
+    if (!eligible) {
+      return {
+        error:
+          "Product references require AI image-to-image for accurate product rendering. Upgrade (or use available trial runs), or remove product references.",
+      };
+    }
+    if (!userIsAdmin) {
+      const aiGenerateCount = await countAiGenerateCarouselsThisMonth(user.id);
+      const aiCap = limits.aiGenerateCarouselsPerMonth;
+      if (aiCap > 0 && aiGenerateCount >= aiCap) {
+        return {
+          error: `Product references require AI image-to-image. You’ve used your ${aiCap} AI image carousels this month. Remove product references or try again next month.`,
+        };
+      }
+    }
+    useAiGenStored = true;
+    useStockStored = false;
   }
   const generationOptions: Record<string, unknown> = {
     use_ai_backgrounds: useAiBg,

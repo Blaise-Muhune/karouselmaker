@@ -355,6 +355,9 @@ export function NewProjectForm({
             )}
             <div className="space-y-2">
               <Label>Brand kit (optional)</Label>
+              <p className="text-muted-foreground text-xs">
+                Set your core colors, or use the image button once to pull both colors from your logo.
+              </p>
               <div className="grid gap-4 sm:grid-cols-2">
                 <FormField
                   control={form.control}
@@ -392,14 +395,6 @@ export function NewProjectForm({
                           value={field.value ?? ""}
                           onChange={field.onChange}
                           placeholder="#666666"
-                          onExtractFromLogo={(primary, secondary) => {
-                            form.setValue("brand_kit.primary_color", primary);
-                            form.setValue("brand_kit.secondary_color", secondary);
-                          }}
-                          onLogoUpload={async (file) => {
-                            setLogoFile(file);
-                            return null;
-                          }}
                         />
                       </FormControl>
                       <FormMessage />

@@ -647,11 +647,10 @@ function computeEditorAnchoredPanelPlacement(
   return { panelLeft, panelTop, panelWidth, panelMaxHeight };
 }
 
-/** All caps → lowercase; otherwise uppercase the whole string (length unchanged; highlights stay valid). */
-function toggleAllTextCase(text: string): string {
-  if (!text) return text;
-  const upper = text.toUpperCase();
-  return text === upper ? text.toLowerCase() : upper;
+function toggleTextTransformMode(
+  current: "uppercase" | "lowercase" | "none" | undefined
+): "uppercase" | "lowercase" {
+  return current === "uppercase" ? "lowercase" : "uppercase";
 }
 
 export function SlideEditForm({
@@ -1030,6 +1029,7 @@ export function SlideEditForm({
     align?: "left" | "center" | "right" | "justify";
     color?: string;
     fontFamily?: string;
+    textTransform?: "uppercase" | "lowercase" | "none";
     rotation?: number;
     /** Solid fill behind the zone text (export + preview). */
     boxBackgroundColor?: string;
@@ -2761,9 +2761,23 @@ export function SlideEditForm({
       }
       /** New signed URL: same storage path is upserted, so RSC refresh alone kept stale `imageUrls` from mount. */
       setBackgroundImageUrlForPreview(r.backgroundImageUrl);
-      setImageUrls((rows) =>
-        rows.length === 1 ? [{ ...rows[0]!, url: r.backgroundImageUrl }] : rows
-      );
+      setImageUrls((rows) => {
+        if (rows.length === 0) return rows;
+        const first = rows[0]!;
+        const previousUrl = first.url.trim();
+        const existingAlternates = (first.alternates ?? []).filter((u) => u.trim().length > 0);
+        const mergedAlternates = previousUrl && previousUrl !== r.backgroundImageUrl
+          ? [previousUrl, ...existingAlternates.filter((u) => u !== previousUrl)]
+          : existingAlternates;
+        return [
+          {
+            ...first,
+            url: r.backgroundImageUrl,
+            alternates: mergedAlternates,
+          },
+          ...rows.slice(1),
+        ];
+      });
       router.refresh();
     } finally {
       setAiRegenPending(false);
@@ -2993,8 +3007,36 @@ export function SlideEditForm({
     else alert(result.error ?? "Couldn't apply auto highlights to all slides.");
   };
 
-  /** Apply auto highlights (only if Auto is on for this slide) + current headline highlight style to all slides. */
+  /** Apply headline text styling block to all slides (layout/align/backdrop + highlights/bold/outline). */
   const handleApplyHeadlineHighlightStyleToAll = async () => {
+    // Keep headline layout/align/backdrop in sync first.
+    setApplyingHeadlineZone(true);
+    const sizeResult = await applyFontSizeToAllSlides(
+      slide.carousel_id,
+      { headline_font_size: headlineFontSize ?? defaultHeadlineSize },
+      editorPath,
+      applyScope
+    );
+    const effectiveHeadlineZone = { ...(effectiveHeadlineZoneBase ?? {}), ...(headlineZoneOverride ?? {}) } as ZoneOverride;
+    if (sizeResult.ok && Object.keys(effectiveHeadlineZone).length > 0) {
+      const zoneResult = await applyToAllSlides(
+        slide.carousel_id,
+        { meta: { headline_zone_override: effectiveHeadlineZone } },
+        editorPath,
+        applyScope
+      );
+      if (!zoneResult.ok) {
+        setApplyingHeadlineZone(false);
+        alert(zoneResult.error ?? "Couldn't apply headline layout to all slides.");
+        return;
+      }
+    } else if (!sizeResult.ok) {
+      setApplyingHeadlineZone(false);
+      alert(sizeResult.error ?? "Couldn't apply headline size to all slides.");
+      return;
+    }
+    setApplyingHeadlineZone(false);
+
     if (lastHeadlineHighlightAction === "auto") {
       setApplyingAutoHighlights(true);
       const colorForField = headlineHighlightColor;
@@ -3015,7 +3057,13 @@ export function SlideEditForm({
     setApplyingHighlightStyle(true);
     const styleResult = await applyToAllSlides(
       slide.carousel_id,
-      { meta: { headline_highlight_style: headlineHighlightStyle } },
+      {
+        meta: {
+          headline_highlight_style: headlineHighlightStyle,
+          headline_outline_stroke: headlineOutlineStroke,
+          ...(headlineBoldWeight !== 700 && { headline_bold_weight: headlineBoldWeight }),
+        },
+      },
       editorPath,
       { includeFirstSlide: true, includeLastSlide: true }
     );
@@ -3024,8 +3072,36 @@ export function SlideEditForm({
     else alert(styleResult.error ?? "Couldn't apply headline highlight style to all slides.");
   };
 
-  /** Apply auto highlights (only if Auto is on for this slide) + current body highlight style to all slides. */
+  /** Apply body text styling block to all slides (layout/align/backdrop + highlights/bold/outline). */
   const handleApplyBodyHighlightStyleToAll = async () => {
+    // Keep body layout/align/backdrop in sync first.
+    setApplyingBodyZone(true);
+    const sizeResult = await applyFontSizeToAllSlides(
+      slide.carousel_id,
+      { body_font_size: bodyFontSize ?? defaultBodySize },
+      editorPath,
+      applyScope
+    );
+    const effectiveBodyZone = { ...(effectiveBodyZoneBase ?? {}), ...(bodyZoneOverride ?? {}) } as ZoneOverride;
+    if (sizeResult.ok && Object.keys(effectiveBodyZone).length > 0) {
+      const zoneResult = await applyToAllSlides(
+        slide.carousel_id,
+        { meta: { body_zone_override: effectiveBodyZone } },
+        editorPath,
+        applyScope
+      );
+      if (!zoneResult.ok) {
+        setApplyingBodyZone(false);
+        alert(zoneResult.error ?? "Couldn't apply body layout to all slides.");
+        return;
+      }
+    } else if (!sizeResult.ok) {
+      setApplyingBodyZone(false);
+      alert(sizeResult.error ?? "Couldn't apply body size to all slides.");
+      return;
+    }
+    setApplyingBodyZone(false);
+
     if (lastBodyHighlightAction === "auto") {
       setApplyingAutoHighlights(true);
       const colorForField = bodyHighlightColor;
@@ -3046,7 +3122,13 @@ export function SlideEditForm({
     setApplyingHighlightStyle(true);
     const styleResult = await applyToAllSlides(
       slide.carousel_id,
-      { meta: { body_highlight_style: bodyHighlightStyle } },
+      {
+        meta: {
+          body_highlight_style: bodyHighlightStyle,
+          body_outline_stroke: bodyOutlineStroke,
+          ...(bodyBoldWeight !== 700 && { body_bold_weight: bodyBoldWeight }),
+        },
+      },
       editorPath,
       { includeFirstSlide: true, includeLastSlide: true }
     );
@@ -3089,20 +3171,28 @@ export function SlideEditForm({
   };
 
   const toggleHeadlineCase = useCallback(() => {
-    setHeadline((h) => {
-      const next = toggleAllTextCase(h);
-      setHeadlineHighlights((prev) => clampHighlightSpansToText(next, prev));
-      return next;
-    });
-  }, []);
+    setHeadlineZoneOverride((prev) => ({
+      ...(headlineZoneFromTemplate ?? {}),
+      ...(prev ?? {}),
+      textTransform: toggleTextTransformMode(
+        (prev?.textTransform ??
+          (headlineZoneFromTemplate as { textTransform?: "uppercase" | "lowercase" | "none" } | undefined)
+            ?.textTransform) as "uppercase" | "lowercase" | "none" | undefined
+      ),
+    }));
+  }, [headlineZoneFromTemplate]);
 
   const toggleBodyCase = useCallback(() => {
-    setBody((b) => {
-      const next = toggleAllTextCase(b);
-      setBodyHighlights((prev) => clampHighlightSpansToText(next, prev));
-      return next;
-    });
-  }, []);
+    setBodyZoneOverride((prev) => ({
+      ...(bodyZoneFromTemplate ?? {}),
+      ...(prev ?? {}),
+      textTransform: toggleTextTransformMode(
+        (prev?.textTransform ??
+          (bodyZoneFromTemplate as { textTransform?: "uppercase" | "lowercase" | "none" } | undefined)
+            ?.textTransform) as "uppercase" | "lowercase" | "none" | undefined
+      ),
+    }));
+  }, [bodyZoneFromTemplate]);
 
   /** Apply headline font size, position, layout, and text color to all slides. Uses effective zone (template + overrides) so color is always included. */
   const handleApplyHeadlineToAll = async () => {
@@ -3237,7 +3327,6 @@ export function SlideEditForm({
           },
         }),
         ...(hasMadeWithZone && { made_with_zone_override: { ...madeWithZoneOverride } }),
-        ...(madeWithText.trim() !== "" && { made_with_text: madeWithText.trim() }),
         headline_highlight_style: headlineHighlightStyle,
         body_highlight_style: bodyHighlightStyle,
         headline_outline_stroke: headlineOutlineStroke,
@@ -3281,6 +3370,12 @@ export function SlideEditForm({
         watermark: {
           ...templateConfig.chrome.watermark,
           enabled: showWatermark,
+          ...(watermarkZoneOverride?.position && { position: watermarkZoneOverride.position }),
+          ...(watermarkZoneOverride?.logoX != null && Number.isFinite(watermarkZoneOverride.logoX) && { logoX: Math.round(watermarkZoneOverride.logoX) }),
+          ...(watermarkZoneOverride?.logoY != null && Number.isFinite(watermarkZoneOverride.logoY) && { logoY: Math.round(watermarkZoneOverride.logoY) }),
+          ...(watermarkZoneOverride?.fontSize != null && Number.isFinite(watermarkZoneOverride.fontSize) && { fontSize: Math.round(watermarkZoneOverride.fontSize) }),
+          ...(watermarkZoneOverride?.maxWidth != null && Number.isFinite(watermarkZoneOverride.maxWidth) && { maxWidth: Math.round(watermarkZoneOverride.maxWidth) }),
+          ...(watermarkZoneOverride?.maxHeight != null && Number.isFinite(watermarkZoneOverride.maxHeight) && { maxHeight: Math.round(watermarkZoneOverride.maxHeight) }),
           ...(watermarkColorOverride && /^#([0-9A-Fa-f]{3}){1,2}$/.test(watermarkColorOverride) && { color: watermarkColorOverride }),
         },
       },
@@ -4282,9 +4377,9 @@ export function SlideEditForm({
                     ? (size, slotIndex = 0) =>
                         validImageCount < 2
                           ? setImageDisplay((d) => ({ ...d, pipSize: size }))
-                          : slotIndex === 0
-                            ? setImageDisplay((d) => ({ ...d, pipSize: size }))
-                            : setImageDisplay((d) => upsertImageDisplayPipSlot(d, slotIndex, validImageCount, { pipSize: size }))
+                          : setImageDisplay((d) =>
+                              upsertImageDisplayPipSlot(d, slotIndex, validImageCount, { pipSize: size })
+                            )
                     : undefined
                 }
                 onPipImageClick={(slot) => {
@@ -5212,9 +5307,9 @@ export function SlideEditForm({
                             ? (size, slotIndex = 0) =>
                                 validImageCount < 2
                                   ? setImageDisplay((d) => ({ ...d, pipSize: size }))
-                                  : slotIndex === 0
-                                    ? setImageDisplay((d) => ({ ...d, pipSize: size }))
-                                    : setImageDisplay((d) => upsertImageDisplayPipSlot(d, slotIndex, validImageCount, { pipSize: size }))
+                                  : setImageDisplay((d) =>
+                                      upsertImageDisplayPipSlot(d, slotIndex, validImageCount, { pipSize: size })
+                                    )
                             : undefined
                         }
                         onPipImageClick={(slot) => {
@@ -5532,11 +5627,11 @@ export function SlideEditForm({
                             <div className="grid grid-cols-2 gap-2">
                               <div className="min-w-0">
                                 <Label className="text-xs">X (px)</Label>
-                                <StepperWithLongPress value={watermarkZoneOverride?.logoX ?? templateConfig?.chrome?.watermark?.logoX ?? 24} min={0} max={1080} step={8} onChange={(v) => setWatermarkZoneOverride((o) => ({ ...o, logoX: v }))} label="X" className="w-full min-w-0" disabled={!showWatermark} />
+                                <StepperWithLongPress value={watermarkZoneOverride?.logoX ?? templateConfig?.chrome?.watermark?.logoX ?? 24} min={0} max={1080} step={8} onChange={(v) => setWatermarkZoneOverride((o) => ({ ...(o ?? {}), logoX: v, position: "custom" }))} label="X" className="w-full min-w-0" disabled={!showWatermark} />
                               </div>
                               <div className="min-w-0">
                                 <Label className="text-xs">Y (px)</Label>
-                                <StepperWithLongPress value={watermarkZoneOverride?.logoY ?? templateConfig?.chrome?.watermark?.logoY ?? 24} min={0} max={1080} step={8} onChange={(v) => setWatermarkZoneOverride((o) => ({ ...o, logoY: v }))} label="Y" className="w-full min-w-0" disabled={!showWatermark} />
+                                <StepperWithLongPress value={watermarkZoneOverride?.logoY ?? templateConfig?.chrome?.watermark?.logoY ?? 24} min={0} max={1080} step={8} onChange={(v) => setWatermarkZoneOverride((o) => ({ ...(o ?? {}), logoY: v, position: "custom" }))} label="Y" className="w-full min-w-0" disabled={!showWatermark} />
                               </div>
                             </div>
                             <div>
@@ -5899,8 +5994,8 @@ export function SlideEditForm({
                   className="h-8 min-w-8 px-2 text-xs font-semibold"
                   onClick={toggleHeadlineCase}
                   disabled={!headline}
-                  title="Uppercase all text, or lowercase if it is already all caps"
-                  aria-label="Toggle headline between uppercase and lowercase"
+                  title="Toggle headline case style (uppercase/lowercase)"
+                  aria-label="Toggle headline case style"
                 >
                   Aa
                 </Button>
@@ -5982,9 +6077,9 @@ export function SlideEditForm({
               <div className="border-t border-border/40 pt-3 space-y-4">
                 {totalSlides > 1 && (
                   <div className="flex justify-end">
-                    <Button type="button" variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground hover:text-foreground" onClick={handleApplyHeadlineHighlightStyleToAll} disabled={applyingHighlightStyle || applyingAutoHighlights} title="Apply Text/Bg highlight style to all slides. Auto highlights run on every slide only if Auto is on for this slide.">
+                    <Button type="button" variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground hover:text-foreground" onClick={handleApplyHeadlineHighlightStyleToAll} disabled={applyingHighlightStyle || applyingAutoHighlights || applyingHeadlineZone} title="Apply this whole text styling block to all slides: layout, align, highlights, bold, outline/stroke, and backdrop.">
                       {applyingHighlightStyle || applyingAutoHighlights ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
-                      Apply highlight style to all slides
+                      Apply to all
                     </Button>
                   </div>
                 )}
@@ -6411,7 +6506,7 @@ export function SlideEditForm({
               {editorTab === "text" && (
               <div className="border-t border-border/40 pt-3 mt-3 hidden">
                   <div className="space-y-2">
-                    <p className="text-[11px] text-muted-foreground">Select a word (or drag to select), then click a color. Or click Auto to highlight key words. Use “Apply color to all” to recolor all current highlights. Use “Apply highlight style to all slides” above to run highlight style on every frame.</p>
+                    <p className="text-[11px] text-muted-foreground">Select a word (or drag to select), then click a color. Or click Auto to highlight key words. Use “Apply color to all” to recolor all current highlights. Use “Apply to all” above to sync this whole text styling block on every frame.</p>
                     <div className="flex flex-wrap items-center gap-1.5">
                       <Button
                         type="button"
@@ -6557,8 +6652,8 @@ export function SlideEditForm({
                   className="h-8 min-w-8 px-2 text-xs font-semibold"
                   onClick={toggleBodyCase}
                   disabled={!body}
-                  title="Uppercase all text, or lowercase if it is already all caps"
-                  aria-label="Toggle body between uppercase and lowercase"
+                  title="Toggle body case style (uppercase/lowercase)"
+                  aria-label="Toggle body case style"
                 >
                   Aa
                 </Button>
@@ -6637,9 +6732,9 @@ export function SlideEditForm({
               <div className="border-t border-border/40 pt-3 space-y-4">
                 {totalSlides > 1 && (
                   <div className="flex justify-end">
-                    <Button type="button" variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground hover:text-foreground" onClick={handleApplyBodyHighlightStyleToAll} disabled={applyingHighlightStyle || applyingAutoHighlights} title="Apply Text/Bg highlight style to all slides. Auto highlights run on every slide only if Auto is on for this slide.">
+                    <Button type="button" variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground hover:text-foreground" onClick={handleApplyBodyHighlightStyleToAll} disabled={applyingHighlightStyle || applyingAutoHighlights || applyingBodyZone} title="Apply this whole text styling block to all slides: layout, align, highlights, bold, outline/stroke, and backdrop.">
                       {applyingHighlightStyle || applyingAutoHighlights ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
-                      Apply highlight style to all slides
+                      Apply to all
                     </Button>
                   </div>
                 )}
@@ -7064,7 +7159,7 @@ export function SlideEditForm({
               {editorTab === "text" && (
               <div className="border-t border-border/40 pt-3 mt-3 hidden">
                   <div className="space-y-2">
-                    <p className="text-[11px] text-muted-foreground">Select a word (or drag to select), then click a color. Or click Auto to highlight key words. Use “Apply color to all” to recolor all current highlights. Use “Apply highlight style to all slides” above to run highlight style on every frame.</p>
+                    <p className="text-[11px] text-muted-foreground">Select a word (or drag to select), then click a color. Or click Auto to highlight key words. Use “Apply color to all” to recolor all current highlights. Use “Apply to all” above to sync this whole text styling block on every frame.</p>
                     <div className="flex flex-wrap items-center gap-1.5">
                       <Button
                         type="button"

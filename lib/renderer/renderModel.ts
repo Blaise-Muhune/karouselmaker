@@ -145,6 +145,7 @@ const ZONE_NUMERIC_KEYS = [
   "boxBackgroundBorderRadius",
 ] as const;
 const ZONE_ALIGN_VALUES = new Set(["left", "center", "right", "justify"]);
+const ZONE_TEXT_TRANSFORM_VALUES = new Set(["none", "uppercase", "lowercase"]);
 
 /**
  * Normalize a single zone override so numeric fields are numbers (layout and wrap match export).
@@ -172,6 +173,9 @@ export function normalizeZoneOverrideSingle(
               : Math.round(n);
   }
   if (raw.align && ZONE_ALIGN_VALUES.has(raw.align as string)) out.align = raw.align;
+  if (raw.textTransform && ZONE_TEXT_TRANSFORM_VALUES.has(raw.textTransform as string)) {
+    out.textTransform = raw.textTransform;
+  }
   if (typeof raw.color === "string" && /^#([0-9A-Fa-f]{3}){1,2}$/.test(raw.color)) out.color = raw.color;
   if (typeof raw.fontFamily === "string" && raw.fontFamily.trim() !== "") out.fontFamily = raw.fontFamily.trim();
   if (typeof raw.boxBackgroundColor === "string" && /^#([0-9A-Fa-f]{3}){1,2}$/.test(raw.boxBackgroundColor.trim())) {

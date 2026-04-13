@@ -2589,6 +2589,7 @@ export function SlidePreview({
           fontSize,
           fontWeight: block.zone.fontWeight,
           lineHeight: block.zone.lineHeight,
+          textTransform: (block.zone as { textTransform?: CSSProperties["textTransform"] }).textTransform ?? "none",
           fontFamily: zoneFontFamily(block.zone),
           textAlign: effectiveAlign,
           textAlignLast: effectiveAlign === "justify" ? "justify" : undefined,

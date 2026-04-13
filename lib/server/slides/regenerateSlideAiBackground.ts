@@ -50,6 +50,12 @@ function primaryBackgroundStoragePath(bg: Record<string, unknown> | null | undef
   return undefined;
 }
 
+function toPersistableHttpUrl(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return /^https?:\/\//i.test(trimmed) ? trimmed : undefined;
+}
+
 export type RegenerateSlideAiBackgroundResult =
   | { ok: true; backgroundImageUrl: string }
   | { ok: false; error: string };
@@ -248,12 +254,33 @@ export async function regenerateSlideAiBackgroundForUser(params: {
   const newPath = await uploadGeneratedImage(params.userId, carousel.id, slide.id, genResult.buffer);
   if (!newPath) return { ok: false, error: "Failed to save the new image." };
 
+  const imageSlotsRaw = (bg as { images?: unknown[] } | null | undefined)?.images;
+  const firstImageSlot =
+    Array.isArray(imageSlotsRaw) && imageSlotsRaw.length > 0
+      ? (imageSlotsRaw[0] as Record<string, unknown>)
+      : undefined;
+  const previousPrimaryImage: Record<string, unknown> = {
+    ...(storagePath ? { storage_path: storagePath } : {}),
+    ...(toPersistableHttpUrl((bg as { image_url?: unknown } | null | undefined)?.image_url) ? { image_url: toPersistableHttpUrl((bg as { image_url?: unknown } | null | undefined)?.image_url) } : {}),
+    ...(toPersistableHttpUrl(firstImageSlot?.image_url) ? { image_url: toPersistableHttpUrl(firstImageSlot?.image_url) } : {}),
+    ...(typeof firstImageSlot?.source === "string" ? { source: firstImageSlot.source } : {}),
+    ...(firstImageSlot?.unsplash_attribution ? { unsplash_attribution: firstImageSlot.unsplash_attribution } : {}),
+    ...(firstImageSlot?.pixabay_attribution ? { pixabay_attribution: firstImageSlot.pixabay_attribution } : {}),
+    ...(firstImageSlot?.pexels_attribution ? { pexels_attribution: firstImageSlot.pexels_attribution } : {}),
+    alternates: [],
+  };
   const mergedBg: Record<string, unknown> = {
     ...(typeof bg === "object" && bg !== null ? bg : {}),
     mode: "image",
     storage_path: newPath,
     fit: (bg as { fit?: string }).fit ?? "cover",
-    images: undefined,
+    images:
+      storagePath && storagePath !== newPath
+        ? [
+            { storage_path: newPath, alternates: [] },
+            previousPrimaryImage,
+          ]
+        : [{ storage_path: newPath, alternates: [] }],
     image_url: undefined,
     asset_id: undefined,
     secondary_image_url: undefined,

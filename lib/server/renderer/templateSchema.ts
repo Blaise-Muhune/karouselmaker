@@ -25,6 +25,8 @@ const textZoneSchema = z.object({
   lineHeight: z.number().min(0.5).max(3),
   maxLines: z.number().int().min(1).max(30),
   align: z.enum(["left", "center", "right", "justify"]),
+  /** Optional text transform for zone content. */
+  textTransform: z.enum(["none", "uppercase", "lowercase"]).optional(),
   /** Optional text color (hex). When unset, uses contrasting color from background. */
   color: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
   /** Optional font family: "system", "Inter", "Georgia", or other safe web font. Rendered as font-family stack. */

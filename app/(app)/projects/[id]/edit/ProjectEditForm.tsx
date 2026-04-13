@@ -375,6 +375,9 @@ export function ProjectEditForm({
         </div>
         <div className="space-y-2">
           <FormLabel>Brand kit (optional)</FormLabel>
+          <p className="text-muted-foreground text-xs">
+            Set your core colors, or use the image button once to pull both colors from your logo.
+          </p>
           <div className="grid gap-4 sm:grid-cols-2">
             <FormField
               control={form.control}
@@ -390,6 +393,22 @@ export function ProjectEditForm({
                       onExtractFromLogo={(primary, secondary) => {
                         form.setValue("brand_kit.primary_color", primary);
                         form.setValue("brand_kit.secondary_color", secondary);
+                      }}
+                      onLogoUpload={async (file) => {
+                        setLogoUploading(true);
+                        try {
+                          const fd = new FormData();
+                          fd.set("logo", file);
+                          const result = await uploadProjectLogo(projectId, fd);
+                          if (result.ok) {
+                            form.setValue("brand_kit.logo_storage_path", result.storagePath);
+                            router.refresh();
+                            return result.storagePath;
+                          }
+                        } finally {
+                          setLogoUploading(false);
+                        }
+                        return null;
                       }}
                     />
                   </FormControl>
@@ -408,26 +427,6 @@ export function ProjectEditForm({
                           value={field.value ?? ""}
                           onChange={field.onChange}
                           placeholder="#666666"
-                          onExtractFromLogo={(primary, secondary) => {
-                            form.setValue("brand_kit.primary_color", primary);
-                            form.setValue("brand_kit.secondary_color", secondary);
-                          }}
-                          onLogoUpload={async (file) => {
-                            setLogoUploading(true);
-                            try {
-                              const fd = new FormData();
-                              fd.set("logo", file);
-                              const result = await uploadProjectLogo(projectId, fd);
-                              if (result.ok) {
-                                form.setValue("brand_kit.logo_storage_path", result.storagePath);
-                                router.refresh();
-                                return result.storagePath;
-                              }
-                            } finally {
-                              setLogoUploading(false);
-                            }
-                            return null;
-                          }}
                         />
                   </FormControl>
                   <FormMessage />

@@ -487,6 +487,8 @@ export function renderSlideHtml(
           const fontSize = Math.round(block.zone.fontSize * effectiveTextScale);
           const lineHeight = block.zone.lineHeight;
           const fontStack = getFontFamilyStack((block.zone as { fontFamily?: string }).fontFamily);
+          const textTransform =
+            ((block.zone as { textTransform?: "none" | "uppercase" | "lowercase" }).textTransform ?? "none");
           const zoneAlign = block.zone.align ?? "left";
           const rotation = (block.zone as { rotation?: number }).rotation ?? 0;
           const transformCss = rotation !== 0 ? `transform:rotate(${rotation}deg) translateZ(0);transform-origin:50% 50%;` : "";
@@ -531,7 +533,7 @@ export function renderSlideHtml(
               boxBackgroundBorderRadius?: number;
             }
           );
-          return `<div class="text-block" style="left:${block.zone.x}px;top:${block.zone.y}px;width:${block.zone.w}px;height:${block.zone.h}px;overflow:visible;font-size:${fontSize}px;font-weight:${block.zone.fontWeight};line-height:${lineHeight};text-align:${zoneAlign};${justifyCss}color:${escapeHtml(zoneColor)};font-family:${fontStack};z-index:5;${transformCss}${boxChrome}">${linesHtml}</div>`;
+          return `<div class="text-block" style="left:${block.zone.x}px;top:${block.zone.y}px;width:${block.zone.w}px;height:${block.zone.h}px;overflow:visible;font-size:${fontSize}px;font-weight:${block.zone.fontWeight};line-height:${lineHeight};text-transform:${textTransform};text-align:${zoneAlign};${justifyCss}color:${escapeHtml(zoneColor)};font-family:${fontStack};z-index:5;${transformCss}${boxChrome}">${linesHtml}</div>`;
         })
         .join("");
 

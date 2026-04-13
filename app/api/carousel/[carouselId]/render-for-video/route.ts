@@ -111,6 +111,7 @@ export async function POST(
 
   const backgroundData = await resolveSlideBackgroundUrls(slides);
   const resolvedVideoUrls: string[][] = [];
+  const effectivePhotoOnlyBySlide: boolean[] = [];
   for (let i = 0; i < slides.length; i++) {
     const raw = backgroundData[i]!.backgroundUrls;
     const urls: string[] = [];
@@ -174,6 +175,7 @@ export async function POST(
       const hasPhotoForSlide = slideBackgroundHasPhotoForExport(slideBg);
       const effectivePhotoOnly =
         (photoCompositionOnlyGlobal || slidePhotoMeta) && hasPhotoForSlide;
+      effectivePhotoOnlyBySlide[i] = effectivePhotoOnly;
       const backgroundOverrideForVideo = imageOverlay
         ? buildSlideBackgroundOverrideForRasterExport(
             slideBg,
@@ -420,6 +422,9 @@ export async function POST(
     const slideUrls = await Promise.all(
       slides.map((_, i) => getSignedImageUrl(BUCKET, paths.slidePath(i), SIGNED_URL_EXPIRES))
     );
+    const overlayUrls = await Promise.all(
+      slides.map((_, i) => getSignedImageUrl(BUCKET, paths.overlayPath(i), SIGNED_URL_EXPIRES))
+    );
     const slideVideoData = slides.map((_, i) => {
       const variantCount = resolvedVideoUrls[i]?.length ?? 0;
       const backgroundUrls =
@@ -430,7 +435,7 @@ export async function POST(
           : [slideUrls[i]!];
       return {
         backgroundUrls,
-        overlayUrl: null as string | null,
+        overlayUrl: effectivePhotoOnlyBySlide[i] ? null : (overlayUrls[i] ?? null),
       };
     });
 

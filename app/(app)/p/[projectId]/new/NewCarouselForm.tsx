@@ -408,6 +408,15 @@ export function NewCarouselForm({
   }, [ugcInstagramImagePolicy, useAiBackgrounds, imageSource]);
 
   useEffect(() => {
+    if (!useAiBackgrounds || carouselFor === "linkedin") return;
+    if (!canUseAiGenerate) return;
+    if (productRefIds.length === 0) return;
+    if (imageSource !== "ai_generate") {
+      setImageSource("ai_generate");
+    }
+  }, [useAiBackgrounds, carouselFor, canUseAiGenerate, productRefIds.length, imageSource]);
+
+  useEffect(() => {
     setUseSavedUgcCharacter(initialUseSavedUgcCharacter);
   }, [initialUseSavedUgcCharacter]);
 
@@ -489,8 +498,20 @@ export function NewCarouselForm({
       setError(`Notes are too long (max ${CAROUSEL_NOTES_MAX_CHARS.toLocaleString()} characters).`);
       return;
     }
-    const needsAiGenerateRefsSubmit =
-      useAiBackgrounds && imageSource === "ai_generate" && canUseAiGenerate && carouselFor !== "linkedin";
+    const shouldForceAiGenerateForProductRefs =
+      useAiBackgrounds && carouselFor !== "linkedin" && productRefIds.length > 0;
+    if (shouldForceAiGenerateForProductRefs && !canUseAiGenerate) {
+      setError(
+        "Product references use AI image-to-image for accuracy. Enable AI generate access (or remove product refs) to continue."
+      );
+      return;
+    }
+    const useAiGenerateThisRun =
+      useAiBackgrounds &&
+      carouselFor !== "linkedin" &&
+      canUseAiGenerate &&
+      (imageSource === "ai_generate" || shouldForceAiGenerateForProductRefs);
+    const needsAiGenerateRefsSubmit = useAiGenerateThisRun;
     if (needsAiGenerateRefsSubmit) {
       const allRefIds = [...aiStyleRefIds, ...ugcCharacterRefIds, ...productRefIds];
       const refDedupe = new Set(allRefIds);
@@ -534,8 +555,8 @@ export function NewCarouselForm({
       }
       if (backgroundAssetIds.length) formData.set("background_asset_ids", JSON.stringify(backgroundAssetIds));
       if (useAiBackgrounds || regenerateCarouselId) formData.set("use_ai_backgrounds", "true");
-      if (imageSource === "stock") formData.set("use_stock_photos", "true");
-      if (imageSource === "ai_generate" && canUseAiGenerate && carouselFor !== "linkedin") {
+      if (imageSource === "stock" && !useAiGenerateThisRun) formData.set("use_stock_photos", "true");
+      if (useAiGenerateThisRun) {
         formData.set("use_ai_generate", "true");
         formData.set("ai_style_reference_asset_ids", JSON.stringify(aiStyleRefIds));
         if (!useSavedUgcCharacter && ugcCharacterRefIds.length > 0) {
