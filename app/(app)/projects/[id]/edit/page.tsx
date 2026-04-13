@@ -73,7 +73,7 @@ export default async function EditProjectPage({
 
   return (
     <div className="p-6 md:p-8">
-      <div className="mx-auto max-w-xl space-y-6">
+      <div className="mx-auto w-full max-w-6xl space-y-6">
         <Breadcrumbs
           items={[
             { label: project.name, href: `/p/${project.id}` },

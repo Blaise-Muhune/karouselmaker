@@ -4128,7 +4128,7 @@ export function SlideEditForm({
   );
 
   const previewContent = (
-    <div className="flex flex-col rounded-xl border border-border/50 bg-muted/5 overflow-hidden">
+    <div className="flex flex-col rounded-xl border border-border/50 bg-muted/5 overflow-hidden max-lg:max-h-[calc(100dvh-7.5rem)]">
       {/* Top bar: Download (icon) + Save + Expand, and Slide/Size */}
       <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 border-b border-border/40 bg-card/30">
         <div className="flex items-center gap-2 min-w-0">
@@ -4228,7 +4228,7 @@ export function SlideEditForm({
         </div>
       </div>
       {/* Canvas with Prev / Next on sides */}
-      <div className="flex items-center justify-center gap-3 p-3">
+      <div className="flex flex-1 min-h-0 items-center justify-center gap-3 p-3 overflow-auto">
         {totalSlides > 1 ? (
           <Button
             type="button"
@@ -5449,7 +5449,7 @@ export function SlideEditForm({
       <div className="lg:flex lg:flex-1 lg:min-h-0 lg:overflow-hidden">
       <main
         ref={mainScrollRef}
-        className="relative z-10 flex-1 min-h-[min(36vh,320px)] lg:min-h-0 flex items-start justify-center p-4 lg:px-10 lg:py-8 bg-muted/20 overflow-visible order-1 max-lg:sticky max-lg:top-0 max-lg:z-30 max-lg:self-start max-lg:border-b max-lg:border-border/60 max-lg:bg-background max-lg:shadow-sm lg:overflow-hidden lg:order-2"
+        className="relative z-10 flex-1 min-h-[min(36vh,320px)] lg:min-h-0 flex items-start justify-center p-4 lg:px-10 lg:py-8 bg-muted/20 overflow-visible order-1 max-lg:border-b max-lg:border-border/60 max-lg:bg-background max-lg:shadow-sm lg:overflow-hidden lg:order-2"
       >
         <div className="w-full max-w-[760px] shrink-0">{previewContent}</div>
       </main>
