@@ -338,6 +338,7 @@ export type SlidePreviewProps = {
       pipX: number;
       pipY: number;
       zIndex: number;
+      pipEnabled: boolean;
     }>[];
     /** Single image: custom focal point X (0–100). Overrides position preset when set with imagePositionY. */
     imagePositionX?: number;
@@ -1634,24 +1635,34 @@ export function SlidePreview({
       {multiImages && imageDisplay?.mode === "pip" ? (
         (() => {
           const rawPipIndex = imageDisplay?.pipIndex;
-          const selectedPipIndex =
-            multiImages.length > 1 && typeof rawPipIndex === "number" && Number.isFinite(rawPipIndex)
-              ? Math.max(0, Math.min(multiImages.length - 1, Math.floor(rawPipIndex)))
-              : null;
-          const baseImageUrlMp =
-            selectedPipIndex != null
-              ? (multiImages.find((_, i) => i !== selectedPipIndex) ?? null)
-              : null;
-          const pipEntriesMp =
-            selectedPipIndex != null
-              ? [{ url: multiImages[selectedPipIndex]!, sourceIndex: selectedPipIndex }].filter((e) => Boolean(e.url))
-              : multiImages.map((url, i) => ({ url, sourceIndex: i }));
+          const pipEnabledSet = new Set<number>();
+          for (let i = 0; i < multiImages.length; i++) {
+            const slot = Array.isArray(imageDisplay?.pips)
+              ? (imageDisplay.pips[i] as { pipEnabled?: boolean } | undefined)
+              : undefined;
+            if (typeof slot?.pipEnabled === "boolean") {
+              if (slot.pipEnabled) pipEnabledSet.add(i);
+              continue;
+            }
+            if (multiImages.length > 1 && typeof rawPipIndex === "number" && Number.isFinite(rawPipIndex)) {
+              const idx = Math.max(0, Math.min(multiImages.length - 1, Math.floor(rawPipIndex)));
+              if (i === idx) pipEnabledSet.add(i);
+              continue;
+            }
+            if (i === 0) pipEnabledSet.add(i);
+          }
+          const pipEntriesMp = multiImages
+            .map((url, i) => ({ url, sourceIndex: i }))
+            .filter((e) => pipEnabledSet.has(e.sourceIndex));
+          const baseEntriesMp = multiImages
+            .map((url, i) => ({ url, sourceIndex: i }))
+            .filter((e) => !pipEnabledSet.has(e.sourceIndex));
           const pipDisplaySource =
-            selectedPipIndex != null && Array.isArray(imageDisplay.pips)
-              ? { ...imageDisplay, pips: [imageDisplay.pips[selectedPipIndex] ?? {}] }
+            Array.isArray(imageDisplay.pips) && pipEntriesMp.length > 0
+              ? { ...imageDisplay, pips: pipEntriesMp.map((e) => imageDisplay.pips?.[e.sourceIndex] ?? {}) }
               : imageDisplay;
           const layoutsMp = resolvePipLayoutsForImageCount(pipDisplaySource, pipEntriesMp.length);
-          if (!layoutsMp) return null;
+          if (!layoutsMp || pipEntriesMp.length === 0) return null;
           const pipBgColorMp = backgroundOverride?.color ?? model.background.backgroundColor;
           const pipBgStyleMp =
             backgroundOverride?.style === "pattern" &&
@@ -1670,9 +1681,9 @@ export function SlidePreview({
           return (
             <div className="absolute inset-0" style={{ zIndex: 0, isolation: "isolate" }}>
               <div className="absolute inset-0" style={{ ...pipBgStyleMp, zIndex: 0 }} />
-              {baseImageUrlMp && (
+              {baseEntriesMp.length === 1 && (
                 <img
-                  src={baseImageUrlMp}
+                  src={baseEntriesMp[0]!.url}
                   alt=""
                   referrerPolicy="no-referrer"
                   className="absolute inset-0 w-full h-full pointer-events-none"
@@ -1685,6 +1696,41 @@ export function SlidePreview({
                         : POSITION_TO_CSS[imageDisplay?.position ?? "top"],
                   }}
                 />
+              )}
+              {baseEntriesMp.length > 1 && (
+                <div className="absolute inset-0" style={{ zIndex: 0 }}>
+                  {baseEntriesMp.map(({ url, sourceIndex }, i) => {
+                    const slotRaw =
+                      Array.isArray(imageDisplay?.pips) && sourceIndex >= 0
+                        ? (imageDisplay!.pips![sourceIndex] as Record<string, unknown> | undefined)
+                        : undefined;
+                    const slotFit =
+                      slotRaw?.fit === "contain" || slotRaw?.fit === "cover"
+                        ? (slotRaw.fit as "cover" | "contain")
+                        : pipFitMp;
+                    const slotPos =
+                      typeof slotRaw?.imagePositionX === "number" && typeof slotRaw?.imagePositionY === "number"
+                        ? `${slotRaw.imagePositionX}% ${slotRaw.imagePositionY}%`
+                        : POSITION_TO_CSS[
+                            ((typeof slotRaw?.position === "string" ? slotRaw.position : imageDisplay?.position) ?? "top") as keyof typeof POSITION_TO_CSS
+                          ];
+                    return (
+                      <img
+                        key={`base-${sourceIndex}`}
+                        src={url}
+                        alt=""
+                        referrerPolicy="no-referrer"
+                        className="absolute h-full pointer-events-none"
+                        style={{
+                          left: `${(i * 100) / baseEntriesMp.length}%`,
+                          width: `${100 / baseEntriesMp.length}%`,
+                          objectFit: slotFit,
+                          objectPosition: slotPos,
+                        }}
+                      />
+                    );
+                  })}
+                </div>
               )}
               {pipEntriesMp.map(({ url, sourceIndex }, i) => {
                 const spec = layoutsMp[i]!;

@@ -292,6 +292,7 @@ export type ImageDisplayState = {
   pipIndex?: number;
   /** Multi-image PiP: optional per-slot overrides (index matches image slot order). */
   pips?: Partial<{
+    pipEnabled: boolean;
     position: "center" | "top" | "bottom" | "left" | "right" | "top-left" | "top-right" | "bottom-left" | "bottom-right";
     fit: "cover" | "contain";
     frame: "none" | "thin" | "medium" | "thick" | "chunky" | "heavy";
@@ -371,6 +372,7 @@ function mergeSelectedSlotVisualOverrides(
 ): Partial<ImageDisplayState> {
   const slot = d.pips?.[slotIndex] as
     | Partial<{
+        pipEnabled: boolean;
         position: ImageDisplayState["position"];
         fit: ImageDisplayState["fit"];
         frame: ImageDisplayState["frame"];
@@ -2280,6 +2282,7 @@ export function SlideEditForm({
         if (slot?.imagePositionX != null) o.imagePositionX = Math.min(100, Math.max(0, slot.imagePositionX));
         if (slot?.imagePositionY != null) o.imagePositionY = Math.min(100, Math.max(0, slot.imagePositionY));
         if (slot?.pipPosition != null) o.pipPosition = slot.pipPosition;
+        if (typeof slot?.pipEnabled === "boolean") o.pipEnabled = slot.pipEnabled;
         if (slot?.pipSize != null) o.pipSize = Math.min(1, Math.max(0.25, slot.pipSize));
         if (slot?.pipRotation != null) o.pipRotation = Math.min(180, Math.max(-180, slot.pipRotation));
         if (slot?.pipBorderRadius != null) o.pipBorderRadius = Math.min(72, Math.max(0, slot.pipBorderRadius));
@@ -4446,9 +4449,6 @@ export function SlideEditForm({
                 onPipImageClick={(slot) => {
                   const nextSlot = Math.min(Math.max(0, slot), Math.max(0, validImageCount - 1));
                   setBackgroundImageDisplaySlot(nextSlot);
-                  if ((imageDisplay.mode ?? "full") === "pip" && validImageCount > 1) {
-                    setImageDisplay((d) => ({ ...d, pipIndex: nextSlot }));
-                  }
                   if (editorTab !== "background") setEditorTab("background");
                 }}
                 positionAndSizeOnly
@@ -5390,9 +5390,6 @@ export function SlideEditForm({
                         onPipImageClick={(slot) => {
                           const nextSlot = Math.min(Math.max(0, slot), Math.max(0, validImageCount - 1));
                           setBackgroundImageDisplaySlot(nextSlot);
-                          if ((imageDisplay.mode ?? "full") === "pip" && validImageCount > 1) {
-                            setImageDisplay((d) => ({ ...d, pipIndex: nextSlot }));
-                          }
                           if (editorTab !== "background") setEditorTab("background");
                         }}
                         editToolbarHeadline={
@@ -7502,13 +7499,34 @@ export function SlideEditForm({
                             className="h-7 text-[10px] px-2"
                             onClick={() => {
                               setBackgroundImageDisplaySlot(i);
-                              if ((imageDisplay.mode ?? "full") === "pip" && validImageCount > 1) {
-                                setImageDisplay((d) => ({ ...d, pipIndex: i }));
-                              }
                             }}
                           >
                             Slot {i + 1} — Display
                           </Button>
+                          {(imageDisplay.mode ?? "full") === "pip" && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant={((imageDisplay.pips?.[i] as { pipEnabled?: boolean } | undefined)?.pipEnabled ?? (imageDisplay.pipIndex != null ? imageDisplay.pipIndex === i : i === 0))
+                                ? "secondary"
+                                : "outline"}
+                              className="h-7 text-[10px] px-2"
+                              onClick={() =>
+                                setImageDisplay((d) =>
+                                  upsertImageDisplayPipSlot(d, i, validImageCount, {
+                                    pipEnabled:
+                                      !(((d.pips?.[i] as { pipEnabled?: boolean } | undefined)?.pipEnabled ??
+                                        (d.pipIndex != null ? d.pipIndex === i : i === 0))),
+                                  })
+                                )
+                              }
+                            >
+                              {((imageDisplay.pips?.[i] as { pipEnabled?: boolean } | undefined)?.pipEnabled ??
+                                (imageDisplay.pipIndex != null ? imageDisplay.pipIndex === i : i === 0))
+                                ? "PiP on"
+                                : "PiP off"}
+                            </Button>
+                          )}
                         </div>
                       )}
                       <div className="flex gap-2 items-start">
@@ -7745,9 +7763,6 @@ export function SlideEditForm({
                             className="h-8 min-w-8 px-2.5 text-xs tabular-nums"
                             onClick={() => {
                               setBackgroundImageDisplaySlot(idx);
-                              if ((imageDisplay.mode ?? "full") === "pip" && validImageCount > 1) {
-                                setImageDisplay((d) => ({ ...d, pipIndex: idx }));
-                              }
                             }}
                           >
                             {idx + 1}
@@ -7768,7 +7783,6 @@ export function SlideEditForm({
                               ...d,
                               mode: v,
                               ...(v === "pip" && d.pipPosition == null ? { pipPosition: "bottom_right" as const, pipSize: 0.4 } : {}),
-                              ...(v === "pip" ? { pipIndex: Math.max(0, Math.min(validImageCount - 1, backgroundImageDisplaySlot)) } : {}),
                               ...(v === "full" ? { pips: undefined, pipShadow: undefined, pipIndex: undefined } : {}),
                             }));
                             if (v === "pip") setBackground((b) => ({ ...b, overlay: { ...b.overlay, tintOpacity: 0 } }));
@@ -7913,6 +7927,16 @@ export function SlideEditForm({
                               ...d,
                               mode: v,
                               ...(v === "pip" && d.pipPosition == null ? { pipPosition: "bottom_right" as const, pipSize: 0.4 } : {}),
+                              ...(v === "pip"
+                                ? {
+                                    pips: Array.from({ length: validImageCount }).map((_, idx) => ({
+                                      ...(d.pips?.[idx] ?? {}),
+                                      pipEnabled:
+                                        ((d.pips?.[idx] as { pipEnabled?: boolean } | undefined)?.pipEnabled ??
+                                          (d.pipIndex != null ? d.pipIndex === idx : idx === 0)),
+                                    })),
+                                  }
+                                : {}),
                               ...(v === "full" ? { pips: undefined, pipShadow: undefined } : {}),
                             }));
                             if (v === "pip") setBackground((b) => ({ ...b, overlay: { ...b.overlay, tintOpacity: 0 } }));
@@ -7923,7 +7947,7 @@ export function SlideEditForm({
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="full">Multi layout (grid / side by side)</SelectItem>
-                            <SelectItem value="pip">Picture-in-picture (selected image only)</SelectItem>
+                            <SelectItem value="pip">Picture-in-picture (per image)</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>

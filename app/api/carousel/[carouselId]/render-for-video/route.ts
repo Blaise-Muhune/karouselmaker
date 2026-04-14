@@ -40,6 +40,13 @@ const CONTENT_TIMEOUT_MS = 25000;
 const SELECTOR_TIMEOUT_MS = 30000;
 const SIGNED_URL_EXPIRES = 600;
 
+function normalizeStoragePathForBucket(path: string | undefined, bucket: string): string | undefined {
+  const trimmed = path?.trim().replace(/^\/+/, "");
+  if (!trimmed) return undefined;
+  const bucketPrefix = `${bucket}/`;
+  return trimmed.startsWith(bucketPrefix) ? trimmed.slice(bucketPrefix.length) : trimmed;
+}
+
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -205,7 +212,9 @@ export async function POST(
             if (img.image_url) urls.push(img.image_url);
             else if (img.storage_path) {
               try {
-                urls.push(await getSignedImageUrl(BUCKET, img.storage_path, 600));
+                const path = normalizeStoragePathForBucket(img.storage_path, BUCKET);
+                if (!path) continue;
+                urls.push(await getSignedImageUrl(BUCKET, path, 600));
               } catch {
                 // skip
               }
@@ -217,7 +226,8 @@ export async function POST(
           backgroundImageUrl = slideBg.image_url;
         } else if (slideBg.storage_path) {
           try {
-            backgroundImageUrl = await getSignedImageUrl(BUCKET, slideBg.storage_path, 600);
+            const path = normalizeStoragePathForBucket(slideBg.storage_path, BUCKET);
+            if (path) backgroundImageUrl = await getSignedImageUrl(BUCKET, path, 600);
           } catch {
             // skip
           }
@@ -227,9 +237,11 @@ export async function POST(
             secondaryBackgroundImageUrl = slideBg.secondary_image_url;
           } else if (slideBg.secondary_storage_path) {
             try {
+              const path = normalizeStoragePathForBucket(slideBg.secondary_storage_path, BUCKET);
+              if (!path) throw new Error("invalid secondary storage path");
               secondaryBackgroundImageUrl = await getSignedImageUrl(
                 BUCKET,
-                slideBg.secondary_storage_path,
+                path,
                 600
               );
             } catch {

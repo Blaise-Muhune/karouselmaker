@@ -756,27 +756,43 @@ export function renderSlideHtml(
     disp.mode === "pip" && typeof (disp as { pipIndex?: unknown }).pipIndex === "number"
       ? Number((disp as { pipIndex?: number }).pipIndex)
       : null;
-  const selectedPipIndex =
-    rawPipIndex != null && Number.isFinite(rawPipIndex) && (multiUrlsCandidate?.length ?? 0) > 1
-      ? Math.max(0, Math.min((multiUrlsCandidate?.length ?? 1) - 1, Math.floor(rawPipIndex)))
-      : null;
-  const baseBgUrlForSinglePip =
-    selectedPipIndex != null && multiUrlsCandidate
-      ? (multiUrlsCandidate.find((_, i) => i !== selectedPipIndex) ?? null)
-      : null;
+  const pipEnabledIndices = (() => {
+    const count = multiUrlsCandidate?.length ?? 0;
+    if (count < 1) return [] as number[];
+    const out: number[] = [];
+    const pipsRaw = Array.isArray((disp as { pips?: unknown[] }).pips)
+      ? ((disp as { pips?: unknown[] }).pips ?? [])
+      : [];
+    for (let i = 0; i < count; i++) {
+      const slot = pipsRaw[i] as { pipEnabled?: unknown } | undefined;
+      if (typeof slot?.pipEnabled === "boolean") {
+        if (slot.pipEnabled) out.push(i);
+        continue;
+      }
+      if (rawPipIndex != null && Number.isFinite(rawPipIndex) && count > 1) {
+        const idx = Math.max(0, Math.min(count - 1, Math.floor(rawPipIndex)));
+        if (i === idx) out.push(i);
+        continue;
+      }
+      if (i === 0) out.push(i);
+    }
+    return out;
+  })();
   const pipUrls: string[] =
     isPipMode && !overlayOnly
       ? hasMultipleBackgroundImages && multiUrlsCandidate
-        ? selectedPipIndex != null
-          ? [multiUrlsCandidate[selectedPipIndex]!].filter(Boolean)
-          : multiUrlsCandidate
+        ? multiUrlsCandidate.filter((_, i) => pipEnabledIndices.includes(i))
         : resolvedBgUrl
           ? [resolvedBgUrl]
           : []
       : [];
+  const baseBgUrlsForPip =
+    isPipMode && !overlayOnly && hasMultipleBackgroundImages && multiUrlsCandidate
+      ? multiUrlsCandidate.filter((_, i) => !pipEnabledIndices.includes(i))
+      : [];
   const pipDispForResolve =
-    selectedPipIndex != null && Array.isArray((disp as { pips?: unknown[] }).pips)
-      ? { ...disp, pips: [((disp as { pips?: unknown[] }).pips ?? [])[selectedPipIndex] ?? {}] }
+    pipEnabledIndices.length > 0 && Array.isArray((disp as { pips?: unknown[] }).pips)
+      ? { ...disp, pips: pipEnabledIndices.map((idx) => ((disp as { pips?: unknown[] }).pips ?? [])[idx] ?? {}) }
       : disp;
   const pipLayoutsResolved = pipUrls.length > 0 ? resolvePipLayoutsForImageCount(pipDispForResolve, pipUrls.length) : null;
   const pipShowShadow = disp.pipShadow === true;
@@ -854,9 +870,17 @@ export function renderSlideHtml(
             return shell;
           })
             .join("");
-          const baseLayer = baseBgUrlForSinglePip
-            ? `<img src="${escapeHtml(baseBgUrlForSinglePip)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:${fit};object-position:${singleBgPosition};display:block;z-index:0" />`
-            : "";
+          const baseLayer =
+            baseBgUrlsForPip.length === 1
+              ? `<img src="${escapeHtml(baseBgUrlsForPip[0]!)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:${fit};object-position:${singleBgPosition};display:block;z-index:0" />`
+              : baseBgUrlsForPip.length > 1
+                ? baseBgUrlsForPip
+                    .map((u, i) => {
+                      const w = 100 / baseBgUrlsForPip.length;
+                      return `<img src="${escapeHtml(u)}" alt="" style="position:absolute;left:${i * w}%;top:0;width:${w}%;height:100%;object-fit:${fit};object-position:${singleBgPosition};display:block;z-index:0" />`;
+                    })
+                    .join("")
+                : "";
           return `<div style="position:absolute;inset:0;z-index:0;isolation:isolate">${baseLayer}${pipLayers}</div>`;
         })()
       : "";

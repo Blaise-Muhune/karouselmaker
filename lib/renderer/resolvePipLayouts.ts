@@ -2,6 +2,7 @@ export type PipCorner = "top_left" | "top_right" | "bottom_left" | "bottom_right
 
 /** Partial overrides per PiP slot (saved on slide `image_display.pips`). */
 export type PipSlotPartial = {
+  pipEnabled?: boolean;
   pipPosition?: PipCorner;
   pipSize?: number;
   pipRotation?: number;

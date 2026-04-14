@@ -46,6 +46,13 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
+function normalizeStoragePathForBucket(path: string | undefined, bucket: string): string | undefined {
+  const trimmed = path?.trim().replace(/^\/+/, "");
+  if (!trimmed) return undefined;
+  const bucketPrefix = `${bucket}/`;
+  return trimmed.startsWith(bucketPrefix) ? trimmed.slice(bucketPrefix.length) : trimmed;
+}
+
 async function readImageOverlayFromRequest(request: Request): Promise<boolean> {
   try {
     const ct = request.headers.get("content-type") ?? "";
@@ -257,8 +264,10 @@ export async function POST(
             const resolved: string[] = [];
             for (const img of slideBg.images) {
               const storagePath =
-                img.storage_path?.replace(/^\/+/, "").trim() ||
-                (img.asset_id ? (await getAsset(userId, img.asset_id))?.storage_path?.replace(/^\/+/, "").trim() : undefined);
+                normalizeStoragePathForBucket(img.storage_path, BUCKET) ||
+                (img.asset_id
+                  ? normalizeStoragePathForBucket((await getAsset(userId, img.asset_id))?.storage_path, BUCKET)
+                  : undefined);
               let data =
                 (storagePath && (await downloadStorageImageAsDataUrl(BUCKET, storagePath)))
                 ?? (img.image_url && /^https?:\/\//i.test(img.image_url) ? await fetchImageAsDataUrl(img.image_url) : null);
@@ -298,8 +307,10 @@ export async function POST(
             if (resolved.length === 1) backgroundImageUrl = resolved[0] ?? null;
             else if (resolved.length >= 2) backgroundImageUrls = resolved;
           } else {
-            const storagePath = slideBg.storage_path ?? (slideBg.asset_id ? (await getAsset(userId, slideBg.asset_id))?.storage_path : undefined);
-            const trimmedPath = storagePath?.replace(/^\/+/, "").trim();
+            const trimmedPath = normalizeStoragePathForBucket(
+              slideBg.storage_path ?? (slideBg.asset_id ? (await getAsset(userId, slideBg.asset_id))?.storage_path : undefined),
+              BUCKET
+            );
             if (trimmedPath) {
               backgroundImageUrl = await downloadStorageImageAsDataUrl(BUCKET, trimmedPath);
               if (!backgroundImageUrl) {
@@ -333,13 +344,15 @@ export async function POST(
           }
           if (slide.slide_type === "hook" && !backgroundImageUrls) {
             if (slideBg.secondary_storage_path) {
-              const secPath = slideBg.secondary_storage_path.replace(/^\/+/, "").trim();
-              secondaryBackgroundImageUrl = await downloadStorageImageAsDataUrl(BUCKET, secPath);
-              if (!secondaryBackgroundImageUrl) {
-                try {
-                  secondaryBackgroundImageUrl = await getSignedImageUrl(BUCKET, secPath, 600);
-                } catch {
-                  // keep null
+              const secPath = normalizeStoragePathForBucket(slideBg.secondary_storage_path, BUCKET);
+              if (secPath) {
+                secondaryBackgroundImageUrl = await downloadStorageImageAsDataUrl(BUCKET, secPath);
+                if (!secondaryBackgroundImageUrl) {
+                  try {
+                    secondaryBackgroundImageUrl = await getSignedImageUrl(BUCKET, secPath, 600);
+                  } catch {
+                    // keep null
+                  }
                 }
               }
             }
