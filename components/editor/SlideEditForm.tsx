@@ -488,7 +488,7 @@ const SECTION_INFO: Record<string, { title: string; body: string }> = {
   },
   layout: {
     title: "Frame layout",
-    body: "The Template dropdown chooses the frame layout—where the headline and body are placed (e.g. center, bottom). Each template has a fixed layout; you only edit the text. Position number shows the frame index (e.g. 3/10) on the frame and always applies to all frames in the carousel. If you have multiple frames, use Apply template to all to use this template on every frame.",
+    body: "The Template dropdown chooses the frame layout—where the headline and body are placed (e.g. center, bottom). Each template has a fixed layout; you only edit the text. Position number shows the frame index (e.g. 3/10) on the frame and always applies to all frames in the carousel.",
   },
   background: {
     title: "Background",
@@ -1228,6 +1228,7 @@ export function SlideEditForm({
   const [slideOverlayShapes, setSlideOverlayShapes] = useState<OverlayShape[]>(() => parseSlideOverlayShapes(slide.meta));
   const [slideShapesSelectedIndex, setSlideShapesSelectedIndex] = useState<number | null>(null);
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
+  const [saveTemplateChoiceOpen, setSaveTemplateChoiceOpen] = useState(false);
   const [templateName, setTemplateName] = useState("");
   const [saveAsSystemTemplate, setSaveAsSystemTemplate] = useState(false);
   const [savingTemplate, setSavingTemplate] = useState(false);
@@ -1730,6 +1731,7 @@ export function SlideEditForm({
   const pipEnabledForSlot = (slotIndex: number): boolean =>
     ((imageDisplay.pips?.[slotIndex] as { pipEnabled?: boolean } | undefined)?.pipEnabled ??
       (imageDisplay.pipIndex != null ? imageDisplay.pipIndex === slotIndex : slotIndex === 0));
+  const activeSlotPipEnabled = validImageCount >= 2 ? pipEnabledForSlot(activeBackgroundDisplaySlot) : true;
   const nonPipImageCount =
     validImageCount >= 2 && (imageDisplay.mode ?? "full") === "pip"
       ? Array.from({ length: validImageCount }).filter((_, i) => !pipEnabledForSlot(i)).length
@@ -3571,6 +3573,9 @@ export function SlideEditForm({
     );
     setUpdateTemplateOpen(true);
   };
+  const openTemplateSaveChoiceDialog = () => {
+    setSaveTemplateChoiceOpen(true);
+  };
 
   const currentTemplate = templateId ? templates.find((t) => t.id === templateId) : null;
   const canUpdateTemplate =
@@ -4678,6 +4683,17 @@ export function SlideEditForm({
             Apply to all
           </Button>
         )}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 text-xs"
+          onClick={openTemplateSaveChoiceDialog}
+          disabled={!templateConfig}
+        >
+          <Bookmark className="size-3.5" />
+          Save as template
+        </Button>
       </div>
       {saveError && (
         <p className="text-destructive text-sm px-3 pb-2" role="alert">
@@ -4786,6 +4802,49 @@ export function SlideEditForm({
                 {v}
               </button>
             ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={saveTemplateChoiceOpen}
+        onOpenChange={setSaveTemplateChoiceOpen}
+      >
+        <DialogContent className="max-w-sm" showCloseButton>
+          <DialogHeader>
+            <DialogTitle>Save template</DialogTitle>
+            <p className="text-muted-foreground text-sm">
+              Do you want to update the current template or save this as a new template?
+            </p>
+          </DialogHeader>
+          <div className="grid gap-2">
+            {canUpdateTemplate && (
+              <Button
+                type="button"
+                variant="outline"
+                className="justify-start"
+                onClick={() => {
+                  setSaveTemplateChoiceOpen(false);
+                  openUpdateTemplateDialog();
+                }}
+              >
+                <CheckIcon className="size-4" />
+                Update current template
+              </Button>
+            )}
+            <Button
+              type="button"
+              variant="outline"
+              className="justify-start"
+              onClick={() => {
+                setSaveTemplateChoiceOpen(false);
+                setSaveTemplateIncludeImageBg(false);
+                setSaveTemplateOpen(true);
+              }}
+            >
+              <Bookmark className="size-4" />
+              Save as new template
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -6078,10 +6137,6 @@ export function SlideEditForm({
                     </label>
                   </div>
                 </div>
-                <Button type="button" variant="secondary" size="sm" className="w-full h-9 text-xs font-medium" onClick={handleApplyTemplateToAll} disabled={applyingTemplate} title="Use this template on every frame (respects First/Last options above)">
-                  {applyingTemplate ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
-                  Apply this template to all slides
-                </Button>
               </>
             )}
           </section>
@@ -8020,7 +8075,7 @@ export function SlideEditForm({
                         </Select>
                       </div>
                       {(imageDisplay.mode ?? "full") === "pip" && (
-                        <div className="grid gap-3 sm:grid-cols-2 pt-1">
+                        <div className={cn("grid gap-3 sm:grid-cols-2 pt-1", !activeSlotPipEnabled && "opacity-60")}>
                           <div className="space-y-1.5">
                             <span className="text-muted-foreground text-xs">
                               PiP corner (slot {activeBackgroundDisplaySlot + 1})
@@ -8032,6 +8087,7 @@ export function SlideEditForm({
                                   upsertImageDisplayPipSlot(d, activeBackgroundDisplaySlot, validImageCount, { pipPosition: v })
                                 )
                               }
+                              disabled={!activeSlotPipEnabled}
                             >
                               <SelectTrigger className="h-9 rounded-lg border-input/80 bg-background text-sm">
                                 <SelectValue />
@@ -8060,7 +8116,8 @@ export function SlideEditForm({
                                     })
                                   )
                                 }
-                                className="h-2 flex-1 cursor-pointer appearance-none rounded-full bg-muted accent-primary"
+                                className="h-2 flex-1 cursor-pointer appearance-none rounded-full bg-muted accent-primary disabled:cursor-not-allowed"
+                                disabled={!activeSlotPipEnabled}
                               />
                               <span className="text-muted-foreground min-w-8 text-xs tabular-nums">
                                 {Math.round((activePipResolved?.pipSize ?? imageDisplay.pipSize ?? 0.4) * 100)}%
@@ -8081,6 +8138,7 @@ export function SlideEditForm({
                                   )
                                 }
                                 title="Reset this PiP rotation to 0°"
+                                disabled={!activeSlotPipEnabled}
                               >
                                 <RotateCcw className="size-3.5" />
                                 Reset
@@ -8099,6 +8157,7 @@ export function SlideEditForm({
                               formatDisplay={(v) => `${v}°`}
                               label="PiP rotation"
                               className="w-full min-w-0"
+                              disabled={!activeSlotPipEnabled}
                             />
                           </div>
                           <div className="space-y-1.5">
@@ -8118,6 +8177,7 @@ export function SlideEditForm({
                               formatDisplay={(v) => `${v}px`}
                               label="PiP corner radius"
                               className="w-full min-w-0"
+                              disabled={!activeSlotPipEnabled}
                             />
                           </div>
                           <label className="flex items-center gap-2 sm:col-span-2 cursor-pointer">
@@ -8129,6 +8189,11 @@ export function SlideEditForm({
                             />
                             <span className="text-muted-foreground text-xs">PiP drop shadow (all boxes)</span>
                           </label>
+                          {!activeSlotPipEnabled && (
+                            <p className="text-muted-foreground text-[11px] sm:col-span-2">
+                              This slot has PiP off. Turn PiP on for this slot to edit these controls.
+                            </p>
+                          )}
                         </div>
                       )}
                     </>
@@ -8656,8 +8721,7 @@ export function SlideEditForm({
                   size="sm"
                   className="h-8 md:min-w-[160px] rounded-md text-xs gap-1.5"
                   onClick={() => {
-                    setSaveTemplateIncludeImageBg(false);
-                    setSaveTemplateOpen(true);
+                    openTemplateSaveChoiceDialog();
                   }}
                   disabled={!templateConfig}
                 >

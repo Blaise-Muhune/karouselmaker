@@ -2446,7 +2446,7 @@ export function SlidePreview({
                                 objectPosition: slotPos,
                               }}
                             />
-                            {slotFit === "cover" && onMultiImageSlotPositionChangeRef.current && (
+                            {onMultiImageSlotPositionChange && (
                               <div
                                 className="absolute inset-0 cursor-grab active:cursor-grabbing"
                                 onPointerDown={(ev) =>
@@ -2477,7 +2477,7 @@ export function SlidePreview({
                               objectPosition: slotPos,
                             }}
                           />
-                          {slotFit === "cover" && onMultiImageSlotPositionChangeRef.current && (
+                          {onMultiImageSlotPositionChange && (
                             <div
                               className="absolute inset-0 cursor-grab active:cursor-grabbing"
                               onPointerDown={(ev) =>
