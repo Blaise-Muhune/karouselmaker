@@ -12,7 +12,6 @@ import {
 } from "@/components/ui/dialog";
 import {
   TemplateSelectCards,
-  defaultPlatformFilterForTemplateCategory,
   type TemplateOption,
 } from "@/components/carousels/TemplateSelectCards";
 import { setSlideTemplate } from "@/app/actions/slides/setSlideTemplate";
@@ -1294,9 +1293,6 @@ export function SlideGrid({
           {isBulkTemplateOpen && (() => {
             const ids = bulkApplyTemplateIds!;
             const firstSlide = slidesOrder.find((s) => s.id === ids[0]);
-            const bulkInitialPlatform = defaultPlatformFilterForTemplateCategory(
-              templates.find((t) => t.id === (firstSlide?.template_id ?? templates[0]?.id))?.category
-            );
             const previewImageUrlsForBulk =
               firstSlide && (slideBackgroundImageUrls[firstSlide.id] != null)
                 ? typeof slideBackgroundImageUrls[firstSlide.id] === "string"
@@ -1311,7 +1307,7 @@ export function SlideGrid({
                   defaultTemplateId={templates[0]?.id ?? null}
                   defaultTemplateConfig={templates[0]?.parsedConfig ?? null}
                   defaultTemplateCategory={templates[0]?.category ?? undefined}
-                  initialPlatformFilter={bulkInitialPlatform}
+                  showLayoutFilter
                   value={null}
                   previewImageUrls={previewImageUrlsForBulk}
                   onChange={async (id) => {
@@ -1361,9 +1357,6 @@ export function SlideGrid({
           {templateModalSlideId != null && !isBulkTemplateOpen && (() => {
             const slideForModal = slidesOrder.find((s) => s.id === templateModalSlideId);
             const currentTemplateIdForModal = slideForModal?.template_id ?? templates[0]?.id ?? null;
-            const singleInitialPlatform = defaultPlatformFilterForTemplateCategory(
-              templates.find((t) => t.id === currentTemplateIdForModal)?.category
-            );
             if (!slideForModal) return null;
             const slideBgImages = slideBackgroundImageUrls[slideForModal.id];
             const previewImageUrlsForModal =
@@ -1380,7 +1373,7 @@ export function SlideGrid({
                   defaultTemplateId={templates[0]?.id ?? null}
                   defaultTemplateConfig={templates[0]?.parsedConfig ?? null}
                   defaultTemplateCategory={templates[0]?.category ?? undefined}
-                  initialPlatformFilter={singleInitialPlatform}
+                  showLayoutFilter
                   value={currentTemplateIdForModal === templates[0]?.id ? null : currentTemplateIdForModal}
                   previewImageUrls={previewImageUrlsForModal}
                   onChange={async (id) => {

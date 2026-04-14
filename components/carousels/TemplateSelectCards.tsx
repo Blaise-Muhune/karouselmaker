@@ -37,14 +37,6 @@ const PREVIEW_SIZES = [
 export type TemplatePlatformFilter = "all" | "linkedin" | "other";
 export type TemplateLayoutFilter = "all" | "withImage" | "noImage";
 
-/** Default platform subset from a template’s category (carousel / slide editor modals). */
-export function defaultPlatformFilterForTemplateCategory(category: string | undefined | null): TemplatePlatformFilter {
-  const c = (category ?? "").toLowerCase().trim();
-  if (c === "linkedin") return "linkedin";
-  if (c.length > 0) return "other";
-  return "all";
-}
-
 function usePreviewSize() {
   const [index, setIndex] = useState(0);
   useEffect(() => {
@@ -66,12 +58,6 @@ function usePreviewSize() {
   const size = PREVIEW_SIZES[Math.min(index, PREVIEW_SIZES.length - 1)] ?? PREVIEW_SIZES[0];
   const scale = (size.w - INSET * 2) / 1080;
   return { w: size.w, h: size.h, scale };
-}
-
-function filterByPlatform(list: TemplateOption[], f: TemplatePlatformFilter): TemplateOption[] {
-  if (f === "linkedin") return list.filter((t) => (t.category ?? "").toLowerCase() === "linkedin");
-  if (f === "other") return list.filter((t) => (t.category ?? "").toLowerCase() !== "linkedin");
-  return list;
 }
 
 function filterByLayout(list: TemplateOption[], f: TemplateLayoutFilter): TemplateOption[] {
@@ -101,8 +87,6 @@ export type TemplateSelectCardsProps = {
   previewImageUrls?: string[] | null;
   /** Category of the default template (e.g. "linkedin"). Use when the default is not in the templates list (e.g. edit flow). */
   defaultTemplateCategory?: string;
-  /** Initial platform subset. Users can switch to "All" anytime. Remount the component (e.g. `key` when modal opens) to reset. */
-  initialPlatformFilter?: TemplatePlatformFilter;
   /** Second filter: image vs no-image layouts (slide editor). */
   showLayoutFilter?: boolean;
   initialLayoutFilter?: TemplateLayoutFilter;
@@ -133,8 +117,7 @@ export function TemplateSelectCards({
   primaryColor = "#0a0a0a",
   previewImageUrls,
   defaultTemplateCategory,
-  initialPlatformFilter = "all",
-  showLayoutFilter = false,
+  showLayoutFilter = true,
   initialLayoutFilter = "all",
   paginateInternally = false,
   isAdmin = false,
@@ -168,11 +151,6 @@ export function TemplateSelectCards({
     defaultTemplateCategory === "linkedin" ||
     (defaultTemplateId ? templates.find((t) => t.id === defaultTemplateId)?.category === "linkedin" : false);
 
-  const hasLinkedIn = templates.some((t) => (t.category ?? "").toLowerCase() === "linkedin");
-  const hasOther = templates.some((t) => (t.category ?? "").toLowerCase() !== "linkedin");
-  const showPlatformFilter = hasLinkedIn || hasOther;
-
-  const [platformFilter, setPlatformFilter] = useState<TemplatePlatformFilter>(initialPlatformFilter);
   const [layoutFilter, setLayoutFilter] = useState<TemplateLayoutFilter>(initialLayoutFilter);
   const pageSize = Math.max(TEMPLATE_PAGE_SIZE, initialVisibleCount ?? TEMPLATE_PAGE_SIZE);
   const [visibleCount, setVisibleCount] = useState(pageSize);
@@ -216,13 +194,13 @@ export function TemplateSelectCards({
   const hasMyTemplates = showMyTemplatesSection && myTemplates.length > 0;
 
   const myTemplatesFiltered = useMemo(
-    () => filterByLayout(filterByPlatform(myTemplates, platformFilter), layoutFilter),
-    [myTemplates, platformFilter, layoutFilter]
+    () => filterByLayout(myTemplates, layoutFilter),
+    [myTemplates, layoutFilter]
   );
 
   const catalogFiltered = useMemo(
-    () => filterByLayout(filterByPlatform(templates, platformFilter), layoutFilter),
-    [templates, platformFilter, layoutFilter]
+    () => filterByLayout(templates, layoutFilter),
+    [templates, layoutFilter]
   );
 
   const displayList = paginateInternally ? catalogFiltered.slice(0, visibleCount) : catalogFiltered;
@@ -231,7 +209,7 @@ export function TemplateSelectCards({
 
   useEffect(() => {
     setVisibleCount(pageSize);
-  }, [platformFilter, layoutFilter, pageSize]);
+  }, [layoutFilter, pageSize]);
 
   /** Build imageDisplay from template defaults so PIP and full templates render exactly as designed. */
   const getImageDisplayFromConfig = (config: TemplateConfig): ComponentProps<typeof SlidePreview>["imageDisplay"] => {
@@ -373,38 +351,21 @@ export function TemplateSelectCards({
 
   return (
     <div className="flex flex-col gap-3 min-w-0 w-full max-w-full">
-      {(showPlatformFilter || showLayoutFilter) && (
+      {showLayoutFilter && (
         <div className="flex flex-wrap items-end gap-3 sm:gap-4">
-          {showPlatformFilter && (
-            <div className="space-y-1.5 min-w-[min(100%,200px)]">
-              <Label htmlFor="template-filter-platform" className="text-xs text-muted-foreground">
-                Platform
-              </Label>
-              <Select value={platformFilter} onValueChange={(v) => setPlatformFilter(v as TemplatePlatformFilter)}>
-                <SelectTrigger id="template-filter-platform" className="h-9 w-full sm:w-[200px] text-sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All templates</SelectItem>
-                  {hasLinkedIn && <SelectItem value="linkedin">LinkedIn</SelectItem>}
-                  {hasOther && <SelectItem value="other">Instagram &amp; others</SelectItem>}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
           {showLayoutFilter && (
             <div className="space-y-1.5 min-w-[min(100%,220px)]">
               <Label htmlFor="template-filter-layout" className="text-xs text-muted-foreground">
-                Layout
+                Image requirement
               </Label>
               <Select value={layoutFilter} onValueChange={(v) => setLayoutFilter(v as TemplateLayoutFilter)}>
                 <SelectTrigger id="template-filter-layout" className="h-9 w-full sm:w-[220px] text-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All layouts</SelectItem>
-                  <SelectItem value="withImage">With background image</SelectItem>
-                  <SelectItem value="noImage">Without image (text / pattern)</SelectItem>
+                  <SelectItem value="all">Any template</SelectItem>
+                  <SelectItem value="withImage">Requires image</SelectItem>
+                  <SelectItem value="noImage">Does not require image</SelectItem>
                 </SelectContent>
               </Select>
             </div>

@@ -455,18 +455,34 @@ export function NewCarouselForm({
   const setPrimaryTemplateId = (id: string | null) => {
     setSelectedTemplateIds((prev) => {
       if (!id) return prev.slice(1, 3);
-      const rest = prev.slice(1).filter((v) => v !== id);
-      return [id, ...rest].slice(0, 3);
+      const next = prev.slice(0, 3);
+      if (next.length === 0) return [id];
+      next[0] = id;
+      return next;
     });
   };
 
   const setTemplateIdForSlot = (slot: 0 | 1 | 2, id: string) => {
     setSelectedTemplateIds((prev) => {
-      const seed = prev.filter((v) => v !== id);
-      while (seed.length <= slot) seed.push("");
-      seed[slot] = id;
-      return seed.filter((v) => v.length > 0).slice(0, 3);
+      const next = prev.slice(0, 3);
+      while (next.length <= slot) next.push(next[0] ?? id);
+      next[slot] = id;
+      return next.slice(0, 3);
     });
+  };
+
+  const setTemplateSlotEnabled = (slot: 1 | 2, enabled: boolean) => {
+    setSelectedTemplateIds((prev) => {
+      const next = prev.slice(0, 3);
+      if (!enabled) {
+        return slot === 1 ? next.slice(0, 1) : next.slice(0, 2);
+      }
+      while (next.length <= slot) next.push(next[0] ?? "");
+      return next.filter((id) => id.length > 0).slice(0, 3);
+    });
+    if (!enabled && templatePickerSlot === slot) {
+      setTemplatePickerSlot(slot === 1 ? 0 : 1);
+    }
   };
 
   const prevCarouselForRef = useRef<"instagram" | "linkedin">(carouselFor);
@@ -1307,40 +1323,65 @@ export function NewCarouselForm({
                   <div className="flex flex-wrap gap-2">
                     {(["First", "Middle", "Last"] as const).map((label, idx) => {
                       const slot = idx as 0 | 1 | 2;
+                      const enabled = slot === 0 ? true : slot === 1 ? selectedTemplateIds.length >= 2 : selectedTemplateIds.length >= 3;
+                      const canToggle = slot !== 0;
+                      const toggleDisabled = slot === 2 && selectedTemplateIds.length < 2;
                       const id = selectedTemplateIds[slot];
-                      const name = id ? templateOptions.find((t) => t.id === id)?.name ?? "Custom" : "Default";
+                      const name = enabled
+                        ? id
+                          ? templateOptions.find((t) => t.id === id)?.name ?? "Custom"
+                          : "Default"
+                        : "Off";
                       const active = templatePickerSlot === slot;
                       return (
-                        <button
-                          key={label}
-                          type="button"
-                          onClick={() => setTemplatePickerSlot(slot)}
-                          className={cn(
-                            "group inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium transition-all",
-                            active
-                              ? "bg-primary text-primary-foreground shadow-sm ring-1 ring-primary/40"
-                              : "bg-background text-foreground/80 hover:bg-background/80 border border-border/70"
+                        <div key={label} className="inline-flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => enabled && setTemplatePickerSlot(slot)}
+                            disabled={!enabled}
+                            className={cn(
+                              "group inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed",
+                              active && enabled
+                                ? "bg-primary text-primary-foreground shadow-sm ring-1 ring-primary/40"
+                                : "bg-background text-foreground/80 hover:bg-background/80 border border-border/70"
+                            )}
+                          >
+                            <span
+                              className={cn(
+                                "inline-flex size-5 items-center justify-center rounded-full text-[10px] font-semibold",
+                                active && enabled ? "bg-primary-foreground/20 text-primary-foreground" : "bg-muted text-muted-foreground"
+                              )}
+                            >
+                              {slot + 1}
+                            </span>
+                            <span>{label}</span>
+                            <span
+                              className={cn(
+                                "max-w-[150px] truncate font-normal",
+                                active && enabled ? "text-primary-foreground/90" : "text-muted-foreground"
+                              )}
+                              title={`${label} slot: ${name}`}
+                            >
+                              {name}
+                            </span>
+                          </button>
+                          {canToggle && (
+                            <button
+                              type="button"
+                              disabled={toggleDisabled}
+                              onClick={() => setTemplateSlotEnabled(slot as 1 | 2, !enabled)}
+                              className={cn(
+                                "inline-flex h-7 items-center rounded-full border px-2 text-[10px] font-semibold uppercase tracking-wide transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                                enabled
+                                  ? "border-primary/50 bg-primary/10 text-primary"
+                                  : "border-border bg-background text-muted-foreground hover:text-foreground"
+                              )}
+                              title={enabled ? `Disable ${label.toLowerCase()} slot` : `Enable ${label.toLowerCase()} slot`}
+                            >
+                              {enabled ? "On" : "Off"}
+                            </button>
                           )}
-                        >
-                          <span
-                            className={cn(
-                              "inline-flex size-5 items-center justify-center rounded-full text-[10px] font-semibold",
-                              active ? "bg-primary-foreground/20 text-primary-foreground" : "bg-muted text-muted-foreground"
-                            )}
-                          >
-                            {slot + 1}
-                          </span>
-                          <span>{label}</span>
-                          <span
-                            className={cn(
-                              "max-w-[150px] truncate font-normal",
-                              active ? "text-primary-foreground/90" : "text-muted-foreground"
-                            )}
-                            title={`${label} slot: ${name}`}
-                          >
-                            {name}
-                          </span>
-                        </button>
+                        </div>
                       );
                     })}
                   </div>
@@ -1351,7 +1392,7 @@ export function NewCarouselForm({
                     templates={templateOptions}
                     defaultTemplateId={carouselFor === "linkedin" ? defaultLinkedInTemplateId : defaultTemplateId}
                     defaultTemplateConfig={carouselFor === "linkedin" ? defaultLinkedInTemplateConfig : defaultTemplateConfig}
-                    initialPlatformFilter={carouselFor === "linkedin" ? "linkedin" : "other"}
+                    showLayoutFilter
                     value={selectedTemplateIds[templatePickerSlot] ?? selectedTemplateId}
                     onChange={(id) => {
                       if (!id) return;

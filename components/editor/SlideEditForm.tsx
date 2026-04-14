@@ -9,7 +9,7 @@ import { HighlightModal } from "@/components/editor/HighlightModal";
 import { AssetPickerModal } from "@/components/assets/AssetPickerModal";
 import { GoogleDriveFilePicker } from "@/components/drive/GoogleDriveFilePicker";
 import { importSingleFileFromGoogleDrive } from "@/app/actions/assets/importFromGoogleDrive";
-import { TemplateSelectCards, defaultPlatformFilterForTemplateCategory } from "@/components/carousels/TemplateSelectCards";
+import { TemplateSelectCards } from "@/components/carousels/TemplateSelectCards";
 import { ImportTemplateButton } from "@/components/templates/ImportTemplateButton";
 import { Button } from "@/components/ui/button";
 import {
@@ -2003,9 +2003,6 @@ export function SlideEditForm({
     ...baseModalOptions.filter((t) => !recentlyCreatedTemplates.some((r) => r.id === t.id)),
   ];
   const firstTemplate = templates[0];
-  const templateModalInitialPlatform = defaultPlatformFilterForTemplateCategory(
-    templates.find((t) => t.id === (slide.template_id ?? firstTemplate?.id))?.category
-  );
   useEffect(() => {
     setOverrideTemplateConfig(null);
     setLastHeadlineHighlightAction("manual");
@@ -5201,7 +5198,6 @@ export function SlideEditForm({
               defaultTemplateId={firstTemplate?.id ?? null}
               defaultTemplateConfig={firstTemplate?.parsedConfig ?? null}
               defaultTemplateCategory={firstTemplate?.category ?? undefined}
-              initialPlatformFilter={templateModalInitialPlatform}
               showLayoutFilter
               value={templateId === firstTemplate?.id ? null : templateId}
               isAdmin={isAdmin}
