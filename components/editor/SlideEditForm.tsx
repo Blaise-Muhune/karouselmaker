@@ -125,7 +125,8 @@ function slotHasPersistableImage(row: {
   storage_path?: string;
 }): boolean {
   const hasHttps = row.url.trim().length > 0 && /^https?:\/\//i.test(row.url.trim());
-  const hasLibrary = !!(row.asset_id && row.storage_path);
+  /** AI-generated/library slots can have storage_path even when asset_id is absent. */
+  const hasLibrary = !!(row.storage_path || row.asset_id);
   return hasHttps || hasLibrary;
 }
 
@@ -168,9 +169,9 @@ function mapImageRowsToImagesPayload(
       alternates: i.alternates ?? [],
     };
     const persistedUrl = urlToPersist(i.url);
-    if (i.asset_id && i.storage_path) {
-      out.asset_id = i.asset_id;
-      out.storage_path = i.storage_path;
+    if (i.storage_path || i.asset_id) {
+      if (i.asset_id) out.asset_id = i.asset_id;
+      if (i.storage_path) out.storage_path = i.storage_path;
       if (persistedUrl) out.image_url = persistedUrl;
     } else if (persistedUrl) {
       out.image_url = persistedUrl;
@@ -888,7 +889,8 @@ export function SlideEditForm({
         const pool = [url, ...alts].filter((u) => u.trim() && /^https?:\/\//i.test(u));
         return {
           url,
-          ...(aid && sp ? { asset_id: aid, storage_path: sp } : {}),
+          ...(aid ? { asset_id: aid } : {}),
+          ...(sp ? { storage_path: sp } : {}),
           source: (img.source === "brave" || img.source === "unsplash" || img.source === "google" || img.source === "pixabay" || img.source === "pexels" ? img.source : undefined) as ImageUrlItem["source"],
           unsplash_attribution: img.unsplash_attribution,
           pixabay_attribution: img.pixabay_attribution,
@@ -970,6 +972,7 @@ export function SlideEditForm({
   });
   type SwipePosition = "bottom_left" | "bottom_center" | "bottom_right" | "top_left" | "top_center" | "top_right" | "center_left" | "center_right" | "custom";
   type SwipeType = "text" | "arrow-left" | "arrow-right" | "arrows" | "hand-left" | "hand-right" | "chevrons" | "dots" | "finger-swipe" | "finger-left" | "finger-right" | "circle-arrows" | "line-dots" | "custom";
+  type ImagePositionSelectValue = NonNullable<ImageDisplayState["position"]> | "custom";
   const [swipePosition, setSwipePosition] = useState<SwipePosition>(() => {
     const m = slide.meta as { swipe_position?: SwipePosition; swipe_x?: number; swipe_y?: number } | null;
     if (m?.swipe_position && ["bottom_left", "bottom_center", "bottom_right", "top_left", "top_center", "top_right", "center_left", "center_right", "custom"].includes(m.swipe_position)) return m.swipe_position;
@@ -1724,6 +1727,44 @@ export function SlideEditForm({
   }, [imageDisplay, validImageCount]);
   const activeBackgroundDisplaySlot = validImageCount <= 1 ? 0 : Math.min(backgroundImageDisplaySlot, validImageCount - 1);
   const activePipResolved = pipResolvedLayoutsForEditor?.[activeBackgroundDisplaySlot];
+  const pipEnabledForSlot = (slotIndex: number): boolean =>
+    ((imageDisplay.pips?.[slotIndex] as { pipEnabled?: boolean } | undefined)?.pipEnabled ??
+      (imageDisplay.pipIndex != null ? imageDisplay.pipIndex === slotIndex : slotIndex === 0));
+  const nonPipImageCount =
+    validImageCount >= 2 && (imageDisplay.mode ?? "full") === "pip"
+      ? Array.from({ length: validImageCount }).filter((_, i) => !pipEnabledForSlot(i)).length
+      : 0;
+  useEffect(() => {
+    if (validImageCount < 2) return;
+    setImageDisplay((prev) => {
+      const nextPips = [...(prev.pips ?? [])];
+      let changed = false;
+      while (nextPips.length < validImageCount) {
+        nextPips.push({});
+        changed = true;
+      }
+      for (let i = 0; i < validImageCount; i++) {
+        const cur = (nextPips[i] ?? {}) as Record<string, unknown>;
+        const seeded: Record<string, unknown> = { ...cur };
+        const seed = <K extends keyof ImageDisplayState>(k: K) => {
+          if (seeded[k as string] == null && prev[k] != null) {
+            seeded[k as string] = prev[k] as unknown;
+            changed = true;
+          }
+        };
+        seed("position");
+        seed("fit");
+        seed("frame");
+        seed("frameRadius");
+        seed("frameColor");
+        seed("frameShape");
+        seed("imagePositionX");
+        seed("imagePositionY");
+        nextPips[i] = seeded;
+      }
+      return changed ? { ...prev, pips: nextPips } : prev;
+    });
+  }, [validImageCount]);
   const singleImageWithPip = (imageDisplay?.mode === "pip") && validImageCount === 1;
   const pipDefaultHeadlineSize = headlineZoneFromTemplate?.fontSize ?? 72;
   const pipDefaultBodySize = bodyZoneFromTemplate?.fontSize ?? 48;
@@ -1909,6 +1950,10 @@ export function SlideEditForm({
   const selectedSlotVisualOverrides =
     validImageCount >= 2 ? mergeSelectedSlotVisualOverrides(imageDisplay, activeBackgroundDisplaySlot) : {};
   const effectiveImageDisplay = validImageCount >= 2 ? { ...multiImageDefaults, ...imageDisplay, ...selectedSlotVisualOverrides } : imageDisplay;
+  const imagePositionSelectValue: ImagePositionSelectValue =
+    effectiveImageDisplay.imagePositionX != null && effectiveImageDisplay.imagePositionY != null
+      ? "custom"
+      : (effectiveImageDisplay.position ?? "top");
   /**
    * Show "Include background image in template" whenever the slide has an image to embed OR the template
    * already stores preview URLs—so users can uncheck on update and strip embedded images (any layout: full, PiP, multi).
@@ -2270,9 +2315,10 @@ export function SlideEditForm({
     if (source.pipX != null) payload.pipX = Math.min(100, Math.max(0, source.pipX));
     if (source.pipY != null) payload.pipY = Math.min(100, Math.max(0, source.pipY));
     if (source.mode === "pip" && typeof source.pipShadow === "boolean") payload.pipShadow = source.pipShadow;
-    if (Array.isArray(source.pips) && source.pips.length > 0 && source.mode === "pip") {
+    if (Array.isArray(source.pips) && source.pips.length > 0) {
       payload.pips = source.pips.slice(0, 4).map((slot) => {
         const o: Record<string, unknown> = {};
+        if (typeof slot?.pipEnabled === "boolean") o.pipEnabled = slot.pipEnabled;
         if (slot?.position != null) o.position = slot.position;
         if (slot?.fit != null) o.fit = slot.fit;
         if (slot?.frame != null) o.frame = slot.frame;
@@ -4418,6 +4464,17 @@ export function SlideEditForm({
                     ? (x, y) => setImageDisplay((d) => ({ ...d, imagePositionX: x, imagePositionY: y }))
                     : undefined
                 }
+                onMultiImageSlotPositionChange={
+                  isImageMode && validImageCount >= 2
+                    ? (x, y, slotIndex) =>
+                        setImageDisplay((d) =>
+                          upsertImageDisplayPipSlot(d, slotIndex, validImageCount, {
+                            imagePositionX: x,
+                            imagePositionY: y,
+                          })
+                        )
+                    : undefined
+                }
                 onPipPositionChange={
                   isImageMode && effectiveImageDisplay.mode === "pip"
                     ? (x, y, slotIndex = 0) =>
@@ -5357,6 +5414,17 @@ export function SlideEditForm({
                         onBackgroundImagePositionChange={
                           isImageMode && validImageCount < 2
                             ? (x, y) => setImageDisplay((d) => ({ ...d, imagePositionX: x, imagePositionY: y }))
+                            : undefined
+                        }
+                        onMultiImageSlotPositionChange={
+                          isImageMode && validImageCount >= 2
+                            ? (x, y, slotIndex) =>
+                                setImageDisplay((d) =>
+                                  upsertImageDisplayPipSlot(d, slotIndex, validImageCount, {
+                                    imagePositionX: x,
+                                    imagePositionY: y,
+                                  })
+                                )
                             : undefined
                         }
                         onPipPositionChange={
@@ -8086,16 +8154,38 @@ export function SlideEditForm({
                     <div className="space-y-1.5">
                       <span className="text-muted-foreground text-xs">Image position</span>
                       <Select
-                        value={effectiveImageDisplay.position ?? "top"}
-                        onValueChange={(v) =>
+                        value={imagePositionSelectValue}
+                        onValueChange={(v) => {
+                          if (v === "custom") {
+                            setImageDisplay((d) =>
+                              validImageCount >= 2
+                                ? upsertImageDisplayPipSlot(d, activeBackgroundDisplaySlot, validImageCount, {
+                                    imagePositionX: effectiveImageDisplay.imagePositionX ?? 50,
+                                    imagePositionY: effectiveImageDisplay.imagePositionY ?? 50,
+                                  })
+                                : {
+                                    ...d,
+                                    imagePositionX: d.imagePositionX ?? 50,
+                                    imagePositionY: d.imagePositionY ?? 50,
+                                  }
+                            );
+                            return;
+                          }
                           setImageDisplay((d) =>
                             validImageCount >= 2
                               ? upsertImageDisplayPipSlot(d, activeBackgroundDisplaySlot, validImageCount, {
                                   position: v as ImageDisplayState["position"],
+                                  imagePositionX: undefined,
+                                  imagePositionY: undefined,
                                 })
-                              : { ...d, position: v as ImageDisplayState["position"] }
-                          )
-                        }
+                              : {
+                                  ...d,
+                                  position: v as ImageDisplayState["position"],
+                                  imagePositionX: undefined,
+                                  imagePositionY: undefined,
+                                }
+                          );
+                        }}
                       >
                         <SelectTrigger className="h-9 rounded-lg border-input/80 bg-background text-sm">
                           <SelectValue />
@@ -8110,6 +8200,7 @@ export function SlideEditForm({
                           <SelectItem value="top-right">Top right</SelectItem>
                           <SelectItem value="bottom-left">Bottom left</SelectItem>
                           <SelectItem value="bottom-right">Bottom right</SelectItem>
+                          <SelectItem value="custom">Custom (drag)</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -8242,7 +8333,7 @@ export function SlideEditForm({
                     </div>
                       </>
                     )}
-                    {validImageCount >= 2 && (imageDisplay.mode ?? "full") !== "pip" && (
+                    {validImageCount >= 2 && ((imageDisplay.mode ?? "full") !== "pip" || nonPipImageCount > 1) && (
                       <>
                         <div className="space-y-1.5">
                           <span className="text-muted-foreground text-xs">Layout</span>
@@ -8266,6 +8357,11 @@ export function SlideEditForm({
                         </div>
                         {(effectiveImageDisplay.layout ?? "auto") !== "overlay-circles" && (
                           <>
+                            {(imageDisplay.mode ?? "full") === "pip" && nonPipImageCount > 1 && (
+                              <p className="sm:col-span-2 text-[11px] text-muted-foreground">
+                                These controls affect non-PiP background images only. PiP images stay on top.
+                              </p>
+                            )}
                             <div className="space-y-1.5">
                               <span className="text-muted-foreground text-xs">Gap</span>
                               <StepperWithLongPress

@@ -874,12 +874,49 @@ export function renderSlideHtml(
             baseBgUrlsForPip.length === 1
               ? `<img src="${escapeHtml(baseBgUrlsForPip[0]!)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:${fit};object-position:${singleBgPosition};display:block;z-index:0" />`
               : baseBgUrlsForPip.length > 1
-                ? baseBgUrlsForPip
-                    .map((u, i) => {
-                      const w = 100 / baseBgUrlsForPip.length;
-                      return `<img src="${escapeHtml(u)}" alt="" style="position:absolute;left:${i * w}%;top:0;width:${w}%;height:100%;object-fit:${fit};object-position:${singleBgPosition};display:block;z-index:0" />`;
-                    })
-                    .join("")
+                ? (() => {
+                    const baseCount = baseBgUrlsForPip.length;
+                    const layoutMode = disp.layout ?? "auto";
+                    const useGrid = layoutMode === "grid" || (layoutMode === "auto" && baseCount === 4);
+                    const useStacked = layoutMode === "stacked";
+                    const useSideBySide = layoutMode === "side-by-side" || (layoutMode === "auto" && (baseCount === 2 || baseCount === 3));
+                    const gapPx = Math.max(0, Math.min(48, disp.gap ?? 0));
+                    const dividerStyle = disp.dividerStyle ?? "gap";
+                    const dividerColor = escapeHtml(disp.dividerColor ?? "#ffffff");
+                    const dividerWidth = Math.max(2, Math.min(100, disp.dividerWidth ?? 48));
+                    const imgs = baseBgUrlsForPip
+                      .map((u, i) => {
+                        const style = (() => {
+                          if (useGrid && baseCount === 4) {
+                            const row = Math.floor(i / 2);
+                            const col = i % 2;
+                            return `left:${col === 0 ? 0 : "50%"};top:${row === 0 ? 0 : "50%"};width:50%;height:50%;padding-left:${col === 1 ? gapPx / 2 : 0}px;padding-right:${col === 0 ? gapPx / 2 : 0}px;padding-top:${row === 1 ? gapPx / 2 : 0}px;padding-bottom:${row === 0 ? gapPx / 2 : 0}px;`;
+                          }
+                          if (useStacked) {
+                            const h = 100 / baseCount;
+                            return `left:0;top:${i * h}%;width:100%;height:${h}%;padding-top:${i > 0 ? gapPx / 2 : 0}px;padding-bottom:${i < baseCount - 1 ? gapPx / 2 : 0}px;`;
+                          }
+                          if (useSideBySide || layoutMode === "auto") {
+                            const w = 100 / baseCount;
+                            return `left:${i * w}%;top:0;width:${w}%;height:100%;padding-left:${i > 0 ? gapPx / 2 : 0}px;padding-right:${i < baseCount - 1 ? gapPx / 2 : 0}px;`;
+                          }
+                          return "left:0;top:0;width:100%;height:100%;";
+                        })();
+                        return `<img src="${escapeHtml(u)}" alt="" style="position:absolute;${style}object-fit:${fit};object-position:${singleBgPosition};display:block;z-index:0" />`;
+                      })
+                      .join("");
+                    const dividers =
+                      dividerStyle !== "gap"
+                        ? useStacked
+                          ? Array.from({ length: baseCount - 1 })
+                              .map((_, i) => `<div style="position:absolute;left:0;width:100%;top:${((i + 1) * 100) / baseCount}%;height:${dividerWidth}px;transform:translateY(-50%);background:${dividerColor};opacity:.95;z-index:0"></div>`)
+                              .join("")
+                          : Array.from({ length: baseCount - 1 })
+                              .map((_, i) => `<div style="position:absolute;top:0;height:100%;left:${((i + 1) * 100) / baseCount}%;width:${dividerWidth}px;transform:translateX(-50%);background:${dividerColor};opacity:.95;z-index:0"></div>`)
+                              .join("")
+                        : "";
+                    return `${imgs}${dividers}`;
+                  })()
                 : "";
           return `<div style="position:absolute;inset:0;z-index:0;isolation:isolate">${baseLayer}${pipLayers}</div>`;
         })()

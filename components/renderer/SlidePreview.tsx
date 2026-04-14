@@ -349,6 +349,8 @@ export type SlidePreviewProps = {
   } | null;
   /** When set (editor live preview), user can drag to reposition the background image. */
   onBackgroundImagePositionChange?: (x: number, y: number) => void;
+  /** When set (editor multi-image layout), user can drag a slot image to reposition within its own box. */
+  onMultiImageSlotPositionChange?: (x: number, y: number, slotIndex: number) => void;
   /** When set (editor live preview, PiP mode), user can drag to reposition a PiP box. `slotIndex` matches image order (0 = first). */
   onPipPositionChange?: (x: number, y: number, slotIndex?: number) => void;
   /** When set (editor live preview, PiP mode), user can resize a PiP box from corner handles. */
@@ -692,6 +694,7 @@ export function SlidePreview({
   photoCompositionOnly = false,
   viewportFit = "cover",
   onBackgroundImagePositionChange,
+  onMultiImageSlotPositionChange,
   onPipPositionChange,
   onPipSizeChange,
   onPipRotationChange,
@@ -764,9 +767,13 @@ export function SlidePreview({
   /** Background image drag: start client coords and start focal point (%). */
   const bgImageDragRef = useRef<{ startClientX: number; startClientY: number; startX: number; startY: number } | null>(null);
   const onBackgroundImagePositionChangeRef = useRef(onBackgroundImagePositionChange);
+  const onMultiImageSlotPositionChangeRef = useRef(onMultiImageSlotPositionChange);
   useEffect(() => {
     onBackgroundImagePositionChangeRef.current = onBackgroundImagePositionChange;
   }, [onBackgroundImagePositionChange]);
+  useEffect(() => {
+    onMultiImageSlotPositionChangeRef.current = onMultiImageSlotPositionChange;
+  }, [onMultiImageSlotPositionChange]);
   const handleBgImagePointerDown = useCallback(
     (e: React.PointerEvent) => {
       if (!onBackgroundImagePositionChangeRef.current) return;
@@ -795,6 +802,56 @@ export function SlidePreview({
       window.addEventListener("pointerup", onUp);
     },
     [imageDisplay?.position, imageDisplay?.imagePositionX, imageDisplay?.imagePositionY, editScale]
+  );
+  const multiSlotDragRef = useRef<{
+    startClientX: number;
+    startClientY: number;
+    startX: number;
+    startY: number;
+    slotIndex: number;
+    slotW: number;
+    slotH: number;
+  } | null>(null);
+  const handleMultiSlotImagePointerDown = useCallback(
+    (
+      e: React.PointerEvent,
+      slotIndex: number,
+      slotStartX: number,
+      slotStartY: number,
+      slotW: number,
+      slotH: number
+    ) => {
+      if (!onMultiImageSlotPositionChangeRef.current) return;
+      e.preventDefault();
+      e.stopPropagation();
+      multiSlotDragRef.current = {
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+        startX: slotStartX,
+        startY: slotStartY,
+        slotIndex,
+        slotW: Math.max(1, slotW),
+        slotH: Math.max(1, slotH),
+      };
+      (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+      const scale = editScale || 1;
+      const onMove = (ev: PointerEvent) => {
+        const d = multiSlotDragRef.current;
+        if (!d) return;
+        const nextX = Math.min(100, Math.max(0, d.startX + ((ev.clientX - d.startClientX) / (d.slotW * scale)) * 100));
+        const nextY = Math.min(100, Math.max(0, d.startY + ((ev.clientY - d.startClientY) / (d.slotH * scale)) * 100));
+        onMultiImageSlotPositionChangeRef.current?.(nextX, nextY, d.slotIndex);
+      };
+      const onUp = () => {
+        (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        multiSlotDragRef.current = null;
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    },
+    [editScale]
   );
   /** PiP drag: start client coords and start position (0–100). */
   const pipDragRef = useRef<{ startClientX: number; startClientY: number; startX: number; startY: number } | null>(null);
@@ -1699,7 +1756,58 @@ export function SlidePreview({
               )}
               {baseEntriesMp.length > 1 && (
                 <div className="absolute inset-0" style={{ zIndex: 0 }}>
-                  {baseEntriesMp.map(({ url, sourceIndex }, i) => {
+                  {(() => {
+                    const baseCount = baseEntriesMp.length;
+                    const layoutMode = imageDisplay?.layout ?? "auto";
+                    const useGrid = layoutMode === "grid" || (layoutMode === "auto" && baseCount === 4);
+                    const useStacked = layoutMode === "stacked";
+                    const useSideBySide = layoutMode === "side-by-side" || (layoutMode === "auto" && (baseCount === 2 || baseCount === 3));
+                    const gapPx = Math.max(0, Math.min(48, imageDisplay?.gap ?? 0));
+                    const dividerStyle = imageDisplay?.dividerStyle ?? "gap";
+                    const dividerColor = imageDisplay?.dividerColor ?? "#ffffff";
+                    const dividerWidth = Math.max(2, Math.min(100, imageDisplay?.dividerWidth ?? 48));
+                    const itemStyleFor = (index: number): CSSProperties => {
+                      if (useGrid && baseCount === 4) {
+                        const row = Math.floor(index / 2);
+                        const col = index % 2;
+                        return {
+                          left: col === 0 ? 0 : "50%",
+                          top: row === 0 ? 0 : "50%",
+                          width: "50%",
+                          height: "50%",
+                          paddingLeft: col === 1 ? gapPx / 2 : 0,
+                          paddingRight: col === 0 ? gapPx / 2 : 0,
+                          paddingTop: row === 1 ? gapPx / 2 : 0,
+                          paddingBottom: row === 0 ? gapPx / 2 : 0,
+                        };
+                      }
+                      if (useStacked) {
+                        const h = 100 / baseCount;
+                        return {
+                          left: 0,
+                          top: `${index * h}%`,
+                          width: "100%",
+                          height: `${h}%`,
+                          paddingTop: index > 0 ? gapPx / 2 : 0,
+                          paddingBottom: index < baseCount - 1 ? gapPx / 2 : 0,
+                        };
+                      }
+                      if (useSideBySide || layoutMode === "auto") {
+                        const w = 100 / baseCount;
+                        return {
+                          left: `${index * w}%`,
+                          top: 0,
+                          width: `${w}%`,
+                          height: "100%",
+                          paddingLeft: index > 0 ? gapPx / 2 : 0,
+                          paddingRight: index < baseCount - 1 ? gapPx / 2 : 0,
+                        };
+                      }
+                      return { left: 0, top: 0, width: "100%", height: "100%" };
+                    };
+                    return (
+                      <>
+                        {baseEntriesMp.map(({ url, sourceIndex }, i) => {
                     const slotRaw =
                       Array.isArray(imageDisplay?.pips) && sourceIndex >= 0
                         ? (imageDisplay!.pips![sourceIndex] as Record<string, unknown> | undefined)
@@ -1722,14 +1830,48 @@ export function SlidePreview({
                         referrerPolicy="no-referrer"
                         className="absolute h-full pointer-events-none"
                         style={{
-                          left: `${(i * 100) / baseEntriesMp.length}%`,
-                          width: `${100 / baseEntriesMp.length}%`,
+                          ...itemStyleFor(i),
                           objectFit: slotFit,
                           objectPosition: slotPos,
                         }}
                       />
                     );
                   })}
+                        {dividerStyle !== "gap" &&
+                          (useStacked
+                            ? Array.from({ length: baseCount - 1 }).map((_, i) => (
+                                <div
+                                  key={`base-divider-h-${i}`}
+                                  className="absolute pointer-events-none"
+                                  style={{
+                                    left: 0,
+                                    width: "100%",
+                                    top: `${((i + 1) * 100) / baseCount}%`,
+                                    height: dividerWidth,
+                                    transform: "translateY(-50%)",
+                                    backgroundColor: dividerColor,
+                                    opacity: 0.95,
+                                  }}
+                                />
+                              ))
+                            : Array.from({ length: baseCount - 1 }).map((_, i) => (
+                                <div
+                                  key={`base-divider-v-${i}`}
+                                  className="absolute pointer-events-none"
+                                  style={{
+                                    top: 0,
+                                    height: "100%",
+                                    left: `${((i + 1) * 100) / baseCount}%`,
+                                    width: dividerWidth,
+                                    transform: "translateX(-50%)",
+                                    backgroundColor: dividerColor,
+                                    opacity: 0.95,
+                                  }}
+                                />
+                              )))}
+                      </>
+                    );
+                  })()}
                 </div>
               )}
               {pipEntriesMp.map(({ url, sourceIndex }, i) => {
@@ -2233,6 +2375,15 @@ export function SlidePreview({
                       : POSITION_TO_CSS[
                           ((typeof slotRaw?.position === "string" ? slotRaw.position : pos) ?? "top") as keyof typeof POSITION_TO_CSS
                         ];
+                  const slotPosPercent =
+                    typeof slotRaw?.imagePositionX === "number" && typeof slotRaw?.imagePositionY === "number"
+                      ? {
+                          x: Math.min(100, Math.max(0, slotRaw.imagePositionX)),
+                          y: Math.min(100, Math.max(0, slotRaw.imagePositionY)),
+                        }
+                      : POSITION_TO_PERCENT[
+                          ((typeof slotRaw?.position === "string" ? slotRaw.position : pos) ?? "top") as keyof typeof POSITION_TO_PERCENT
+                        ] ?? { x: 50, y: 50 };
                   const slotFrame = typeof slotRaw?.frame === "string" ? slotRaw.frame : frame;
                   const slotFrameW = FRAME_WIDTHS[slotFrame] ?? frameW;
                   const slotFrameColor =
@@ -2295,19 +2446,55 @@ export function SlidePreview({
                                 objectPosition: slotPos,
                               }}
                             />
+                            {slotFit === "cover" && onMultiImageSlotPositionChangeRef.current && (
+                              <div
+                                className="absolute inset-0 cursor-grab active:cursor-grabbing"
+                                onPointerDown={(ev) =>
+                                  handleMultiSlotImagePointerDown(
+                                    ev,
+                                    i,
+                                    slotPosPercent.x,
+                                    slotPosPercent.y,
+                                    slotItemInnerW,
+                                    slotItemInnerH
+                                  )
+                                }
+                                role="presentation"
+                                aria-label={`Drag to reposition image in slot ${i + 1}`}
+                              />
+                            )}
                           </div>
                         </>
                       ) : (
-                        <img
-                          src={url}
-                          alt=""
-                          referrerPolicy="no-referrer"
-                          className="w-full h-full"
-                          style={{
-                            objectFit: slotFit,
-                            objectPosition: slotPos,
-                          }}
-                        />
+                        <>
+                          <img
+                            src={url}
+                            alt=""
+                            referrerPolicy="no-referrer"
+                            className="w-full h-full"
+                            style={{
+                              objectFit: slotFit,
+                              objectPosition: slotPos,
+                            }}
+                          />
+                          {slotFit === "cover" && onMultiImageSlotPositionChangeRef.current && (
+                            <div
+                              className="absolute inset-0 cursor-grab active:cursor-grabbing"
+                              onPointerDown={(ev) =>
+                                handleMultiSlotImagePointerDown(
+                                  ev,
+                                  i,
+                                  slotPosPercent.x,
+                                  slotPosPercent.y,
+                                  itemW,
+                                  itemH
+                                )
+                              }
+                              role="presentation"
+                              aria-label={`Drag to reposition image in slot ${i + 1}`}
+                            />
+                          )}
+                        </>
                       )}
                     </div>
                   );
