@@ -142,6 +142,7 @@ export function NewCarouselForm({
   /** When opening /new from “Similar ideas” on another carousel — reuse that run’s image/template/ref settings; notes stay empty. */
   initialSettingsCarriedFromCarousel = false,
   initialSelectedTemplateId,
+  initialSelectedTemplateIds,
   initialBackgroundAssetIds,
   initialViralShortsStyle,
   initialNumberOfSlides,
@@ -195,6 +196,8 @@ export function NewCarouselForm({
   initialSettingsCarriedFromCarousel?: boolean;
   /** Pre-fill template from source carousel `generation_options.template_id`. */
   initialSelectedTemplateId?: string | null;
+  /** Pre-fill ordered templates from source carousel `generation_options.template_ids`. */
+  initialSelectedTemplateIds?: string[];
   initialBackgroundAssetIds?: string[];
   initialViralShortsStyle?: boolean;
   /** 1–12 when source run fixed slide count; empty string in form means AI decides. */
@@ -305,12 +308,16 @@ export function NewCarouselForm({
   const combinedReferenceCount =
     aiStyleRefIds.length + ugcCharacterRefIds.length + productRefIds.length;
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(() => {
+  const [selectedTemplateIds, setSelectedTemplateIds] = useState<string[]>(() => {
+    const carriedOrdered = Array.isArray(initialSelectedTemplateIds)
+      ? initialSelectedTemplateIds.filter((id): id is string => templateOptions.some((t) => t.id === id)).slice(0, 3)
+      : [];
+    if (carriedOrdered.length > 0) return carriedOrdered;
     const initialPlatform = initialCarouselFor ?? "instagram";
     const wantImageTemplate = initialUseAiBackgrounds ?? (!!regenerateCarouselId);
     const carried = initialSelectedTemplateId?.trim();
     const carriedOk = Boolean(carried && templateOptions.some((t) => t.id === carried));
-    return pickTemplateIdForBackgroundMode(templateOptions, {
+    const firstTemplateId = pickTemplateIdForBackgroundMode(templateOptions, {
       carouselFor: initialPlatform,
       wantImageTemplate,
       preferredId: carriedOk
@@ -321,16 +328,23 @@ export function NewCarouselForm({
       fallbackDefaultId: initialPlatform === "linkedin" ? defaultLinkedInTemplateId : defaultTemplateId,
       respectUserPreferred: carriedOk,
     });
+    return firstTemplateId ? [firstTemplateId] : [];
   });
+  const selectedTemplateId = selectedTemplateIds[0] ?? null;
+  const [templatePickerSlot, setTemplatePickerSlot] = useState<0 | 1 | 2>(0);
   /** After user picks a template in the modal, keep it—do not auto-replace when AI background toggles. */
   const userLockedTemplateChoiceRef = useRef(false);
 
   useLayoutEffect(() => {
+    if ((initialSelectedTemplateIds?.length ?? 0) > 0) {
+      userLockedTemplateChoiceRef.current = true;
+      return;
+    }
     const tid = initialSelectedTemplateId?.trim();
     if (tid && templateOptions.some((t) => t.id === tid)) {
       userLockedTemplateChoiceRef.current = true;
     }
-  }, [initialSelectedTemplateId, templateOptions]);
+  }, [initialSelectedTemplateId, initialSelectedTemplateIds, templateOptions]);
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [plansOpen, setPlansOpen] = useState(false);
@@ -439,6 +453,23 @@ export function NewCarouselForm({
     return () => window.clearTimeout(id);
   }, [isPending]);
 
+  const setPrimaryTemplateId = (id: string | null) => {
+    setSelectedTemplateIds((prev) => {
+      if (!id) return prev.slice(1, 3);
+      const rest = prev.slice(1).filter((v) => v !== id);
+      return [id, ...rest].slice(0, 3);
+    });
+  };
+
+  const setTemplateIdForSlot = (slot: 0 | 1 | 2, id: string) => {
+    setSelectedTemplateIds((prev) => {
+      const seed = prev.filter((v) => v !== id);
+      while (seed.length <= slot) seed.push("");
+      seed[slot] = id;
+      return seed.filter((v) => v.length > 0).slice(0, 3);
+    });
+  };
+
   const prevCarouselForRef = useRef<"instagram" | "linkedin">(carouselFor);
   useEffect(() => {
     if (prevCarouselForRef.current !== carouselFor) {
@@ -462,7 +493,7 @@ export function NewCarouselForm({
         fallbackDefaultId: carouselFor === "linkedin" ? defaultLinkedInTemplateId : defaultTemplateId,
         respectUserPreferred: currentStillValid,
       });
-      setSelectedTemplateId(next);
+      setPrimaryTemplateId(next);
     }
   }, [carouselFor, useAiBackgrounds, templateOptions, defaultLinkedInTemplateId, defaultTemplateId, selectedTemplateId]);
 
@@ -478,7 +509,7 @@ export function NewCarouselForm({
       fallbackDefaultId: carouselFor === "linkedin" ? defaultLinkedInTemplateId : defaultTemplateId,
       respectUserPreferred: false,
     });
-    if (next !== selectedTemplateId) setSelectedTemplateId(next);
+    if (next !== selectedTemplateId) setPrimaryTemplateId(next);
   }, [
     useAiBackgrounds,
     carouselFor,
@@ -582,8 +613,13 @@ export function NewCarouselForm({
       if (useWebSearch) formData.set("use_web_search", "true");
       if (viralShortsStyle) formData.set("viral_shorts_style", "true");
       if (notes.trim()) formData.set("notes", notes.trim());
-      if (selectedTemplateId) formData.set("template_id", selectedTemplateId);
-      else if (carouselFor === "linkedin" && defaultLinkedInTemplateId) formData.set("template_id", defaultLinkedInTemplateId);
+      const orderedTemplateIds = selectedTemplateIds.slice(0, 3);
+      if (orderedTemplateIds.length > 0) {
+        formData.set("template_id", orderedTemplateIds[0]!);
+        formData.set("template_ids", JSON.stringify(orderedTemplateIds));
+      } else if (carouselFor === "linkedin" && defaultLinkedInTemplateId) {
+        formData.set("template_id", defaultLinkedInTemplateId);
+      }
       const result = await startCarouselGeneration(formData);
       if ("error" in result && !("carouselId" in result)) {
         setError(result.error);
@@ -1252,22 +1288,37 @@ export function NewCarouselForm({
               </CardDescription>
             </CardHeader>
             <CardContent className="px-5 pt-0">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setTemplateModalOpen(true)}
-              className="gap-2"
-            >
-              <LayoutTemplateIcon className="size-4" />
-              {selectedTemplateId
-                ? templateOptions.find((t) => t.id === selectedTemplateId)?.name ?? "Custom"
-                : "Default (recommended)"}
-            </Button>
+            <div className="space-y-2">
+              {(["First slide", "Middle slides", "Last slide"] as const).map((label, idx) => {
+                const current = selectedTemplateIds[idx];
+                return (
+                  <div key={label} className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setTemplatePickerSlot(idx as 0 | 1 | 2);
+                        setTemplateModalOpen(true);
+                      }}
+                      className="gap-2"
+                    >
+                      <LayoutTemplateIcon className="size-4" />
+                      {label}: {current ? templateOptions.find((t) => t.id === current)?.name ?? "Custom" : "Default"}
+                    </Button>
+                  </div>
+                );
+              })}
+              <p className="text-xs text-muted-foreground">
+                Choose up to 3 templates. 1 = all slides, 2 = first/last + middle, 3 = first + middle + last.
+              </p>
+            </div>
             <Dialog open={templateModalOpen} onOpenChange={setTemplateModalOpen}>
               <DialogContent className="flex flex-col max-w-[calc(100%-2rem)] max-h-[85vh] sm:max-w-2xl md:max-w-[92vw] md:max-h-[92vh] md:w-[92vw] md:h-[92vh] lg:max-w-[94vw] lg:max-h-[94vh] lg:w-[94vw] lg:h-[94vh]">
                 <DialogHeader>
-                  <DialogTitle>Choose template</DialogTitle>
+                  <DialogTitle>
+                    Choose template for {templatePickerSlot === 0 ? "first slide" : templatePickerSlot === 1 ? "middle slides" : "last slide"}
+                  </DialogTitle>
                   <p className="text-muted-foreground text-sm mt-1">
                     All templates are available. Use the platform filter to match Instagram or LinkedIn; default matches your carousel type.
                   </p>
@@ -1287,10 +1338,11 @@ export function NewCarouselForm({
                     defaultTemplateId={carouselFor === "linkedin" ? defaultLinkedInTemplateId : defaultTemplateId}
                     defaultTemplateConfig={carouselFor === "linkedin" ? defaultLinkedInTemplateConfig : defaultTemplateConfig}
                     initialPlatformFilter={carouselFor === "linkedin" ? "linkedin" : "other"}
-                    value={selectedTemplateId}
+                    value={selectedTemplateIds[templatePickerSlot] ?? selectedTemplateId}
                     onChange={(id) => {
+                      if (!id) return;
                       userLockedTemplateChoiceRef.current = true;
-                      setSelectedTemplateId(id);
+                      setTemplateIdForSlot(templatePickerSlot, id);
                       setTemplateModalOpen(false);
                     }}
                     primaryColor={primaryColor}

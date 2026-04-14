@@ -324,6 +324,16 @@ export async function generateCarousel(formData: FormData): Promise<
     use_saved_ugc_character: formData.get("use_saved_ugc_character") ?? undefined,
     notes: ((formData.get("notes") as string | null) ?? "").trim() || undefined,
     template_id: (formData.get("template_id") as string | null)?.trim() || undefined,
+    template_ids: (() => {
+      const rawIds = formData.get("template_ids") as string | null;
+      if (!rawIds) return undefined;
+      try {
+        const arr = JSON.parse(rawIds) as unknown;
+        return Array.isArray(arr) ? arr : undefined;
+      } catch {
+        return undefined;
+      }
+    })(),
     viral_shorts_style: formData.get("viral_shorts_style") ?? undefined,
     carousel_for: (formData.get("carousel_for") as string | null)?.trim() || undefined,
   };
@@ -544,8 +554,9 @@ export async function generateCarousel(formData: FormData): Promise<
 
   // Resolve template for prompt so AI gets zone limits (font size, width, height, has headline/body).
   let templateForPrompt: Awaited<ReturnType<typeof getTemplate>> = null;
-  if (data.template_id) {
-    templateForPrompt = await getTemplate(user.id, data.template_id);
+  const orderedRequestedTemplateIds = (data.template_ids?.length ? data.template_ids : (data.template_id ? [data.template_id] : [])).slice(0, 3);
+  if (orderedRequestedTemplateIds[0]) {
+    templateForPrompt = await getTemplate(user.id, orderedRequestedTemplateIds[0]);
   } else {
     const defaultForPrompt =
       carouselFor === "linkedin"
@@ -710,6 +721,7 @@ export async function generateCarousel(formData: FormData): Promise<
     ...(carouselFor && { carousel_for: carouselFor }),
     ...(data.notes?.trim() && { notes: data.notes.trim() }),
     ...(data.template_id && { template_id: data.template_id }),
+    ...(data.template_ids?.length ? { template_ids: data.template_ids } : {}),
     ...(data.number_of_slides != null && { number_of_slides: data.number_of_slides }),
     ...(data.background_asset_ids != null && { background_asset_ids: data.background_asset_ids }),
     ...(data.ai_style_reference_asset_ids != null && {
@@ -733,22 +745,48 @@ export async function generateCarousel(formData: FormData): Promise<
     (requestedUseAiBackgrounds && validated.slides.some(hasImageQueriesForDefault));
 
   const defaultTemplate =
-    carouselFor === "linkedin" && !data.template_id
+    carouselFor === "linkedin" && orderedRequestedTemplateIds.length === 0
       ? await getDefaultLinkedInTemplate(user.id)
-      : !data.template_id && carouselWillHaveImages
+      : orderedRequestedTemplateIds.length === 0 && carouselWillHaveImages
         ? await getDefaultTemplateForNewCarouselImage(user.id)
         : await getDefaultTemplateForNewCarousel(user.id);
   let defaultTemplateId: string | null = defaultTemplate?.templateId ?? null;
-  let selectedTemplate: Awaited<ReturnType<typeof getTemplate>> = null;
-  if (data.template_id) {
-    const requested = await getTemplate(user.id, data.template_id);
-    if (requested) {
-      defaultTemplateId = requested.id;
-      selectedTemplate = requested;
-    }
+  const resolvedTemplates = new Map<string, NonNullable<Awaited<ReturnType<typeof getTemplate>>>>();
+  for (const templateId of orderedRequestedTemplateIds) {
+    const tpl = await getTemplate(user.id, templateId);
+    if (tpl) resolvedTemplates.set(templateId, tpl);
   }
-  if (!selectedTemplate && defaultTemplateId) {
+  let selectedTemplate: Awaited<ReturnType<typeof getTemplate>> =
+    orderedRequestedTemplateIds[0] ? (resolvedTemplates.get(orderedRequestedTemplateIds[0]) ?? null) : null;
+  if (selectedTemplate) {
+    defaultTemplateId = selectedTemplate.id;
+  } else if (defaultTemplateId) {
     selectedTemplate = await getTemplate(user.id, defaultTemplateId);
+    if (selectedTemplate) resolvedTemplates.set(selectedTemplate.id, selectedTemplate);
+  }
+  const templateIdsForRun = (() => {
+    const requestedResolved = orderedRequestedTemplateIds.filter((id) => resolvedTemplates.has(id));
+    if (requestedResolved.length > 0) return requestedResolved.slice(0, 3);
+    return defaultTemplateId ? [defaultTemplateId] : [];
+  })();
+  const chooseTemplateIdForSlideIndex = (slideIndex: number, totalSlides: number): string | null => {
+    const [t1, t2, t3] = templateIdsForRun;
+    if (templateIdsForRun.length >= 3) {
+      if (slideIndex <= 1) return t1 ?? null;
+      if (slideIndex >= totalSlides) return t3 ?? null;
+      return t2 ?? t1 ?? t3 ?? null;
+    }
+    if (templateIdsForRun.length === 2) {
+      if (slideIndex <= 1 || slideIndex >= totalSlides) return t1 ?? null;
+      return t2 ?? t1 ?? null;
+    }
+    return t1 ?? null;
+  };
+  const slideTemplateIdByIndex = new Map<number, string>();
+  const totalSlideCount = validated.slides.length;
+  for (const s of validated.slides) {
+    const templateId = chooseTemplateIdForSlideIndex(s.slide_index, totalSlideCount);
+    if (templateId) slideTemplateIdByIndex.set(s.slide_index, templateId);
   }
   const isFollowCta = carouselFor !== "linkedin" && (defaultTemplate && "isFollowCta" in defaultTemplate ? defaultTemplate.isFollowCta : false);
 
@@ -760,7 +798,10 @@ export async function generateCarousel(formData: FormData): Promise<
     const mainHeadlineWords = sanitizeHighlightWordsForText(fullHeadline, s.headline_highlight_words);
     const mainBodyWords = sanitizeHighlightWordsForText(fullBody, s.body_highlight_words);
     const alternates = (s as { shorten_alternates?: { headline: string; body?: string; headline_highlight_words?: string[]; body_highlight_words?: string[] }[] }).shorten_alternates;
-    const templateConfigParsed = selectedTemplate ? templateConfigSchema.safeParse(selectedTemplate.config) : null;
+    const slideTemplate = slideTemplateIdByIndex.get(s.slide_index)
+      ? resolvedTemplates.get(slideTemplateIdByIndex.get(s.slide_index)!)
+      : selectedTemplate;
+    const templateConfigParsed = slideTemplate ? templateConfigSchema.safeParse(slideTemplate.config) : null;
     const bodyZoneForRewrite =
       templateConfigParsed?.success ? templateConfigParsed.data.textZones.find((z) => z.id === "body") : undefined;
 
@@ -792,13 +833,23 @@ export async function generateCarousel(formData: FormData): Promise<
       slide_type: s.slide_type,
       headline: fullHeadline,
       body: fullBody || null,
-      template_id: defaultTemplateId,
+      template_id: slideTemplateIdByIndex.get(s.slide_index) ?? defaultTemplateId,
       background: {},
       meta: meta as Json,
     };
   });
 
   const createdSlides = await replaceSlides(user.id, carousel.id, slideRows);
+  const templateAllowsImageById = new Map<string, boolean>();
+  for (const [templateId, template] of resolvedTemplates.entries()) {
+    const parsedConfig = templateConfigSchema.safeParse(template.config);
+    templateAllowsImageById.set(templateId, parsedConfig.success ? parsedConfig.data.backgroundRules.allowImage !== false : true);
+  }
+  const slideCanUseImage = (slide: (typeof createdSlides)[number]) => {
+    const assignedTemplateId = slideTemplateIdByIndex.get(slide.slide_index);
+    if (!assignedTemplateId) return true;
+    return templateAllowsImageById.get(assignedTemplateId) !== false;
+  };
 
   const overlayColor = "#0a0a0a"; // neutral overlay (template/default); do not use brand logo color
   const overlayTextColor = getContrastingTextColor(overlayColor);
@@ -844,8 +895,9 @@ export async function generateCarousel(formData: FormData): Promise<
         topic: data.input_value?.trim(),
       });
       const userAssetUpdates: { slide: (typeof createdSlides)[number]; asset: { id: string; storage_path: string } }[] = [];
-      for (let i = 0; i < createdSlides.length; i++) {
-        const slide = createdSlides[i];
+      const eligibleSlides = createdSlides.filter(slideCanUseImage);
+      for (let i = 0; i < eligibleSlides.length; i++) {
+        const slide = eligibleSlides[i];
         if (!slide) continue;
         const matchedAssetId = aiMatchedAssetBySlideId?.get(slide.id);
         const asset =
@@ -876,7 +928,13 @@ export async function generateCarousel(formData: FormData): Promise<
 
   const hasImageQueries = (s: { image_queries?: string[]; unsplash_queries?: string[]; image_query?: string; unsplash_query?: string }) =>
     (s.image_queries?.length ?? s.unsplash_queries?.length ?? 0) > 0 || !!(s.image_query?.trim() || s.unsplash_query?.trim());
-  if (requestedUseAiBackgrounds && validated.slides.some(hasImageQueries)) {
+  if (
+    requestedUseAiBackgrounds &&
+    validated.slides.some((s) => {
+      const slideRow = createdSlides.find((row) => row.slide_index === s.slide_index);
+      return !!slideRow && slideCanUseImage(slideRow) && hasImageQueries(s);
+    })
+  ) {
     {
       const curBg = await getCarousel(user.id, carousel.id);
       const po = (curBg?.generation_options ?? {}) as Record<string, unknown>;
@@ -949,6 +1007,7 @@ export async function generateCarousel(formData: FormData): Promise<
     if (useAiGenerate) {
       const aiGenJobs: { slide: (typeof createdSlides)[number]; aiSlide: (typeof validated.slides)[number] }[] = [];
       for (const slide of createdSlides) {
+        if (!slideCanUseImage(slide)) continue;
         if (slidesWithImage.has(slide.id)) continue;
         const aiSlide = aiSlideByIndex.get(slide.slide_index);
         const queries = aiSlide?.image_queries?.filter((q) => q?.trim()) ?? aiSlide?.unsplash_queries?.filter((q) => q?.trim()) ?? (aiSlide?.image_query?.trim() ? [aiSlide.image_query.trim()] : aiSlide?.unsplash_query?.trim() ? [aiSlide.unsplash_query.trim()] : []);
@@ -1243,6 +1302,7 @@ export async function generateCarousel(formData: FormData): Promise<
       type StockProvider = "unsplash" | "pexels" | "pixabay";
       const searchJobs: { slide: (typeof createdSlides)[number]; queries: string[]; image_provider: StockProvider }[] = [];
       for (const slide of createdSlides) {
+        if (!slideCanUseImage(slide)) continue;
         if (slidesWithImage.has(slide.id)) continue;
         const aiSlide = aiSlideByIndex.get(slide.slide_index);
         const queries = aiSlide?.image_queries?.filter((q) => q?.trim()) ?? aiSlide?.unsplash_queries?.filter((q) => q?.trim()) ?? (aiSlide?.image_query?.trim() ? [aiSlide.image_query.trim()] : aiSlide?.unsplash_query?.trim() ? [aiSlide.unsplash_query.trim()] : []);
@@ -1461,11 +1521,13 @@ export async function generateCarousel(formData: FormData): Promise<
     );
   }
 
-  // Apply full template (overlay, defaults.meta, image_display, etc.) so it matches "select template in editor" and Apply to all.
-  if (defaultTemplateId) {
-    LOG("backgrounds", "applying template defaults to all slides");
+  // Apply full template defaults per slide (overlay, defaults.meta, image_display, etc.) to match editor behavior.
+  if (defaultTemplateId || templateIdsForRun.length > 0) {
+    LOG("backgrounds", "applying template defaults to slides");
     for (const slide of createdSlides) {
-      const result = await setSlideTemplate(slide.id, defaultTemplateId);
+      const templateIdForSlide = slideTemplateIdByIndex.get(slide.slide_index) ?? defaultTemplateId;
+      if (!templateIdForSlide) continue;
+      const result = await setSlideTemplate(slide.id, templateIdForSlide);
       if (!result.ok) LOG("backgrounds", `setSlideTemplate failed for ${slide.id}: ${result.error}`);
     }
   }
@@ -1637,6 +1699,16 @@ export async function startCarouselGeneration(formData: FormData): Promise<
     use_saved_ugc_character: formData.get("use_saved_ugc_character") ?? undefined,
     notes: ((formData.get("notes") as string | null) ?? "").trim() || undefined,
     template_id: (formData.get("template_id") as string | null)?.trim() || undefined,
+    template_ids: (() => {
+      const rawIds = formData.get("template_ids") as string | null;
+      if (!rawIds) return undefined;
+      try {
+        const arr = JSON.parse(rawIds) as unknown;
+        return Array.isArray(arr) ? arr : undefined;
+      } catch {
+        return undefined;
+      }
+    })(),
     viral_shorts_style: formData.get("viral_shorts_style") ?? undefined,
     carousel_for: (formData.get("carousel_for") as string | null)?.trim() || undefined,
   };
@@ -1769,6 +1841,7 @@ export async function startCarouselGeneration(formData: FormData): Promise<
     number_of_slides: data.number_of_slides,
     notes: data.notes,
     template_id: data.template_id,
+    template_ids: data.template_ids,
     viral_shorts_style: !!parsed.data.viral_shorts_style && userIsAdmin,
     background_asset_ids: data.background_asset_ids,
     ai_style_reference_asset_ids: data.ai_style_reference_asset_ids ?? [],

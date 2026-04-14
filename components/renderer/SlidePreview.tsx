@@ -352,6 +352,8 @@ export type SlidePreviewProps = {
   onPipPositionChange?: (x: number, y: number, slotIndex?: number) => void;
   /** When set (editor live preview, PiP mode), user can resize a PiP box from corner handles. */
   onPipSizeChange?: (size: number, slotIndex?: number) => void;
+  /** When set (editor live preview, PiP mode), user can rotate a PiP box from preview handle. */
+  onPipRotationChange?: (deg: number, slotIndex?: number) => void;
   /** When set, clicking a PiP image notifies parent (e.g. switch to Background tab). */
   /** Called when user clicks a PiP image; slotIndex matches multi-image order (0 = first). */
   onPipImageClick?: (slotIndex: number) => void;
@@ -546,6 +548,13 @@ type ZoneRotateDragRef = {
   rot0: number;
   apply: (deg: number) => void;
 };
+type PipRotateDragRef = {
+  cx: number;
+  cy: number;
+  a0: number;
+  rot0: number;
+  slotIndex?: number;
+};
 
 /** Zigzag clip-paths for 2 images – shared boundary at 50%, zigzagging between 35% and 65%. */
 const ZIGZAG_LEFT = "polygon(0 0, 50% 0, 35% 25%, 65% 50%, 35% 75%, 50% 100%, 0 100%)";
@@ -684,6 +693,7 @@ export function SlidePreview({
   onBackgroundImagePositionChange,
   onPipPositionChange,
   onPipSizeChange,
+  onPipRotationChange,
   onPipImageClick,
   slideOverlayShapes,
   slideOverlayShapesResolved,
@@ -717,6 +727,8 @@ export function SlidePreview({
   const bodyMoreOpenRef = useRef(false);
   /** Which chrome element is focused for editing in preview: counter or watermark. */
   const [focusedChrome, setFocusedChrome] = useState<"counter" | "watermark" | "swipe" | "madeWith" | null>(null);
+  /** Which PiP slot is focused (shows resize/rotate controls). Null keeps preview clean. */
+  const [focusedPipSlot, setFocusedPipSlot] = useState<number | null>(null);
   const [headlineFontModalOpen, setHeadlineFontModalOpen] = useState(false);
   const [bodyFontModalOpen, setBodyFontModalOpen] = useState(false);
   const counterChromeRef = useRef<HTMLDivElement>(null);
@@ -787,12 +799,44 @@ export function SlidePreview({
   const pipDragRef = useRef<{ startClientX: number; startClientY: number; startX: number; startY: number } | null>(null);
   const onPipPositionChangeRef = useRef(onPipPositionChange);
   const onPipSizeChangeRef = useRef(onPipSizeChange);
+  const onPipRotationChangeRef = useRef(onPipRotationChange);
   useEffect(() => {
     onPipPositionChangeRef.current = onPipPositionChange;
   }, [onPipPositionChange]);
   useEffect(() => {
     onPipSizeChangeRef.current = onPipSizeChange;
   }, [onPipSizeChange]);
+  useEffect(() => {
+    onPipRotationChangeRef.current = onPipRotationChange;
+  }, [onPipRotationChange]);
+  const pipRotateDragRef = useRef<PipRotateDragRef | null>(null);
+  const [pipRotateListening, setPipRotateListening] = useState(false);
+  useEffect(() => {
+    if (!pipRotateListening) return;
+    const onMove = (e: PointerEvent) => {
+      const st = pipRotateDragRef.current;
+      const root = previewRootRef.current;
+      if (!st || !root) return;
+      const r = root.getBoundingClientRect();
+      const px = ((e.clientX - r.left) / r.width) * CANVAS_SIZE;
+      const py = ((e.clientY - r.top) / r.height) * canvasH;
+      const ang = (Math.atan2(py - st.cy, px - st.cx) * 180) / Math.PI;
+      const rot = Math.round(normDegTextZone(st.rot0 + (ang - st.a0)));
+      onPipRotationChangeRef.current?.(rot, st.slotIndex);
+    };
+    const onUp = () => {
+      pipRotateDragRef.current = null;
+      setPipRotateListening(false);
+    };
+    window.addEventListener("pointermove", onMove, { capture: true });
+    window.addEventListener("pointerup", onUp, { capture: true });
+    window.addEventListener("pointercancel", onUp, { capture: true });
+    return () => {
+      window.removeEventListener("pointermove", onMove, { capture: true });
+      window.removeEventListener("pointerup", onUp, { capture: true });
+      window.removeEventListener("pointercancel", onUp, { capture: true });
+    };
+  }, [pipRotateListening, canvasH]);
   /** When PiP fit is "contain", we size each frame to that image's aspect ratio after load. */
   const [pipAspectByIndex, setPipAspectByIndex] = useState<Record<number, number>>({});
   const pipImagesFingerprint = `${backgroundImageUrl ?? ""}\0${(backgroundImageUrls ?? []).join("\0")}`;
@@ -1420,9 +1464,14 @@ export function SlidePreview({
       }
       aria-label={isEditablePreview && !chromeVisible ? "Click to show edit controls" : undefined}
       onPointerDownCapture={(e) => {
+        const t = e.target as HTMLElement | null;
+        if (focusedPipSlot != null) {
+          if (!t?.closest || !t.closest("[data-pip-control='true']")) {
+            setFocusedPipSlot(null);
+          }
+        }
         const ed = slideOverlayShapesEditable;
         if (!ed || ed.selectedIndex == null) return;
-        const t = e.target as HTMLElement | null;
         if (!t?.closest) return;
         if (t.closest("[data-slide-shapes-edit-layer]")) return;
         ed.onSelectIndex(null);
@@ -1695,8 +1744,18 @@ export function SlidePreview({
                 const useCustomPipPosMp = spec.pipX != null && spec.pipY != null;
                 const pipXClampedMp = useCustomPipPosMp ? Math.min(100, Math.max(0, spec.pipX!)) : 0;
                 const pipYClampedMp = useCustomPipPosMp ? Math.min(100, Math.max(0, spec.pipY!)) : 0;
+                const pipLeftMp = useCustomPipPosMp
+                  ? (pipXClampedMp / 100) * rangeXMp
+                  : spec.pipPosition === "bottom_right" || spec.pipPosition === "top_right"
+                    ? CANVAS_SIZE - pipInsetMp - pipWMp
+                    : pipInsetMp;
+                const pipTopMp = useCustomPipPosMp
+                  ? (pipYClampedMp / 100) * rangeYMp
+                  : spec.pipPosition === "bottom_right" || spec.pipPosition === "bottom_left"
+                    ? CANVAS_SIZE - pipInsetMp - pipHMp
+                    : pipInsetMp;
                 const pipPosStyleMp: CSSProperties = useCustomPipPosMp
-                  ? { left: (pipXClampedMp / 100) * rangeXMp, top: (pipYClampedMp / 100) * rangeYMp }
+                  ? { left: pipLeftMp, top: pipTopMp }
                   : spec.pipPosition === "bottom_right"
                     ? { right: pipInsetMp, bottom: pipInsetMp }
                     : spec.pipPosition === "bottom_left"
@@ -1718,6 +1777,7 @@ export function SlidePreview({
                 };
                 /* Stack order within isolated PiP layer only (does not compete with gradient z-index 1). */
                 const zMp = 1 + (spec.zIndex ?? i);
+                const pipSlotFocused = focusedPipSlot === sourceIndex;
                 return (
                   <div
                     key={`pip-m-${i}`}
@@ -1729,10 +1789,15 @@ export function SlidePreview({
                       ...pipPosStyleMp,
                       ...(spec.pipRotation !== 0 && { transform: `rotate(${spec.pipRotation}deg)`, transformOrigin: "center" }),
                     }}
-                    onClick={() => onPipImageClick?.(sourceIndex)}
+                    data-pip-control="true"
+                    onClick={() => {
+                      setFocusedPipSlot(sourceIndex);
+                      onPipImageClick?.(sourceIndex);
+                    }}
                   >
                     <div
-                      className={`absolute inset-0 overflow-hidden ${onPipPositionChange ? "cursor-grab active:cursor-grabbing" : ""}`}
+                      data-pip-control="true"
+                      className={`absolute inset-0 overflow-hidden ${onPipPositionChange && pipSlotFocused ? "cursor-grab active:cursor-grabbing" : ""}`}
                       style={{
                         ...pipShapeStylesMp,
                         ...(!pipUseClipPathFrameMp && slotFrameW > 0 ? { border: `${slotFrameW}px solid ${slotFrameColor}` } : {}),
@@ -1742,7 +1807,7 @@ export function SlidePreview({
                             : { boxShadow: slotFrameW > 0 ? "0 8px 32px rgba(0,0,0,0.3)" : "0 8px 32px rgba(0,0,0,0.25)" }
                           : {}),
                       }}
-                      {...(onPipPositionChange
+                      {...(onPipPositionChange && pipSlotFocused
                         ? {
                             onPointerDown: (e: React.PointerEvent) => handlePipPointerDown(e, pipWMp, pipHMp, dragSlotMp),
                             role: "presentation" as const,
@@ -1791,6 +1856,7 @@ export function SlidePreview({
                     )}
                     </div>
                     {onPipSizeChange &&
+                      pipSlotFocused &&
                       (["top_left", "top_right", "bottom_left", "bottom_right"] as const).map((corner) => (
                         <button
                           key={corner}
@@ -1813,10 +1879,46 @@ export function SlidePreview({
                               top: "auto",
                             }),
                           }}
+                          data-pip-control="true"
                           onPointerDown={(e) => handlePipResizePointerDown(e, corner, pipWMp, pipHMp, baseSizeMp, dragSlotMp)}
                           aria-label={`Resize picture-in-picture from ${corner.replace(/_/g, " ")}`}
                         />
                       ))}
+                    {onPipRotationChange && pipSlotFocused && (
+                      <button
+                        type="button"
+                        className="absolute left-1/2 z-30 -translate-x-1/2 rounded-full border-2 border-primary bg-primary/80 hover:scale-110 touch-none cursor-grab shadow-md ring-2 ring-background"
+                        style={{
+                          width: RESIZE_HANDLE_SIZE,
+                          height: RESIZE_HANDLE_SIZE,
+                          top: -(RESIZE_HANDLE_SIZE + 12),
+                          pointerEvents: "auto",
+                        }}
+                        data-pip-control="true"
+                        aria-label="Rotate picture in picture"
+                        onPointerDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          e.currentTarget.setPointerCapture(e.pointerId);
+                          const root = previewRootRef.current;
+                          if (!root) return;
+                          const r = root.getBoundingClientRect();
+                          const px = ((e.clientX - r.left) / r.width) * CANVAS_SIZE;
+                          const py = ((e.clientY - r.top) / r.height) * canvasH;
+                          const cx = pipLeftMp + pipWMp / 2;
+                          const cy = pipTopMp + pipHMp / 2;
+                          const a0 = (Math.atan2(py - cy, px - cx) * 180) / Math.PI;
+                          pipRotateDragRef.current = {
+                            cx,
+                            cy,
+                            a0,
+                            rot0: spec.pipRotation ?? 0,
+                            slotIndex: sourceIndex,
+                          };
+                          setPipRotateListening(true);
+                        }}
+                      />
+                    )}
                   </div>
                 );
               })}
@@ -2221,10 +2323,20 @@ export function SlidePreview({
             const useCustomPipPos = imageDisplay?.pipX != null && imageDisplay?.pipY != null;
             const pipXClamped = useCustomPipPos ? Math.min(100, Math.max(0, imageDisplay.pipX!)) : 0;
             const pipYClamped = useCustomPipPos ? Math.min(100, Math.max(0, imageDisplay.pipY!)) : 0;
+            const pipLeft = useCustomPipPos
+              ? (pipXClamped / 100) * rangeX
+              : pipPosForLayout === "bottom_right" || pipPosForLayout === "top_right"
+                ? CANVAS_SIZE - pipInset - pipW
+                : pipInset;
+            const pipTop = useCustomPipPos
+              ? (pipYClamped / 100) * rangeY
+              : pipPosForLayout === "bottom_right" || pipPosForLayout === "bottom_left"
+                ? CANVAS_SIZE - pipInset - pipH
+                : pipInset;
             const pipPosStyle: CSSProperties = useCustomPipPos
               ? {
-                  left: (pipXClamped / 100) * rangeX,
-                  top: (pipYClamped / 100) * rangeY,
+                  left: pipLeft,
+                  top: pipTop,
                 }
               : pipPosForLayout === "bottom_right"
                 ? { right: pipInset, bottom: pipInset }
@@ -2246,11 +2358,13 @@ export function SlidePreview({
               if (img.naturalWidth > 0 && img.naturalHeight > 0)
                 setPipAspectByIndex((prev) => ({ ...prev, 0: img.naturalWidth / img.naturalHeight }));
             };
+            const pipSlotFocused = focusedPipSlot === 0;
             return (
               <div className="absolute inset-0" style={{ zIndex: 0, isolation: "isolate" }}>
                 <div className="absolute inset-0" style={{ ...pipBgStyle, zIndex: 0 }} />
                 <div
                   className="absolute"
+                  data-pip-control="true"
                   style={{
                     zIndex: 1,
                     width: pipW,
@@ -2258,10 +2372,14 @@ export function SlidePreview({
                     ...pipPosStyle,
                     ...(pipRotationSingle !== 0 && { transform: `rotate(${pipRotationSingle}deg)`, transformOrigin: "center" }),
                   }}
-                  onClick={() => onPipImageClick?.(0)}
+                  onClick={() => {
+                    setFocusedPipSlot(0);
+                    onPipImageClick?.(0);
+                  }}
                 >
                   <div
-                    className={`absolute inset-0 overflow-hidden ${onPipPositionChange ? "cursor-grab active:cursor-grabbing" : ""}`}
+                    data-pip-control="true"
+                    className={`absolute inset-0 overflow-hidden ${onPipPositionChange && pipSlotFocused ? "cursor-grab active:cursor-grabbing" : ""}`}
                     style={{
                       ...pipShapeStyles,
                       ...(!pipUseClipPathFrame && pipFrameW > 0 ? { border: `${pipFrameW}px solid ${pipFrameColor}` } : {}),
@@ -2271,7 +2389,7 @@ export function SlidePreview({
                           : { boxShadow: pipFrameW > 0 ? "0 8px 32px rgba(0,0,0,0.3)" : "0 8px 32px rgba(0,0,0,0.25)" }
                         : {}),
                     }}
-                    {...(onPipPositionChange
+                    {...(onPipPositionChange && pipSlotFocused
                       ? {
                           onPointerDown: (e: React.PointerEvent) => handlePipPointerDown(e, pipW, pipH, pipDragSlot),
                           role: "presentation" as const,
@@ -2324,6 +2442,7 @@ export function SlidePreview({
                   )}
                   </div>
                   {onPipSizeChange &&
+                    pipSlotFocused &&
                     (["top_left", "top_right", "bottom_left", "bottom_right"] as const).map((corner) => (
                       <button
                         key={corner}
@@ -2346,10 +2465,46 @@ export function SlidePreview({
                             top: "auto",
                           }),
                         }}
+                        data-pip-control="true"
                         onPointerDown={(e) => handlePipResizePointerDown(e, corner, pipW, pipH, baseSize, pipDragSlot)}
                         aria-label={`Resize picture-in-picture from ${corner.replace(/_/g, " ")}`}
                       />
                     ))}
+                  {onPipRotationChange && pipSlotFocused && (
+                    <button
+                      type="button"
+                      className="absolute left-1/2 z-30 -translate-x-1/2 rounded-full border-2 border-primary bg-primary/80 hover:scale-110 touch-none cursor-grab shadow-md ring-2 ring-background"
+                      style={{
+                        width: RESIZE_HANDLE_SIZE,
+                        height: RESIZE_HANDLE_SIZE,
+                        top: -(RESIZE_HANDLE_SIZE + 12),
+                        pointerEvents: "auto",
+                      }}
+                      data-pip-control="true"
+                      aria-label="Rotate picture in picture"
+                      onPointerDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        e.currentTarget.setPointerCapture(e.pointerId);
+                        const root = previewRootRef.current;
+                        if (!root) return;
+                        const r = root.getBoundingClientRect();
+                        const px = ((e.clientX - r.left) / r.width) * CANVAS_SIZE;
+                        const py = ((e.clientY - r.top) / r.height) * canvasH;
+                        const cx = pipLeft + pipW / 2;
+                        const cy = pipTop + pipH / 2;
+                        const a0 = (Math.atan2(py - cy, px - cx) * 180) / Math.PI;
+                        pipRotateDragRef.current = {
+                          cx,
+                          cy,
+                          a0,
+                          rot0: pipRotationSingle,
+                          slotIndex: 0,
+                        };
+                        setPipRotateListening(true);
+                      }}
+                    />
+                  )}
                 </div>
               </div>
             );

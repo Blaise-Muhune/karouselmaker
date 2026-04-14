@@ -98,6 +98,7 @@ export default async function NewCarouselPage({
     notes?: string;
     carousel_for?: "instagram" | "linkedin";
     template_id?: string;
+    template_ids?: string[];
     background_asset_ids?: unknown;
     number_of_slides?: unknown;
     viral_shorts_style?: boolean;
@@ -111,6 +112,11 @@ export default async function NewCarouselPage({
         !!(genOpts.use_unsplash_only || genOpts.use_pixabay_only || genOpts.use_pexels_only);
 
   const templateIdFromOpts = typeof genOpts?.template_id === "string" ? genOpts.template_id.trim() : "";
+  const templateIdsFromOpts = Array.isArray(genOpts?.template_ids)
+    ? (genOpts.template_ids as unknown[])
+        .filter((id): id is string => typeof id === "string" && id.trim().length > 0)
+        .slice(0, 3)
+    : undefined;
   const backgroundIdsFromOpts = Array.isArray(genOpts?.background_asset_ids)
     ? (genOpts!.background_asset_ids as unknown[]).filter((id): id is string => typeof id === "string" && id.length > 0)
     : undefined;
@@ -195,6 +201,7 @@ export default async function NewCarouselPage({
           regenerateCarouselId={regenerateCarousel?.id}
           initialSettingsCarriedFromCarousel={!!carrySettingsCarousel && !regenerateCarousel}
           initialSelectedTemplateId={templateIdFromOpts || undefined}
+          initialSelectedTemplateIds={templateIdsFromOpts}
           initialBackgroundAssetIds={backgroundIdsFromOpts}
           initialViralShortsStyle={userIsAdmin && genOpts?.viral_shorts_style === true}
           initialNumberOfSlides={initialNumberOfSlides}

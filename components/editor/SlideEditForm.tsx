@@ -4433,6 +4433,16 @@ export function SlideEditForm({
                             )
                     : undefined
                 }
+                onPipRotationChange={
+                  isImageMode && effectiveImageDisplay.mode === "pip"
+                    ? (deg, slotIndex = 0) =>
+                        validImageCount < 2
+                          ? setImageDisplay((d) => ({ ...d, pipRotation: deg }))
+                          : setImageDisplay((d) =>
+                              upsertImageDisplayPipSlot(d, slotIndex, validImageCount, { pipRotation: deg })
+                            )
+                    : undefined
+                }
                 onPipImageClick={(slot) => {
                   const nextSlot = Math.min(Math.max(0, slot), Math.max(0, validImageCount - 1));
                   setBackgroundImageDisplaySlot(nextSlot);
@@ -5364,6 +5374,16 @@ export function SlideEditForm({
                                   ? setImageDisplay((d) => ({ ...d, pipSize: size }))
                                   : setImageDisplay((d) =>
                                       upsertImageDisplayPipSlot(d, slotIndex, validImageCount, { pipSize: size })
+                                    )
+                            : undefined
+                        }
+                        onPipRotationChange={
+                          isImageMode && effectiveImageDisplay.mode === "pip"
+                            ? (deg, slotIndex = 0) =>
+                                validImageCount < 2
+                                  ? setImageDisplay((d) => ({ ...d, pipRotation: deg }))
+                                  : setImageDisplay((d) =>
+                                      upsertImageDisplayPipSlot(d, slotIndex, validImageCount, { pipRotation: deg })
                                     )
                             : undefined
                         }
@@ -7844,7 +7864,20 @@ export function SlideEditForm({
                             </div>
                           </div>
                           <div className="space-y-1.5">
-                            <span className="text-muted-foreground text-xs">PiP rotation</span>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-muted-foreground text-xs">PiP rotation</span>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 px-2 text-[11px] gap-1"
+                                onClick={() => setImageDisplay((d) => ({ ...d, pipRotation: 0 }))}
+                                title="Reset PiP rotation to 0°"
+                              >
+                                <RotateCcw className="size-3.5" />
+                                Reset
+                              </Button>
+                            </div>
                             <StepperWithLongPress
                               value={imageDisplay.pipRotation ?? 0}
                               min={-180}
@@ -7943,7 +7976,24 @@ export function SlideEditForm({
                             </div>
                           </div>
                           <div className="space-y-1.5">
-                            <span className="text-muted-foreground text-xs">PiP rotation (this slot)</span>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-muted-foreground text-xs">PiP rotation (this slot)</span>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 px-2 text-[11px] gap-1"
+                                onClick={() =>
+                                  setImageDisplay((d) =>
+                                    upsertImageDisplayPipSlot(d, activeBackgroundDisplaySlot, validImageCount, { pipRotation: 0 })
+                                  )
+                                }
+                                title="Reset this PiP rotation to 0°"
+                              >
+                                <RotateCcw className="size-3.5" />
+                                Reset
+                              </Button>
+                            </div>
                             <StepperWithLongPress
                               value={activePipResolved?.pipRotation ?? imageDisplay.pipRotation ?? 0}
                               min={-180}

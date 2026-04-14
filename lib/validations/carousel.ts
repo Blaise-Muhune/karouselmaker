@@ -63,6 +63,8 @@ export const generateCarouselInputSchema = z
   notes: z.string().max(8000).optional(),
   /** Optional template ID to apply to all slides. If omitted, app default template is used. */
   template_id: z.string().uuid().optional(),
+  /** Optional ordered template IDs (max 3): [first], [first+last,middle], or [first,middle,last]. */
+  template_ids: z.array(z.string().uuid()).max(3).optional(),
   /** When true, generate in "Viral Shorts" style: curiosity-gap/contrarian hook, story build-up, one natural mid-carousel engagement slide, payoff, follow CTA. */
   viral_shorts_style: z
     .string()
