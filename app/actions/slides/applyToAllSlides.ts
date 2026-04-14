@@ -110,6 +110,22 @@ export async function applyToAllSlides(
       const incomingMeta = { ...(patch.meta as Record<string, unknown>) };
       delete incomingMeta.headline_highlights;
       delete incomingMeta.body_highlights;
+      if (
+        incomingMeta.extra_text_values &&
+        typeof incomingMeta.extra_text_values === "object" &&
+        !Array.isArray(incomingMeta.extra_text_values)
+      ) {
+        const existingExtraValues =
+          existingMeta.extra_text_values &&
+          typeof existingMeta.extra_text_values === "object" &&
+          !Array.isArray(existingMeta.extra_text_values)
+            ? (existingMeta.extra_text_values as Record<string, unknown>)
+            : {};
+        incomingMeta.extra_text_values = {
+          ...existingExtraValues,
+          ...(incomingMeta.extra_text_values as Record<string, unknown>),
+        };
+      }
       slidePatch.meta = { ...existingMeta, ...incomingMeta } as Json;
     }
     await updateSlide(user.id, slide.id, slidePatch);

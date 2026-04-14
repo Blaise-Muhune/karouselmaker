@@ -1319,6 +1319,7 @@ export function SlideEditForm({
   const [applyingClear, setApplyingClear] = useState(false);
   const [applyingHeadlineZone, setApplyingHeadlineZone] = useState(false);
   const [applyingBodyZone, setApplyingBodyZone] = useState(false);
+  const [applyingExtraZoneId, setApplyingExtraZoneId] = useState<string | null>(null);
   const [applyingAutoHighlights, setApplyingAutoHighlights] = useState(false);
   const [applyingHighlightStyle, setApplyingHighlightStyle] = useState(false);
   const [applyingChromeSection, setApplyingChromeSection] = useState<null | "show" | "counter" | "logo" | "swipe" | "watermark" | "shapes">(null);
@@ -1396,6 +1397,7 @@ export function SlideEditForm({
   const previewWrapRef = useRef<HTMLDivElement>(null);
   const [previewWrapSize, setPreviewWrapSize] = useState<{ w: number; h: number } | null>(null);
   const [activeEditZone, setActiveEditZone] = useState<string | null>(null);
+  const [expandedExtraTextZoneId, setExpandedExtraTextZoneId] = useState<string | null>(null);
   /** Which text section is expanded in the Text tab (click to expand and show green container in preview). */
   const [expandedTextSection, setExpandedTextSection] = useState<"headline" | "body" | null>(null);
   /** "Edit more" (style, highlight, layout) open per section. */
@@ -1753,8 +1755,12 @@ export function SlideEditForm({
     if (extraTextZones.length === 0) return templateConfigBase;
     const merged = [...templateConfigBase.textZones];
     for (const z of extraTextZones) {
-      if (merged.some((m) => m.id === z.id)) continue;
-      merged.push(z);
+      const idx = merged.findIndex((m) => m.id === z.id);
+      if (idx >= 0) {
+        merged[idx] = { ...merged[idx], ...z };
+      } else {
+        merged.push(z);
+      }
     }
     return { ...templateConfigBase, textZones: merged };
   }, [templateConfigBase, extraTextZones]);
@@ -2073,6 +2079,7 @@ export function SlideEditForm({
           )
         : {}
     );
+    setExpandedExtraTextZoneId(null);
   }, [slide.id, normalizeExtraTextZone]);
 
   const effectiveTemplateId = slide.template_id ?? templates[0]?.id ?? null;
@@ -2122,6 +2129,8 @@ export function SlideEditForm({
     };
     setCustomExtraTextZones((prev) => [...prev, next]);
     setExtraTextValues((prev) => ({ ...prev, [nowId]: "" }));
+    setExpandedExtraTextZoneId(nowId);
+    setActiveEditZone(nowId);
   };
   const upsertExtraTextZonePatch = useCallback((zoneId: string, patch: Omit<Partial<ExtraTextZone>, "id">) => {
     const fallbackBase = extraTextZones.find((z) => z.id === zoneId);
@@ -3522,6 +3531,27 @@ export function SlideEditForm({
       router.refresh();
     }
     setApplyingBodyZone(false);
+  };
+  const handleApplyExtraTextToAll = async (zoneId: string) => {
+    const zone = extraTextZones.find((z) => z.id === zoneId);
+    if (!zone) return;
+    const value = extraTextValues[zoneId] ?? "";
+    setApplyingExtraZoneId(zoneId);
+    const result = await applyToAllSlides(
+      slide.carousel_id,
+      {
+        meta: {
+          extra_text_values: {
+            [zoneId]: value,
+          },
+        },
+      },
+      editorPath,
+      applyScope
+    );
+    setApplyingExtraZoneId(null);
+    if (result.ok) router.refresh();
+    else alert(result.error ?? "Couldn't apply this extra text to all slides.");
   };
 
   /** Build template config from current slide state (layout, overlay, chrome, defaults). Used by Save as template and Update template. */
@@ -6430,12 +6460,34 @@ export function SlideEditForm({
                   {extraTextZones.map((zone) => {
                     const fromTemplate = templateExtraTextZones.some((z) => z.id === zone.id);
                     const updateZone = (patch: Partial<ExtraTextZone>) => upsertExtraTextZonePatch(zone.id, patch);
+                    const toggleExtraCase = () =>
+                      updateZone({
+                        textTransform: toggleTextTransformMode(
+                          (zone.textTransform ?? "none") as "uppercase" | "lowercase" | "none"
+                        ),
+                      });
                     return (
                       <div
                         key={zone.id}
-                        className={`rounded-md border bg-background/60 p-3 space-y-3 transition-colors ${activeEditZone === zone.id ? "border-primary/60 ring-1 ring-primary/30" : "border-border/60"}`}
-                        onClick={() => setActiveEditZone(zone.id)}
+                        className={`rounded-md border bg-background/60 transition-colors ${activeEditZone === zone.id ? "border-primary/60 ring-1 ring-primary/30" : "border-border/60"}`}
                       >
+                        <button
+                          type="button"
+                          className="w-full flex items-center gap-2 p-3 text-left hover:bg-muted/20 focus:outline-none focus:ring-0"
+                          onClick={() => {
+                            setActiveEditZone(zone.id);
+                            setExpandedExtraTextZoneId((prev) => (prev === zone.id ? null : zone.id));
+                          }}
+                          aria-expanded={expandedExtraTextZoneId === zone.id}
+                          aria-controls={`text-section-extra-${zone.id}`}
+                        >
+                          <ChevronDownIcon className={`size-4 shrink-0 text-muted-foreground transition-transform ${expandedExtraTextZoneId === zone.id ? "" : "-rotate-90"}`} />
+                          <span className="text-xs font-semibold text-foreground">{zone.label?.trim() || zone.id}</span>
+                          <span className="min-w-0 truncate text-xs text-muted-foreground flex-1">
+                            {(extraTextValues[zone.id] ?? "").trim() || `Text for ${zone.label?.trim() || zone.id}`}
+                          </span>
+                        </button>
+                        <div id={`text-section-extra-${zone.id}`} className={expandedExtraTextZoneId === zone.id ? "p-3 pt-0 space-y-3" : "hidden"}>
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-2">
                             <p className="text-[11px] font-semibold text-foreground">{zone.label?.trim() || zone.id}</p>
@@ -6450,6 +6502,20 @@ export function SlideEditForm({
                             </label>
                           </div>
                           <div className="flex items-center gap-2">
+                            {fromTemplate && totalSlides > 1 && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-8 text-xs"
+                                onClick={() => handleApplyExtraTextToAll(zone.id)}
+                                disabled={applyingExtraZoneId === zone.id}
+                                title="Apply this extra text to selected slides in scope"
+                              >
+                                {applyingExtraZoneId === zone.id ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
+                                Apply to all
+                              </Button>
+                            )}
                             {!fromTemplate && (
                               <Button
                                 type="button"
@@ -6470,39 +6536,45 @@ export function SlideEditForm({
                             )}
                           </div>
                         </div>
-                        <div className="grid gap-2 sm:grid-cols-2">
-                          <div className="space-y-1">
-                            <Label className="text-[11px] text-muted-foreground font-normal">Label</Label>
-                            <Input
-                              value={zone.label ?? ""}
-                              onChange={(e) => updateZone({ label: e.target.value.slice(0, 80) || undefined })}
-                              placeholder="Label (e.g. Kicker)"
-                              className="h-8 text-xs"
-                            />
-                          </div>
-                          <div className="space-y-1">
-                            <Label className="text-[11px] text-muted-foreground font-normal">Case</Label>
-                            <Select
-                              value={zone.textTransform ?? "none"}
-                              onValueChange={(v) => updateZone({ textTransform: v as "none" | "uppercase" | "lowercase" })}
-                            >
-                              <SelectTrigger className="h-8 text-xs">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="none">Normal</SelectItem>
-                                <SelectItem value="uppercase">UPPERCASE</SelectItem>
-                                <SelectItem value="lowercase">lowercase</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
+                        <div className="space-y-1">
+                          <Label className="text-[11px] text-muted-foreground font-normal">Label</Label>
+                          <Input
+                            value={zone.label ?? ""}
+                            onChange={(e) => updateZone({ label: e.target.value.slice(0, 80) || undefined })}
+                            placeholder="Label (e.g. Kicker)"
+                            className="h-8 text-xs"
+                          />
                         </div>
                         <Textarea
                           value={extraTextValues[zone.id] ?? ""}
                           onChange={(e) => setExtraTextValues((prev) => ({ ...prev, [zone.id]: e.target.value }))}
+                          onFocus={() => {
+                            setActiveEditZone(zone.id);
+                            setExpandedExtraTextZoneId(zone.id);
+                          }}
                           placeholder={`Text for ${zone.label?.trim() || zone.id}`}
                           className="min-h-[64px] text-sm"
                         />
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 min-w-8 px-2 text-xs font-semibold"
+                            onClick={toggleExtraCase}
+                            disabled={!(extraTextValues[zone.id] ?? "").trim()}
+                            title="Toggle case style (uppercase/lowercase)"
+                            aria-label="Toggle case style"
+                          >
+                            Aa
+                          </Button>
+                          <button type="button" onClick={() => setInfoSection("content")} className="rounded p-1.5 text-muted-foreground hover:bg-muted" aria-label="Content help" title="Help">
+                            <InfoIcon className="size-3.5" />
+                          </button>
+                        </div>
+                        <div className="rounded-lg border border-border/50 bg-muted/20 p-3 space-y-4">
+                          <div className="space-y-3">
+                            <p className="text-xs font-medium text-foreground">Text style</p>
                         <div className="grid gap-3 sm:grid-cols-2">
                           <div className="space-y-1.5">
                             <Label className="text-[11px] text-muted-foreground font-normal">Font size</Label>
@@ -6531,20 +6603,6 @@ export function SlideEditForm({
                                     {f.label}
                                   </SelectItem>
                                 ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div className="space-y-1.5">
-                            <Label className="text-[11px] text-muted-foreground font-normal">Align</Label>
-                            <Select value={zone.align} onValueChange={(v) => updateZone({ align: v as ExtraTextZone["align"] })}>
-                              <SelectTrigger className="h-8 text-xs">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="left">Left</SelectItem>
-                                <SelectItem value="center">Center</SelectItem>
-                                <SelectItem value="right">Right</SelectItem>
-                                <SelectItem value="justify">Justify</SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
@@ -6602,6 +6660,29 @@ export function SlideEditForm({
                             />
                           </div>
                         </div>
+                          </div>
+                        <div className="space-y-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">On the slide</p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Button type="button" variant="secondary" size="sm" className="h-7 text-xs" title="Position and size in preview">
+                              <LayoutTemplateIcon className="size-3" /> Layout
+                            </Button>
+                            <div className="flex items-center gap-2">
+                              <Label className="text-[11px] text-muted-foreground shrink-0">Align</Label>
+                              <Select value={zone.align} onValueChange={(v) => updateZone({ align: v as ExtraTextZone["align"] })}>
+                                <SelectTrigger className="h-7 text-[11px] w-[100px]">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="left">Left</SelectItem>
+                                  <SelectItem value="center">Center</SelectItem>
+                                  <SelectItem value="right">Right</SelectItem>
+                                  <SelectItem value="justify">Justify</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                        </div>
                         <div className="rounded-md border border-border/50 bg-muted/20 p-2">
                           <p className="text-[11px] font-medium text-foreground mb-2">Backdrop</p>
                           <div className="space-y-2">
@@ -6652,6 +6733,8 @@ export function SlideEditForm({
                               </>
                             )}
                           </div>
+                        </div>
+                        </div>
                         </div>
                       </div>
                     );
