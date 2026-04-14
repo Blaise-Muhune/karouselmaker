@@ -52,6 +52,7 @@ import {
 
 /** Full page reload while generation overlay is open, so long runs can recover / see updated state. */
 const CAROUSEL_GENERATION_OVERLAY_REFRESH_MS = 3 * 60 * 1000 + 30 * 1000;
+const WEB_IMAGES_DISCLAIMER_STORAGE_KEY = "km:web-images-disclaimer:skip";
 
 /** Carousel for: Instagram (default) or LinkedIn. LinkedIn uses B2B-optimized content and stock/own images only (no AI generate). */
 const CAROUSEL_FOR_OPTIONS = [
@@ -363,9 +364,26 @@ export function NewCarouselForm({
   const [topicSuggestError, setTopicSuggestError] = useState<string | null>(null);
   const [topicRefreshesUsed, setTopicRefreshesUsed] = useState(0);
   const [topicRefreshesLimit, setTopicRefreshesLimit] = useState(2);
+  const [webImagesDisclaimerOpen, setWebImagesDisclaimerOpen] = useState(false);
+  const [webImagesDontShowAgain, setWebImagesDontShowAgain] = useState(false);
+  const [webImagesDisclaimerAccepted, setWebImagesDisclaimerAccepted] = useState(false);
+  const [webImagesSkipDisclaimer, setWebImagesSkipDisclaimer] = useState(false);
+  const formRef = useRef<HTMLFormElement | null>(null);
 
   /** Matches `handleSubmit`: topic/URL/text needs value; document needs file. */
   const hasRequiredInput = inputType === "document" ? !!inputDocumentFile : inputValue.trim().length > 0;
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(WEB_IMAGES_DISCLAIMER_STORAGE_KEY);
+      if (raw === "1") {
+        setWebImagesSkipDisclaimer(true);
+        setWebImagesDontShowAgain(true);
+      }
+    } catch {
+      // Ignore storage access issues (private mode / blocked storage).
+    }
+  }, []);
 
   async function handleOpenTopicSuggestions() {
     setTopicSuggestError(null);
@@ -408,6 +426,20 @@ export function NewCarouselForm({
     setTopicSuggestOpen(false);
   }
 
+  function handleConfirmWebImagesDisclaimer() {
+    if (webImagesDontShowAgain) {
+      try {
+        window.localStorage.setItem(WEB_IMAGES_DISCLAIMER_STORAGE_KEY, "1");
+      } catch {
+        // Ignore storage access issues.
+      }
+      setWebImagesSkipDisclaimer(true);
+    }
+    setWebImagesDisclaimerAccepted(true);
+    setWebImagesDisclaimerOpen(false);
+    formRef.current?.requestSubmit();
+  }
+
   useEffect(() => {
     if (carouselFor === "linkedin" && (imageSource === "ai_generate" || imageSource === "brave")) {
       setImageSource("stock");
@@ -417,6 +449,12 @@ export function NewCarouselForm({
   useEffect(() => {
     if (!canUseWebImages && imageSource === "brave") setImageSource("stock");
   }, [canUseWebImages, imageSource]);
+
+  useEffect(() => {
+    if (imageSource !== "brave") {
+      setWebImagesDisclaimerAccepted(false);
+    }
+  }, [imageSource]);
 
   useEffect(() => {
     if (!ugcInstagramImagePolicy || !useAiBackgrounds) return;
@@ -536,6 +574,11 @@ export function NewCarouselForm({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const usingWebImagesThisRun = useAiBackgrounds && imageSource === "brave";
+    if (usingWebImagesThisRun && !webImagesSkipDisclaimer && !webImagesDisclaimerAccepted) {
+      setWebImagesDisclaimerOpen(true);
+      return;
+    }
     setError(null);
     const trimmed = inputValue.trim();
     if (inputType === "document") {
@@ -681,7 +724,7 @@ export function NewCarouselForm({
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form ref={formRef} onSubmit={handleSubmit} className="space-y-6">
         {regenerateCarouselId && (
           <div className="rounded-lg border border-border/60 bg-muted/20 px-4 py-3">
             <label className="flex items-start gap-2.5 cursor-pointer group">
@@ -970,12 +1013,12 @@ export function NewCarouselForm({
                             Best for professional posts
                           </BackgroundSourceBestForHint>
                         ) : src === "brave" ? (
-                          <BackgroundSourceBestForHint platform="tiktok">
-                            Best for real-world and timely visuals
+                          <BackgroundSourceBestForHint platform="instagram">
+                            Best for Instagram/TikTok with real-world and timely visuals
                           </BackgroundSourceBestForHint>
                         ) : (
                           <BackgroundSourceBestForHint platform="instagram">
-                            Best for bold, scroll-stopping visuals
+                            Best for Instagram/TikTok with bold, scroll-stopping visuals
                           </BackgroundSourceBestForHint>
                         )}
                       </label>
@@ -1418,6 +1461,39 @@ export function NewCarouselForm({
             </CardContent>
           </Card>
         )}
+
+        <Dialog open={webImagesDisclaimerOpen} onOpenChange={setWebImagesDisclaimerOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Web images responsibility</DialogTitle>
+              <DialogDescription>
+                You are fully responsible for how you use web-sourced images, including copyright, licensing, and platform policies.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Continue only if you understand that this tool helps discover images, but does not grant rights to use them.
+              </p>
+              <label className="flex items-start gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={webImagesDontShowAgain}
+                  onChange={(e) => setWebImagesDontShowAgain(e.target.checked)}
+                  className="mt-0.5 rounded border-input accent-primary size-4 shrink-0"
+                />
+                <span className="text-xs text-foreground">Don&apos;t show this again</span>
+              </label>
+              <div className="flex justify-end gap-2 pt-1">
+                <Button type="button" variant="outline" onClick={() => setWebImagesDisclaimerOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="button" onClick={handleConfirmWebImagesDisclaimer}>
+                  I understand, continue
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         <Dialog
           open={topicSuggestOpen}
