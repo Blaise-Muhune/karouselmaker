@@ -987,9 +987,18 @@ export function SlideEditForm({
     lineHeight: number;
     maxLines: number;
     align: "left" | "center" | "right" | "justify";
+    textTransform?: "none" | "uppercase" | "lowercase";
     color?: string;
     fontFamily?: string;
     rotation?: number;
+    boxBackgroundColor?: string;
+    boxBackgroundOpacity?: number;
+    boxBackgroundFrameOnly?: boolean;
+    boxBackgroundBorderWidth?: number;
+    boxBackgroundBorderSides?: { top?: boolean; right?: boolean; bottom?: boolean; left?: boolean };
+    boxBackgroundBorderColor?: string;
+    boxBackgroundBorderOpacity?: number;
+    boxBackgroundBorderRadius?: number;
   };
   const normalizeExtraTextZone = useCallback((raw: unknown): ExtraTextZone | null => {
     if (!raw || typeof raw !== "object") return null;
@@ -999,6 +1008,24 @@ export function SlideEditForm({
     const n = (v: unknown, d: number) => (Number.isFinite(Number(v)) ? Number(v) : d);
     const alignRaw = typeof z.align === "string" ? z.align : "left";
     const align = alignRaw === "left" || alignRaw === "center" || alignRaw === "right" || alignRaw === "justify" ? alignRaw : "left";
+    const borderSidesRaw =
+      z.boxBackgroundBorderSides && typeof z.boxBackgroundBorderSides === "object" && !Array.isArray(z.boxBackgroundBorderSides)
+        ? (z.boxBackgroundBorderSides as Record<string, unknown>)
+        : undefined;
+    const borderSides =
+      borderSidesRaw
+        ? {
+            ...(typeof borderSidesRaw.top === "boolean" ? { top: borderSidesRaw.top } : {}),
+            ...(typeof borderSidesRaw.right === "boolean" ? { right: borderSidesRaw.right } : {}),
+            ...(typeof borderSidesRaw.bottom === "boolean" ? { bottom: borderSidesRaw.bottom } : {}),
+            ...(typeof borderSidesRaw.left === "boolean" ? { left: borderSidesRaw.left } : {}),
+          }
+        : undefined;
+    const textTransformRaw = typeof z.textTransform === "string" ? z.textTransform : undefined;
+    const textTransform =
+      textTransformRaw === "none" || textTransformRaw === "uppercase" || textTransformRaw === "lowercase"
+        ? textTransformRaw
+        : undefined;
     return {
       id,
       ...(typeof z.label === "string" && z.label.trim() ? { label: z.label.trim().slice(0, 80) } : {}),
@@ -1015,6 +1042,27 @@ export function SlideEditForm({
       ...(typeof z.color === "string" && /^#([0-9A-Fa-f]{3}){1,2}$/.test(z.color.trim()) ? { color: z.color.trim() } : {}),
       ...(typeof z.fontFamily === "string" && z.fontFamily.trim() ? { fontFamily: z.fontFamily.trim().slice(0, 80) } : {}),
       ...(Number.isFinite(Number(z.rotation)) ? { rotation: Math.max(-180, Math.min(180, Number(z.rotation))) } : {}),
+      ...(textTransform ? { textTransform } : {}),
+      ...(typeof z.boxBackgroundColor === "string" && /^#([0-9A-Fa-f]{3}){1,2}$/.test(z.boxBackgroundColor.trim())
+        ? { boxBackgroundColor: z.boxBackgroundColor.trim() }
+        : {}),
+      ...(Number.isFinite(Number(z.boxBackgroundOpacity))
+        ? { boxBackgroundOpacity: Math.max(0, Math.min(1, Number(z.boxBackgroundOpacity))) }
+        : {}),
+      ...(typeof z.boxBackgroundFrameOnly === "boolean" ? { boxBackgroundFrameOnly: z.boxBackgroundFrameOnly } : {}),
+      ...(Number.isFinite(Number(z.boxBackgroundBorderWidth))
+        ? { boxBackgroundBorderWidth: Math.max(0, Math.min(32, Math.round(Number(z.boxBackgroundBorderWidth)))) }
+        : {}),
+      ...(borderSides && Object.keys(borderSides).length > 0 ? { boxBackgroundBorderSides: borderSides } : {}),
+      ...(typeof z.boxBackgroundBorderColor === "string" && /^#([0-9A-Fa-f]{3}){1,2}$/.test(z.boxBackgroundBorderColor.trim())
+        ? { boxBackgroundBorderColor: z.boxBackgroundBorderColor.trim() }
+        : {}),
+      ...(Number.isFinite(Number(z.boxBackgroundBorderOpacity))
+        ? { boxBackgroundBorderOpacity: Math.max(0, Math.min(1, Number(z.boxBackgroundBorderOpacity))) }
+        : {}),
+      ...(Number.isFinite(Number(z.boxBackgroundBorderRadius))
+        ? { boxBackgroundBorderRadius: Math.max(0, Math.min(64, Math.round(Number(z.boxBackgroundBorderRadius)))) }
+        : {}),
     };
   }, []);
   const [swipePosition, setSwipePosition] = useState<SwipePosition>(() => {
@@ -2043,6 +2091,7 @@ export function SlideEditForm({
   const applyScope: ApplyScope = { includeFirstSlide, includeLastSlide };
   const defaultBodySize = templateConfig?.textZones?.find((z) => z.id === "body")?.fontSize ?? 48;
   const handleAddExtraTextArea = () => {
+    if (extraTextZones.length >= 12) return;
     const nowId = `extra_${Date.now().toString(36)}`;
     const baseZone = bodyZoneFromTemplate ?? headlineZoneFromTemplate;
     const next: ExtraTextZone = {
@@ -2061,6 +2110,15 @@ export function SlideEditForm({
       ...(baseZone?.color ? { color: baseZone.color } : {}),
       ...(baseZone?.fontFamily ? { fontFamily: baseZone.fontFamily } : {}),
       ...(baseZone?.rotation != null ? { rotation: baseZone.rotation } : {}),
+      ...(baseZone?.textTransform ? { textTransform: baseZone.textTransform } : {}),
+      ...(baseZone?.boxBackgroundColor ? { boxBackgroundColor: baseZone.boxBackgroundColor } : {}),
+      ...(baseZone?.boxBackgroundOpacity != null ? { boxBackgroundOpacity: baseZone.boxBackgroundOpacity } : {}),
+      ...(baseZone?.boxBackgroundFrameOnly != null ? { boxBackgroundFrameOnly: baseZone.boxBackgroundFrameOnly } : {}),
+      ...(baseZone?.boxBackgroundBorderWidth != null ? { boxBackgroundBorderWidth: baseZone.boxBackgroundBorderWidth } : {}),
+      ...(baseZone?.boxBackgroundBorderSides ? { boxBackgroundBorderSides: baseZone.boxBackgroundBorderSides } : {}),
+      ...(baseZone?.boxBackgroundBorderColor ? { boxBackgroundBorderColor: baseZone.boxBackgroundBorderColor } : {}),
+      ...(baseZone?.boxBackgroundBorderOpacity != null ? { boxBackgroundBorderOpacity: baseZone.boxBackgroundBorderOpacity } : {}),
+      ...(baseZone?.boxBackgroundBorderRadius != null ? { boxBackgroundBorderRadius: baseZone.boxBackgroundBorderRadius } : {}),
     };
     setCustomExtraTextZones((prev) => [...prev, next]);
     setExtraTextValues((prev) => ({ ...prev, [nowId]: "" }));
@@ -6290,43 +6348,89 @@ export function SlideEditForm({
             <div className="rounded-lg border border-border/50 bg-muted/5 p-3 space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-xs font-medium text-foreground">Extra text areas</p>
-                <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={handleAddExtraTextArea}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={handleAddExtraTextArea}
+                  disabled={extraTextZones.length >= 12}
+                >
                   <PlusIcon className="size-3.5" />
-                  Add text area
+                  Add text area ({extraTextZones.length}/12)
                 </Button>
               </div>
               <p className="text-[11px] text-muted-foreground">
-                Add optional template text zones (badge, kicker, caption, CTA line). Saved with template and considered during AI generation.
+                Extra text areas now support the same zone settings as headline/body (size, color, font, layout, and backdrop). Saved to template, import, preview, and export.
               </p>
               {extraTextZones.length > 0 && (
                 <div className="space-y-2">
                   {extraTextZones.map((zone) => {
                     const fromTemplate = templateExtraTextZones.some((z) => z.id === zone.id);
+                    const updateZone = (patch: Partial<ExtraTextZone>) =>
+                      setCustomExtraTextZones((prev) => prev.map((z) => (z.id === zone.id ? ({ ...z, ...patch }) : z)));
                     return (
-                      <div key={zone.id} className="rounded-md border border-border/60 bg-background/60 p-2 space-y-1.5">
+                      <div key={zone.id} className="rounded-md border border-border/60 bg-background/60 p-3 space-y-3">
                         <div className="flex items-center justify-between gap-2">
-                          <p className="text-[11px] font-medium text-foreground">
-                            {zone.label?.trim() || zone.id}
-                            {zone.optional ? " (optional)" : ""}
-                          </p>
-                          {!fromTemplate && (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 px-2 text-[11px]"
-                              onClick={() => {
-                                setCustomExtraTextZones((prev) => prev.filter((z) => z.id !== zone.id));
-                                setExtraTextValues((prev) => {
-                                  const next = { ...prev };
-                                  delete next[zone.id];
-                                  return next;
-                                });
-                              }}
+                          <div className="flex items-center gap-2">
+                            <p className="text-[11px] font-semibold text-foreground">{zone.label?.trim() || zone.id}</p>
+                            <label className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                              <input
+                                type="checkbox"
+                                checked={zone.optional === true}
+                                onChange={(e) => updateZone({ optional: e.target.checked ? true : undefined })}
+                                className="rounded border-input accent-primary"
+                              />
+                              Optional
+                            </label>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {!fromTemplate && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 px-2 text-[11px]"
+                                onClick={() => {
+                                  setCustomExtraTextZones((prev) => prev.filter((z) => z.id !== zone.id));
+                                  setExtraTextValues((prev) => {
+                                    const next = { ...prev };
+                                    delete next[zone.id];
+                                    return next;
+                                  });
+                                }}
+                              >
+                                Remove
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <div className="space-y-1">
+                            <Label className="text-[11px] text-muted-foreground font-normal">Label</Label>
+                            <Input
+                              value={zone.label ?? ""}
+                              onChange={(e) => updateZone({ label: e.target.value.slice(0, 80) || undefined })}
+                              placeholder="Label (e.g. Kicker)"
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-[11px] text-muted-foreground font-normal">Case</Label>
+                            <Select
+                              value={zone.textTransform ?? "none"}
+                              onValueChange={(v) => updateZone({ textTransform: v as "none" | "uppercase" | "lowercase" })}
                             >
-                              Remove
-                            </Button>
-                          )}
+                              <SelectTrigger className="h-8 text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">Normal</SelectItem>
+                                <SelectItem value="uppercase">UPPERCASE</SelectItem>
+                                <SelectItem value="lowercase">lowercase</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
                         </div>
                         <Textarea
                           value={extraTextValues[zone.id] ?? ""}
@@ -6334,6 +6438,156 @@ export function SlideEditForm({
                           placeholder={`Text for ${zone.label?.trim() || zone.id}`}
                           className="min-h-[64px] text-sm"
                         />
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="space-y-1.5">
+                            <Label className="text-[11px] text-muted-foreground font-normal">Font size</Label>
+                            <StepperWithLongPress value={zone.fontSize} min={8} max={280} step={1} onChange={(v) => updateZone({ fontSize: v })} label="extra text font size" className="w-full" />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-[11px] text-muted-foreground font-normal">Weight</Label>
+                            <StepperWithLongPress value={zone.fontWeight} min={100} max={900} step={100} onChange={(v) => updateZone({ fontWeight: v })} label="extra text font weight" className="w-full" />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-[11px] text-muted-foreground font-normal">Text color</Label>
+                            <ColorPicker value={zone.color ?? ""} onChange={(v) => updateZone({ color: v.trim() || undefined })} placeholder="Text color" />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-[11px] text-muted-foreground font-normal">Font</Label>
+                            <Select
+                              value={zone.fontFamily ?? "system"}
+                              onValueChange={(v) => updateZone({ fontFamily: v === "system" ? undefined : v })}
+                            >
+                              <SelectTrigger className="h-8 text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {PREVIEW_FONTS.map((f) => (
+                                  <SelectItem key={f.id} value={f.id}>
+                                    {f.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-[11px] text-muted-foreground font-normal">Align</Label>
+                            <Select value={zone.align} onValueChange={(v) => updateZone({ align: v as ExtraTextZone["align"] })}>
+                              <SelectTrigger className="h-8 text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="left">Left</SelectItem>
+                                <SelectItem value="center">Center</SelectItem>
+                                <SelectItem value="right">Right</SelectItem>
+                                <SelectItem value="justify">Justify</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-[11px] text-muted-foreground font-normal">Rotation</Label>
+                            <StepperWithLongPress value={Math.round(zone.rotation ?? 0)} min={-180} max={180} step={1} onChange={(v) => updateZone({ rotation: v })} label="extra text rotation" className="w-full" />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-[11px] text-muted-foreground font-normal">X</Label>
+                            <StepperWithLongPress value={zone.x} min={0} max={1080} step={4} onChange={(v) => updateZone({ x: v })} label="extra text x" className="w-full" />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-[11px] text-muted-foreground font-normal">Y</Label>
+                            <StepperWithLongPress value={zone.y} min={0} max={1920} step={4} onChange={(v) => updateZone({ y: v })} label="extra text y" className="w-full" />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-[11px] text-muted-foreground font-normal">Width</Label>
+                            <StepperWithLongPress value={zone.w} min={1} max={1080} step={4} onChange={(v) => updateZone({ w: v })} label="extra text width" className="w-full" />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-[11px] text-muted-foreground font-normal">Height</Label>
+                            <StepperWithLongPress
+                              value={zone.h}
+                              min={1}
+                              max={1920}
+                              step={4}
+                              onChange={(v) => {
+                                const lh = zone.lineHeight ?? 1.15;
+                                const maxLines = computeMaxLinesForZone(v, zone.fontSize, lh);
+                                updateZone({ h: v, maxLines });
+                              }}
+                              label="extra text height"
+                              className="w-full"
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-[11px] text-muted-foreground font-normal">Max lines</Label>
+                            <StepperWithLongPress value={zone.maxLines} min={1} max={30} step={1} onChange={(v) => updateZone({ maxLines: v })} label="extra text max lines" className="w-full" />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-[11px] text-muted-foreground font-normal">Line height</Label>
+                            <StepperWithLongPress
+                              value={Math.round(zone.lineHeight * 20)}
+                              min={10}
+                              max={60}
+                              step={1}
+                              onChange={(v) => {
+                                const lh = Math.max(0.5, Math.min(3, v / 20));
+                                const maxLines = computeMaxLinesForZone(zone.h, zone.fontSize, lh);
+                                updateZone({ lineHeight: lh, maxLines });
+                              }}
+                              label="extra text line height"
+                              formatDisplay={(v) => `${(v / 20).toFixed(2)}x`}
+                              className="w-full"
+                            />
+                          </div>
+                        </div>
+                        <div className="rounded-md border border-border/50 bg-muted/20 p-2">
+                          <p className="text-[11px] font-medium text-foreground mb-2">Backdrop</p>
+                          <div className="space-y-2">
+                            <ColorPicker
+                              value={zone.boxBackgroundColor ?? ""}
+                              onChange={(v) => {
+                                const c = v.trim();
+                                if (!c) {
+                                  updateZone({
+                                    boxBackgroundColor: undefined,
+                                    boxBackgroundOpacity: undefined,
+                                    boxBackgroundFrameOnly: undefined,
+                                    boxBackgroundBorderWidth: undefined,
+                                    boxBackgroundBorderSides: undefined,
+                                    boxBackgroundBorderColor: undefined,
+                                    boxBackgroundBorderOpacity: undefined,
+                                    boxBackgroundBorderRadius: undefined,
+                                  });
+                                  return;
+                                }
+                                updateZone({ boxBackgroundColor: c, boxBackgroundOpacity: zone.boxBackgroundOpacity ?? 0.82 });
+                              }}
+                              placeholder="Backdrop color"
+                            />
+                            {typeof zone.boxBackgroundColor === "string" && zone.boxBackgroundColor.trim() !== "" && (
+                              <>
+                                <div className="flex items-center gap-2 min-h-9">
+                                  <span className="text-[11px] text-muted-foreground shrink-0 w-14 hidden sm:inline">Opacity</span>
+                                  <Slider
+                                    className="flex-1 py-1"
+                                    min={0}
+                                    max={100}
+                                    step={1}
+                                    value={[Math.round((zone.boxBackgroundOpacity ?? 0.82) * 100)]}
+                                    onValueChange={(vals) => {
+                                      const pct = vals[0] ?? 82;
+                                      updateZone({ boxBackgroundOpacity: pct / 100 });
+                                    }}
+                                  />
+                                  <span className="text-[11px] tabular-nums text-muted-foreground w-10 text-right shrink-0">
+                                    {Math.round((zone.boxBackgroundOpacity ?? 0.82) * 100)}%
+                                  </span>
+                                </div>
+                                <TextBackdropChromeFields
+                                  zone={zone}
+                                  onMerge={(patch) => updateZone(patch as Partial<ExtraTextZone>)}
+                                />
+                              </>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     );
                   })}

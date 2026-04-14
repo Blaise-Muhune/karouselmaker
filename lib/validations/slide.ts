@@ -231,9 +231,25 @@ const extraTextZoneSchema = z.object({
   lineHeight: z.number().min(0.5).max(3),
   maxLines: z.number().int().min(1).max(30),
   align: z.enum(["left", "center", "right", "justify"]),
+  textTransform: z.enum(["none", "uppercase", "lowercase"]).optional(),
   color: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
   fontFamily: z.string().max(80).optional(),
   rotation: z.number().min(-180).max(180).optional(),
+  boxBackgroundColor: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
+  boxBackgroundOpacity: z.coerce.number().min(0).max(1).optional(),
+  boxBackgroundFrameOnly: z.boolean().optional(),
+  boxBackgroundBorderWidth: z.number().int().min(0).max(32).optional(),
+  boxBackgroundBorderSides: z
+    .object({
+      top: z.boolean().optional(),
+      right: z.boolean().optional(),
+      bottom: z.boolean().optional(),
+      left: z.boolean().optional(),
+    })
+    .optional(),
+  boxBackgroundBorderColor: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
+  boxBackgroundBorderOpacity: z.coerce.number().min(0).max(1).optional(),
+  boxBackgroundBorderRadius: z.number().int().min(0).max(64).optional(),
 });
 
 export const slideMetaSchema = z.object({

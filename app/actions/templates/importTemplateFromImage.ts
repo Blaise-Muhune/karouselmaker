@@ -708,7 +708,7 @@ function normalizeToValidConfig(parsed: unknown): TemplateConfig {
   let textZones = fullDefault.textZones;
   const rawZones = raw?.textZones;
   if (Array.isArray(rawZones) && rawZones.length > 0) {
-    textZones = rawZones.slice(0, 4).map((z: unknown, i: number) => {
+    textZones = rawZones.slice(0, 14).map((z: unknown, i: number) => {
       const zone = typeof z === "object" && z !== null ? (z as Record<string, unknown>) : {};
       const fallback = fullDefault.textZones[i] ?? fullDefault.textZones[0];
       if (!fallback) return fullDefault.textZones[0]!;
