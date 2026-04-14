@@ -1013,13 +1013,17 @@ export function NewCarouselForm({
                             Best for professional posts
                           </BackgroundSourceBestForHint>
                         ) : src === "brave" ? (
-                          <BackgroundSourceBestForHint platform="instagram">
-                            Best for Instagram/TikTok with real-world and timely visuals
-                          </BackgroundSourceBestForHint>
+                          <p className="mt-1.5 text-[10px] leading-snug text-muted-foreground">
+                            Best for real-world and timely visuals.
+                          </p>
                         ) : (
-                          <BackgroundSourceBestForHint platform="instagram">
-                            Best for Instagram/TikTok with bold, scroll-stopping visuals
-                          </BackgroundSourceBestForHint>
+                          <p className="mt-1.5 flex items-center gap-1.5 text-[10px] leading-snug text-muted-foreground">
+                            <span className="inline-flex items-center gap-1" aria-hidden>
+                              <InstagramMicroIcon className="size-3.5 opacity-90" />
+                              <TikTokMicroIcon className="size-3.5 opacity-90" />
+                            </span>
+                            <span>Best for Instagram/TikTok with bold, scroll-stopping visuals</span>
+                          </p>
                         )}
                       </label>
                     );
