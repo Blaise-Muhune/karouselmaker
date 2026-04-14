@@ -319,8 +319,18 @@ export type SlidePreviewProps = {
     pipY?: number;
     /** When mode is "pip": drop shadow on each PiP box. Default off. */
     pipShadow?: boolean;
+    /** Multi-image PiP: selected slot rendered as PiP; others remain base/full. */
+    pipIndex?: number;
     /** Multi-image PiP: per-slot overrides (partial). */
     pips?: Partial<{
+      position: "center" | "top" | "bottom" | "left" | "right" | "top-left" | "top-right" | "bottom-left" | "bottom-right";
+      fit: "cover" | "contain";
+      frame: "none" | "thin" | "medium" | "thick" | "chunky" | "heavy";
+      frameRadius: number;
+      frameColor: string;
+      frameShape: "squircle" | "circle" | "diamond" | "hexagon" | "pill";
+      imagePositionX: number;
+      imagePositionY: number;
       pipPosition: "top_left" | "top_right" | "bottom_left" | "bottom_right";
       pipSize: number;
       pipRotation: number;
@@ -1574,7 +1584,24 @@ export function SlidePreview({
       })()}
       {multiImages && imageDisplay?.mode === "pip" ? (
         (() => {
-          const layoutsMp = resolvePipLayoutsForImageCount(imageDisplay, multiImages.length);
+          const rawPipIndex = imageDisplay?.pipIndex;
+          const selectedPipIndex =
+            multiImages.length > 1 && typeof rawPipIndex === "number" && Number.isFinite(rawPipIndex)
+              ? Math.max(0, Math.min(multiImages.length - 1, Math.floor(rawPipIndex)))
+              : null;
+          const baseImageUrlMp =
+            selectedPipIndex != null
+              ? (multiImages.find((_, i) => i !== selectedPipIndex) ?? null)
+              : null;
+          const pipEntriesMp =
+            selectedPipIndex != null
+              ? [{ url: multiImages[selectedPipIndex]!, sourceIndex: selectedPipIndex }].filter((e) => Boolean(e.url))
+              : multiImages.map((url, i) => ({ url, sourceIndex: i }));
+          const pipDisplaySource =
+            selectedPipIndex != null && Array.isArray(imageDisplay.pips)
+              ? { ...imageDisplay, pips: [imageDisplay.pips[selectedPipIndex] ?? {}] }
+              : imageDisplay;
+          const layoutsMp = resolvePipLayoutsForImageCount(pipDisplaySource, pipEntriesMp.length);
           if (!layoutsMp) return null;
           const pipBgColorMp = backgroundOverride?.color ?? model.background.backgroundColor;
           const pipBgStyleMp =
@@ -1594,15 +1621,63 @@ export function SlidePreview({
           return (
             <div className="absolute inset-0" style={{ zIndex: 0, isolation: "isolate" }}>
               <div className="absolute inset-0" style={{ ...pipBgStyleMp, zIndex: 0 }} />
-              {multiImages.map((url, i) => {
+              {baseImageUrlMp && (
+                <img
+                  src={baseImageUrlMp}
+                  alt=""
+                  referrerPolicy="no-referrer"
+                  className="absolute inset-0 w-full h-full pointer-events-none"
+                  style={{
+                    zIndex: 0,
+                    objectFit: pipFitMp,
+                    objectPosition:
+                      imageDisplay?.imagePositionX != null && imageDisplay?.imagePositionY != null
+                        ? `${imageDisplay.imagePositionX}% ${imageDisplay.imagePositionY}%`
+                        : POSITION_TO_CSS[imageDisplay?.position ?? "top"],
+                  }}
+                />
+              )}
+              {pipEntriesMp.map(({ url, sourceIndex }, i) => {
                 const spec = layoutsMp[i]!;
+                const slotRaw =
+                  Array.isArray(imageDisplay?.pips) && sourceIndex >= 0
+                    ? (imageDisplay!.pips![sourceIndex] as Record<string, unknown> | undefined)
+                    : undefined;
+                const slotFit =
+                  slotRaw?.fit === "contain" || slotRaw?.fit === "cover"
+                    ? (slotRaw.fit as "cover" | "contain")
+                    : pipFitMp;
+                const slotFrame = typeof slotRaw?.frame === "string" ? slotRaw.frame : pipFrameMp;
+                const slotFrameW = FRAME_WIDTHS[slotFrame] ?? pipFrameWMp;
+                const slotFrameColor =
+                  typeof slotRaw?.frameColor === "string" && slotRaw.frameColor.trim().length > 0
+                    ? slotRaw.frameColor
+                    : pipFrameColorMp;
+                const slotFrameShape =
+                  slotRaw?.frameShape === "squircle" ||
+                  slotRaw?.frameShape === "circle" ||
+                  slotRaw?.frameShape === "diamond" ||
+                  slotRaw?.frameShape === "hexagon" ||
+                  slotRaw?.frameShape === "pill"
+                    ? slotRaw.frameShape
+                    : pipFrameShapeMp;
+                const slotPosition =
+                  (typeof slotRaw?.position === "string" ? slotRaw.position : imageDisplay?.position) ?? "top";
+                const slotObjPos =
+                  typeof slotRaw?.imagePositionX === "number" && typeof slotRaw?.imagePositionY === "number"
+                    ? `${slotRaw.imagePositionX}% ${slotRaw.imagePositionY}%`
+                    : imageDisplay?.imagePositionX != null && imageDisplay?.imagePositionY != null
+                      ? `${imageDisplay.imagePositionX}% ${imageDisplay.imagePositionY}%`
+                      : POSITION_TO_CSS[slotPosition];
                 const radiusForSlot =
-                  spec.pipBorderRadius ?? imageDisplay?.frameRadius ?? (pipFrameWMp > 0 ? 24 : 0);
+                  spec.pipBorderRadius ??
+                  (typeof slotRaw?.frameRadius === "number" ? slotRaw.frameRadius : imageDisplay?.frameRadius) ??
+                  (slotFrameW > 0 ? 24 : 0);
                 const baseSizeMp = Math.round(Math.min(CANVAS_SIZE, Math.max(270, spec.pipSize * CANVAS_SIZE)));
                 let pipWMp = baseSizeMp;
                 let pipHMp = baseSizeMp;
                 const ar = pipAspectByIndex[i];
-                if (pipFitMp === "contain" && ar != null && ar > 0) {
+                if (slotFit === "contain" && ar != null && ar > 0) {
                   if (ar >= 1) {
                     pipWMp = baseSizeMp;
                     pipHMp = Math.round(baseSizeMp / ar);
@@ -1611,10 +1686,10 @@ export function SlidePreview({
                     pipHMp = baseSizeMp;
                   }
                 }
-                const pipShapeStylesMp = getShapeStyles(pipFrameShapeMp, radiusForSlot, pipWMp, pipHMp);
-                const pipInnerWMp = pipWMp - pipFrameWMp * 2;
-                const pipInnerHMp = pipHMp - pipFrameWMp * 2;
-                const pipInnerShapeStylesMp = getShapeStyles(pipFrameShapeMp, radiusForSlot, pipInnerWMp, pipInnerHMp);
+                const pipShapeStylesMp = getShapeStyles(slotFrameShape, radiusForSlot, pipWMp, pipHMp);
+                const pipInnerWMp = pipWMp - slotFrameW * 2;
+                const pipInnerHMp = pipHMp - slotFrameW * 2;
+                const pipInnerShapeStylesMp = getShapeStyles(slotFrameShape, radiusForSlot, pipInnerWMp, pipInnerHMp);
                 const rangeXMp = CANVAS_SIZE - pipWMp;
                 const rangeYMp = CANVAS_SIZE - pipHMp;
                 const useCustomPipPosMp = spec.pipX != null && spec.pipY != null;
@@ -1629,9 +1704,9 @@ export function SlidePreview({
                       : spec.pipPosition === "top_right"
                         ? { right: pipInsetMp, top: pipInsetMp }
                         : { left: pipInsetMp, top: pipInsetMp };
-                const pipUseClipPathFrameMp = pipFrameWMp > 0 && isClipPathShape(pipFrameShapeMp);
+                const pipUseClipPathFrameMp = slotFrameW > 0 && isClipPathShape(slotFrameShape);
                 const dragSlotMp: PipDragSlot = {
-                  slotIndex: i,
+                  slotIndex: sourceIndex,
                   pipPosition: spec.pipPosition,
                   pipX: spec.pipX,
                   pipY: spec.pipY,
@@ -1654,17 +1729,17 @@ export function SlidePreview({
                       ...pipPosStyleMp,
                       ...(spec.pipRotation !== 0 && { transform: `rotate(${spec.pipRotation}deg)`, transformOrigin: "center" }),
                     }}
-                    onClick={() => onPipImageClick?.(i)}
+                    onClick={() => onPipImageClick?.(sourceIndex)}
                   >
                     <div
                       className={`absolute inset-0 overflow-hidden ${onPipPositionChange ? "cursor-grab active:cursor-grabbing" : ""}`}
                       style={{
                         ...pipShapeStylesMp,
-                        ...(!pipUseClipPathFrameMp && pipFrameWMp > 0 ? { border: `${pipFrameWMp}px solid ${pipFrameColorMp}` } : {}),
+                        ...(!pipUseClipPathFrameMp && slotFrameW > 0 ? { border: `${slotFrameW}px solid ${slotFrameColor}` } : {}),
                         ...(pipShowShadowMp
-                          ? pipFrameWMp > 0 && !pipUseClipPathFrameMp
+                          ? slotFrameW > 0 && !pipUseClipPathFrameMp
                             ? { boxShadow: "0 8px 32px rgba(0,0,0,0.3)" }
-                            : { boxShadow: pipFrameWMp > 0 ? "0 8px 32px rgba(0,0,0,0.3)" : "0 8px 32px rgba(0,0,0,0.25)" }
+                            : { boxShadow: slotFrameW > 0 ? "0 8px 32px rgba(0,0,0,0.3)" : "0 8px 32px rgba(0,0,0,0.25)" }
                           : {}),
                       }}
                       {...(onPipPositionChange
@@ -1677,12 +1752,12 @@ export function SlidePreview({
                     >
                     {pipUseClipPathFrameMp ? (
                       <>
-                        <div className="absolute inset-0" style={{ ...pipShapeStylesMp, backgroundColor: pipFrameColorMp }} />
+                        <div className="absolute inset-0" style={{ ...pipShapeStylesMp, backgroundColor: slotFrameColor }} />
                         <div
                           className="absolute overflow-hidden pointer-events-none"
                           style={{
-                            left: pipFrameWMp,
-                            top: pipFrameWMp,
+                            left: slotFrameW,
+                            top: slotFrameW,
                             width: pipInnerWMp,
                             height: pipInnerHMp,
                             ...pipInnerShapeStylesMp,
@@ -1694,11 +1769,8 @@ export function SlidePreview({
                             referrerPolicy="no-referrer"
                             className="absolute inset-0 w-full h-full"
                             style={{
-                              objectFit: pipFitMp,
-                              objectPosition:
-                                imageDisplay?.imagePositionX != null && imageDisplay?.imagePositionY != null
-                                  ? `${imageDisplay.imagePositionX}% ${imageDisplay.imagePositionY}%`
-                                  : POSITION_TO_CSS[imageDisplay?.position ?? "top"],
+                              objectFit: slotFit,
+                              objectPosition: slotObjPos,
                             }}
                             onLoad={onPipImageLoadMp}
                           />
@@ -1711,11 +1783,8 @@ export function SlidePreview({
                         referrerPolicy="no-referrer"
                         className="absolute inset-0 w-full h-full pointer-events-none"
                         style={{
-                          objectFit: pipFitMp,
-                          objectPosition:
-                            imageDisplay?.imagePositionX != null && imageDisplay?.imagePositionY != null
-                              ? `${imageDisplay.imagePositionX}% ${imageDisplay.imagePositionY}%`
-                              : POSITION_TO_CSS[imageDisplay?.position ?? "top"],
+                          objectFit: slotFit,
+                          objectPosition: slotObjPos,
                         }}
                         onLoad={onPipImageLoadMp}
                       />
@@ -1851,26 +1920,42 @@ export function SlidePreview({
                 className="absolute overflow-hidden"
                 style={{ left: pad, top: pad, width: innerW, height: innerH, ...shapeStylesContainer, border: frameW > 0 ? `${frameW}px solid ${frameColor}` : "none", boxShadow: frameW > 0 ? "0 8px 32px rgba(0,0,0,0.3)" : undefined }}
               >
-                {multiImages.map((url, i) => (
-                  <div
-                    key={i}
-                    className="absolute inset-0 overflow-hidden"
-                    style={{
-                      clipPath: isDiagonal ? (i === 0 ? DIAGONAL_TOP : DIAGONAL_BOTTOM) : (i === 0 ? ZIGZAG_LEFT : ZIGZAG_RIGHT),
-                    }}
-                  >
-                    <img
-                      src={url}
-                      alt=""
-                      referrerPolicy="no-referrer"
-                      className="absolute inset-0 w-full h-full"
+                {multiImages.map((url, i) => {
+                  const slotRaw =
+                    Array.isArray(imageDisplay?.pips) && i >= 0
+                      ? (imageDisplay!.pips![i] as Record<string, unknown> | undefined)
+                      : undefined;
+                  const slotFit =
+                    slotRaw?.fit === "contain" || slotRaw?.fit === "cover"
+                      ? (slotRaw.fit as "cover" | "contain")
+                      : fit;
+                  const slotPos =
+                    typeof slotRaw?.imagePositionX === "number" && typeof slotRaw?.imagePositionY === "number"
+                      ? `${slotRaw.imagePositionX}% ${slotRaw.imagePositionY}%`
+                      : POSITION_TO_CSS[
+                          ((typeof slotRaw?.position === "string" ? slotRaw.position : pos) ?? "top") as keyof typeof POSITION_TO_CSS
+                        ];
+                  return (
+                    <div
+                      key={i}
+                      className="absolute inset-0 overflow-hidden"
                       style={{
-                        objectFit: fit,
-                        objectPosition: POSITION_TO_CSS[pos],
+                        clipPath: isDiagonal ? (i === 0 ? DIAGONAL_TOP : DIAGONAL_BOTTOM) : (i === 0 ? ZIGZAG_LEFT : ZIGZAG_RIGHT),
                       }}
-                    />
-                  </div>
-                ))}
+                    >
+                      <img
+                        src={url}
+                        alt=""
+                        referrerPolicy="no-referrer"
+                        className="absolute inset-0 w-full h-full"
+                        style={{
+                          objectFit: slotFit,
+                          objectPosition: slotPos,
+                        }}
+                      />
+                    </div>
+                  );
+                })}
                 {isDiagonal ? (
                   <div
                     className="absolute inset-0 pointer-events-none"
@@ -1916,10 +2001,6 @@ export function SlidePreview({
           }
           const segments = getDividerSegments(count, useStacked, useGrid, useSideBySide, pad, innerW, innerH, itemW, itemH, effectiveGap, dividerWidth);
           const flexDir = useStacked ? "column" : "row";
-          const shapeStylesItem = getShapeStyles(frameShape, radius, itemW, itemH);
-          const itemInnerW = itemW - frameW * 2;
-          const itemInnerH = itemH - frameW * 2;
-          const shapeStylesItemInner = getShapeStyles(frameShape, radius, itemInnerW, itemInnerH);
 
           const renderDividerSegment = (seg: DividerSegment, idx: number) => {
             const baseStyle: React.CSSProperties = { position: "absolute" as const, left: seg.x, top: seg.y, width: seg.w, height: seg.h, pointerEvents: "none", zIndex: 0 };
@@ -1976,7 +2057,6 @@ export function SlidePreview({
             return null;
           };
 
-          const useClipPathFrameMulti = frameW > 0 && isClipPathShape(frameShape);
           return (
             <>
               <div
@@ -1990,57 +2070,100 @@ export function SlidePreview({
                   flexDirection: flexDir,
                 }}
               >
-                {multiImages.map((url, i) => (
-                  <div
-                    key={i}
-                    className="overflow-hidden bg-muted relative"
-                    style={{
-                      width: itemW,
-                      height: itemH,
-                      flexGrow: 0,
-                      flexShrink: 0,
-                      ...(useClipPathFrameMulti ? {} : { ...shapeStylesItem, border: frameW > 0 ? `${frameW}px solid ${frameColor}` : "none", boxShadow: frameW > 0 ? "0 8px 32px rgba(0,0,0,0.3)" : undefined }),
-                    }}
-                  >
-                    {useClipPathFrameMulti ? (
-                      <>
-                        <div className="absolute inset-0" style={{ ...shapeStylesItem, backgroundColor: frameColor }} />
-                        <div
-                          className="absolute overflow-hidden"
-                          style={{
-                            left: frameW,
-                            top: frameW,
-                            width: itemInnerW,
-                            height: itemInnerH,
-                            ...shapeStylesItemInner,
-                          }}
-                        >
-                          <img
-                            src={url}
-                            alt=""
-                            referrerPolicy="no-referrer"
-                            className="w-full h-full"
+                {multiImages.map((url, i) => {
+                  const slotRaw =
+                    Array.isArray(imageDisplay?.pips) && i >= 0
+                      ? (imageDisplay!.pips![i] as Record<string, unknown> | undefined)
+                      : undefined;
+                  const slotFit =
+                    slotRaw?.fit === "contain" || slotRaw?.fit === "cover"
+                      ? (slotRaw.fit as "cover" | "contain")
+                      : fit;
+                  const slotPos =
+                    typeof slotRaw?.imagePositionX === "number" && typeof slotRaw?.imagePositionY === "number"
+                      ? `${slotRaw.imagePositionX}% ${slotRaw.imagePositionY}%`
+                      : POSITION_TO_CSS[
+                          ((typeof slotRaw?.position === "string" ? slotRaw.position : pos) ?? "top") as keyof typeof POSITION_TO_CSS
+                        ];
+                  const slotFrame = typeof slotRaw?.frame === "string" ? slotRaw.frame : frame;
+                  const slotFrameW = FRAME_WIDTHS[slotFrame] ?? frameW;
+                  const slotFrameColor =
+                    typeof slotRaw?.frameColor === "string" && slotRaw.frameColor.trim().length > 0
+                      ? slotRaw.frameColor
+                      : frameColor;
+                  const slotFrameShape =
+                    slotRaw?.frameShape === "squircle" ||
+                    slotRaw?.frameShape === "circle" ||
+                    slotRaw?.frameShape === "diamond" ||
+                    slotRaw?.frameShape === "hexagon" ||
+                    slotRaw?.frameShape === "pill"
+                      ? slotRaw.frameShape
+                      : frameShape;
+                  const slotRadius =
+                    typeof slotRaw?.frameRadius === "number" ? slotRaw.frameRadius : radius;
+                  const slotShapeStylesItem = getShapeStyles(slotFrameShape, slotRadius, itemW, itemH);
+                  const slotItemInnerW = itemW - slotFrameW * 2;
+                  const slotItemInnerH = itemH - slotFrameW * 2;
+                  const slotShapeStylesItemInner = getShapeStyles(slotFrameShape, slotRadius, slotItemInnerW, slotItemInnerH);
+                  const slotUseClipPathFrameMulti = slotFrameW > 0 && isClipPathShape(slotFrameShape);
+                  return (
+                    <div
+                      key={i}
+                      className="overflow-hidden bg-muted relative"
+                      style={{
+                        width: itemW,
+                        height: itemH,
+                        flexGrow: 0,
+                        flexShrink: 0,
+                        ...(slotUseClipPathFrameMulti
+                          ? {}
+                          : {
+                              ...slotShapeStylesItem,
+                              border: slotFrameW > 0 ? `${slotFrameW}px solid ${slotFrameColor}` : "none",
+                              boxShadow: slotFrameW > 0 ? "0 8px 32px rgba(0,0,0,0.3)" : undefined,
+                            }),
+                      }}
+                    >
+                      {slotUseClipPathFrameMulti ? (
+                        <>
+                          <div className="absolute inset-0" style={{ ...slotShapeStylesItem, backgroundColor: slotFrameColor }} />
+                          <div
+                            className="absolute overflow-hidden"
                             style={{
-                              objectFit: fit,
-                              objectPosition: POSITION_TO_CSS[pos],
+                              left: slotFrameW,
+                              top: slotFrameW,
+                              width: slotItemInnerW,
+                              height: slotItemInnerH,
+                              ...slotShapeStylesItemInner,
                             }}
-                          />
-                        </div>
-                      </>
-                    ) : (
-                      <img
-                        src={url}
-                        alt=""
-                        referrerPolicy="no-referrer"
-                        className="w-full h-full"
-                        style={{
-                          objectFit: fit,
-                          objectPosition: POSITION_TO_CSS[pos],
-                        }}
-                      />
-                    )}
-                  </div>
-                ))}
+                          >
+                            <img
+                              src={url}
+                              alt=""
+                              referrerPolicy="no-referrer"
+                              className="w-full h-full"
+                              style={{
+                                objectFit: slotFit,
+                                objectPosition: slotPos,
+                              }}
+                            />
+                          </div>
+                        </>
+                      ) : (
+                        <img
+                          src={url}
+                          alt=""
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full"
+                          style={{
+                            objectFit: slotFit,
+                            objectPosition: slotPos,
+                          }}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
               </div>
               {useVisibleDividers && segments.map((seg, idx) => renderDividerSegment(seg, idx))}
             </>

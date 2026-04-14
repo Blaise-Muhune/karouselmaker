@@ -605,14 +605,26 @@ export function renderSlideHtml(
         const useVisibleDividers = count >= 2 && dividerStyle !== "gap" && !(count === 2 && dividerStyle === "diagonal");
         const pad = frameW > 0 ? 16 : gap;
         const inner = 1080 - pad * 2;
+        const slotPips = Array.isArray(disp.pips) ? (disp.pips as Record<string, unknown>[]) : [];
+        const slotPosCss = (i: number): string => {
+          const s = slotPips[i];
+          if (s && typeof s.imagePositionX === "number" && typeof s.imagePositionY === "number") {
+            return `${Math.min(100, Math.max(0, s.imagePositionX))}% ${Math.min(100, Math.max(0, s.imagePositionY))}%`;
+          }
+          const rawPos = s && typeof s.position === "string" ? s.position : undefined;
+          return POSITION_TO_CSS[rawPos as keyof typeof POSITION_TO_CSS] ?? posCss;
+        };
+        const slotFit = (i: number): "cover" | "contain" => {
+          const s = slotPips[i];
+          return s && (s.fit === "cover" || s.fit === "contain") ? (s.fit as "cover" | "contain") : fit;
+        };
 
         if (useCreativeDivider) {
           const isDiagonal = dividerStyle === "diagonal";
           const clip0 = isDiagonal ? DIAGONAL_TOP : ZIGZAG_LEFT;
           const clip1 = isDiagonal ? DIAGONAL_BOTTOM : ZIGZAG_RIGHT;
-          const coverPos = posCss;
           const imgs = multiUrls.map((url, i) =>
-            `<div style="position:absolute;inset:0;background-size:${fit};background-position:${coverPos};background-image:url('${escapeHtml(url)}');clip-path:${i === 0 ? clip0 : clip1}"></div>`
+            `<div style="position:absolute;inset:0;background-size:${slotFit(i)};background-position:${slotPosCss(i)};background-image:url('${escapeHtml(url)}');clip-path:${i === 0 ? clip0 : clip1}"></div>`
           ).join("");
           const divOverlay = isDiagonal
             ? `<div style="position:absolute;inset:0;background:linear-gradient(135deg, transparent calc(50% - ${dividerWidth}px), ${escapeHtml(dividerColor)} calc(50% - ${dividerWidth}px), ${escapeHtml(dividerColor)} calc(50% + ${dividerWidth}px), transparent calc(50% + ${dividerWidth}px));pointer-events:none"></div>`
@@ -690,16 +702,23 @@ export function renderSlideHtml(
           return "";
         }).join("") : "";
 
-        const multiCoverPos = posCss;
-        const shapeCssItem = getShapeCss(frameShape, radius, itemW, itemH);
-        const useClipPathFrameMulti = frameW > 0 && isClipPathShape(frameShape);
-        const itemsHtml = multiUrls.map((url) => {
-          if (useClipPathFrameMulti) {
-            const iw = itemW - frameW * 2;
-            const ih = itemH - frameW * 2;
-            return `<div style="position:relative;width:${itemW}px;height:${itemH}px;flex-shrink:0"><div style="position:absolute;inset:0;${shapeCssItem};background-color:${escapeHtml(frameColor)}"></div><div style="position:absolute;left:${frameW}px;top:${frameW}px;width:${iw}px;height:${ih}px;${shapeCssItem};overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.3);"><div style="width:100%;height:100%;background-size:${fit};background-position:${multiCoverPos};background-image:url('${escapeHtml(url)}')"></div></div></div>`;
+        const itemsHtml = multiUrls.map((url, i) => {
+          const s = slotPips[i];
+          const localFrame = s && typeof s.frame === "string" ? s.frame : frame;
+          const localFrameW = FRAME_WIDTHS[localFrame as keyof typeof FRAME_WIDTHS] ?? frameW;
+          const localFrameColor = s && typeof s.frameColor === "string" ? s.frameColor : frameColor;
+          const localFrameShape = s && typeof s.frameShape === "string" ? s.frameShape : frameShape;
+          const localRadius = s && typeof s.frameRadius === "number" ? s.frameRadius : radius;
+          const localShapeCss = getShapeCss(localFrameShape, localRadius, itemW, itemH);
+          const localUseClipPathFrame = localFrameW > 0 && isClipPathShape(localFrameShape);
+          const localFit = slotFit(i);
+          const localPos = slotPosCss(i);
+          if (localUseClipPathFrame) {
+            const iw = itemW - localFrameW * 2;
+            const ih = itemH - localFrameW * 2;
+            return `<div style="position:relative;width:${itemW}px;height:${itemH}px;flex-shrink:0"><div style="position:absolute;inset:0;${localShapeCss};background-color:${escapeHtml(localFrameColor)}"></div><div style="position:absolute;left:${localFrameW}px;top:${localFrameW}px;width:${iw}px;height:${ih}px;${localShapeCss};overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.3);"><div style="width:100%;height:100%;background-size:${localFit};background-position:${localPos};background-image:url('${escapeHtml(url)}')"></div></div></div>`;
           }
-          return `<div style="overflow:hidden;${shapeCssItem};${frameW > 0 ? `border:${frameW}px solid ${escapeHtml(frameColor)};box-shadow:0 8px 32px rgba(0,0,0,0.3);` : ""}width:${itemW}px;height:${itemH}px;flex-shrink:0"><div style="width:100%;height:100%;background-size:${fit};background-position:${multiCoverPos};background-image:url('${escapeHtml(url)}')"></div></div>`;
+          return `<div style="overflow:hidden;${localShapeCss};${localFrameW > 0 ? `border:${localFrameW}px solid ${escapeHtml(localFrameColor)};box-shadow:0 8px 32px rgba(0,0,0,0.3);` : ""}width:${itemW}px;height:${itemH}px;flex-shrink:0"><div style="width:100%;height:100%;background-size:${localFit};background-position:${localPos};background-image:url('${escapeHtml(url)}')"></div></div>`;
         }).join("");
         return `<div style="position:absolute;left:${pad}px;top:${pad}px;width:${inner}px;height:${inner}px;display:flex;flex-wrap:wrap;flex-direction:${flexDir};gap:${effectiveGap}px;box-sizing:border-box">${itemsHtml}</div>${segsHtml}`;
       })()
@@ -733,15 +752,33 @@ export function renderSlideHtml(
       ? `left:16px;top:16px;width:${1080 - 32}px;height:${1080 - 32}px;${singleShapeCss};border:${singleFrameW}px solid ${escapeHtml(singleFrameColor)};box-shadow:0 8px 32px rgba(0,0,0,0.3);`
       : "left:0;top:0;width:1080px;height:1080px;";
   const pipInset = 48;
+  const rawPipIndex =
+    disp.mode === "pip" && typeof (disp as { pipIndex?: unknown }).pipIndex === "number"
+      ? Number((disp as { pipIndex?: number }).pipIndex)
+      : null;
+  const selectedPipIndex =
+    rawPipIndex != null && Number.isFinite(rawPipIndex) && (multiUrlsCandidate?.length ?? 0) > 1
+      ? Math.max(0, Math.min((multiUrlsCandidate?.length ?? 1) - 1, Math.floor(rawPipIndex)))
+      : null;
+  const baseBgUrlForSinglePip =
+    selectedPipIndex != null && multiUrlsCandidate
+      ? (multiUrlsCandidate.find((_, i) => i !== selectedPipIndex) ?? null)
+      : null;
   const pipUrls: string[] =
     isPipMode && !overlayOnly
       ? hasMultipleBackgroundImages && multiUrlsCandidate
-        ? multiUrlsCandidate
+        ? selectedPipIndex != null
+          ? [multiUrlsCandidate[selectedPipIndex]!].filter(Boolean)
+          : multiUrlsCandidate
         : resolvedBgUrl
           ? [resolvedBgUrl]
           : []
       : [];
-  const pipLayoutsResolved = pipUrls.length > 0 ? resolvePipLayoutsForImageCount(disp, pipUrls.length) : null;
+  const pipDispForResolve =
+    selectedPipIndex != null && Array.isArray((disp as { pips?: unknown[] }).pips)
+      ? { ...disp, pips: [((disp as { pips?: unknown[] }).pips ?? [])[selectedPipIndex] ?? {}] }
+      : disp;
+  const pipLayoutsResolved = pipUrls.length > 0 ? resolvePipLayoutsForImageCount(pipDispForResolve, pipUrls.length) : null;
   const pipShowShadow = disp.pipShadow === true;
   /* PiP uses Frame, Shape, Corner radius, Frame color from Display so those controls apply to each PiP box. */
   const allPipHtml =
@@ -750,6 +787,30 @@ export function renderSlideHtml(
           const pipLayers = pipUrls
             .map((url, i) => {
             const layout = pipLayoutsResolved[i]!;
+            const slotRaw =
+              Array.isArray((pipDispForResolve as { pips?: unknown[] }).pips) && i >= 0
+                ? (((pipDispForResolve as { pips?: unknown[] }).pips ?? [])[i] as Record<string, unknown> | undefined)
+                : undefined;
+            const slotFit =
+              slotRaw?.fit === "cover" || slotRaw?.fit === "contain"
+                ? (slotRaw.fit as "cover" | "contain")
+                : fit;
+            const slotPos =
+              typeof slotRaw?.imagePositionX === "number" && typeof slotRaw?.imagePositionY === "number"
+                ? `${Math.min(100, Math.max(0, slotRaw.imagePositionX))}% ${Math.min(100, Math.max(0, slotRaw.imagePositionY))}%`
+                : POSITION_TO_CSS[
+                    ((typeof slotRaw?.position === "string" ? slotRaw.position : disp.position) ?? "top") as keyof typeof POSITION_TO_CSS
+                  ];
+            const slotFrame = typeof slotRaw?.frame === "string" ? slotRaw.frame : singleFrame;
+            const slotFrameW = FRAME_WIDTHS[slotFrame as keyof typeof FRAME_WIDTHS] ?? singleFrameW;
+            const slotFrameColor =
+              typeof slotRaw?.frameColor === "string" && slotRaw.frameColor.trim().length > 0
+                ? slotRaw.frameColor
+                : singleFrameColor;
+            const slotFrameShape =
+              typeof slotRaw?.frameShape === "string" && slotRaw.frameShape.trim().length > 0
+                ? slotRaw.frameShape
+                : singleFrameShape;
             const pipSizePx = Math.round(Math.min(1080, Math.max(270, layout.pipSize * 1080)));
             const pipRangeX = 1080 - pipSizePx;
             const pipRangeY = 1080 - pipSizePx;
@@ -764,33 +825,39 @@ export function renderSlideHtml(
                   : pipPos === "top_right"
                     ? `right:${pipInset}px;top:${pipInset}px`
                     : `left:${pipInset}px;top:${pipInset}px`;
-            const pipCornerR = layout.pipBorderRadius;
-            const pipShapeCss = getShapeCss(disp.frameShape ?? "squircle", pipCornerR, pipSizePx, pipSizePx);
-            const pipInnerSize = pipSizePx - singleFrameW * 2;
-            const pipInnerShapeCss = getShapeCss(disp.frameShape ?? "squircle", pipCornerR, pipInnerSize, pipInnerSize);
+            const pipCornerR =
+              layout.pipBorderRadius ??
+              (typeof slotRaw?.frameRadius === "number" ? slotRaw.frameRadius : singleRadius);
+            const pipShapeCss = getShapeCss(slotFrameShape, pipCornerR, pipSizePx, pipSizePx);
+            const pipInnerSize = pipSizePx - slotFrameW * 2;
+            const pipInnerShapeCss = getShapeCss(slotFrameShape, pipCornerR, pipInnerSize, pipInnerSize);
             const pipRotation = Math.min(180, Math.max(-180, layout.pipRotation ?? 0));
             const pipTransform = pipRotation !== 0 ? `transform:rotate(${pipRotation}deg);transform-origin:50% 50%;` : "";
             /* Stack within isolated PiP subtree only; gradient stays at z-index 1 above this wrapper. */
             const z = 1 + (layout.zIndex ?? i);
             const innerShadowCss = pipShowShadow ? "box-shadow:0 8px 32px rgba(0,0,0,0.3);" : "";
+            const slotUseClipPathFrame = slotFrameW > 0 && isClipPathShape(slotFrameShape);
             const inner =
-              singleFrameW > 0 && singleUseClipPathFrame
-                ? `<div style="position:absolute;inset:0;${pipShapeCss};background-color:${escapeHtml(singleFrameColor)}"></div><div style="position:absolute;left:${singleFrameW}px;top:${singleFrameW}px;width:${pipInnerSize}px;height:${pipInnerSize}px;${pipInnerShapeCss};overflow:hidden;${innerShadowCss}"><img src="${escapeHtml(url)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:${fit};object-position:${singleBgPosition};display:block" /></div>`
-                : `<img src="${escapeHtml(url)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:${fit};object-position:${singleBgPosition};display:block" />`;
-            const shellBorderOnly = singleFrameW > 0 && !singleUseClipPathFrame ? `border:${singleFrameW}px solid ${escapeHtml(singleFrameColor)};` : "";
+              slotFrameW > 0 && slotUseClipPathFrame
+                ? `<div style="position:absolute;inset:0;${pipShapeCss};background-color:${escapeHtml(slotFrameColor)}"></div><div style="position:absolute;left:${slotFrameW}px;top:${slotFrameW}px;width:${pipInnerSize}px;height:${pipInnerSize}px;${pipInnerShapeCss};overflow:hidden;${innerShadowCss}"><img src="${escapeHtml(url)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:${slotFit};object-position:${slotPos};display:block" /></div>`
+                : `<img src="${escapeHtml(url)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:${slotFit};object-position:${slotPos};display:block" />`;
+            const shellBorderOnly = slotFrameW > 0 && !slotUseClipPathFrame ? `border:${slotFrameW}px solid ${escapeHtml(slotFrameColor)};` : "";
             const shellShadow = pipShowShadow
-              ? singleFrameW > 0 && !singleUseClipPathFrame
+              ? slotFrameW > 0 && !slotUseClipPathFrame
                 ? "box-shadow:0 8px 32px rgba(0,0,0,0.3);"
-                : `box-shadow:0 8px 32px rgba(0,0,0,${singleFrameW > 0 ? "0.3" : "0.25"});`
+                : `box-shadow:0 8px 32px rgba(0,0,0,${slotFrameW > 0 ? "0.3" : "0.25"});`
               : "";
             const shell =
-              singleFrameW > 0 && singleUseClipPathFrame
+              slotFrameW > 0 && slotUseClipPathFrame
                 ? `<div style="position:absolute;${pipPosStyle};width:${pipSizePx}px;height:${pipSizePx}px;z-index:${z};${pipTransform}">${inner}</div>`
                 : `<div style="position:absolute;${pipPosStyle};width:${pipSizePx}px;height:${pipSizePx}px;overflow:hidden;${pipShapeCss};z-index:${z};${shellBorderOnly}${shellShadow}${pipTransform}">${inner}</div>`;
             return shell;
           })
             .join("");
-          return `<div style="position:absolute;inset:0;z-index:0;isolation:isolate">${pipLayers}</div>`;
+          const baseLayer = baseBgUrlForSinglePip
+            ? `<img src="${escapeHtml(baseBgUrlForSinglePip)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:${fit};object-position:${singleBgPosition};display:block;z-index:0" />`
+            : "";
+          return `<div style="position:absolute;inset:0;z-index:0;isolation:isolate">${baseLayer}${pipLayers}</div>`;
         })()
       : "";
   /** Use <img> for single full-bleed so data URLs and large images render reliably (no style-attribute length limits). */

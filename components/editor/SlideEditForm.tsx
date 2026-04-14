@@ -288,8 +288,18 @@ export type ImageDisplayState = {
   pipY?: number;
   /** When mode is "pip": drop shadow on each PiP box. Default off. */
   pipShadow?: boolean;
+  /** Multi-image PiP: selected slot rendered as PiP; others remain in base layout. */
+  pipIndex?: number;
   /** Multi-image PiP: optional per-slot overrides (index matches image slot order). */
   pips?: Partial<{
+    position: "center" | "top" | "bottom" | "left" | "right" | "top-left" | "top-right" | "bottom-left" | "bottom-right";
+    fit: "cover" | "contain";
+    frame: "none" | "thin" | "medium" | "thick" | "chunky" | "heavy";
+    frameRadius: number;
+    frameColor: string;
+    frameShape: "squircle" | "circle" | "diamond" | "hexagon" | "pill";
+    imagePositionX: number;
+    imagePositionY: number;
     pipPosition: "top_left" | "top_right" | "bottom_left" | "bottom_right";
     pipSize: number;
     pipRotation: number;
@@ -354,6 +364,35 @@ function upsertImageDisplayPipSlot(
 
 /** Default PiP box rotation (degrees) when a photo is uploaded or picked from library / Drive. */
 const DEFAULT_PIP_ROTATION_AFTER_UPLOAD = 90;
+
+function mergeSelectedSlotVisualOverrides(
+  d: ImageDisplayState,
+  slotIndex: number
+): Partial<ImageDisplayState> {
+  const slot = d.pips?.[slotIndex] as
+    | Partial<{
+        position: ImageDisplayState["position"];
+        fit: ImageDisplayState["fit"];
+        frame: ImageDisplayState["frame"];
+        frameRadius: number;
+        frameColor: string;
+        frameShape: ImageDisplayState["frameShape"];
+        imagePositionX: number;
+        imagePositionY: number;
+      }>
+    | undefined;
+  if (!slot) return {};
+  return {
+    ...(slot.position != null ? { position: slot.position } : {}),
+    ...(slot.fit != null ? { fit: slot.fit } : {}),
+    ...(slot.frame != null ? { frame: slot.frame } : {}),
+    ...(slot.frameRadius != null ? { frameRadius: slot.frameRadius } : {}),
+    ...(slot.frameColor != null ? { frameColor: slot.frameColor } : {}),
+    ...(slot.frameShape != null ? { frameShape: slot.frameShape } : {}),
+    ...(slot.imagePositionX != null ? { imagePositionX: slot.imagePositionX } : {}),
+    ...(slot.imagePositionY != null ? { imagePositionY: slot.imagePositionY } : {}),
+  };
+}
 
 /**
  * Which slot receives a library/Drive append pick — mirrors `handlePickImage` / `handleDriveFilePicked`
@@ -1865,7 +1904,9 @@ export function SlideEditForm({
   const defaultBodySize = templateConfig?.textZones?.find((z) => z.id === "body")?.fontSize ?? 48;
 
   const multiImageDefaults: ImageDisplayState = { position: "top", fit: "cover", frame: "none", frameRadius: 0, frameColor: "#ffffff", frameShape: "squircle", layout: "auto", gap: 0, dividerStyle: "wave", dividerColor: "#ffffff", dividerWidth: 48 };
-  const effectiveImageDisplay = validImageCount >= 2 ? { ...multiImageDefaults, ...imageDisplay } : imageDisplay;
+  const selectedSlotVisualOverrides =
+    validImageCount >= 2 ? mergeSelectedSlotVisualOverrides(imageDisplay, activeBackgroundDisplaySlot) : {};
+  const effectiveImageDisplay = validImageCount >= 2 ? { ...multiImageDefaults, ...imageDisplay, ...selectedSlotVisualOverrides } : imageDisplay;
   /**
    * Show "Include background image in template" whenever the slide has an image to embed OR the template
    * already stores preview URLs—so users can uncheck on update and strip embedded images (any layout: full, PiP, multi).
@@ -2219,6 +2260,7 @@ export function SlideEditForm({
     if (source.overlayCircleX != null) payload.overlayCircleX = Math.min(100, Math.max(0, source.overlayCircleX));
     if (source.overlayCircleY != null) payload.overlayCircleY = Math.min(100, Math.max(0, source.overlayCircleY));
     if (source.mode != null) payload.mode = source.mode;
+    if (source.mode === "pip" && source.pipIndex != null) payload.pipIndex = Math.max(0, Math.round(source.pipIndex));
     if (source.pipPosition != null) payload.pipPosition = source.pipPosition;
     if (source.pipSize != null) payload.pipSize = Math.min(1, Math.max(0.25, source.pipSize));
     if (source.pipRotation != null) payload.pipRotation = Math.min(180, Math.max(-180, source.pipRotation));
@@ -2229,6 +2271,14 @@ export function SlideEditForm({
     if (Array.isArray(source.pips) && source.pips.length > 0 && source.mode === "pip") {
       payload.pips = source.pips.slice(0, 4).map((slot) => {
         const o: Record<string, unknown> = {};
+        if (slot?.position != null) o.position = slot.position;
+        if (slot?.fit != null) o.fit = slot.fit;
+        if (slot?.frame != null) o.frame = slot.frame;
+        if (slot?.frameRadius != null) o.frameRadius = Math.min(48, Math.max(0, slot.frameRadius));
+        if (slot?.frameColor != null) o.frameColor = slot.frameColor;
+        if (slot?.frameShape != null) o.frameShape = slot.frameShape;
+        if (slot?.imagePositionX != null) o.imagePositionX = Math.min(100, Math.max(0, slot.imagePositionX));
+        if (slot?.imagePositionY != null) o.imagePositionY = Math.min(100, Math.max(0, slot.imagePositionY));
         if (slot?.pipPosition != null) o.pipPosition = slot.pipPosition;
         if (slot?.pipSize != null) o.pipSize = Math.min(1, Math.max(0.25, slot.pipSize));
         if (slot?.pipRotation != null) o.pipRotation = Math.min(180, Math.max(-180, slot.pipRotation));
@@ -2800,6 +2850,7 @@ export function SlideEditForm({
       dividerColor: imageDisplay.dividerColor ?? "#ffffff",
       dividerWidth: imageDisplay.dividerWidth ?? 48,
       ...(imageDisplay.mode != null && { mode: imageDisplay.mode }),
+      ...(imageDisplay.mode === "pip" && imageDisplay.pipIndex != null && { pipIndex: imageDisplay.pipIndex }),
       ...(imageDisplay.pipPosition != null && { pipPosition: imageDisplay.pipPosition }),
       ...(imageDisplay.pipSize != null && { pipSize: imageDisplay.pipSize }),
       ...(imageDisplay.pipRotation != null && { pipRotation: imageDisplay.pipRotation }),
@@ -4383,7 +4434,11 @@ export function SlideEditForm({
                     : undefined
                 }
                 onPipImageClick={(slot) => {
-                  setBackgroundImageDisplaySlot(Math.min(Math.max(0, slot), Math.max(0, validImageCount - 1)));
+                  const nextSlot = Math.min(Math.max(0, slot), Math.max(0, validImageCount - 1));
+                  setBackgroundImageDisplaySlot(nextSlot);
+                  if ((imageDisplay.mode ?? "full") === "pip" && validImageCount > 1) {
+                    setImageDisplay((d) => ({ ...d, pipIndex: nextSlot }));
+                  }
                   if (editorTab !== "background") setEditorTab("background");
                 }}
                 positionAndSizeOnly
@@ -5313,7 +5368,11 @@ export function SlideEditForm({
                             : undefined
                         }
                         onPipImageClick={(slot) => {
-                          setBackgroundImageDisplaySlot(Math.min(Math.max(0, slot), Math.max(0, validImageCount - 1)));
+                          const nextSlot = Math.min(Math.max(0, slot), Math.max(0, validImageCount - 1));
+                          setBackgroundImageDisplaySlot(nextSlot);
+                          if ((imageDisplay.mode ?? "full") === "pip" && validImageCount > 1) {
+                            setImageDisplay((d) => ({ ...d, pipIndex: nextSlot }));
+                          }
                           if (editorTab !== "background") setEditorTab("background");
                         }}
                         editToolbarHeadline={
@@ -7421,7 +7480,12 @@ export function SlideEditForm({
                             size="sm"
                             variant={activeBackgroundDisplaySlot === i ? "secondary" : "ghost"}
                             className="h-7 text-[10px] px-2"
-                            onClick={() => setBackgroundImageDisplaySlot(i)}
+                            onClick={() => {
+                              setBackgroundImageDisplaySlot(i);
+                              if ((imageDisplay.mode ?? "full") === "pip" && validImageCount > 1) {
+                                setImageDisplay((d) => ({ ...d, pipIndex: i }));
+                              }
+                            }}
                           >
                             Slot {i + 1} — Display
                           </Button>
@@ -7645,7 +7709,7 @@ export function SlideEditForm({
                         {validImageCount <= 1
                           ? "How your image appears on the slide."
                           : (imageDisplay.mode ?? "full") === "pip"
-                            ? "Choose a slot (or tap a PiP in the preview). Corner, size, rotation, and radius apply to that image only. Frame, fit, and focal position apply to every PiP box."
+                            ? "Choose which slot becomes PiP (or tap it in the preview). Corner, size, rotation, and radius apply to that selected image."
                             : "Layout, gap, and dividers apply to all images. Slot numbers match image order."}
                       </p>
                     </div>
@@ -7659,7 +7723,12 @@ export function SlideEditForm({
                             size="sm"
                             variant={backgroundImageDisplaySlot === idx ? "secondary" : "outline"}
                             className="h-8 min-w-8 px-2.5 text-xs tabular-nums"
-                            onClick={() => setBackgroundImageDisplaySlot(idx)}
+                            onClick={() => {
+                              setBackgroundImageDisplaySlot(idx);
+                              if ((imageDisplay.mode ?? "full") === "pip" && validImageCount > 1) {
+                                setImageDisplay((d) => ({ ...d, pipIndex: idx }));
+                              }
+                            }}
                           >
                             {idx + 1}
                           </Button>
@@ -7679,7 +7748,8 @@ export function SlideEditForm({
                               ...d,
                               mode: v,
                               ...(v === "pip" && d.pipPosition == null ? { pipPosition: "bottom_right" as const, pipSize: 0.4 } : {}),
-                              ...(v === "full" ? { pips: undefined, pipShadow: undefined } : {}),
+                              ...(v === "pip" ? { pipIndex: Math.max(0, Math.min(validImageCount - 1, backgroundImageDisplaySlot)) } : {}),
+                              ...(v === "full" ? { pips: undefined, pipShadow: undefined, pipIndex: undefined } : {}),
                             }));
                             if (v === "pip") setBackground((b) => ({ ...b, overlay: { ...b.overlay, tintOpacity: 0 } }));
                           }}
@@ -7820,7 +7890,7 @@ export function SlideEditForm({
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="full">Multi layout (grid / side by side)</SelectItem>
-                            <SelectItem value="pip">Picture-in-picture (each image in a box)</SelectItem>
+                            <SelectItem value="pip">Picture-in-picture (selected image only)</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -7943,7 +8013,15 @@ export function SlideEditForm({
                       <span className="text-muted-foreground text-xs">Image position</span>
                       <Select
                         value={effectiveImageDisplay.position ?? "top"}
-                        onValueChange={(v) => setImageDisplay((d) => ({ ...d, position: v as ImageDisplayState["position"] }))}
+                        onValueChange={(v) =>
+                          setImageDisplay((d) =>
+                            validImageCount >= 2
+                              ? upsertImageDisplayPipSlot(d, activeBackgroundDisplaySlot, validImageCount, {
+                                  position: v as ImageDisplayState["position"],
+                                })
+                              : { ...d, position: v as ImageDisplayState["position"] }
+                          )
+                        }
                       >
                         <SelectTrigger className="h-9 rounded-lg border-input/80 bg-background text-sm">
                           <SelectValue />
@@ -7964,8 +8042,14 @@ export function SlideEditForm({
                     <div className="space-y-1.5">
                       <span className="text-muted-foreground text-xs">Fit</span>
                       <Select
-                        value={imageDisplay.fit ?? "cover"}
-                        onValueChange={(v: "cover" | "contain") => setImageDisplay((d) => ({ ...d, fit: v }))}
+                        value={effectiveImageDisplay.fit ?? "cover"}
+                        onValueChange={(v: "cover" | "contain") =>
+                          setImageDisplay((d) =>
+                            validImageCount >= 2
+                              ? upsertImageDisplayPipSlot(d, activeBackgroundDisplaySlot, validImageCount, { fit: v })
+                              : { ...d, fit: v }
+                          )
+                        }
                       >
                         <SelectTrigger className="h-9 rounded-lg border-input/80 bg-background text-sm">
                           <SelectValue />
@@ -7983,7 +8067,15 @@ export function SlideEditForm({
                       <span className="text-muted-foreground text-xs">Frame</span>
                       <Select
                         value={effectiveImageDisplay.frame ?? "medium"}
-                        onValueChange={(v: "none" | "thin" | "medium" | "thick" | "chunky" | "heavy") => setImageDisplay((d) => ({ ...d, frame: v as ImageDisplayState["frame"] }))}
+                        onValueChange={(v: "none" | "thin" | "medium" | "thick" | "chunky" | "heavy") =>
+                          setImageDisplay((d) =>
+                            validImageCount >= 2
+                              ? upsertImageDisplayPipSlot(d, activeBackgroundDisplaySlot, validImageCount, {
+                                  frame: v as ImageDisplayState["frame"],
+                                })
+                              : { ...d, frame: v as ImageDisplayState["frame"] }
+                          )
+                        }
                       >
                         <SelectTrigger className="h-9 rounded-lg border-input/80 bg-background text-sm">
                           <SelectValue />
@@ -8001,8 +8093,14 @@ export function SlideEditForm({
                     <div className="space-y-1.5">
                       <span className="text-muted-foreground text-xs">Shape</span>
                       <Select
-                        value={imageDisplay.frameShape ?? "squircle"}
-                        onValueChange={(v: "squircle" | "circle" | "diamond" | "hexagon" | "pill") => setImageDisplay((d) => ({ ...d, frameShape: v }))}
+                        value={effectiveImageDisplay.frameShape ?? "squircle"}
+                        onValueChange={(v: "squircle" | "circle" | "diamond" | "hexagon" | "pill") =>
+                          setImageDisplay((d) =>
+                            validImageCount >= 2
+                              ? upsertImageDisplayPipSlot(d, activeBackgroundDisplaySlot, validImageCount, { frameShape: v })
+                              : { ...d, frameShape: v }
+                          )
+                        }
                       >
                         <SelectTrigger className="h-9 rounded-lg border-input/80 bg-background text-sm">
                           <SelectValue />
@@ -8023,13 +8121,19 @@ export function SlideEditForm({
                         min={0}
                         max={48}
                         step={4}
-                        onChange={(v) => setImageDisplay((d) => ({ ...d, frameRadius: v }))}
+                        onChange={(v) =>
+                          setImageDisplay((d) =>
+                            validImageCount >= 2
+                              ? upsertImageDisplayPipSlot(d, activeBackgroundDisplaySlot, validImageCount, { frameRadius: v })
+                              : { ...d, frameRadius: v }
+                          )
+                        }
                         formatDisplay={(v) => `${v}px`}
                         label="corner radius"
                         className="w-full min-w-0"
-                        disabled={(imageDisplay.frameShape ?? "squircle") === "circle" || (imageDisplay.frameShape ?? "squircle") === "pill"}
+                        disabled={(effectiveImageDisplay.frameShape ?? "squircle") === "circle" || (effectiveImageDisplay.frameShape ?? "squircle") === "pill"}
                       />
-                      {((imageDisplay.frameShape ?? "squircle") === "circle" || (imageDisplay.frameShape ?? "squircle") === "pill") && (
+                      {((effectiveImageDisplay.frameShape ?? "squircle") === "circle" || (effectiveImageDisplay.frameShape ?? "squircle") === "pill") && (
                         <p className="text-muted-foreground text-[11px]">Not used for Circle or Pill.</p>
                       )}
                     </div>
@@ -8039,12 +8143,24 @@ export function SlideEditForm({
                         <input
                           type="color"
                           value={effectiveImageDisplay.frameColor ?? "#ffffff"}
-                          onChange={(e) => setImageDisplay((d) => ({ ...d, frameColor: e.target.value }))}
+                          onChange={(e) =>
+                            setImageDisplay((d) =>
+                              validImageCount >= 2
+                                ? upsertImageDisplayPipSlot(d, activeBackgroundDisplaySlot, validImageCount, { frameColor: e.target.value })
+                                : { ...d, frameColor: e.target.value }
+                            )
+                          }
                           className="h-9 w-12 cursor-pointer rounded-lg border border-input/80 bg-background"
                         />
                         <Input
                           value={effectiveImageDisplay.frameColor ?? "#ffffff"}
-                          onChange={(e) => setImageDisplay((d) => ({ ...d, frameColor: e.target.value }))}
+                          onChange={(e) =>
+                            setImageDisplay((d) =>
+                              validImageCount >= 2
+                                ? upsertImageDisplayPipSlot(d, activeBackgroundDisplaySlot, validImageCount, { frameColor: e.target.value })
+                                : { ...d, frameColor: e.target.value }
+                            )
+                          }
                           placeholder="#ffffff"
                           className="h-9 w-24 rounded-lg border-input/80 bg-background text-sm font-mono"
                         />
