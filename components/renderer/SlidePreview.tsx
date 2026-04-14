@@ -380,7 +380,7 @@ export type SlidePreviewProps = {
   headlineFontSizeSpans?: { start: number; end: number; fontSize: number }[] | undefined;
   bodyFontSizeSpans?: { start: number; end: number; fontSize: number }[] | undefined;
   /** Which zone has focus (editor sets from focus/blur). Enables floating toolbar and drag. */
-  focusedZone?: "headline" | "body" | null;
+  focusedZone?: string | null;
   onHeadlineFocus?: () => void;
   onHeadlineBlur?: () => void;
   onBodyFocus?: () => void;
@@ -388,6 +388,10 @@ export type SlidePreviewProps = {
   /** Callbacks when user drags a text zone to a new position (editor updates zone override). */
   onHeadlinePositionChange?: (x: number, y: number) => void;
   onBodyPositionChange?: (x: number, y: number) => void;
+  /** Generic callbacks for additional text zones (extra zones in template/meta). */
+  onTextZonePositionChange?: (zoneId: string, x: number, y: number) => void;
+  onTextZoneSizeChange?: (zoneId: string, w: number, h: number) => void;
+  onTextZoneRotationChange?: (zoneId: string, deg: number) => void;
   /** Toolbar for headline: font, size, position (editor passes from zone override). */
   editToolbarHeadline?: {
     label: string;
@@ -691,6 +695,9 @@ export function SlidePreview({
   onBodyBlur,
   onHeadlinePositionChange,
   onBodyPositionChange,
+  onTextZonePositionChange,
+  onTextZoneSizeChange,
+  onTextZoneRotationChange,
   editToolbarHeadline,
   editToolbarBody,
   editChromeCounter,
@@ -727,8 +734,8 @@ export function SlidePreview({
   const visibleWidth = scale > 1 ? CANVAS_SIZE / scale : CANVAS_SIZE;
   const [chromeVisible, setChromeVisible] = useState(false);
   const previewRootRef = useRef<HTMLDivElement>(null);
-  const [dragOffset, setDragOffset] = useState<{ zone: "headline" | "body"; x: number; y: number } | null>(null);
-  const dragZoneRef = useRef<{ zone: "headline" | "body"; baseX: number; baseY: number } | null>(null);
+  const [dragOffset, setDragOffset] = useState<{ zone: string; x: number; y: number } | null>(null);
+  const dragZoneRef = useRef<{ zone: string; baseX: number; baseY: number } | null>(null);
   const headlineBlockRef = useRef<HTMLDivElement>(null);
   const bodyBlockRef = useRef<HTMLDivElement>(null);
   const headlineTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -1083,7 +1090,7 @@ export function SlidePreview({
     return () => document.removeEventListener("mousedown", handleMouseDown);
   }, [focusedChrome, onChromeFocus]);
   const [resizeState, setResizeState] = useState<{
-    zone: "headline" | "body";
+    zone: string;
     corner: "nw" | "ne" | "sw" | "se";
     startX: number;
     startY: number;
@@ -1125,11 +1132,12 @@ export function SlidePreview({
       const nx = Math.round(Math.max(0, zoneInfo.baseX + off.x));
       const ny = Math.round(Math.max(0, zoneInfo.baseY + off.y));
       if (zoneInfo.zone === "headline") onHeadlinePositionChange?.(nx, ny);
-      else onBodyPositionChange?.(nx, ny);
+      else if (zoneInfo.zone === "body") onBodyPositionChange?.(nx, ny);
+      else onTextZonePositionChange?.(zoneInfo.zone, nx, ny);
     }
     dragZoneRef.current = null;
     setDragOffset(null);
-  }, [onHeadlinePositionChange, onBodyPositionChange]);
+  }, [onHeadlinePositionChange, onBodyPositionChange, onTextZonePositionChange]);
 
   const handleResizeMove = useCallback(
     (e: PointerEvent) => {
@@ -1189,13 +1197,27 @@ export function SlidePreview({
         onHeadlinePositionChange?.(Math.round(Math.max(0, x)), Math.round(Math.max(0, y)));
         editToolbarHeadline?.onWidthChange(Math.round(w));
         editToolbarHeadline?.onHeightChange(Math.round(h));
-      } else {
+      } else if (rs.zone === "body") {
         onBodyPositionChange?.(Math.round(Math.max(0, x)), Math.round(Math.max(0, y)));
         editToolbarBody?.onWidthChange(Math.round(w));
         editToolbarBody?.onHeightChange(Math.round(h));
+      } else {
+        const nx = Math.round(Math.max(0, x));
+        const ny = Math.round(Math.max(0, y));
+        onTextZonePositionChange?.(rs.zone, nx, ny);
+        onTextZoneSizeChange?.(rs.zone, Math.round(w), Math.round(h));
       }
     },
-    [editScale, onHeadlinePositionChange, onBodyPositionChange, editToolbarHeadline, editToolbarBody, canvasH]
+    [
+      editScale,
+      onHeadlinePositionChange,
+      onBodyPositionChange,
+      onTextZonePositionChange,
+      onTextZoneSizeChange,
+      editToolbarHeadline,
+      editToolbarBody,
+      canvasH,
+    ]
   );
   const handleResizeUp = useCallback(() => {
     setResizeState(null);
@@ -2981,16 +3003,8 @@ export function SlidePreview({
         const useOutline = zoneOutlineStrokePx > 0;
         const zoneBoldWeight = block.zone.id === "headline" ? headlineBoldWeight : bodyBoldWeight;
         const zoneBoxChromeStyle = parseZoneBoxChrome(block.zone);
-        const zoneDragX =
-          dragOffset != null &&
-          ((block.zone.id === "headline" && dragOffset.zone === "headline") || (block.zone.id === "body" && dragOffset.zone === "body"))
-            ? dragOffset.x
-            : 0;
-        const zoneDragY =
-          dragOffset != null &&
-          ((block.zone.id === "headline" && dragOffset.zone === "headline") || (block.zone.id === "body" && dragOffset.zone === "body"))
-            ? dragOffset.y
-            : 0;
+        const zoneDragX = dragOffset != null && dragOffset.zone === block.zone.id ? dragOffset.x : 0;
+        const zoneDragY = dragOffset != null && dragOffset.zone === block.zone.id ? dragOffset.y : 0;
         const isEditableHeadline =
           block.zone.id === "headline" &&
           (onHeadlineChange != null || (positionAndSizeOnly && onHeadlinePositionChange != null && editToolbarHeadline != null)) &&
@@ -4017,6 +4031,146 @@ export function SlidePreview({
                   )}
                 </div>
               )}
+              </div>
+            </Fragment>
+          );
+        }
+        const isExtraZone = block.zone.id !== "headline" && block.zone.id !== "body";
+        const isFocusedExtra = focusedZone === block.zone.id;
+        const canEditExtra = isExtraZone && (onTextZonePositionChange != null || onTextZoneRotationChange != null || onTextZoneSizeChange != null) && chromeVisible;
+        if (canEditExtra) {
+          const isDraggingExtra = dragOffset?.zone === block.zone.id;
+          const offX = isDraggingExtra ? dragOffset.x : 0;
+          const offY = isDraggingExtra ? dragOffset.y : 0;
+          const canDrag = onTextZonePositionChange != null && editScale > 0;
+          const canResize = onTextZoneSizeChange != null && editScale > 0;
+          const canRotate = canResize && isFocusedExtra && onTextZoneRotationChange != null;
+          const resizeHandles = canResize && isFocusedExtra ? (
+            <>
+              {(["nw", "ne", "sw", "se"] as const).map((corner) => (
+                <div
+                  key={corner}
+                  role="button"
+                  tabIndex={-1}
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                    setResizeState({
+                      zone: block.zone.id,
+                      corner,
+                      startX: block.zone.x,
+                      startY: block.zone.y,
+                      startW: block.zone.w,
+                      startH: block.zone.h,
+                      startPtrX: e.clientX,
+                      startPtrY: e.clientY,
+                      rotation: (block.zone as { rotation?: number }).rotation ?? 0,
+                    });
+                  }}
+                  className="absolute rounded-full border-2 border-primary bg-primary/80 cursor-nwse-resize hover:scale-110 z-20 touch-none"
+                  style={{
+                    width: RESIZE_HANDLE_SIZE,
+                    height: RESIZE_HANDLE_SIZE,
+                    ...(corner === "nw" && { left: RESIZE_HANDLE_OFFSET, top: RESIZE_HANDLE_OFFSET, cursor: "nwse-resize" }),
+                    ...(corner === "ne" && { right: RESIZE_HANDLE_OFFSET, top: RESIZE_HANDLE_OFFSET, left: "auto", cursor: "nesw-resize" }),
+                    ...(corner === "sw" && { left: RESIZE_HANDLE_OFFSET, bottom: RESIZE_HANDLE_OFFSET, top: "auto", cursor: "nesw-resize" }),
+                    ...(corner === "se" && { right: RESIZE_HANDLE_OFFSET, bottom: RESIZE_HANDLE_OFFSET, left: "auto", top: "auto", cursor: "nwse-resize" }),
+                  }}
+                  aria-label={`Resize ${block.zone.id}`}
+                />
+              ))}
+            </>
+          ) : null;
+          const rotateHandle = canRotate ? (
+            <button
+              type="button"
+              data-text-zone-handle="rotate"
+              className="absolute left-1/2 z-30 -translate-x-1/2 rounded-full border-2 border-primary bg-primary/80 hover:scale-110 touch-none cursor-grab"
+              style={{ width: RESIZE_HANDLE_SIZE, height: RESIZE_HANDLE_SIZE, top: -(RESIZE_HANDLE_SIZE + 12), pointerEvents: "auto" }}
+              aria-label={`Rotate ${block.zone.id}`}
+              onPointerDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                e.currentTarget.setPointerCapture(e.pointerId);
+                const root = previewRootRef.current;
+                if (!root || !onTextZoneRotationChange) return;
+                const r = root.getBoundingClientRect();
+                const px = ((e.clientX - r.left) / r.width) * CANVAS_SIZE;
+                const py = ((e.clientY - r.top) / r.height) * canvasH;
+                const cx = block.zone.x + offX + block.zone.w / 2;
+                const cy = block.zone.y + offY + block.zone.h / 2;
+                const a0 = (Math.atan2(py - cy, px - cx) * 180) / Math.PI;
+                const rot0 = zoneRotation;
+                zoneRotateDragRef.current = {
+                  cx,
+                  cy,
+                  a0,
+                  rot0,
+                  apply: (deg) => onTextZoneRotationChange(block.zone.id, deg),
+                };
+                setZoneRotateListening(true);
+              }}
+            />
+          ) : null;
+          const zoneBoxEl = (
+            <div
+              className={`rounded-sm transition-shadow overflow-visible ${canDrag ? "cursor-move " : ""}${isFocusedExtra ? "ring-2 ring-primary/80 shadow-lg" : ""}`}
+              style={{
+                position: "absolute",
+                left: zoneRotation !== 0 ? 0 : block.zone.x + offX,
+                top: zoneRotation !== 0 ? 0 : block.zone.y + offY,
+                ...zoneBoxStyle,
+                overflow: "visible",
+                ...(zoneRotation !== 0 && { backfaceVisibility: "hidden" }),
+              }}
+              onPointerDown={
+                canDrag
+                  ? (e) => {
+                      const t = e.target as HTMLElement;
+                      if (t?.closest?.('[data-text-zone-handle="rotate"]')) return;
+                      e.preventDefault();
+                      (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+                      dragZoneRef.current = { zone: block.zone.id, baseX: block.zone.x, baseY: block.zone.y };
+                      setDragOffset({ zone: block.zone.id, x: 0, y: 0 });
+                    }
+                  : undefined
+              }
+              role={canDrag ? "button" : undefined}
+              aria-label={canDrag ? `Drag to move ${block.zone.id}` : undefined}
+            >
+              <div
+                className="absolute inset-0 flex min-w-0 flex-col justify-center box-border overflow-visible cursor-pointer"
+                style={{ zIndex: 0, ...readOnlyBlockStyles, width: "100%", height: "100%" }}
+              >
+                {readOnlyBlockContent}
+              </div>
+              {rotateHandle}
+              {resizeHandles}
+            </div>
+          );
+          return (
+            <Fragment key={block.zone.id}>
+              {positionAndSizeOnly ? null : readOnlyBlockEl}
+              <div className="absolute shrink-0" style={{ zIndex: 6 }}>
+                {zoneRotation !== 0 ? (
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: block.zone.x + offX,
+                      top: block.zone.y + offY,
+                      ...zoneBoxStyle,
+                      transform: `rotate(${zoneRotation}deg) translateZ(0)`,
+                      transformOrigin: "50% 50%",
+                      overflow: "visible",
+                      backfaceVisibility: "hidden",
+                    }}
+                  >
+                    {zoneBoxEl}
+                  </div>
+                ) : (
+                  zoneBoxEl
+                )}
               </div>
             </Fragment>
           );

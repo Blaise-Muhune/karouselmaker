@@ -1395,7 +1395,7 @@ export function SlideEditForm({
   const [savedFeedback, setSavedFeedback] = useState(false);
   const previewWrapRef = useRef<HTMLDivElement>(null);
   const [previewWrapSize, setPreviewWrapSize] = useState<{ w: number; h: number } | null>(null);
-  const [activeEditZone, setActiveEditZone] = useState<"headline" | "body" | null>(null);
+  const [activeEditZone, setActiveEditZone] = useState<string | null>(null);
   /** Which text section is expanded in the Text tab (click to expand and show green container in preview). */
   const [expandedTextSection, setExpandedTextSection] = useState<"headline" | "body" | null>(null);
   /** "Edit more" (style, highlight, layout) open per section. */
@@ -2123,6 +2123,20 @@ export function SlideEditForm({
     setCustomExtraTextZones((prev) => [...prev, next]);
     setExtraTextValues((prev) => ({ ...prev, [nowId]: "" }));
   };
+  const upsertExtraTextZonePatch = useCallback((zoneId: string, patch: Omit<Partial<ExtraTextZone>, "id">) => {
+    const fallbackBase = extraTextZones.find((z) => z.id === zoneId);
+    if (!fallbackBase) return;
+    setCustomExtraTextZones((prev) => {
+      const idx = prev.findIndex((z) => z.id === zoneId);
+      if (idx >= 0) {
+        const next = [...prev];
+        const current = next[idx]!;
+        next[idx] = { ...current, ...patch, id: current.id };
+        return next;
+      }
+      return [...prev, { ...fallbackBase, ...patch }];
+    });
+  }, [extraTextZones]);
 
   const multiImageDefaults: ImageDisplayState = { position: "top", fit: "cover", frame: "none", frameRadius: 0, frameColor: "#ffffff", frameShape: "squircle", layout: "auto", gap: 0, dividerStyle: "wave", dividerColor: "#ffffff", dividerWidth: 48 };
   const selectedSlotVisualOverrides =
@@ -4662,6 +4676,30 @@ export function SlideEditForm({
                     y: ny,
                   }));
                 }}
+                onTextZonePositionChange={(zoneId, x, y) => {
+                  const zone = extraTextZones.find((z) => z.id === zoneId);
+                  if (!zone) return;
+                  const ch = exportSize === "1080x1920" ? 1920 : exportSize === "1080x1350" ? 1350 : 1080;
+                  const { x: nx, y: ny } = clampTextZonePositionToCanvas(Math.round(x), Math.round(y), zone.w, zone.h, zone.rotation ?? 0, 1080, ch);
+                  upsertExtraTextZonePatch(zoneId, { x: nx, y: ny });
+                }}
+                onTextZoneSizeChange={(zoneId, w, h) => {
+                  const zone = extraTextZones.find((z) => z.id === zoneId);
+                  if (!zone) return;
+                  const ch = exportSize === "1080x1920" ? 1920 : exportSize === "1080x1350" ? 1350 : 1080;
+                  const clampedH = Math.max(60, Math.min(ch, Math.round(h)));
+                  const clampedW = Math.max(120, Math.min(1080, Math.round(w)));
+                  const pos = clampTextZonePositionToCanvas(zone.x, zone.y, clampedW, clampedH, zone.rotation ?? 0, 1080, ch);
+                  const lh = zone.lineHeight ?? 1.15;
+                  upsertExtraTextZonePatch(zoneId, {
+                    x: pos.x,
+                    y: pos.y,
+                    w: clampedW,
+                    h: clampedH,
+                    maxLines: computeMaxLinesForZone(clampedH, zone.fontSize, lh),
+                  });
+                }}
+                onTextZoneRotationChange={(zoneId, deg) => upsertExtraTextZonePatch(zoneId, { rotation: deg })}
                 onBackgroundImagePositionChange={
                   isImageMode && validImageCount < 2
                     ? (x, y) => setImageDisplay((d) => ({ ...d, imagePositionX: x, imagePositionY: y }))
@@ -5669,6 +5707,30 @@ export function SlideEditForm({
                             y: ny,
                           }));
                         }}
+                        onTextZonePositionChange={(zoneId, x, y) => {
+                          const zone = extraTextZones.find((z) => z.id === zoneId);
+                          if (!zone) return;
+                          const ch = exportSize === "1080x1920" ? 1920 : exportSize === "1080x1350" ? 1350 : 1080;
+                          const { x: nx, y: ny } = clampTextZonePositionToCanvas(Math.round(x), Math.round(y), zone.w, zone.h, zone.rotation ?? 0, 1080, ch);
+                          upsertExtraTextZonePatch(zoneId, { x: nx, y: ny });
+                        }}
+                        onTextZoneSizeChange={(zoneId, w, h) => {
+                          const zone = extraTextZones.find((z) => z.id === zoneId);
+                          if (!zone) return;
+                          const ch = exportSize === "1080x1920" ? 1920 : exportSize === "1080x1350" ? 1350 : 1080;
+                          const clampedH = Math.max(60, Math.min(ch, Math.round(h)));
+                          const clampedW = Math.max(120, Math.min(1080, Math.round(w)));
+                          const pos = clampTextZonePositionToCanvas(zone.x, zone.y, clampedW, clampedH, zone.rotation ?? 0, 1080, ch);
+                          const lh = zone.lineHeight ?? 1.15;
+                          upsertExtraTextZonePatch(zoneId, {
+                            x: pos.x,
+                            y: pos.y,
+                            w: clampedW,
+                            h: clampedH,
+                            maxLines: computeMaxLinesForZone(clampedH, zone.fontSize, lh),
+                          });
+                        }}
+                        onTextZoneRotationChange={(zoneId, deg) => upsertExtraTextZonePatch(zoneId, { rotation: deg })}
                         onBackgroundImagePositionChange={
                           isImageMode && validImageCount < 2
                             ? (x, y) => setImageDisplay((d) => ({ ...d, imagePositionX: x, imagePositionY: y }))
@@ -6367,10 +6429,13 @@ export function SlideEditForm({
                 <div className="space-y-2">
                   {extraTextZones.map((zone) => {
                     const fromTemplate = templateExtraTextZones.some((z) => z.id === zone.id);
-                    const updateZone = (patch: Partial<ExtraTextZone>) =>
-                      setCustomExtraTextZones((prev) => prev.map((z) => (z.id === zone.id ? ({ ...z, ...patch }) : z)));
+                    const updateZone = (patch: Partial<ExtraTextZone>) => upsertExtraTextZonePatch(zone.id, patch);
                     return (
-                      <div key={zone.id} className="rounded-md border border-border/60 bg-background/60 p-3 space-y-3">
+                      <div
+                        key={zone.id}
+                        className={`rounded-md border bg-background/60 p-3 space-y-3 transition-colors ${activeEditZone === zone.id ? "border-primary/60 ring-1 ring-primary/30" : "border-border/60"}`}
+                        onClick={() => setActiveEditZone(zone.id)}
+                      >
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-2">
                             <p className="text-[11px] font-semibold text-foreground">{zone.label?.trim() || zone.id}</p>
