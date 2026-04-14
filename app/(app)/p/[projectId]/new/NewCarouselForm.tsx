@@ -23,6 +23,7 @@ import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { UpgradePlansDialog } from "@/components/subscription/UpgradePlansDialog";
+import { WaitingGamesDialog } from "@/components/waiting/WaitingGamesDialog";
 import {
   Gem,
   GlobeIcon,
@@ -715,8 +716,14 @@ export function NewCarouselForm({
               {regenerateCarouselId ? "Regenerating your carousel…" : "Generating your carousel…"}
             </p>
             <p className="text-xs text-muted-foreground">
-              This may take a minute or two. If it runs very long, this page refreshes automatically so you can check progress.
+              This usually takes 2-4 minutes, if it takes longer <span className="font-semibold text-foreground">refresh the page</span>.
             </p>
+            <div className="flex justify-center">
+              <WaitingGamesDialog
+                loadingMessage="Your carousel is still generating…"
+                triggerClassName="bg-background/80"
+              />
+            </div>
           </div>
         </div>
       )}
