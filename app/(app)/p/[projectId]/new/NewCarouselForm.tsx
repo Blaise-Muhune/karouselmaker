@@ -20,7 +20,6 @@ import { importFromGoogleDrive, importFilesFromGoogleDrive } from "@/app/actions
 import { TemplateSelectCards } from "@/components/carousels/TemplateSelectCards";
 import type { TemplateOption } from "@/components/carousels/TemplateSelectCards";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
-import { ImportTemplateButton } from "@/components/templates/ImportTemplateButton";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { UpgradePlansDialog } from "@/components/subscription/UpgradePlansDialog";
@@ -1301,33 +1300,51 @@ export function NewCarouselForm({
                     Pick up to 3 slots: first, middle, and last.
                   </p>
                 </DialogHeader>
-                <div className="grid gap-2 sm:grid-cols-3">
-                  {(["First slide", "Middle slides", "Last slide"] as const).map((label, idx) => {
-                    const slot = idx as 0 | 1 | 2;
-                    const id = selectedTemplateIds[slot];
-                    const name = id ? templateOptions.find((t) => t.id === id)?.name ?? "Custom" : "Default";
-                    return (
-                      <Button
-                        key={label}
-                        type="button"
-                        variant={templatePickerSlot === slot ? "secondary" : "outline"}
-                        size="sm"
-                        className="justify-start"
-                        onClick={() => setTemplatePickerSlot(slot)}
-                      >
-                        <span className="truncate">{label}: {name}</span>
-                      </Button>
-                    );
-                  })}
+                <p className="text-xs text-muted-foreground">
+                  Import template coming soon.
+                </p>
+                <div className="rounded-xl border border-border/70 bg-muted/20 p-2">
+                  <div className="flex flex-wrap gap-2">
+                    {(["First", "Middle", "Last"] as const).map((label, idx) => {
+                      const slot = idx as 0 | 1 | 2;
+                      const id = selectedTemplateIds[slot];
+                      const name = id ? templateOptions.find((t) => t.id === id)?.name ?? "Custom" : "Default";
+                      const active = templatePickerSlot === slot;
+                      return (
+                        <button
+                          key={label}
+                          type="button"
+                          onClick={() => setTemplatePickerSlot(slot)}
+                          className={cn(
+                            "group inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium transition-all",
+                            active
+                              ? "bg-primary text-primary-foreground shadow-sm ring-1 ring-primary/40"
+                              : "bg-background text-foreground/80 hover:bg-background/80 border border-border/70"
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              "inline-flex size-5 items-center justify-center rounded-full text-[10px] font-semibold",
+                              active ? "bg-primary-foreground/20 text-primary-foreground" : "bg-muted text-muted-foreground"
+                            )}
+                          >
+                            {slot + 1}
+                          </span>
+                          <span>{label}</span>
+                          <span
+                            className={cn(
+                              "max-w-[150px] truncate font-normal",
+                              active ? "text-primary-foreground/90" : "text-muted-foreground"
+                            )}
+                            title={`${label} slot: ${name}`}
+                          >
+                            {name}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-                <ImportTemplateButton
-                  layout="callout"
-                  isPro={hasFullAccess}
-                  atLimit={false}
-                  isAdmin={isAdminUser}
-                  className="shrink-0"
-                  onCreated={() => router.refresh()}
-                />
                 <div className="overflow-y-auto overflow-x-hidden flex-1 min-h-0 min-w-0 w-full pr-1">
                   <TemplateSelectCards
                     key={`${carouselFor}-${templateModalOpen}`}
