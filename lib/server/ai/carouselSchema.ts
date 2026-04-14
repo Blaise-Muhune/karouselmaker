@@ -21,6 +21,8 @@ export function createCarouselOutputSchema() {
   const shortenAlternateSchema = z.object({
     headline: z.string().max(h),
     body: z.string().max(b).optional().default(""),
+    /** Optional extra text values for template custom zones (zone.id -> text). */
+    extra_text_values: z.record(z.string(), z.string().max(b)).optional(),
     headline_highlight_words: highlightWordsSchema,
     body_highlight_words: highlightWordsSchema,
     variant: z.enum(["short", "normal", "long"]).optional(),
@@ -31,6 +33,8 @@ export function createCarouselOutputSchema() {
     slide_type: slideTypeEnum,
     headline: z.string().max(h),
     body: z.string().max(b).optional().default(""),
+    /** Optional extra text values for template custom zones (zone.id -> text). */
+    extra_text_values: z.record(z.string(), z.string().max(b)).optional(),
     headline_highlight_words: highlightWordsSchema,
     body_highlight_words: highlightWordsSchema,
     image_query: z.string().max(80).optional(),

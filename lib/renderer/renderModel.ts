@@ -6,6 +6,8 @@ import { formatHandleAttribution } from "./attributionText";
 export type SlideData = {
   headline: string;
   body: string | null;
+  /** Optional values for extra template text zones (zone.id -> text). */
+  extra_text_values?: Record<string, string>;
   slide_index: number;
   slide_type: string;
   /** When set, headline is plain text and we inject {{#hex}}...{{/}} from these spans for rendering. */
@@ -306,7 +308,7 @@ export function buildSlideRenderModel(
         ? slideData.headline
         : zone.id === "body"
           ? slideData.body ?? ""
-          : "";
+          : (slideData.extra_text_values?.[zone.id] ?? "");
     const highlights = zone.id === "headline" ? slideData.headline_highlights : slideData.body_highlights;
     if (highlights?.length) {
       const plainText = stripHighlightMarkers(text);

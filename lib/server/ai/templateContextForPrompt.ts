@@ -59,6 +59,7 @@ export type TemplateContextForPrompt = {
   hasBody: boolean;
   headlineMaxChars: number;
   bodyMaxChars: number;
+  extraZoneIds: string[];
   /** Human-readable line for the system prompt. */
   promptSection: string;
 };
@@ -84,12 +85,14 @@ export function buildTemplateContextForPrompt(templateConfig: Json | null | unde
       hasBody: true,
       headlineMaxChars: DEFAULT_FALLBACK_HEADLINE,
       bodyMaxChars: DEFAULT_FALLBACK_BODY,
+      extraZoneIds: [],
       promptSection: "",
     };
   }
 
   const headlineZone = zones.find((z) => z.id === "headline");
   const bodyZone = zones.find((z) => z.id === "body");
+  const extraZones = zones.filter((z) => z.id !== "headline" && z.id !== "body");
   const hasHeadline = !!headlineZone;
   const hasBody = !!bodyZone;
   const headlineVisualLines = headlineZone
@@ -172,6 +175,29 @@ export function buildTemplateContextForPrompt(templateConfig: Json | null | unde
   } else {
     lines.push("- Body zone: absent in this template. Omit body (use empty string or omit) on every slide.");
   }
+  if (extraZones.length > 0) {
+    lines.push("- Extra text zones: When relevant, set slide.extra_text_values as an object keyed by exact zone id. Omit any optional zone when forcing text would hurt clarity.");
+    for (const z of extraZones) {
+      const zMax = Math.min(
+        ABSOLUTE_MAX_BODY_CHARS,
+        maxCharsForZone({
+          w: Number(z.w) || DESIGN_WIDTH,
+          fontSize: Number(z.fontSize) || 28,
+          maxLines: Number(z.maxLines) || 2,
+        })
+      );
+      const zLines = visualLinesForZone({
+        h: Number(z.h),
+        fontSize: Number(z.fontSize) || 28,
+        maxLines: Number(z.maxLines) || 2,
+        lineHeight: Number((z as unknown as { lineHeight?: number }).lineHeight) || 1.2,
+      });
+      const zLabel = (z as { label?: string }).label?.trim();
+      const zOptional = (z as { optional?: boolean }).optional === true;
+      lines.push(`- Extra zone "${z.id}"${zLabel ? ` (${zLabel})` : ""}: max ~${zMax} chars, ~${zLines} lines, ${zOptional ? "optional" : "required if present"} in layout.`);
+    }
+    lines.push("- For every slide, keep extra_text_values keys limited to these exact zone ids only.");
+  }
   lines.push("Do not exceed these character counts. Prefer fewer characters when the limit is low; it is OK to use a single word or very few words. shorten_alternates can vary in length (short / normal / long).");
 
   return {
@@ -179,6 +205,7 @@ export function buildTemplateContextForPrompt(templateConfig: Json | null | unde
     hasBody,
     headlineMaxChars: hasHeadline ? headlineMaxChars : 0,
     bodyMaxChars: hasBody ? bodyMaxChars : 0,
+    extraZoneIds: extraZones.map((z) => z.id),
     promptSection: lines.join(" "),
   };
 }

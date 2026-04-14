@@ -118,6 +118,10 @@ export type TemplateSelectCardsProps = {
   selectedTemplateOverlayOverride?: SlideBackgroundOverride | null;
   /** When true, show a "My templates" section first (user-owned / modified / imported). */
   showMyTemplatesSection?: boolean;
+  /** Internal pagination initial count when paginateInternally=true. */
+  initialVisibleCount?: number;
+  /** When true, render a stronger, more visible load-more button. */
+  emphasizeLoadMoreButton?: boolean;
 };
 
 export function TemplateSelectCards({
@@ -138,6 +142,8 @@ export function TemplateSelectCards({
   onTemplateDeleted,
   selectedTemplateOverlayOverride,
   showMyTemplatesSection = true,
+  initialVisibleCount,
+  emphasizeLoadMoreButton = false,
 }: TemplateSelectCardsProps) {
   const { w: PREVIEW_W, h: PREVIEW_H, scale: SCALE } = usePreviewSize();
   const brandKit = { primary_color: primaryColor };
@@ -168,7 +174,8 @@ export function TemplateSelectCards({
 
   const [platformFilter, setPlatformFilter] = useState<TemplatePlatformFilter>(initialPlatformFilter);
   const [layoutFilter, setLayoutFilter] = useState<TemplateLayoutFilter>(initialLayoutFilter);
-  const [visibleCount, setVisibleCount] = useState(TEMPLATE_PAGE_SIZE);
+  const pageSize = Math.max(TEMPLATE_PAGE_SIZE, initialVisibleCount ?? TEMPLATE_PAGE_SIZE);
+  const [visibleCount, setVisibleCount] = useState(pageSize);
 
   const effectiveDefaultTemplateConfig =
     defaultTemplateConfig ??
@@ -220,11 +227,11 @@ export function TemplateSelectCards({
 
   const displayList = paginateInternally ? catalogFiltered.slice(0, visibleCount) : catalogFiltered;
   const hasMore = paginateInternally && catalogFiltered.length > visibleCount;
-  const loadMore = () => setVisibleCount((n) => n + TEMPLATE_PAGE_SIZE);
+  const loadMore = () => setVisibleCount((n) => n + pageSize);
 
   useEffect(() => {
-    setVisibleCount(TEMPLATE_PAGE_SIZE);
-  }, [platformFilter, layoutFilter]);
+    setVisibleCount(pageSize);
+  }, [platformFilter, layoutFilter, pageSize]);
 
   /** Build imageDisplay from template defaults so PIP and full templates render exactly as designed. */
   const getImageDisplayFromConfig = (config: TemplateConfig): ComponentProps<typeof SlidePreview>["imageDisplay"] => {
@@ -479,13 +486,18 @@ export function TemplateSelectCards({
       </div>
 
       {hasMore && (
-        <div className="pt-2 border-t flex justify-center">
+        <div className="pt-3 border-t flex justify-center">
           <button
             type="button"
             onClick={loadMore}
-            className="text-sm font-medium text-primary hover:underline"
+            className={cn(
+              "text-sm font-semibold rounded-md px-4 py-2 transition-colors",
+              emphasizeLoadMoreButton
+                ? "bg-primary text-primary-foreground hover:opacity-90 shadow-sm"
+                : "text-primary hover:underline"
+            )}
           >
-            Load more
+            Show more templates
           </button>
         </div>
       )}

@@ -650,7 +650,7 @@ export function NewCarouselForm({
     <>
       {isPending && (
         <div
-          className="fixed inset-0 z-[100] flex min-h-screen min-h-[100dvh] flex-col items-center justify-center bg-background/98 backdrop-blur-md"
+          className="fixed inset-0 z-100 flex min-h-dvh flex-col items-center justify-center bg-background/98 backdrop-blur-md"
           aria-live="polite"
           aria-busy="true"
         >
@@ -666,7 +666,7 @@ export function NewCarouselForm({
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-8">
+      <form onSubmit={handleSubmit} className="space-y-6">
         {regenerateCarouselId && (
           <div className="rounded-lg border border-border/60 bg-muted/20 px-4 py-3">
             <label className="flex items-start gap-2.5 cursor-pointer group">
@@ -702,12 +702,10 @@ export function NewCarouselForm({
           </div>
         )}
 
-        <Card className="py-4 gap-4">
+        <Card className="gap-4 rounded-2xl border-border/70 bg-card/95 py-4 shadow-sm">
           <CardHeader className="pb-0 px-5">
-            <CardTitle className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
-              Carousel for
-            </CardTitle>
-            <CardDescription>Pick platform style.</CardDescription>
+            <CardTitle className="text-sm font-semibold text-foreground">Platform</CardTitle>
+            <CardDescription>Choose where this carousel is meant to perform.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4 px-5 pt-0">
             <div className="flex rounded-lg border border-input p-0.5 bg-muted/30">
@@ -740,12 +738,10 @@ export function NewCarouselForm({
           </CardContent>
         </Card>
 
-        <Card className="py-4 gap-4">
+        <Card className="gap-4 rounded-2xl border-border/70 bg-card/95 py-4 shadow-sm">
           <CardHeader className="pb-0 px-5">
-            <CardTitle className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
-              What&apos;s it about?
-            </CardTitle>
-            <CardDescription>Topic, URL, pasted text, or upload a document/PDF.</CardDescription>
+            <CardTitle className="text-sm font-semibold text-foreground">Input</CardTitle>
+            <CardDescription>Add your source in one step.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4 px-5 pt-0">
             <div className="flex rounded-lg border border-input p-0.5 bg-muted/30">
@@ -793,7 +789,7 @@ export function NewCarouselForm({
                     ) : (
                       <LightbulbIcon className="size-3.5" />
                     )}
-                    Suggested topics
+                    Suggestions
                   </Button>
                 )}
               </div>
@@ -838,7 +834,7 @@ export function NewCarouselForm({
                     required={inputType === "document"}
                   />
                   <p className="text-xs text-muted-foreground">
-                    Supports PDF, DOCX, TXT, MD, CSV, JSON up to 10MB. We extract text and use it as the carousel input.
+                    PDF, DOCX, TXT, MD, CSV, JSON (up to 10MB).
                   </p>
                 </div>
               )}
@@ -857,25 +853,23 @@ export function NewCarouselForm({
           </CardContent>
         </Card>
 
-        <Card className="py-4 gap-4 border-primary/10">
+        <Card className="gap-4 rounded-2xl border-primary/15 bg-card py-4 shadow-sm">
           <CardHeader className="pb-2 px-5">
-            <CardTitle className="text-sm font-medium text-foreground">
-              Backgrounds
-            </CardTitle>
+            <CardTitle className="text-sm font-semibold text-foreground">Visuals</CardTitle>
             <CardDescription className="text-muted-foreground/90">
               {ugcInstagramImagePolicy ? (
                 <>
-                  This project uses creator (UGC) style: with AI images on, only AI-generated backgrounds are available—stock and web search images stay off so slides don’t look like polished catalog shots. Turn AI images off to use your library instead.
+                  UGC mode keeps visuals authentic: AI images stay on, stock/web stay off. Turn AI off to use your own library.
                 </>
               ) : (
                 <>
                   {!hasFullAccess && !isPro ? (
                     <>
-                      Stock photos and images from your library work on every plan. AI-generated backgrounds are off without Pro (your free full-access runs are used). Turn off &quot;AI images&quot; below to pick stock or library.
+                      Stock and library images always work. AI image generation needs Pro.
                     </>
                   ) : (
                     <>
-                      Stock photos work on every plan. Web images and AI generate need Pro or your first {freeGenerationsTotal} free generations. Off = project colors.
+                      Stock works on all plans. Web + AI images use Pro (or free trial runs).
                     </>
                   )}
                   {hasFullAccess && !isPro && (
@@ -915,7 +909,7 @@ export function NewCarouselForm({
                 <span className="text-xs text-muted-foreground">Image source</span>
                 {projectContentFocus === "ugc" && carouselFor === "linkedin" && (
                   <p className="text-[11px] text-muted-foreground leading-snug">
-                    LinkedIn carousels still use stock photos here for a professional feed. For phone-style UGC backgrounds, choose Instagram / TikTok above.
+                    LinkedIn keeps stock visuals for a cleaner professional look.
                   </p>
                 )}
                 <div className="grid gap-2 sm:grid-cols-3">
@@ -958,15 +952,15 @@ export function NewCarouselForm({
                         </div>
                         {src === "stock" ? (
                           <BackgroundSourceBestForHint platform="linkedin">
-                            Best for LinkedIn and polished, professional carousels
+                            Best for professional posts
                           </BackgroundSourceBestForHint>
                         ) : src === "brave" ? (
                           <BackgroundSourceBestForHint platform="tiktok">
-                            Best for TikTok-style energy and timely, real-world images
+                            Best for real-world and timely visuals
                           </BackgroundSourceBestForHint>
                         ) : (
                           <BackgroundSourceBestForHint platform="instagram">
-                            Best for Instagram-style, scroll-stopping visuals
+                            Best for bold, scroll-stopping visuals
                           </BackgroundSourceBestForHint>
                         )}
                       </label>
@@ -975,7 +969,7 @@ export function NewCarouselForm({
                 </div>
                 {carouselFor !== "linkedin" && imageSource === "ai_generate" && canUseAiGenerate && (
                   <p className="rounded-md border border-border/70 bg-muted/25 px-3 py-2 text-[11px] text-muted-foreground">
-                    Same face across slides? Turn on{" "}
+                    Need character consistency? Turn on{" "}
                     <span className="font-medium text-foreground">Same character from project</span> below (Project → Edit)
                     or pick one-off character refs here.
                   </p>
@@ -1017,15 +1011,14 @@ export function NewCarouselForm({
                         />
                         <span className="text-sm leading-snug">
                           <span className="font-medium text-foreground group-hover:text-foreground/90">
-                            Same character from project
+                            Reuse saved character
                           </span>
                           <span className="block text-[11px] text-muted-foreground mt-0.5">
-                            Uses recurring character notes + face refs from Project → Edit. Off = pick different refs below
-                            for this run only. Saved per project.
+                            Uses saved character brief + refs from Project settings. Turn off to pick one-off refs for this run.
                           </span>
                           {!hasProjectSavedUgcCharacter && (
                             <span className="block text-[11px] text-muted-foreground mt-0.5">
-                              Disabled until you add a saved character brief or character refs in Project → Edit.
+                              Add a saved character in Project settings to enable this.
                             </span>
                           )}
                         </span>
@@ -1034,14 +1027,13 @@ export function NewCarouselForm({
                         <p className="text-xs text-destructive pl-7">{ugcCharacterPrefError}</p>
                       )}
                     </div>
-                    <p className="text-xs font-medium text-foreground">References (optional)</p>
+                    <p className="text-xs font-medium text-foreground">References</p>
                     <p className="text-[11px] text-muted-foreground leading-snug">
                       Up to{" "}
                       <span className="font-medium text-foreground tabular-nums">
                         {MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS}
                       </span>{" "}
-                      images total across characters, style, and product. Product images add image-to-image conditioning
-                      so UI, packaging, and products stay recognizable in generated scenes.
+                      images total across character, style, and product.
                       <span className="text-foreground/80 tabular-nums">
                         {" "}
                         ({combinedReferenceCount}/{MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS} selected)
@@ -1061,7 +1053,7 @@ export function NewCarouselForm({
                           <ImageIcon className="mr-1.5 size-3.5" />
                           {ugcCharacterRefIds.length
                             ? `${ugcCharacterRefIds.length} character${ugcCharacterRefIds.length !== 1 ? "s" : ""}`
-                            : "Pick characters"}
+                          : "Choose characters"}
                         </Button>
                         {ugcCharacterRefIds.length > 0 && (
                           <Button
@@ -1089,7 +1081,7 @@ export function NewCarouselForm({
                         <ImageIcon className="mr-1.5 size-3.5" />
                         {aiStyleRefIds.length
                           ? `${aiStyleRefIds.length} reference${aiStyleRefIds.length !== 1 ? "s" : ""}`
-                          : "Pick from library"}
+                          : "Choose style refs"}
                       </Button>
                       {aiStyleRefIds.length > 0 && (
                         <Button
@@ -1105,8 +1097,7 @@ export function NewCarouselForm({
                     </div>
                       <p className="text-[11px] text-muted-foreground">Product or service</p>
                       <p className="text-[10px] text-muted-foreground/90 leading-snug -mt-1">
-                        Screenshots, product on model, packaging—image-to-image so the model matches your real pixels, not
-                        only text.
+                        Screenshots, packaging, or product photos.
                       </p>
                       <div className="flex flex-wrap items-center gap-2">
                         <Button
@@ -1120,7 +1111,7 @@ export function NewCarouselForm({
                           <PackageIcon className="mr-1.5 size-3.5" />
                           {productRefIds.length
                             ? `${productRefIds.length} product${productRefIds.length !== 1 ? "s" : ""}`
-                            : "Pick product images"}
+                          : "Choose product images"}
                         </Button>
                         {productRefIds.length > 0 && (
                           <Button
@@ -1142,10 +1133,9 @@ export function NewCarouselForm({
             {!useAiBackgrounds && (
               <>
                 <div className="pt-3 border-t border-border/50">
-                  <p className="text-xs text-muted-foreground mb-2">Slide backgrounds</p>
+                  <p className="text-xs text-muted-foreground mb-2">Background assets</p>
                   <p className="text-[11px] text-muted-foreground leading-snug mb-2">
-                    Pick images from your library or Google Drive. These become slide backgrounds (not the same as product
-                    references below).
+                    Pick images from your library or Drive for slide backgrounds.
                   </p>
                   <div className="flex flex-wrap items-center gap-2">
                     <Button
@@ -1274,55 +1264,62 @@ export function NewCarouselForm({
         </Card>
 
         {(templateOptions.length > 0 || (carouselFor === "linkedin" ? defaultLinkedInTemplateConfig : defaultTemplateConfig)) && (
-          <Card className="py-4 gap-4">
+          <Card className="gap-4 rounded-2xl border-border/70 bg-card/95 py-4 shadow-sm">
             <CardHeader className="pb-0 px-5">
-              <CardTitle className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
-                Template (optional)
-              </CardTitle>
+              <CardTitle className="text-sm font-semibold text-foreground">Template</CardTitle>
               <CardDescription>
                 {useAiBackgrounds
-                  ? "Previews use a sample image. Pick the layout for your carousel."
+                  ? "Pick the layout style. Preview cards use sample visuals."
                   : carouselFor === "linkedin"
-                    ? "Pick a layout for LinkedIn. Default uses the recommended LinkedIn template."
-                    : "Pick the layout. Default uses your recommended template."}
+                    ? "Pick a LinkedIn layout. Default uses the recommended one."
+                    : "Pick a layout. Default uses your recommended template."}
               </CardDescription>
             </CardHeader>
             <CardContent className="px-5 pt-0">
             <div className="space-y-2">
-              {(["First slide", "Middle slides", "Last slide"] as const).map((label, idx) => {
-                const current = selectedTemplateIds[idx];
-                return (
-                  <div key={label} className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setTemplatePickerSlot(idx as 0 | 1 | 2);
-                        setTemplateModalOpen(true);
-                      }}
-                      className="gap-2"
-                    >
-                      <LayoutTemplateIcon className="size-4" />
-                      {label}: {current ? templateOptions.find((t) => t.id === current)?.name ?? "Custom" : "Default"}
-                    </Button>
-                  </div>
-                );
-              })}
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setTemplatePickerSlot(0);
+                  setTemplateModalOpen(true);
+                }}
+                className="gap-2"
+              >
+                <LayoutTemplateIcon className="size-4" />
+                Choose templates
+              </Button>
               <p className="text-xs text-muted-foreground">
-                Choose up to 3 templates. 1 = all slides, 2 = first/last + middle, 3 = first + middle + last.
+                Use up to 3 slots: first slide, middle slides, and last slide. Empty slots use Default.
               </p>
             </div>
             <Dialog open={templateModalOpen} onOpenChange={setTemplateModalOpen}>
               <DialogContent className="flex flex-col max-w-[calc(100%-2rem)] max-h-[85vh] sm:max-w-2xl md:max-w-[92vw] md:max-h-[92vh] md:w-[92vw] md:h-[92vh] lg:max-w-[94vw] lg:max-h-[94vh] lg:w-[94vw] lg:h-[94vh]">
                 <DialogHeader>
-                  <DialogTitle>
-                    Choose template for {templatePickerSlot === 0 ? "first slide" : templatePickerSlot === 1 ? "middle slides" : "last slide"}
-                  </DialogTitle>
+                  <DialogTitle>Choose templates</DialogTitle>
                   <p className="text-muted-foreground text-sm mt-1">
-                    All templates are available. Use the platform filter to match Instagram or LinkedIn; default matches your carousel type.
+                    Pick up to 3 slots: first, middle, and last.
                   </p>
                 </DialogHeader>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  {(["First slide", "Middle slides", "Last slide"] as const).map((label, idx) => {
+                    const slot = idx as 0 | 1 | 2;
+                    const id = selectedTemplateIds[slot];
+                    const name = id ? templateOptions.find((t) => t.id === id)?.name ?? "Custom" : "Default";
+                    return (
+                      <Button
+                        key={label}
+                        type="button"
+                        variant={templatePickerSlot === slot ? "secondary" : "outline"}
+                        size="sm"
+                        className="justify-start"
+                        onClick={() => setTemplatePickerSlot(slot)}
+                      >
+                        <span className="truncate">{label}: {name}</span>
+                      </Button>
+                    );
+                  })}
+                </div>
                 <ImportTemplateButton
                   layout="callout"
                   isPro={hasFullAccess}
@@ -1343,7 +1340,6 @@ export function NewCarouselForm({
                       if (!id) return;
                       userLockedTemplateChoiceRef.current = true;
                       setTemplateIdForSlot(templatePickerSlot, id);
-                      setTemplateModalOpen(false);
                     }}
                     primaryColor={primaryColor}
                     previewImageUrls={useAiBackgrounds ? TEMPLATE_PREVIEW_IMAGE_URLS : undefined}
@@ -1355,6 +1351,8 @@ export function NewCarouselForm({
                     }}
                     paginateInternally
                     showMyTemplatesSection
+                    initialVisibleCount={36}
+                    emphasizeLoadMoreButton
                   />
                 </div>
               </DialogContent>
@@ -1483,7 +1481,7 @@ export function NewCarouselForm({
         />
 
         {/* More options: frame count, notes — above Generate; open by default */}
-        <div className="space-y-4 pt-2">
+        <div className="space-y-3 pt-1">
           <Button
             type="button"
             variant="ghost"
@@ -1499,18 +1497,16 @@ export function NewCarouselForm({
             ) : (
               <>
                 <ChevronDownIcon className="mr-1.5 size-4" />
-                More options
+                Advanced options
               </>
             )}
           </Button>
 
           {showMoreOptions && (
-            <Card className="py-4 gap-4">
+            <Card className="gap-4 rounded-2xl border-border/70 bg-card/95 py-4 shadow-sm">
               <CardHeader className="pb-0 px-5">
-                <CardTitle className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
-                  Options
-                </CardTitle>
-                <CardDescription>Frame count, instructions, and tone.</CardDescription>
+                <CardTitle className="text-sm font-semibold text-foreground">Advanced</CardTitle>
+                <CardDescription>Frames, notes, and extra generation controls.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-5 px-5 pt-0">
                 <div className="grid gap-4 sm:grid-cols-2">
@@ -1556,13 +1552,13 @@ export function NewCarouselForm({
                         <ChevronUpIcon className="size-5" />
                       </button>
                     </div>
-                    <p className="text-muted-foreground text-xs">Use arrows or leave as AI decides.</p>
+                    <p className="text-muted-foreground text-xs">Leave empty to let AI choose.</p>
                   </div>
                   <div className="space-y-2 sm:col-span-2 sm:col-start-1">
                     <Label htmlFor="notes" className="text-sm font-medium">Notes (optional)</Label>
                     <Textarea
                       id="notes"
-                      placeholder="Add more context about your carousel…"
+                      placeholder="Optional guidance, tone, or constraints…"
                       className="min-h-20 resize-y"
                       value={notes}
                       maxLength={CAROUSEL_NOTES_MAX_CHARS}
@@ -1588,7 +1584,7 @@ export function NewCarouselForm({
                     className="rounded border-input accent-primary size-4 shrink-0"
                   />
                   <GlobeIcon className="size-3.5 text-muted-foreground shrink-0" />
-                  <span className="text-sm">Web search (URLs, recent topics){!hasFullAccess && " — Pro"}</span>
+                  <span className="text-sm">Web search context {!hasFullAccess && "(Pro)"}</span>
                 </label>
                 {isAdminUser && (
                   <label className="flex items-start gap-3 rounded-lg border border-transparent p-3 text-sm cursor-pointer hover:bg-muted/40 hover:border-border/50 transition-colors">
@@ -1611,11 +1607,14 @@ export function NewCarouselForm({
           )}
         </div>
 
-        <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center">
+        <div className="sticky bottom-0 z-20 -mx-1 rounded-xl border border-border/70 bg-background/95 px-3 py-3 backdrop-blur supports-backdrop-filter:bg-background/75 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs text-muted-foreground">
+            {hasRequiredInput ? "Ready to generate." : "Add input to enable generation."}
+          </p>
           <Button
             type="submit"
             size="lg"
-            className="w-full sm:w-auto min-w-[180px]"
+            className="w-full sm:w-auto min-w-[200px] font-semibold"
             disabled={isPending || carouselCount >= carouselLimit || !hasRequiredInput}
             title={
               !hasRequiredInput && carouselCount < carouselLimit && !isPending

@@ -243,7 +243,16 @@ const HOOK_CIRCLE_BORDER = 14;
 const HOOK_CIRCLE_INSET = 56;
 
 export type SlidePreviewProps = {
-  slide: { headline: string; body: string | null; slide_index: number; slide_type: string };
+  slide: {
+    headline: string;
+    body: string | null;
+    slide_index: number;
+    slide_type: string;
+    /** Optional values for extra template text zones (zone.id -> text). */
+    extra_text_values?: Record<string, string>;
+    /** Optional slide meta for per-slide extra text zones/values. */
+    meta?: unknown;
+  };
   /** When set, headline is plain and we inject color from these spans (no {{}} in text). */
   headline_highlights?: HighlightSpan[];
   /** When set, body is plain and we inject color from these spans. */
@@ -1334,6 +1343,21 @@ export function SlidePreview({
   const slideData: SlideData = {
     headline: slide.headline,
     body: slide.body ?? null,
+    extra_text_values: (() => {
+      const fromMetaRaw =
+        slide.meta && typeof slide.meta === "object" && (slide.meta as Record<string, unknown>).extra_text_values
+          ? ((slide.meta as Record<string, unknown>).extra_text_values as unknown)
+          : undefined;
+      const fromMeta =
+        fromMetaRaw && typeof fromMetaRaw === "object" && !Array.isArray(fromMetaRaw)
+          ? Object.fromEntries(
+              Object.entries(fromMetaRaw as Record<string, unknown>)
+                .filter(([k, v]) => typeof k === "string" && k.trim() !== "" && typeof v === "string")
+                .map(([k, v]) => [k, String(v)])
+            )
+          : {};
+      return { ...fromMeta, ...(slide.extra_text_values ?? {}) };
+    })(),
     slide_index: slide.slide_index,
     slide_type: slide.slide_type,
     ...(headline_highlights?.length && { headline_highlights }),
@@ -1369,8 +1393,31 @@ export function SlidePreview({
   const renderModelOptions = hasZoneOverrides
     ? { zoneOverridesForWrap: mergedZoneOverrides }
     : undefined;
+  const extraTextZonesFromMeta = (() => {
+    const raw =
+      slide.meta && typeof slide.meta === "object"
+        ? (slide.meta as Record<string, unknown>).extra_text_zones
+        : undefined;
+    if (!Array.isArray(raw)) return [];
+    return raw.filter((z): z is TemplateConfig["textZones"][number] =>
+      !!z &&
+      typeof z === "object" &&
+      typeof (z as { id?: unknown }).id === "string" &&
+      (z as { id: string }).id !== "headline" &&
+      (z as { id: string }).id !== "body");
+  })();
+  const templateConfigForRender =
+    extraTextZonesFromMeta.length > 0
+      ? {
+          ...templateConfig,
+          textZones: [
+            ...templateConfig.textZones,
+            ...extraTextZonesFromMeta.filter((z) => !templateConfig.textZones.some((t) => t.id === z.id)),
+          ],
+        }
+      : templateConfig;
   const model = applyTemplate(
-    templateConfig,
+    templateConfigForRender,
     slideData,
     brandKit,
     slide.slide_index,

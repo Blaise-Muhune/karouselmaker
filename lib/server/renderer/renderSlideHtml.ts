@@ -319,9 +319,45 @@ export function renderSlideHtml(
   // When picture-in-picture is on, scale text down so it doesn't overlap the image
   const pipTextScale = imageDisplay?.mode === "pip" ? 0.85 : 1;
   const effectiveTextScale = textScale * pipTextScale;
+  const metaObj = slideMeta && typeof slideMeta === "object" ? (slideMeta as Record<string, unknown>) : null;
+  const metaExtraZones = Array.isArray(metaObj?.extra_text_zones)
+    ? (metaObj!.extra_text_zones as unknown[])
+        .filter((z): z is { id: string; x: number; y: number; w: number; h: number; fontSize: number; fontWeight: number; lineHeight: number; maxLines: number; align: "left" | "center" | "right" | "justify"; color?: string; fontFamily?: string; rotation?: number; label?: string; optional?: boolean } =>
+          !!z &&
+          typeof z === "object" &&
+          typeof (z as { id?: unknown }).id === "string" &&
+          (z as { id: string }).id !== "headline" &&
+          (z as { id: string }).id !== "body")
+    : [];
+  const templateConfigForRender =
+    metaExtraZones.length > 0
+      ? {
+          ...templateConfig,
+          textZones: [
+            ...templateConfig.textZones,
+            ...metaExtraZones.filter((z) => !templateConfig.textZones.some((t) => t.id === z.id)),
+          ],
+        }
+      : templateConfig;
+  const extraTextFromMeta = metaObj?.extra_text_values && typeof metaObj.extra_text_values === "object" && !Array.isArray(metaObj.extra_text_values)
+    ? (metaObj.extra_text_values as Record<string, unknown>)
+    : undefined;
+  const slideDataForRender = {
+    ...slideData,
+    extra_text_values: {
+      ...(extraTextFromMeta
+        ? Object.fromEntries(
+            Object.entries(extraTextFromMeta)
+              .filter(([k, v]) => typeof k === "string" && typeof v === "string" && k.trim() !== "")
+              .map(([k, v]) => [k, String(v)])
+          )
+        : {}),
+      ...(slideData.extra_text_values ?? {}),
+    },
+  };
 
-  const headlineZone = templateConfig.textZones.find((z) => z.id === "headline");
-  const bodyZone = templateConfig.textZones.find((z) => z.id === "body");
+  const headlineZone = templateConfigForRender.textZones.find((z) => z.id === "headline");
+  const bodyZone = templateConfigForRender.textZones.find((z) => z.id === "body");
   // Base merge: template + user zone/font overrides (matches editor preview)
   const mergedZoneOverrides: TextZoneOverrides | undefined =
     zoneOverrides || fontOverrides
@@ -343,10 +379,10 @@ export function renderSlideHtml(
     mergedZoneOverrides &&
     (Object.keys(mergedZoneOverrides.headline ?? {}).length > 0 || Object.keys(mergedZoneOverrides.body ?? {}).length > 0);
   const model = buildSlideRenderModel(
-    templateConfig,
-    slideData,
+    templateConfigForRender,
+    slideDataForRender,
     brandKit,
-    slideData.slide_index,
+    slideDataForRender.slide_index,
     totalSlides,
     hasZoneOverrides ? mergedZoneOverrides : undefined,
     effectiveTextScale,

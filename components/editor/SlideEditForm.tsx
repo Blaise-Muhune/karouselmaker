@@ -973,6 +973,50 @@ export function SlideEditForm({
   type SwipePosition = "bottom_left" | "bottom_center" | "bottom_right" | "top_left" | "top_center" | "top_right" | "center_left" | "center_right" | "custom";
   type SwipeType = "text" | "arrow-left" | "arrow-right" | "arrows" | "hand-left" | "hand-right" | "chevrons" | "dots" | "finger-swipe" | "finger-left" | "finger-right" | "circle-arrows" | "line-dots" | "custom";
   type ImagePositionSelectValue = NonNullable<ImageDisplayState["position"]> | "custom";
+
+  type ExtraTextZone = {
+    id: string;
+    label?: string;
+    optional?: boolean;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    fontSize: number;
+    fontWeight: number;
+    lineHeight: number;
+    maxLines: number;
+    align: "left" | "center" | "right" | "justify";
+    color?: string;
+    fontFamily?: string;
+    rotation?: number;
+  };
+  const normalizeExtraTextZone = useCallback((raw: unknown): ExtraTextZone | null => {
+    if (!raw || typeof raw !== "object") return null;
+    const z = raw as Record<string, unknown>;
+    const id = typeof z.id === "string" ? z.id.trim() : "";
+    if (!id || id === "headline" || id === "body" || id.length > 64) return null;
+    const n = (v: unknown, d: number) => (Number.isFinite(Number(v)) ? Number(v) : d);
+    const alignRaw = typeof z.align === "string" ? z.align : "left";
+    const align = alignRaw === "left" || alignRaw === "center" || alignRaw === "right" || alignRaw === "justify" ? alignRaw : "left";
+    return {
+      id,
+      ...(typeof z.label === "string" && z.label.trim() ? { label: z.label.trim().slice(0, 80) } : {}),
+      ...(z.optional === true ? { optional: true } : {}),
+      x: Math.max(0, Math.min(1080, Math.round(n(z.x, 80)))),
+      y: Math.max(0, Math.min(1920, Math.round(n(z.y, 640)))),
+      w: Math.max(1, Math.min(1080, Math.round(n(z.w, 920)))),
+      h: Math.max(1, Math.min(1920, Math.round(n(z.h, 120)))),
+      fontSize: Math.max(8, Math.min(280, Math.round(n(z.fontSize, 36)))),
+      fontWeight: Math.max(100, Math.min(900, Math.round(n(z.fontWeight, 700)))),
+      lineHeight: Math.max(0.5, Math.min(3, n(z.lineHeight, 1.15))),
+      maxLines: Math.max(1, Math.min(30, Math.round(n(z.maxLines, 2)))),
+      align,
+      ...(typeof z.color === "string" && /^#([0-9A-Fa-f]{3}){1,2}$/.test(z.color.trim()) ? { color: z.color.trim() } : {}),
+      ...(typeof z.fontFamily === "string" && z.fontFamily.trim() ? { fontFamily: z.fontFamily.trim().slice(0, 80) } : {}),
+      ...(Number.isFinite(Number(z.rotation)) ? { rotation: Math.max(-180, Math.min(180, Number(z.rotation))) } : {}),
+    };
+  }, []);
   const [swipePosition, setSwipePosition] = useState<SwipePosition>(() => {
     const m = slide.meta as { swipe_position?: SwipePosition; swipe_x?: number; swipe_y?: number } | null;
     if (m?.swipe_position && ["bottom_left", "bottom_center", "bottom_right", "top_left", "top_center", "top_right", "center_left", "center_right", "custom"].includes(m.swipe_position)) return m.swipe_position;
@@ -1098,6 +1142,20 @@ export function SlideEditForm({
   const [bodyZoneOverride, setBodyZoneOverride] = useState<ZoneOverride | undefined>(() => {
     const m = slide.meta as { body_zone_override?: ZoneOverride } | null;
     return m?.body_zone_override && Object.keys(m.body_zone_override).length > 0 ? m.body_zone_override : undefined;
+  });
+  const [customExtraTextZones, setCustomExtraTextZones] = useState<ExtraTextZone[]>(() => {
+    const m = slide.meta as { extra_text_zones?: unknown[] } | null;
+    if (!Array.isArray(m?.extra_text_zones)) return [];
+    return m.extra_text_zones.map(normalizeExtraTextZone).filter((z): z is ExtraTextZone => !!z);
+  });
+  const [extraTextValues, setExtraTextValues] = useState<Record<string, string>>(() => {
+    const m = slide.meta as { extra_text_values?: Record<string, unknown> } | null;
+    if (!m?.extra_text_values || typeof m.extra_text_values !== "object") return {};
+    return Object.fromEntries(
+      Object.entries(m.extra_text_values)
+        .filter(([k, v]) => typeof k === "string" && k.trim() !== "" && typeof v === "string")
+        .map(([k, v]) => [k, String(v)])
+    );
   });
   type CounterZoneOverride = { top?: number; right?: number; fontSize?: number };
   type WatermarkZoneOverride = { position?: "top_left" | "top_right" | "bottom_left" | "bottom_right" | "custom"; logoX?: number; logoY?: number; fontSize?: number; maxWidth?: number; maxHeight?: number };
@@ -1626,7 +1684,32 @@ export function SlideEditForm({
   }, [imageUrls]);
 
   const templateConfigFromList = getTemplateConfig(templateId, templates);
-  const templateConfig = overrideTemplateConfig ?? templateConfigFromList;
+  const templateConfigBase = overrideTemplateConfig ?? templateConfigFromList;
+  const templateExtraTextZones = useMemo(
+    () =>
+      (templateConfigBase?.textZones ?? [])
+        .filter((z) => z.id !== "headline" && z.id !== "body")
+        .map((z) => normalizeExtraTextZone(z))
+        .filter((z): z is ExtraTextZone => !!z),
+    [templateConfigBase, normalizeExtraTextZone]
+  );
+  const extraTextZones = useMemo(() => {
+    const out: ExtraTextZone[] = [...templateExtraTextZones];
+    for (const z of customExtraTextZones) {
+      if (!out.some((o) => o.id === z.id)) out.push(z);
+    }
+    return out;
+  }, [templateExtraTextZones, customExtraTextZones]);
+  const templateConfig = useMemo(() => {
+    if (!templateConfigBase) return null;
+    if (extraTextZones.length === 0) return templateConfigBase;
+    const merged = [...templateConfigBase.textZones];
+    for (const z of extraTextZones) {
+      if (merged.some((m) => m.id === z.id)) continue;
+      merged.push(z);
+    }
+    return { ...templateConfigBase, textZones: merged };
+  }, [templateConfigBase, extraTextZones]);
 
   const previewShapesMeta = useMemo(
     () =>
@@ -1930,7 +2013,22 @@ export function SlideEditForm({
     setSlideOverlayShapes(parseSlideOverlayShapes(slide.meta));
     setOverlayShapesReplaceTemplate((slide.meta as Record<string, unknown> | null)?.overlay_shapes_replace_template === true);
     setSlideShapesSelectedIndex(null);
-  }, [slide.id]);
+    const meta = (slide.meta ?? {}) as { extra_text_zones?: unknown[]; extra_text_values?: Record<string, unknown> };
+    setCustomExtraTextZones(
+      Array.isArray(meta.extra_text_zones)
+        ? meta.extra_text_zones.map(normalizeExtraTextZone).filter((z): z is ExtraTextZone => !!z)
+        : []
+    );
+    setExtraTextValues(
+      meta.extra_text_values && typeof meta.extra_text_values === "object"
+        ? Object.fromEntries(
+            Object.entries(meta.extra_text_values)
+              .filter(([k, v]) => typeof k === "string" && k.trim() !== "" && typeof v === "string")
+              .map(([k, v]) => [k, String(v)])
+          )
+        : {}
+    );
+  }, [slide.id, normalizeExtraTextZone]);
 
   const effectiveTemplateId = slide.template_id ?? templates[0]?.id ?? null;
   useEffect(() => {
@@ -1947,6 +2045,29 @@ export function SlideEditForm({
   const defaultHeadlineSize = templateConfig?.textZones?.find((z) => z.id === "headline")?.fontSize ?? 72;
   const applyScope: ApplyScope = { includeFirstSlide, includeLastSlide };
   const defaultBodySize = templateConfig?.textZones?.find((z) => z.id === "body")?.fontSize ?? 48;
+  const handleAddExtraTextArea = () => {
+    const nowId = `extra_${Date.now().toString(36)}`;
+    const baseZone = bodyZoneFromTemplate ?? headlineZoneFromTemplate;
+    const next: ExtraTextZone = {
+      id: nowId,
+      label: "Extra text",
+      optional: true,
+      x: Math.max(0, Math.min(900, Math.round((baseZone?.x ?? 80)))),
+      y: Math.max(0, Math.min(1700, Math.round((baseZone?.y ?? 640) + (baseZone?.h ?? 220) + 24))),
+      w: Math.max(200, Math.min(980, Math.round(baseZone?.w ?? 920))),
+      h: Math.max(60, Math.min(420, Math.round((baseZone?.h ?? 220) * 0.6))),
+      fontSize: Math.max(20, Math.min(64, Math.round((baseZone?.fontSize ?? 48) * 0.7))),
+      fontWeight: baseZone?.fontWeight ?? 700,
+      lineHeight: baseZone?.lineHeight ?? 1.15,
+      maxLines: Math.max(1, Math.min(6, Math.round((baseZone?.maxLines ?? 3) * 0.7))),
+      align: baseZone?.align ?? "left",
+      ...(baseZone?.color ? { color: baseZone.color } : {}),
+      ...(baseZone?.fontFamily ? { fontFamily: baseZone.fontFamily } : {}),
+      ...(baseZone?.rotation != null ? { rotation: baseZone.rotation } : {}),
+    };
+    setCustomExtraTextZones((prev) => [...prev, next]);
+    setExtraTextValues((prev) => ({ ...prev, [nowId]: "" }));
+  };
 
   const multiImageDefaults: ImageDisplayState = { position: "top", fit: "cover", frame: "none", frameRadius: 0, frameColor: "#ffffff", frameShape: "squircle", layout: "auto", gap: 0, dividerStyle: "wave", dividerColor: "#ffffff", dividerWidth: 48 };
   const selectedSlotVisualOverrides =
@@ -2437,6 +2558,16 @@ export function SlideEditForm({
           })(),
           ...(headlineFontSizeSpans.length > 0 ? { headline_font_size_spans: headlineFontSizeSpans } : {}),
           ...(bodyFontSizeSpans.length > 0 ? { body_font_size_spans: bodyFontSizeSpans } : {}),
+          ...(Object.keys(extraTextValues).length > 0
+            ? {
+                extra_text_values: Object.fromEntries(
+                  Object.entries(extraTextValues)
+                    .filter(([k, v]) => k.trim() !== "" && typeof v === "string")
+                    .map(([k, v]) => [k, v])
+                ),
+              }
+            : {}),
+          ...(extraTextZones.length > 0 ? { extra_text_zones: extraTextZones } : {}),
       overlay_shapes: slideOverlayShapes,
       ...(bodyZoneForRewrite && bodyRewriteVariants.length === 3 && {
         body_rewrite_variants: [...bodyRewriteVariants],
@@ -3453,8 +3584,18 @@ export function SlideEditForm({
     const overlayShapesForTemplate = overlayShapesReplaceTemplate
       ? [...slideOverlayShapes]
       : mergeTemplateAndSlideOverlayShapes(templateConfig.overlayShapes, slideOverlayShapes);
+    const textZonesForTemplate = (() => {
+      const base = [...templateConfig.textZones];
+      for (const z of extraTextZones) {
+        const idx = base.findIndex((b) => b.id === z.id);
+        if (idx >= 0) base[idx] = { ...base[idx]!, ...z };
+        else base.push(z);
+      }
+      return base;
+    })();
     return {
       ...templateConfig,
+      textZones: textZonesForTemplate,
       backgroundRules,
       overlays: { ...templateConfig.overlays, gradient: gradientOverlay },
       chrome: {
@@ -4384,8 +4525,10 @@ export function SlideEditForm({
                 slide={{
                   headline,
                   body: body.trim() || null,
+                  extra_text_values: extraTextValues,
                   slide_index: slide.slide_index,
                   slide_type: slide.slide_type,
+                  meta: { ...(slide.meta as Record<string, unknown> | null), extra_text_zones: extraTextZones, extra_text_values: extraTextValues },
                 }}
                 templateConfig={templateConfig}
                 brandKit={brandKit}
@@ -5390,8 +5533,10 @@ export function SlideEditForm({
                         slide={{
                           headline,
                           body: body.trim() || null,
+                          extra_text_values: extraTextValues,
                           slide_index: slide.slide_index,
                           slide_type: slide.slide_type,
+                          meta: { ...(slide.meta as Record<string, unknown> | null), extra_text_zones: extraTextZones, extra_text_values: extraTextValues },
                         }}
                         templateConfig={templateConfig}
                         brandKit={brandKit}
@@ -6146,6 +6291,59 @@ export function SlideEditForm({
             <p className="text-xs text-muted-foreground leading-relaxed px-0.5">
               <span className="font-medium text-foreground">Headline & body</span> — open a block to edit. Order: <span className="whitespace-nowrap">text field</span>, then <span className="whitespace-nowrap">text style</span> (size, color, font), <span className="whitespace-nowrap">on the slide</span> (layout, highlights, outline), then <span className="whitespace-nowrap">backdrop</span>.
             </p>
+            <div className="rounded-lg border border-border/50 bg-muted/5 p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-medium text-foreground">Extra text areas</p>
+                <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={handleAddExtraTextArea}>
+                  <PlusIcon className="size-3.5" />
+                  Add text area
+                </Button>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Add optional template text zones (badge, kicker, caption, CTA line). Saved with template and considered during AI generation.
+              </p>
+              {extraTextZones.length > 0 && (
+                <div className="space-y-2">
+                  {extraTextZones.map((zone) => {
+                    const fromTemplate = templateExtraTextZones.some((z) => z.id === zone.id);
+                    return (
+                      <div key={zone.id} className="rounded-md border border-border/60 bg-background/60 p-2 space-y-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-[11px] font-medium text-foreground">
+                            {zone.label?.trim() || zone.id}
+                            {zone.optional ? " (optional)" : ""}
+                          </p>
+                          {!fromTemplate && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-2 text-[11px]"
+                              onClick={() => {
+                                setCustomExtraTextZones((prev) => prev.filter((z) => z.id !== zone.id));
+                                setExtraTextValues((prev) => {
+                                  const next = { ...prev };
+                                  delete next[zone.id];
+                                  return next;
+                                });
+                              }}
+                            >
+                              Remove
+                            </Button>
+                          )}
+                        </div>
+                        <Textarea
+                          value={extraTextValues[zone.id] ?? ""}
+                          onChange={(e) => setExtraTextValues((prev) => ({ ...prev, [zone.id]: e.target.value }))}
+                          placeholder={`Text for ${zone.label?.trim() || zone.id}`}
+                          className="min-h-[64px] text-sm"
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
             <div className="relative min-h-0 space-y-3">
             {/* Headline: collapsible */}
             <div className={`rounded-lg border transition-colors ${activeEditZone === "headline" ? "border-primary/60 ring-1 ring-primary/30" : "border-border/50"} bg-muted/5 overflow-hidden`}>

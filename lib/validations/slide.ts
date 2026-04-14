@@ -218,6 +218,24 @@ export const textZoneOverrideSchema = z.object({
 }).optional();
 export type TextZoneOverride = z.output<typeof textZoneOverrideSchema>;
 
+const extraTextZoneSchema = z.object({
+  id: z.string().min(1).max(64),
+  label: z.string().max(80).optional(),
+  optional: z.boolean().optional(),
+  x: z.number().int().min(0).max(1080),
+  y: z.number().int().min(0).max(1920),
+  w: z.number().int().min(1).max(1080),
+  h: z.number().int().min(1).max(1920),
+  fontSize: z.number().int().min(8).max(280),
+  fontWeight: z.number().int().min(100).max(900),
+  lineHeight: z.number().min(0.5).max(3),
+  maxLines: z.number().int().min(1).max(30),
+  align: z.enum(["left", "center", "right", "justify"]),
+  color: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
+  fontFamily: z.string().max(80).optional(),
+  rotation: z.number().min(-180).max(180).optional(),
+});
+
 export const slideMetaSchema = z.object({
   show_counter: z.boolean().optional(),
   /** Override watermark/logo visibility. First, second, last = on by default; middle = off. */
@@ -246,6 +264,10 @@ export const slideMetaSchema = z.object({
   headline_zone_override: textZoneOverrideSchema,
   /** Per-slide body zone overrides. */
   body_zone_override: textZoneOverrideSchema,
+  /** Additional custom text values by zone id (for template extra text zones). */
+  extra_text_values: z.record(z.string(), z.string().max(2000)).optional(),
+  /** Additional custom text zone definitions created in editor and not yet baked into template. */
+  extra_text_zones: z.array(extraTextZoneSchema).max(12).optional(),
   /** Slide number position & size: top (px), right (px), fontSize. */
   counter_zone_override: z.object({
     top: z.number().int().min(0).max(1920).optional(),

@@ -27,6 +27,7 @@ import {
 } from "@/lib/server/ai/projectContentFocus";
 import { postProcessAiGeneratedImageQueries } from "@/lib/server/ai/sanitizeImageQueries";
 import {
+  ABSOLUTE_MAX_BODY_CHARS,
   buildTemplateContextForPrompt,
 } from "@/lib/server/ai/templateContextForPrompt";
 import { searchImage } from "@/lib/server/imageSearch";
@@ -204,6 +205,19 @@ function normalizeCarouselOutput(parsed: unknown): unknown {
       .map((s) => s.slice(0, maxLen))
       .slice(0, maxItems);
   };
+  const normExtraTextValues = (val: unknown): Record<string, string> | undefined => {
+    if (!val || typeof val !== "object" || Array.isArray(val)) return undefined;
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(val as Record<string, unknown>)) {
+      const key = String(k ?? "").trim();
+      if (!key || key.length > 64) continue;
+      if (typeof v !== "string") continue;
+      const text = v.trim();
+      if (!text) continue;
+      out[key] = text.slice(0, ABSOLUTE_MAX_BODY_CHARS);
+    }
+    return Object.keys(out).length > 0 ? out : undefined;
+  };
   const MAX_SIMILAR_IDEAS = 8;
   const MAX_SIMILAR_IDEA_LEN = 200;
   if (root.similar_ideas !== undefined) {
@@ -219,6 +233,7 @@ function normalizeCarouselOutput(parsed: unknown): unknown {
     if (s.body !== undefined) s.body = slideText(s.body);
     if (s.headline_highlight_words !== undefined) s.headline_highlight_words = normHighlight(s.headline_highlight_words);
     if (s.body_highlight_words !== undefined) s.body_highlight_words = normHighlight(s.body_highlight_words);
+    if (s.extra_text_values !== undefined) s.extra_text_values = normExtraTextValues(s.extra_text_values);
     if (s.image_query !== undefined) s.image_query = normStr(s.image_query, MAX_IMAGE_QUERY_LEN) || undefined;
     if (s.image_queries !== undefined) s.image_queries = normStrArr(s.image_queries, MAX_IMAGE_QUERY_LEN, MAX_IMAGE_QUERIES);
     if (s.unsplash_query !== undefined) s.unsplash_query = normStr(s.unsplash_query, MAX_IMAGE_QUERY_LEN) || undefined;
@@ -232,6 +247,7 @@ function normalizeCarouselOutput(parsed: unknown): unknown {
         if (a.body !== undefined) a.body = slideText(a.body);
         if (a.headline_highlight_words !== undefined) a.headline_highlight_words = normHighlight(a.headline_highlight_words);
         if (a.body_highlight_words !== undefined) a.body_highlight_words = normHighlight(a.body_highlight_words);
+        if (a.extra_text_values !== undefined) a.extra_text_values = normExtraTextValues(a.extra_text_values);
         return a;
       });
     }
@@ -821,11 +837,25 @@ export async function generateCarousel(formData: FormData): Promise<
       }
     }
 
+    const sanitizedExtraTextValues = (() => {
+      const raw = (s as { extra_text_values?: unknown }).extra_text_values;
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+      const out: Record<string, string> = {};
+      for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+        const zoneId = k.trim();
+        if (!zoneId || zoneId.length > 64 || typeof v !== "string") continue;
+        const txt = ensureListNewlines(stripLinksFromText(v)).trim();
+        if (!txt) continue;
+        out[zoneId] = txt.slice(0, ABSOLUTE_MAX_BODY_CHARS);
+      }
+      return Object.keys(out).length > 0 ? out : undefined;
+    })();
     const meta: Record<string, unknown> = {
       show_counter: false,
       body_rewrite_variants,
       ...(mainHeadlineWords.length && { headline_highlight_words: mainHeadlineWords }),
       ...(mainBodyWords.length && { body_highlight_words: mainBodyWords }),
+      ...(sanitizedExtraTextValues && { extra_text_values: sanitizedExtraTextValues }),
     };
     return {
       carousel_id: carousel.id,
