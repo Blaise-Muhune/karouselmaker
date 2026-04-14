@@ -42,6 +42,7 @@ import {
 } from "@/lib/server/ai/summarizeStyleReferenceImages";
 import { summarizeProductReferenceImages } from "@/lib/server/ai/summarizeProductReferenceImages";
 import { buildCarouselSeriesVisualConsistency } from "@/lib/server/ai/carouselSeriesVisualConsistency";
+import { matchBackgroundAssetsToSlides } from "@/lib/server/ai/matchBackgroundAssetsToSlides";
 import { mergeProjectUgcAvatarAssetIds } from "@/lib/server/ai/mergeProjectUgcAvatarAssetIds";
 import { loadUgcAvatarReferenceJpegBuffers } from "@/lib/server/ai/loadUgcAvatarReferenceBuffers";
 import { loadProductReferenceJpegBuffers } from "@/lib/server/ai/loadProductReferenceJpegBuffers";
@@ -818,6 +819,8 @@ export async function generateCarousel(formData: FormData): Promise<
   let ugcSeriesCharacterBriefForCarousel: string | undefined;
   /** True only when this run had an explicit single-character lock source (refs or saved brief). */
   let ugcSingleCharacterModeForCarousel = false;
+  /** True when this run used recurring-entity chaining (person, animal, mascot, object, etc.). */
+  let ugcRecurringEntityModeForCarousel = false;
   try {
   if (parsed.data.background_asset_ids?.length && createdSlides.length) {
     const assetIds = parsed.data.background_asset_ids;
@@ -827,11 +830,27 @@ export async function generateCarousel(formData: FormData): Promise<
       if (asset?.storage_path) assets.push({ id: asset.id, storage_path: asset.storage_path });
     }
     if (assets.length) {
+      const aiMatchedAssetBySlideId = await matchBackgroundAssetsToSlides({
+        userId: user.id,
+        assetIds: assets.map((a) => a.id),
+        slides: createdSlides.map((s) => ({
+          id: s.id,
+          slide_index: s.slide_index,
+          slide_type: s.slide_type,
+          headline: s.headline,
+          body: s.body,
+        })),
+        carouselTitle: validated.title?.trim(),
+        topic: data.input_value?.trim(),
+      });
       const userAssetUpdates: { slide: (typeof createdSlides)[number]; asset: { id: string; storage_path: string } }[] = [];
       for (let i = 0; i < createdSlides.length; i++) {
         const slide = createdSlides[i];
         if (!slide) continue;
-        const asset = assets[i % assets.length];
+        const matchedAssetId = aiMatchedAssetBySlideId?.get(slide.id);
+        const asset =
+          (matchedAssetId ? assets.find((a) => a.id === matchedAssetId) : undefined) ??
+          assets[i % assets.length];
         if (!asset) continue;
         slidesWithImage.add(slide.id);
         userAssetUpdates.push({ slide, asset });
@@ -948,6 +967,7 @@ export async function generateCarousel(formData: FormData): Promise<
       /** AI recurring character: sequential order + rolling previous-slide ref (all content styles). */
       const ugcAiIdentitySequence = aiCharacterPipelineActive && !preferPublicFigures;
       const runAiSlidesSequentially = ugcAiIdentitySequence || chainedGeneratedFaceRefMode;
+      ugcRecurringEntityModeForCarousel = runAiSlidesSequentially && !preferPublicFigures;
       if (runAiSlidesSequentially) {
         aiGenJobs.sort((a, b) => a.aiSlide.slide_index - b.aiSlide.slide_index);
       }
@@ -972,6 +992,12 @@ export async function generateCarousel(formData: FormData): Promise<
         ugcAiIdentitySequence && ugcChainFaceBuf.current ? ugcChainFaceBuf.current : undefined;
       const maybeCaptureUgcChainFaceRef = (buf: Buffer, aiSlide: (typeof validated.slides)[number]) => {
         if (ugcAiIdentitySequence) {
+          /** Keep a first-appearance anchor for recurring entities (person or object), then
+           * keep upgrading the chain when we detect a likely face-forward frame. */
+          if (!ugcChainFaceBuf.current) {
+            ugcChainFaceBuf.current = Buffer.from(buf);
+            return;
+          }
           if (!ugcSlideLikelyShowsHostFaceForChainRef(aiSlide)) return;
           ugcChainFaceBuf.current = Buffer.from(buf);
           return;
@@ -1450,6 +1476,7 @@ export async function generateCarousel(formData: FormData): Promise<
     generation_complete: true,
     ai_backgrounds_pending: false,
     ugc_single_character_mode: ugcSingleCharacterModeForCarousel,
+    ugc_recurring_entity_mode: ugcRecurringEntityModeForCarousel,
     ...(ugcSeriesCharacterBriefForCarousel
       ? { ugc_series_character_brief: ugcSeriesCharacterBriefForCarousel }
       : {}),

@@ -154,6 +154,8 @@ export function NewCarouselForm({
   projectContentFocus = "general",
   /** Persisted project preference: apply saved recurring character (brief + face refs) when generating with AI images. */
   initialUseSavedUgcCharacter = true,
+  /** True only when Project has saved character brief and/or character reference assets. */
+  hasProjectSavedUgcCharacter = false,
 }: {
   projectId: string;
   isPro?: boolean;
@@ -207,6 +209,7 @@ export function NewCarouselForm({
   primaryColor?: string;
   projectContentFocus?: string;
   initialUseSavedUgcCharacter?: boolean;
+  hasProjectSavedUgcCharacter?: boolean;
 }) {
   const router = useRouter();
   const hasFullAccess = hasFullAccessProp ?? isPro;
@@ -333,7 +336,9 @@ export function NewCarouselForm({
   const [plansOpen, setPlansOpen] = useState(false);
   const [driveFolderImporting, setDriveFolderImporting] = useState(false);
   const [driveFolderError, setDriveFolderError] = useState<string | null>(null);
-  const [useSavedUgcCharacter, setUseSavedUgcCharacter] = useState(initialUseSavedUgcCharacter);
+  const [useSavedUgcCharacter, setUseSavedUgcCharacter] = useState(
+    initialUseSavedUgcCharacter && hasProjectSavedUgcCharacter
+  );
   const [ugcCharacterPrefError, setUgcCharacterPrefError] = useState<string | null>(null);
   const [showMoreOptions, setShowMoreOptions] = useState(true);
   /** When regenerating: if true, omit carousel_id so generation creates a new row and keeps the original. */
@@ -417,8 +422,14 @@ export function NewCarouselForm({
   }, [useAiBackgrounds, carouselFor, canUseAiGenerate, productRefIds.length, imageSource]);
 
   useEffect(() => {
-    setUseSavedUgcCharacter(initialUseSavedUgcCharacter);
-  }, [initialUseSavedUgcCharacter]);
+    setUseSavedUgcCharacter(initialUseSavedUgcCharacter && hasProjectSavedUgcCharacter);
+  }, [initialUseSavedUgcCharacter, hasProjectSavedUgcCharacter]);
+
+  useEffect(() => {
+    if (!hasProjectSavedUgcCharacter && useSavedUgcCharacter) {
+      setUseSavedUgcCharacter(false);
+    }
+  }, [hasProjectSavedUgcCharacter, useSavedUgcCharacter]);
 
   useEffect(() => {
     if (!isPending) return;
@@ -953,7 +964,9 @@ export function NewCarouselForm({
                         <input
                           type="checkbox"
                           checked={useSavedUgcCharacter}
+                          disabled={!hasProjectSavedUgcCharacter}
                           onChange={async (e) => {
+                            if (!hasProjectSavedUgcCharacter) return;
                             const checked = e.target.checked;
                             const prev = useSavedUgcCharacter;
                             setUgcCharacterPrefError(null);
@@ -974,6 +987,11 @@ export function NewCarouselForm({
                             Uses recurring character notes + face refs from Project → Edit. Off = pick different refs below
                             for this run only. Saved per project.
                           </span>
+                          {!hasProjectSavedUgcCharacter && (
+                            <span className="block text-[11px] text-muted-foreground mt-0.5">
+                              Disabled until you add a saved character brief or character refs in Project → Edit.
+                            </span>
+                          )}
                         </span>
                       </label>
                       {ugcCharacterPrefError && (

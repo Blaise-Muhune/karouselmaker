@@ -536,7 +536,7 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
       parts.push(
         ugcPhone
           ? "First slide (hook): scroll-stopping **and** phone-plausible—strong candid composition (messy desk, tight face reaction, asymmetrical crop, foreground object blur)—not a flat centered portrait. Bold moment from the topic; still iPhone-real—no crane, drone, glam hero, or ad set. Indoor = indoor light only."
-          : "First slide (hook): striking, scroll-stopping. Vary—close-up, mid-shot action, scale contrast, or micro-story. Avoid clichés: no person from behind at window, no coffee+notebook, no silhouette at sunrise. Let lighting and time of day fit the scene naturally."
+          : "First slide (hook, non-UGC): clean and instantly readable at a glance—one dominant subject, limited clutter, clear figure-ground separation, and minimal competing elements. Must be scroll-stopping but simple. Use a recognizable anchor from the topic (well-known person/role, iconic object, product, symbol, or scene cue viewers immediately identify). Avoid generic filler, noisy collage composition, tiny details, and visual overload. Keep lighting natural to the scene."
       );
     } else {
       parts.push(
@@ -613,7 +613,7 @@ const MAX_EDIT_REFERENCE_IMAGES = 8;
 
 /** When the last UGC attachment is the previous slide JPEG from the same carousel run. */
 const UGC_IMAGE_EDIT_CHAIN_SLIDE_SUFFIX =
-  " The final character reference image may be the immediately previous slide from this same carousel—treat it as the **same person** as in the earlier reference photo(s): same face shape, features, hairstyle, skin tone, and build. Do not introduce a different actor. ";
+  " The final reference image may be the immediately previous slide from this same carousel—use it to preserve recurring entity continuity from first appearance. If the recurring entity is a person, keep the same identity (face shape, features, hairstyle, skin tone, build) and do not introduce a different actor. If the recurring entity is a product/object, keep the same core appearance (shape/silhouette, proportions, primary colors/material cues, and key markings/UI regions) while adapting pose/angle/background to the new scene. ";
 
 function combineImageEditReferenceBuffers(context?: ImagePromptContext): {
   buffers: Buffer[];

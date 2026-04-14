@@ -188,6 +188,7 @@ export default async function CarouselEditorPage({
 
   const usedProjectFaceRefsOnRun = genOpts.ugc_used_project_avatar_refs === true;
   const singleCharacterModeOnRun = genOpts.ugc_single_character_mode === true;
+  const recurringEntityModeOnRun = genOpts.ugc_recurring_entity_mode === true;
   const hasGeneratedUgcBackdrops = slides.some((s) => {
     const bg = s.background as { mode?: string; storage_path?: string } | null;
     const path = bg?.storage_path?.trim() ?? "";
@@ -202,7 +203,7 @@ export default async function CarouselEditorPage({
     useAiBackgroundsCarousel === true &&
     genOpts.use_ai_generate === true &&
     carouselForGen !== "linkedin" &&
-    singleCharacterModeOnRun &&
+    (singleCharacterModeOnRun || recurringEntityModeOnRun) &&
     !usedProjectFaceRefsOnRun &&
     hasGeneratedUgcBackdrops;
   const saveUgcCharacterDisabledHint = !saveUgcCharacterCanApply
@@ -212,10 +213,10 @@ export default async function CarouselEditorPage({
         ? "Needs AI-generated backgrounds—stock or web images don’t store a character lock for this carousel."
         : carouselForGen === "linkedin"
           ? "LinkedIn carousels use stock images here—save character is for Instagram/TikTok-style AI runs."
-          : !singleCharacterModeOnRun
-            ? "This run was not generated in single-character mode. Use Same character from project (or pick character refs) to save/update a recurring character."
+          : !singleCharacterModeOnRun && !recurringEntityModeOnRun
+            ? "This run did not detect recurring-entity continuity. Use Same character from project (or character refs) when the same person/animal/mascot/object should carry across slides."
           : usedProjectFaceRefsOnRun
-            ? "This run used your project’s saved face photos already—nothing new to promote from the carousel."
+            ? "This run already used your project’s saved character references—nothing new to promote from the carousel."
             : !hasGeneratedUgcBackdrops
               ? "No AI-generated slide images on this carousel yet—wait for generation to finish or regenerate with AI images."
               : ""

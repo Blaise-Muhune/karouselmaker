@@ -36,15 +36,15 @@ export function SaveUgcCharacterFromCarouselButton({
             <p className="text-sm text-muted-foreground leading-snug">
               {canSave ? (
                 <>
-                  Save this carousel’s <span className="text-foreground font-medium">AI character</span> to the
-                  project: we copy the text lock and a few slide images (face-friendly frames) into your library for the
-                  next run.
+                  Save this carousel’s <span className="text-foreground font-medium">recurring AI entity</span> to the
+                  project: we copy the text lock and a few anchor frames into your library for the next run (person,
+                  animal, mascot, toy/object, product pack, icon/avatar, or other repeated character).
                 </>
               ) : (
                 <>
                   When a carousel is built with <span className="text-foreground font-medium">AI images</span> (Instagram /
-                  TikTok) and <span className="text-foreground font-medium">without</span> your project’s saved face
-                  photos, you can save that character here for reuse.
+                  TikTok) and <span className="text-foreground font-medium">without</span> your project’s saved character
+                  references, you can save that recurring entity here for reuse.
                 </>
               )}
             </p>
@@ -69,8 +69,8 @@ export function SaveUgcCharacterFromCarouselButton({
                 setMessage({
                   type: "ok",
                   text: hasExistingSavedBrief
-                    ? "Character and face references updated for future carousels."
-                    : "Character and face references saved for future carousels.",
+                    ? "Recurring entity lock and anchor references updated for future carousels."
+                    : "Recurring entity lock and anchor references saved for future carousels.",
                 });
                 router.refresh();
               } else {

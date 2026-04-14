@@ -126,10 +126,18 @@ export default async function NewCarouselPage({
 
   const projectContentFocus = normalizeContentFocusId(project.content_focus);
   const projectUseSavedUgc = (project as { use_saved_ugc_character?: boolean | null }).use_saved_ugc_character;
+  const projectUgcBrief = (project as { ugc_character_brief?: string | null }).ugc_character_brief?.trim() ?? "";
+  const projectUgcAvatarAssetIds = Array.isArray((project as { ugc_character_avatar_asset_ids?: unknown }).ugc_character_avatar_asset_ids)
+    ? ((project as { ugc_character_avatar_asset_ids?: unknown[] }).ugc_character_avatar_asset_ids as unknown[])
+        .filter((id): id is string => typeof id === "string" && id.trim().length > 0)
+    : [];
+  const projectLegacyUgcAvatarId = (project as { ugc_character_avatar_asset_id?: string | null }).ugc_character_avatar_asset_id?.trim() ?? "";
+  const hasProjectSavedUgcCharacter =
+    projectUgcBrief.length > 0 || projectUgcAvatarAssetIds.length > 0 || projectLegacyUgcAvatarId.length > 0;
   const userIsAdmin = isAdmin(user.email ?? null);
   const initialUseSavedUgcCharacter = settingsSourceCarousel
-    ? genOpts?.use_saved_ugc_character !== false
-    : projectUseSavedUgc !== false;
+    ? genOpts?.use_saved_ugc_character !== false && hasProjectSavedUgcCharacter
+    : projectUseSavedUgc !== false && hasProjectSavedUgcCharacter;
 
   const primaryColor = (project.brand_kit as { primary_color?: string } | null)?.primary_color?.trim() || "#0a0a0a";
 
@@ -228,6 +236,7 @@ export default async function NewCarouselPage({
           primaryColor={primaryColor}
           projectContentFocus={projectContentFocus}
           initialUseSavedUgcCharacter={initialUseSavedUgcCharacter}
+          hasProjectSavedUgcCharacter={hasProjectSavedUgcCharacter}
         />
       </div>
     </div>

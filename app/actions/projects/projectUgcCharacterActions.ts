@@ -43,11 +43,13 @@ export async function saveUgcCharacterBriefFromCarousel(
   if (genOpts.use_ai_backgrounds !== true || genOpts.use_ai_generate !== true) {
     return { ok: false, error: "This carousel did not use AI-generated backgrounds." };
   }
-  if (genOpts.ugc_single_character_mode !== true) {
+  const singleCharacterModeOnRun = genOpts.ugc_single_character_mode === true;
+  const recurringEntityModeOnRun = genOpts.ugc_recurring_entity_mode === true;
+  if (!singleCharacterModeOnRun && !recurringEntityModeOnRun) {
     return {
       ok: false,
       error:
-        "This carousel was not generated in single-character mode. Generate with Same character from project (or character refs) first.",
+        "This carousel was not generated with recurring-entity continuity mode. Generate with Same character from project (or character refs) when the same person/animal/mascot/object should persist.",
     };
   }
 
