@@ -82,6 +82,8 @@ export async function POST(
   if (opts.notes && typeof opts.notes === "string") formData.set("notes", opts.notes);
   if (opts.template_id && typeof opts.template_id === "string")
     formData.set("template_id", opts.template_id);
+  if (opts.template_ids != null && Array.isArray(opts.template_ids))
+    formData.set("template_ids", JSON.stringify(opts.template_ids));
   if (opts.viral_shorts_style) formData.set("viral_shorts_style", "true");
   if (opts.carousel_for === "linkedin" || opts.carousel_for === "instagram")
     formData.set("carousel_for", opts.carousel_for);

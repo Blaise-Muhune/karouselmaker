@@ -1,3 +1,4 @@
+import { FONT_WEIGHT_GOOGLE_WGHT_PARAM } from "@/lib/constants/fontWeight";
 import { GOOGLE_FONT_IDS_SET } from "@/lib/constants/googleFonts";
 import { buildSlideRenderModel, getTextScaleForDimensions, getSwipeRightXForFormat, type BrandKit, type SlideData, type TextZoneOverrides, type ChromeOverrides } from "@/lib/renderer/renderModel";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
@@ -6,8 +7,16 @@ import type { OverlayShape } from "@/lib/server/renderer/templateSchema";
 import { mergeTemplateAndSlideOverlayShapes, resolveOverlayShapesForRender } from "@/lib/editor/slideOverlayShapes";
 import { getContrastingTextColor, hexToRgba } from "@/lib/editor/colorUtils";
 import { parseInlineFormatting, stripHighlightMarkers, getFontSizeSegmentsForRange, getLineSubstringByPlainRange } from "@/lib/editor/inlineFormat";
+import {
+  mergeExtraTextZonesFromMetaIntoTemplate,
+  parseExtraTextBoldWeightsMap,
+  parseExtraTextHighlightStylesMap,
+  parseExtraTextHighlightsMap,
+  parseExtraTextOutlineStrokesMap,
+  parseExtraTextZonesSuppressedIds,
+} from "@/lib/editor/extraTextZoneMeta";
 import { getRoundedPolygonClipPath } from "@/lib/renderer/shapeClipPath";
-import { zoneBoxChromeInlineCss } from "@/lib/renderer/zoneBoxChrome";
+import { zoneBoxChromeInlineCss, zoneBoxChromeInlineCssScaled } from "@/lib/renderer/zoneBoxChrome";
 import { resolvePipLayoutsForImageCount } from "@/lib/renderer/resolvePipLayouts";
 import { normalizeFullImageRotation } from "@/lib/renderer/fullImageRotation";
 
@@ -228,6 +237,8 @@ export type HighlightStyle = "text" | "background";
 export type HighlightStyleOverrides = {
   headline?: HighlightStyle;
   body?: HighlightStyle;
+  /** Extra template text zones by zone id. */
+  extra?: Record<string, HighlightStyle>;
 };
 
 export function renderSlideHtml(
@@ -252,9 +263,9 @@ export function renderSlideHtml(
   chromeOverrides?: ChromeOverrides | null,
   highlightStyles: HighlightStyleOverrides = {},
   /** Outline stroke width (px); 0 = off. Independent of highlight; can combine with Text or Bg. */
-  outlineStrokes?: { headline?: number; body?: number },
+  outlineStrokes?: { headline?: number; body?: number; extra?: Record<string, number> },
   /** Font weight for **bold** segments. Default 700. */
-  boldWeights?: { headline?: number; body?: number },
+  boldWeights?: { headline?: number; body?: number; extra?: Record<string, number> },
   /** Per-selection font sizes for headline (plain-text indices). When set, each line is split into segments by these spans. */
   headlineFontSizeSpans?: { start: number; end: number; fontSize: number }[],
   /** Per-selection font sizes for body (plain-text indices). */
@@ -320,6 +331,10 @@ export function renderSlideHtml(
   const pipTextScale = imageDisplay?.mode === "pip" ? 0.85 : 1;
   const effectiveTextScale = textScale * pipTextScale;
   const metaObj = slideMeta && typeof slideMeta === "object" ? (slideMeta as Record<string, unknown>) : null;
+  const suppressedExtraTextZoneSet = new Set(parseExtraTextZonesSuppressedIds(metaObj?.extra_text_zones_suppressed_ids));
+  const templateTextZonesBase = templateConfig.textZones.filter(
+    (z) => z.id === "headline" || z.id === "body" || !suppressedExtraTextZoneSet.has(z.id)
+  );
   const metaExtraZones = Array.isArray(metaObj?.extra_text_zones)
     ? (metaObj!.extra_text_zones as unknown[])
         .filter((z): z is { id: string; x: number; y: number; w: number; h: number; fontSize: number; fontWeight: number; lineHeight: number; maxLines: number; align: "left" | "center" | "right" | "justify"; color?: string; fontFamily?: string; rotation?: number; label?: string; optional?: boolean } =>
@@ -327,21 +342,22 @@ export function renderSlideHtml(
           typeof z === "object" &&
           typeof (z as { id?: unknown }).id === "string" &&
           (z as { id: string }).id !== "headline" &&
-          (z as { id: string }).id !== "body")
+          (z as { id: string }).id !== "body" &&
+          !suppressedExtraTextZoneSet.has((z as { id: string }).id))
     : [];
+  const templateZonesFilteredForSuppressed = templateTextZonesBase.length !== templateConfig.textZones.length;
   const templateConfigForRender =
-    metaExtraZones.length > 0
+    metaExtraZones.length > 0 || templateZonesFilteredForSuppressed
       ? {
           ...templateConfig,
-          textZones: [
-            ...templateConfig.textZones,
-            ...metaExtraZones.filter((z) => !templateConfig.textZones.some((t) => t.id === z.id)),
-          ],
+          textZones: mergeExtraTextZonesFromMetaIntoTemplate(templateTextZonesBase, metaExtraZones),
         }
       : templateConfig;
   const extraTextFromMeta = metaObj?.extra_text_values && typeof metaObj.extra_text_values === "object" && !Array.isArray(metaObj.extra_text_values)
     ? (metaObj.extra_text_values as Record<string, unknown>)
     : undefined;
+  const extraHlFromMeta = parseExtraTextHighlightsMap(metaObj?.extra_text_highlights);
+  const extraHlMerged = { ...extraHlFromMeta, ...(slideData.extra_text_highlights ?? {}) };
   const slideDataForRender = {
     ...slideData,
     extra_text_values: {
@@ -353,6 +369,31 @@ export function renderSlideHtml(
           )
         : {}),
       ...(slideData.extra_text_values ?? {}),
+    },
+    ...(Object.keys(extraHlMerged).length > 0 && { extra_text_highlights: extraHlMerged }),
+  };
+
+  const highlightStylesMerged: HighlightStyleOverrides = {
+    ...highlightStyles,
+    extra: {
+      ...parseExtraTextHighlightStylesMap(metaObj?.extra_text_highlight_styles),
+      ...(highlightStyles.extra ?? {}),
+    },
+  };
+  const outlineStrokesMerged = {
+    headline: outlineStrokes?.headline,
+    body: outlineStrokes?.body,
+    extra: {
+      ...parseExtraTextOutlineStrokesMap(metaObj?.extra_text_outline_strokes),
+      ...(outlineStrokes?.extra ?? {}),
+    },
+  };
+  const boldWeightsMerged = {
+    headline: boldWeights?.headline,
+    body: boldWeights?.body,
+    extra: {
+      ...parseExtraTextBoldWeightsMap(metaObj?.extra_text_bold_weights),
+      ...(boldWeights?.extra ?? {}),
     },
   };
 
@@ -515,11 +556,23 @@ export function renderSlideHtml(
         .map((block) => {
           const zoneHighlightStyle =
             block.zone.id === "headline"
-              ? (highlightStyles.headline ?? "text")
-              : (highlightStyles.body ?? "text");
+              ? (highlightStylesMerged.headline ?? "text")
+              : block.zone.id === "body"
+                ? (highlightStylesMerged.body ?? "text")
+                : (highlightStylesMerged.extra?.[block.zone.id] ?? "text");
           const zoneColor = block.zone.color ?? textColor;
-          const zoneOutlineStrokePx = block.zone.id === "headline" ? (outlineStrokes?.headline ?? 0) : (outlineStrokes?.body ?? 0);
-          const zoneBoldWeight = block.zone.id === "headline" ? (boldWeights?.headline ?? 700) : (boldWeights?.body ?? 700);
+          const zoneOutlineStrokePx =
+            block.zone.id === "headline"
+              ? (outlineStrokesMerged.headline ?? 0)
+              : block.zone.id === "body"
+                ? (outlineStrokesMerged.body ?? 0)
+                : (outlineStrokesMerged.extra?.[block.zone.id] ?? 0);
+          const zoneBoldWeight =
+            block.zone.id === "headline"
+              ? (boldWeightsMerged.headline ?? 700)
+              : block.zone.id === "body"
+                ? (boldWeightsMerged.body ?? 700)
+                : (boldWeightsMerged.extra?.[block.zone.id] ?? 700);
           const fontSize = Math.round(block.zone.fontSize * effectiveTextScale);
           const lineHeight = block.zone.lineHeight;
           const fontStack = getFontFamilyStack((block.zone as { fontFamily?: string }).fontFamily);
@@ -999,13 +1052,21 @@ export function renderSlideHtml(
   /** Chrome (counter, logo, watermark text) scaled with height so they stay proportional in 4:5 and 9:16. */
   const chromeScale = dimH / 1080;
 
-  const usedFontIds = new Set(
-    model.textBlocks
+  const chromeGoogleFontCandidates = [
+    model.chrome.counterChipStyle?.fontFamily,
+    model.chrome.watermark.fontFamily,
+    model.chrome.madeWithChipStyle?.fontFamily,
+  ]
+    .map((f) => (typeof f === "string" ? f.trim() : ""))
+    .filter((f): f is string => !!f && GOOGLE_FONT_IDS_SET.has(f));
+  const usedFontIds = new Set([
+    ...model.textBlocks
       .map((b) => (b.zone as { fontFamily?: string }).fontFamily?.trim())
-      .filter((f): f is string => !!f && GOOGLE_FONT_IDS_SET.has(f))
-  );
+      .filter((f): f is string => !!f && GOOGLE_FONT_IDS_SET.has(f)),
+    ...chromeGoogleFontCandidates,
+  ]);
   const fontFamilyParam = [...usedFontIds]
-    .map((id) => `family=${encodeURIComponent(id).replace(/%20/g, "+")}:wght@100;200;300;400;500;600;700;800;900`)
+    .map((id) => `family=${encodeURIComponent(id).replace(/%20/g, "+")}:wght@${FONT_WEIGHT_GOOGLE_WGHT_PARAM}`)
     .join("&");
   const fontLink = fontFamilyParam ? `<link href="https://fonts.googleapis.com/css2?${fontFamilyParam}&display=swap" rel="stylesheet">` : "";
 
@@ -1119,7 +1180,25 @@ export function renderSlideHtml(
         `<span style="letter-spacing:6px;font-size:${fontSize}px">${escapeHtml(swipeLabel)}</span>`;
       return `<div class="chrome-swipe" style="color:${c};font-size:${fontSize}px;${posStyle};display:flex;align-items:center;justify-content:center;gap:4px">${inner}</div>`;
     })() : ""}
-  ${!noTextOrChrome && showCounter ? `<div style="position:absolute;top:${(model.chrome.counterTop ?? 24) * chromeScale}px;right:${model.chrome.counterRight ?? 24}px;padding:${6 * chromeScale}px ${12 * chromeScale}px;border-radius:9999px;background:rgba(255,255,255,0.08);font-size:${(model.chrome.counterFontSize ?? 20) * chromeScale}px;font-weight:500;letter-spacing:0.02em;opacity:0.85;z-index:10;color:${escapeHtml(model.chrome.counterColor ?? textColor)}">${escapeHtml(model.chrome.counterText)}</div>` : ""}
+  ${!noTextOrChrome && showCounter
+    ? (() => {
+        const chip = model.chrome.counterChipStyle ?? {};
+        const cs = chromeScale;
+        const boxCss = zoneBoxChromeInlineCssScaled(chip, cs);
+        const fs = (model.chrome.counterFontSize ?? 20) * cs;
+        const fw = chip.fontWeight != null && Number.isFinite(Number(chip.fontWeight)) ? Math.round(Number(chip.fontWeight)) : 500;
+        const fam = getFontFamilyStack(chip.fontFamily);
+        const outlinePx = (chip.outlineStroke ?? 0) * cs;
+        const outlineCss = outlinePx > 0 ? `-webkit-text-stroke:${outlinePx}px #000;` : "";
+        const hasPanel = boxCss.length > 0;
+        const pillCss = hasPanel ? "" : `background:rgba(255,255,255,0.08);border-radius:9999px;`;
+        const pad = `${6 * cs}px ${12 * cs}px`;
+        const inner = hasPanel
+          ? `${boxCss}font-size:${fs}px;font-weight:${fw};letter-spacing:0.02em;color:${escapeHtml(model.chrome.counterColor ?? textColor)};font-family:${fam};${outlineCss}display:inline-block`
+          : `${pillCss}padding:${pad};font-size:${fs}px;font-weight:${fw};letter-spacing:0.02em;color:${escapeHtml(model.chrome.counterColor ?? textColor)};font-family:${fam};${outlineCss}display:inline-block`;
+        return `<div style="position:absolute;top:${(model.chrome.counterTop ?? 24) * cs}px;right:${model.chrome.counterRight ?? 24}px;opacity:0.85;z-index:10;display:flex;justify-content:flex-end"><div style="${inner}">${escapeHtml(model.chrome.counterText)}</div></div>`;
+      })()
+    : ""}
   ${!noTextOrChrome && (model.chrome.watermark.text || model.chrome.watermark.logoUrl) && (showWatermarkOverride === undefined ? model.chrome.watermark.enabled : showWatermarkOverride) ? (() => {
     const wm = model.chrome.watermark;
     const useCustom = wm.position === "custom" || (wm.logoX != null && wm.logoY != null);
@@ -1141,7 +1220,19 @@ export function renderSlideHtml(
         : wm.logoUrl
           ? `height:${(wm.fontSize ?? 20) * 2.4 * chromeScale}px;width:auto;object-fit:contain`
           : "";
-    return `<div style="position:absolute;opacity:0.7;font-size:${wmFontSize}px;font-weight:500;z-index:10;color:${escapeHtml(wm.color ?? textColor)};${posStyle}">${wm.logoUrl ? `<img src="${escapeHtml(wm.logoUrl)}" alt="" style="${logoImgStyle}" />` : escapeHtml(wm.text)}</div>`;
+    const wmBox = zoneBoxChromeInlineCssScaled(wm, chromeScale);
+    const wmFam = getFontFamilyStack(wm.fontFamily);
+    const wmFw = wm.fontWeight != null && Number.isFinite(Number(wm.fontWeight)) ? Math.round(Number(wm.fontWeight)) : 500;
+    const wmOutlinePx = (wm.outlineStroke ?? 0) * chromeScale;
+    const wmOutlineCss = wmOutlinePx > 0 ? `-webkit-text-stroke:${wmOutlinePx}px #000;` : "";
+    const wmTextInner = wm.logoUrl
+      ? `<img src="${escapeHtml(wm.logoUrl)}" alt="" style="${logoImgStyle}" />`
+      : (() => {
+          const hasWmPanel = wmBox.length > 0;
+          const textCss = `font-size:${wmFontSize}px;font-weight:${wmFw};color:${escapeHtml(wm.color ?? textColor)};font-family:${wmFam};${wmOutlineCss}${hasWmPanel ? `${wmBox};` : ""}display:inline-block`;
+          return `<span style="${textCss}">${escapeHtml(wm.text)}</span>`;
+        })();
+    return `<div style="position:absolute;opacity:0.7;z-index:10;${posStyle}">${wmTextInner}</div>`;
   })() : ""}
   ${!noTextOrChrome && showMadeWithOverride !== false ? (() => {
     const mwPlain = model.chrome.madeWithText?.trim() ?? "";
@@ -1153,8 +1244,17 @@ export function renderSlideHtml(
     const topBottomCss = mwY != null ? `top:${mwY}px` : `bottom:${mwBottom}px`;
     const mwFs = (model.chrome.madeWithFontSize ?? 30) * chromeScale;
     const mwMaxW = 1032 * chromeScale;
-    const mwColor = (model.chrome as { madeWithColor?: string }).madeWithColor ?? textColor;
-    return `<div style="position:absolute;${leftCss};${topBottomCss};max-width:${mwMaxW}px;font-size:${mwFs}px;font-weight:500;letter-spacing:0.02em;opacity:0.65;z-index:10;color:${escapeHtml(mwColor)};text-shadow:0 1px 2px rgba(0,0,0,0.3);white-space:nowrap">${escapeHtml(mwPlain)}</div>`;
+    const mwColor = model.chrome.madeWithColor ?? textColor;
+    const mwChip = model.chrome.madeWithChipStyle ?? {};
+    const mwBoxCss = zoneBoxChromeInlineCssScaled(mwChip, chromeScale);
+    const mwFam = getFontFamilyStack(mwChip.fontFamily);
+    const mwFw = mwChip.fontWeight != null && Number.isFinite(Number(mwChip.fontWeight)) ? Math.round(Number(mwChip.fontWeight)) : 500;
+    const mwOutlinePx = (mwChip.outlineStroke ?? 0) * chromeScale;
+    const mwOutlineCss = mwOutlinePx > 0 ? `-webkit-text-stroke:${mwOutlinePx}px #000;` : "";
+    const hasMwPanel = mwBoxCss.length > 0;
+    const mwShadow = hasMwPanel ? "" : "text-shadow:0 1px 2px rgba(0,0,0,0.3);";
+    const mwBoxPart = hasMwPanel ? `${mwBoxCss};` : "";
+    return `<div style="position:absolute;${leftCss};${topBottomCss};max-width:${mwMaxW}px;font-size:${mwFs}px;font-weight:${mwFw};letter-spacing:0.02em;opacity:0.65;z-index:10;color:${escapeHtml(mwColor)};font-family:${mwFam};${mwOutlineCss}${mwShadow}${mwBoxPart}white-space:nowrap;display:inline-block">${escapeHtml(mwPlain)}</div>`;
   })() : ""}
   </div>
 </body>

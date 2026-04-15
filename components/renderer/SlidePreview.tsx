@@ -7,15 +7,25 @@ import { getRoundedPolygonClipPath } from "@/lib/renderer/shapeClipPath";
 import { resolvePipLayoutsForImageCount } from "@/lib/renderer/resolvePipLayouts";
 import { fullImageRotationStyle, normalizeFullImageRotation } from "@/lib/renderer/fullImageRotation";
 import { parseZoneBoxChrome } from "@/lib/renderer/zoneBoxChrome";
+import { getFontStack } from "@/components/FontPickerModal";
 import { clampTextZonePositionToCanvas } from "@/lib/renderer/textZoneGeometry";
 import type { OverlayShape, TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { getContrastingTextColor, hexToRgba } from "@/lib/editor/colorUtils";
 import { parseInlineFormatting, HIGHLIGHT_COLORS, stripHighlightMarkers, getFontSizeSegmentsForRange, getLineSubstringByPlainRange, type HighlightSpan, type InlineSegment } from "@/lib/editor/inlineFormat";
+import {
+  mergeExtraTextZonesFromMetaIntoTemplate,
+  parseExtraTextBoldWeightsMap,
+  parseExtraTextHighlightStylesMap,
+  parseExtraTextHighlightsMap,
+  parseExtraTextOutlineStrokesMap,
+  parseExtraTextZonesSuppressedIds,
+} from "@/lib/editor/extraTextZoneMeta";
 import { Hand, ChevronsLeft, ChevronsRight, MoveHorizontal, Minus, Plus, ChevronDownIcon, SparklesIcon, Loader2Icon } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { FontPickerModal } from "@/components/FontPickerModal";
 import { OverlayShapesLayer } from "@/components/renderer/OverlayShapesLayer";
 import { SlideOverlayShapesEditLayer } from "@/components/editor/SlideOverlayShapesEditLayer";
+import { clampFontWeight, FONT_WEIGHT_PRESET_LIST, fontWeightPresetIndex } from "@/lib/constants/fontWeight";
 import { cn } from "@/lib/utils";
 
 /** Base design size (slide content is laid out in 1080x1080, then scaled to cover export dimensions). */
@@ -286,9 +296,9 @@ export type SlidePreviewProps = {
   headlineOutlineStroke?: number;
   /** Outline stroke width (px) for body; 0 = off. Independent of highlight; can combine with Text or Bg. */
   bodyOutlineStroke?: number;
-  /** Font weight (100–900) for **bold** in headline. Default 700. */
+  /** Font weight (100–1500) for **bold** in headline. Default 700. */
   headlineBoldWeight?: number;
-  /** Font weight (100–900) for **bold** in body. Default 700. */
+  /** Font weight (100–1500) for **bold** in body. Default 700. */
   bodyBoldWeight?: number;
   /** When true, wrap background image in a bordered frame (nice separation for multi-image carousels). */
   borderedFrame?: boolean;
@@ -385,6 +395,7 @@ export type SlidePreviewProps = {
   onHeadlineBlur?: () => void;
   onBodyFocus?: () => void;
   onBodyBlur?: () => void;
+  onTextZoneFocus?: (zoneId: string) => void;
   /** Callbacks when user drags a text zone to a new position (editor updates zone override). */
   onHeadlinePositionChange?: (x: number, y: number) => void;
   onBodyPositionChange?: (x: number, y: number) => void;
@@ -693,6 +704,7 @@ export function SlidePreview({
   onHeadlineBlur,
   onBodyFocus,
   onBodyBlur,
+  onTextZoneFocus,
   onHeadlinePositionChange,
   onBodyPositionChange,
   onTextZonePositionChange,
@@ -1362,6 +1374,8 @@ export function SlidePreview({
     };
   }, [zoneRotateListening, canvasH]);
 
+  const metaRec = slide.meta && typeof slide.meta === "object" ? (slide.meta as Record<string, unknown>) : {};
+  const extraHlFromMeta = parseExtraTextHighlightsMap(metaRec.extra_text_highlights);
   const slideData: SlideData = {
     headline: slide.headline,
     body: slide.body ?? null,
@@ -1384,7 +1398,11 @@ export function SlidePreview({
     slide_type: slide.slide_type,
     ...(headline_highlights?.length && { headline_highlights }),
     ...(body_highlights?.length && { body_highlights }),
+    ...(Object.keys(extraHlFromMeta).length > 0 && { extra_text_highlights: extraHlFromMeta }),
   };
+  const extraZoneHighlightStylesMap = parseExtraTextHighlightStylesMap(metaRec.extra_text_highlight_styles);
+  const extraZoneOutlineStrokesMap = parseExtraTextOutlineStrokesMap(metaRec.extra_text_outline_strokes);
+  const extraZoneBoldWeightsMap = parseExtraTextBoldWeightsMap(metaRec.extra_text_bold_weights);
 
   /** Normalize zone overrides (coerce numerics) so grid preview matches editor/export layout and line wrap. */
   const normalizedZoneOverrides = normalizeTextZoneOverrides(zoneOverrides ?? undefined);
@@ -1415,6 +1433,10 @@ export function SlidePreview({
   const renderModelOptions = hasZoneOverrides
     ? { zoneOverridesForWrap: mergedZoneOverrides }
     : undefined;
+  const suppressedExtraTextZoneSet = new Set(parseExtraTextZonesSuppressedIds(metaRec.extra_text_zones_suppressed_ids));
+  const templateTextZonesBase = templateConfig.textZones.filter(
+    (z) => z.id === "headline" || z.id === "body" || !suppressedExtraTextZoneSet.has(z.id)
+  );
   const extraTextZonesFromMeta = (() => {
     const raw =
       slide.meta && typeof slide.meta === "object"
@@ -1426,16 +1448,15 @@ export function SlidePreview({
       typeof z === "object" &&
       typeof (z as { id?: unknown }).id === "string" &&
       (z as { id: string }).id !== "headline" &&
-      (z as { id: string }).id !== "body");
+      (z as { id: string }).id !== "body" &&
+      !suppressedExtraTextZoneSet.has((z as { id: string }).id));
   })();
+  const templateZonesFilteredForSuppressed = templateTextZonesBase.length !== templateConfig.textZones.length;
   const templateConfigForRender =
-    extraTextZonesFromMeta.length > 0
+    extraTextZonesFromMeta.length > 0 || templateZonesFilteredForSuppressed
       ? {
           ...templateConfig,
-          textZones: [
-            ...templateConfig.textZones,
-            ...extraTextZonesFromMeta.filter((z) => !templateConfig.textZones.some((t) => t.id === z.id)),
-          ],
+          textZones: mergeExtraTextZonesFromMetaIntoTemplate(templateTextZonesBase, extraTextZonesFromMeta),
         }
       : templateConfig;
   const model = applyTemplate(
@@ -2997,14 +3018,34 @@ export function SlidePreview({
         const lineHeightNum = typeof block.zone.lineHeight === "number" ? block.zone.lineHeight : 1.2;
         /** Height of the text content in px so the textarea can match the read-only block and align the caret. */
         const textContentHeight = Math.ceil(block.lines.length * fontSize * lineHeightNum);
-        const zoneHighlightStyle = block.zone.id === "headline" ? headlineHighlightStyle : bodyHighlightStyle;
+        const zoneHighlightStyle =
+          block.zone.id === "headline"
+            ? headlineHighlightStyle
+            : block.zone.id === "body"
+              ? bodyHighlightStyle
+              : (extraZoneHighlightStylesMap[block.zone.id] ?? "text");
         const zoneColor = block.zone.color ?? textColor;
-        const zoneOutlineStrokePx = block.zone.id === "headline" ? (headlineOutlineStroke ?? 0) : (bodyOutlineStroke ?? 0);
+        const zoneOutlineStrokePx =
+          block.zone.id === "headline"
+            ? (headlineOutlineStroke ?? 0)
+            : block.zone.id === "body"
+              ? (bodyOutlineStroke ?? 0)
+              : (extraZoneOutlineStrokesMap[block.zone.id] ?? 0);
         const useOutline = zoneOutlineStrokePx > 0;
-        const zoneBoldWeight = block.zone.id === "headline" ? headlineBoldWeight : bodyBoldWeight;
+        const zoneBoldWeight =
+          block.zone.id === "headline"
+            ? headlineBoldWeight
+            : block.zone.id === "body"
+              ? bodyBoldWeight
+              : (extraZoneBoldWeightsMap[block.zone.id] ?? 700);
         const zoneBoxChromeStyle = parseZoneBoxChrome(block.zone);
         const zoneDragX = dragOffset != null && dragOffset.zone === block.zone.id ? dragOffset.x : 0;
         const zoneDragY = dragOffset != null && dragOffset.zone === block.zone.id ? dragOffset.y : 0;
+        const isExtraZone = block.zone.id !== "headline" && block.zone.id !== "body";
+        const canEditExtra =
+          isExtraZone &&
+          (onTextZonePositionChange != null || onTextZoneRotationChange != null || onTextZoneSizeChange != null) &&
+          chromeVisible;
         const isEditableHeadline =
           block.zone.id === "headline" &&
           (onHeadlineChange != null || (positionAndSizeOnly && onHeadlinePositionChange != null && editToolbarHeadline != null)) &&
@@ -3197,6 +3238,7 @@ export function SlidePreview({
               top: block.zone.y + zoneDragY,
               ...zoneBoxStyle,
               zIndex: 5,
+              ...(canEditExtra ? { pointerEvents: "none" as const } : {}),
               ...rotationStyle,
             }}
           >
@@ -3480,22 +3522,22 @@ export function SlidePreview({
                     <button
                       type="button"
                       onClick={() => {
-                        const weights = [400, 500, 600, 700, 800];
-                        const i = weights.indexOf(editToolbarHeadline.fontWeight);
-                        editToolbarHeadline.onFontWeightChange(weights[Math.max(0, i - 1)] ?? 400);
+                        const i = fontWeightPresetIndex(clampFontWeight(editToolbarHeadline.fontWeight));
+                        const next = FONT_WEIGHT_PRESET_LIST[Math.max(0, i - 1)];
+                        if (next != null) editToolbarHeadline.onFontWeightChange(next);
                       }}
                       className="rounded-md border border-white/30 bg-white/20 p-2 text-white hover:bg-white/30"
                       aria-label="Decrease weight"
                     >
                       <Minus className="size-4" />
                     </button>
-                    <span className="min-w-9 text-center text-sm font-medium text-white tabular-nums">{editToolbarHeadline.fontWeight}</span>
+                    <span className="min-w-9 text-center text-sm font-medium text-white tabular-nums">{clampFontWeight(editToolbarHeadline.fontWeight)}</span>
                     <button
                       type="button"
                       onClick={() => {
-                        const weights = [400, 500, 600, 700, 800];
-                        const i = weights.indexOf(editToolbarHeadline.fontWeight);
-                        editToolbarHeadline.onFontWeightChange(weights[Math.min(weights.length - 1, i + 1)] ?? 800);
+                        const i = fontWeightPresetIndex(clampFontWeight(editToolbarHeadline.fontWeight));
+                        const next = FONT_WEIGHT_PRESET_LIST[Math.min(FONT_WEIGHT_PRESET_LIST.length - 1, i + 1)];
+                        if (next != null) editToolbarHeadline.onFontWeightChange(next);
                       }}
                       className="rounded-md border border-white/30 bg-white/20 p-2 text-white hover:bg-white/30"
                       aria-label="Increase weight"
@@ -3889,22 +3931,22 @@ export function SlidePreview({
                     <button
                       type="button"
                       onClick={() => {
-                        const weights = [400, 500, 600, 700, 800];
-                        const i = weights.indexOf(editToolbarBody.fontWeight);
-                        editToolbarBody.onFontWeightChange(weights[Math.max(0, i - 1)] ?? 400);
+                        const i = fontWeightPresetIndex(clampFontWeight(editToolbarBody.fontWeight));
+                        const next = FONT_WEIGHT_PRESET_LIST[Math.max(0, i - 1)];
+                        if (next != null) editToolbarBody.onFontWeightChange(next);
                       }}
                       className="rounded-md border border-white/30 bg-white/20 p-2 text-white hover:bg-white/30"
                       aria-label="Decrease weight"
                     >
                       <Minus className="size-4" />
                     </button>
-                    <span className="min-w-9 text-center text-sm font-medium text-white tabular-nums">{editToolbarBody.fontWeight}</span>
+                    <span className="min-w-9 text-center text-sm font-medium text-white tabular-nums">{clampFontWeight(editToolbarBody.fontWeight)}</span>
                     <button
                       type="button"
                       onClick={() => {
-                        const weights = [400, 500, 600, 700, 800];
-                        const i = weights.indexOf(editToolbarBody.fontWeight);
-                        editToolbarBody.onFontWeightChange(weights[Math.min(weights.length - 1, i + 1)] ?? 800);
+                        const i = fontWeightPresetIndex(clampFontWeight(editToolbarBody.fontWeight));
+                        const next = FONT_WEIGHT_PRESET_LIST[Math.min(FONT_WEIGHT_PRESET_LIST.length - 1, i + 1)];
+                        if (next != null) editToolbarBody.onFontWeightChange(next);
                       }}
                       className="rounded-md border border-white/30 bg-white/20 p-2 text-white hover:bg-white/30"
                       aria-label="Increase weight"
@@ -4035,9 +4077,7 @@ export function SlidePreview({
             </Fragment>
           );
         }
-        const isExtraZone = block.zone.id !== "headline" && block.zone.id !== "body";
         const isFocusedExtra = focusedZone === block.zone.id;
-        const canEditExtra = isExtraZone && (onTextZonePositionChange != null || onTextZoneRotationChange != null || onTextZoneSizeChange != null) && chromeVisible;
         if (canEditExtra) {
           const isDraggingExtra = dragOffset?.zone === block.zone.id;
           const offX = isDraggingExtra ? dragOffset.x : 0;
@@ -4129,6 +4169,7 @@ export function SlidePreview({
                   ? (e) => {
                       const t = e.target as HTMLElement;
                       if (t?.closest?.('[data-text-zone-handle="rotate"]')) return;
+                      onTextZoneFocus?.(block.zone.id);
                       e.preventDefault();
                       (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
                       dragZoneRef.current = { zone: block.zone.id, baseX: block.zone.x, baseY: block.zone.y };
@@ -4136,6 +4177,7 @@ export function SlidePreview({
                     }
                   : undefined
               }
+              onClick={() => onTextZoneFocus?.(block.zone.id)}
               role={canDrag ? "button" : undefined}
               aria-label={canDrag ? `Drag to move ${block.zone.id}` : undefined}
             >
@@ -4152,7 +4194,7 @@ export function SlidePreview({
           return (
             <Fragment key={block.zone.id}>
               {positionAndSizeOnly ? null : readOnlyBlockEl}
-              <div className="absolute shrink-0" style={{ zIndex: 6 }}>
+              <div className="absolute shrink-0" style={{ zIndex: 8 }}>
                 {zoneRotation !== 0 ? (
                   <div
                     style={{
@@ -4431,13 +4473,22 @@ export function SlidePreview({
               chromeInteractionHighlight("counter", "pill")
             )}
             style={{
-              padding: `${6 * chromeScale}px ${12 * chromeScale}px`,
-              fontSize: (model.chrome.counterFontSize ?? 20) * chromeScale,
-              fontWeight: 500,
-              letterSpacing: "0.02em",
-              color: model.chrome.counterColor ?? textColor,
-              opacity: 0.85,
-              backgroundColor: "rgba(255,255,255,0.08)",
+              ...((): React.CSSProperties => {
+                const chip = model.chrome.counterChipStyle ?? {};
+                const box = parseZoneBoxChrome(chip);
+                const outlinePx = (chip.outlineStroke ?? 0) * chromeScale;
+                const hasPanel = !!box?.backgroundColor || Number(box?.borderTopWidth ?? 0) > 0;
+                return {
+                  ...(hasPanel ? { ...box } : { padding: `${6 * chromeScale}px ${12 * chromeScale}px`, backgroundColor: "rgba(255,255,255,0.08)" }),
+                  fontSize: (model.chrome.counterFontSize ?? 20) * chromeScale,
+                  fontWeight: chip.fontWeight != null && Number.isFinite(Number(chip.fontWeight)) ? Math.round(Number(chip.fontWeight)) : 500,
+                  letterSpacing: "0.02em",
+                  color: model.chrome.counterColor ?? textColor,
+                  opacity: 0.85,
+                  fontFamily: getFontStack(chip.fontFamily ?? "system"),
+                  ...(outlinePx > 0 ? { WebkitTextStroke: `${outlinePx}px #000` } : {}),
+                };
+              })(),
             }}
             onClick={() => {
               if (!editChromeCounter) return;
@@ -4522,10 +4573,20 @@ export function SlidePreview({
                   chromeInteractionHighlight("watermark", "rounded")
                 )}
                 style={{
-                  color: model.chrome.watermark.color ?? textColor,
-                  opacity: 0.7,
-                  fontSize: (model.chrome.watermark.fontSize ?? 20) * chromeScale,
-                  fontWeight: 500,
+                  ...((): React.CSSProperties => {
+                    const wm = model.chrome.watermark;
+                    const box = parseZoneBoxChrome(wm);
+                    const outlinePx = (wm.outlineStroke ?? 0) * chromeScale;
+                    return {
+                      ...(box ?? {}),
+                      color: wm.color ?? textColor,
+                      opacity: 0.7,
+                      fontSize: (wm.fontSize ?? 20) * chromeScale,
+                      fontWeight: wm.fontWeight != null && Number.isFinite(Number(wm.fontWeight)) ? Math.round(Number(wm.fontWeight)) : 500,
+                      fontFamily: getFontStack(wm.fontFamily ?? "system"),
+                      ...(outlinePx > 0 ? { WebkitTextStroke: `${outlinePx}px #000` } : {}),
+                    };
+                  })(),
                 }}
                 onClick={() => {
                   if (!editChromeWatermark) return;
@@ -4641,14 +4702,25 @@ export function SlidePreview({
             style={{
               ...posStyle,
               maxWidth: 1032 * chromeScale,
-              fontSize: (model.chrome.madeWithFontSize ?? 30) * chromeScale,
-              fontWeight: 500,
-              letterSpacing: "0.02em",
-              color: (model.chrome as { madeWithColor?: string }).madeWithColor ?? textColor,
-              opacity: 0.65,
-              zIndex: 10,
-              textShadow: "0 1px 2px rgba(0,0,0,0.3)",
-              whiteSpace: "nowrap",
+              ...((): React.CSSProperties => {
+                const chip = model.chrome.madeWithChipStyle ?? {};
+                const box = parseZoneBoxChrome(chip);
+                const outlinePx = (chip.outlineStroke ?? 0) * chromeScale;
+                const hasPanel = !!box?.backgroundColor || Number(box?.borderTopWidth ?? 0) > 0;
+                return {
+                  ...(box ?? {}),
+                  fontSize: (model.chrome.madeWithFontSize ?? 30) * chromeScale,
+                  fontWeight: chip.fontWeight != null && Number.isFinite(Number(chip.fontWeight)) ? Math.round(Number(chip.fontWeight)) : 500,
+                  letterSpacing: "0.02em",
+                  color: model.chrome.madeWithColor ?? textColor,
+                  opacity: 0.65,
+                  zIndex: 10,
+                  ...(hasPanel ? {} : { textShadow: "0 1px 2px rgba(0,0,0,0.3)" }),
+                  whiteSpace: "nowrap",
+                  fontFamily: getFontStack(chip.fontFamily ?? "system"),
+                  ...(outlinePx > 0 ? { WebkitTextStroke: `${outlinePx}px #000` } : {}),
+                };
+              })(),
             }}
             onClick={() => {
               if (!editChromeMadeWith) return;

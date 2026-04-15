@@ -77,6 +77,9 @@ export default async function EditSlidePage({
 
   let initialBackgroundImageUrl: string | null = null;
   let initialBackgroundImageUrls: string[] | null = null;
+  /** Single slot: AI regen history (storage paths + signed previews) for shuffle in the editor. */
+  let initialPrimarySlotStorageChainPaths: string[] | null = null;
+  let initialPrimarySlotStorageChainSignedUrls: string[] | null = null;
   let initialImageSource: "brave" | "unsplash" | "google" | "pixabay" | "pexels" | null = null;
   let initialImageSources: ("brave" | "unsplash" | "google" | "pixabay" | "pexels")[] | null = null;
   let initialSecondaryBackgroundImageUrl: string | null = null;
@@ -89,7 +92,7 @@ export default async function EditSlidePage({
     unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string };
     secondary_storage_path?: string;
     secondary_image_url?: string;
-    images?: { image_url?: string; storage_path?: string; asset_id?: string; source?: "brave" | "google" | "unsplash" | "pixabay" | "pexels"; unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string }; pixabay_attribution?: { userName: string; userId: number; pageURL: string; photoURL: string }; pexels_attribution?: { photographer: string; photographer_url: string; photo_url: string }; alternates?: string[] }[];
+    images?: { image_url?: string; storage_path?: string; asset_id?: string; source?: "brave" | "google" | "unsplash" | "pixabay" | "pexels"; unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string }; pixabay_attribution?: { userName: string; userId: number; pageURL: string; photoURL: string }; pexels_attribution?: { photographer: string; photographer_url: string; photo_url: string }; alternates?: string[]; storage_alternates?: string[] }[];
   } | null;
   /** 1 hour expiry for display so preview doesn't break quickly. */
   const DISPLAY_SIGNED_URL_EXPIRY = 3600;
@@ -125,6 +128,28 @@ export default async function EditSlidePage({
         initialImageSources = resolvedSlots.every((s) => s.source != null)
           ? resolvedSlots.map((s) => s.source!)
           : null;
+      }
+      const img0 = bg.images?.[0] as { storage_path?: string; storage_alternates?: string[] } | undefined;
+      const mainSp = img0?.storage_path?.trim();
+      const sa = (Array.isArray(img0?.storage_alternates) ? img0.storage_alternates : [])
+        .map((x) => (typeof x === "string" ? x.trim() : ""))
+        .filter(Boolean);
+      const chainPaths = mainSp ? [mainSp, ...sa.filter((p) => p !== mainSp)] : [];
+      if (bg.images?.length === 1 && chainPaths.length > 1) {
+        const signedChain: string[] = [];
+        for (const p of chainPaths) {
+          const norm = normalizeStoragePathForBucket(p, BUCKET);
+          if (!norm) continue;
+          try {
+            signedChain.push(await getSignedImageUrl(BUCKET, norm, DISPLAY_SIGNED_URL_EXPIRY));
+          } catch {
+            signedChain.push("");
+          }
+        }
+        if (signedChain.length === chainPaths.length && signedChain.every((u) => u.length > 0)) {
+          initialPrimarySlotStorageChainPaths = chainPaths;
+          initialPrimarySlotStorageChainSignedUrls = signedChain;
+        }
       }
     } else {
       let pathToUse = normalizeStoragePathForBucket(bg.storage_path, BUCKET);
@@ -177,11 +202,17 @@ export default async function EditSlidePage({
     genOptsCarousel.use_ai_generate === true && genOptsCarousel.use_ai_backgrounds === true;
   let allowRegenerateAiBackground = false;
   if (hasFullAccess && useAiGenCarousel && bg?.mode === "image") {
-    const multi = Array.isArray(bg.images) && bg.images.length > 1;
-    if (!multi) {
+    const imgs = bg.images;
+    const otherSlotsUseStorage =
+      Array.isArray(imgs) &&
+      imgs.length > 1 &&
+      imgs.slice(1).some((slot) => {
+        const s = slot as { storage_path?: string; asset_id?: string };
+        return !!(s?.storage_path?.trim() || s?.asset_id);
+      });
+    if (!otherSlotsUseStorage) {
       const path =
-        bg.storage_path?.trim() ||
-        (Array.isArray(bg.images) && bg.images.length === 1 ? bg.images[0]?.storage_path?.trim() : undefined);
+        (Array.isArray(imgs) && imgs[0]?.storage_path?.trim()) || bg.storage_path?.trim() || undefined;
       allowRegenerateAiBackground = isAiGeneratedSlideStoragePath(user.id, carouselId, slideId, path ?? null);
     }
   }
@@ -228,6 +259,8 @@ export default async function EditSlidePage({
           initialIncludeLastSlide={carouselIncludeLast !== false}
           initialBackgroundImageUrl={initialBackgroundImageUrl}
           initialBackgroundImageUrls={initialBackgroundImageUrls}
+          initialPrimarySlotStorageChainPaths={initialPrimarySlotStorageChainPaths}
+          initialPrimarySlotStorageChainSignedUrls={initialPrimarySlotStorageChainSignedUrls}
           initialImageSource={initialImageSource}
           initialImageSources={initialImageSources}
           initialSecondaryBackgroundImageUrl={initialSecondaryBackgroundImageUrl}

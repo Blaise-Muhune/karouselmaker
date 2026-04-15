@@ -11,7 +11,7 @@ import {
 } from "@/lib/renderer/templatePreviewImages";
 import { CheckIcon, LayoutTemplateIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { getSlidePreviewSpreadFromTemplateConfig } from "@/lib/renderer/templateDefaultsForSlidePreview";
+import { getSlidePreviewSpreadFromTemplateConfig, getTemplatePreviewExtraTextValues } from "@/lib/renderer/templateDefaultsForSlidePreview";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -318,7 +318,10 @@ export function TemplateSelectCards({
               }}
             >
               <SlidePreview
-                slide={sampleSlide}
+                slide={{
+                  ...sampleSlide,
+                  extra_text_values: getTemplatePreviewExtraTextValues(t.parsedConfig),
+                }}
                 templateConfig={t.parsedConfig}
                 brandKit={brandKit}
                 totalSlides={8}

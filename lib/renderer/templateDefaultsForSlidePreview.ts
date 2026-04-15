@@ -51,3 +51,20 @@ export function getSlidePreviewSpreadFromTemplateConfig(
 
   return spread;
 }
+
+/**
+ * Default values for extra template text zones so template cards/previews
+ * show all text areas (same way headline/body use sample text).
+ */
+export function getTemplatePreviewExtraTextValues(
+  config: TemplateConfig | null | undefined
+): Record<string, string> {
+  if (!config) return {};
+  const out: Record<string, string> = {};
+  for (const zone of config.textZones ?? []) {
+    if (!zone?.id || zone.id === "headline" || zone.id === "body") continue;
+    const label = typeof zone.label === "string" && zone.label.trim() ? zone.label.trim() : zone.id;
+    out[zone.id] = label;
+  }
+  return out;
+}

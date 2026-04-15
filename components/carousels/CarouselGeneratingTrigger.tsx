@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { WaitingGamesDialog } from "@/components/waiting/WaitingGamesDialog";
 import { getCarouselGenerationSnapshot } from "@/app/actions/carousels/carouselActions";
 
 const POLL_STUCK_MS = 120_000;
@@ -19,19 +20,22 @@ function isGenerationPollComplete(
   },
   startedAt: number
 ): boolean {
+  const elapsed = Date.now() - startedAt;
   if (s.status === "generating") return false;
   if (s.status !== "generated") return true;
 
   // Do not leave the overlay until AI/stock/Brave backgrounds have finished writing to slides.
   if (s.use_ai_backgrounds && s.ai_backgrounds_pending) {
-    return Date.now() - startedAt > POLL_AI_BACKGROUNDS_MAX_MS;
+    if (elapsed > POLL_AI_BACKGROUNDS_MAX_MS) return true;
+    return false;
   }
 
   if (s.generation_complete) return true;
 
-  if (!s.generation_started) return true;
-
-  return Date.now() - startedAt > POLL_STUCK_MS;
+  // `generation_started` is false in normal DB rows before work begins and again after a successful
+  // run — it must not dismiss the overlay by itself while `generation_complete` is still false
+  // (stale read, legacy row, or partial write), or the editor flashes before images land.
+  return elapsed > POLL_STUCK_MS;
 }
 
 /**
@@ -194,6 +198,12 @@ export function CarouselGeneratingPage({
         <Loader2Icon className="mx-auto size-12 animate-spin text-primary" />
         <p className="text-sm font-medium text-foreground">Generating your carousel…</p>
         <p className="text-xs text-muted-foreground">Hang tight—this usually takes a minute or two.</p>
+        <div className="flex justify-center">
+          <WaitingGamesDialog
+            loadingMessage="Your carousel is still generating…"
+            triggerClassName="bg-background/80"
+          />
+        </div>
       </div>
     </div>
   );

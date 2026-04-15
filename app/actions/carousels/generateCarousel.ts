@@ -29,6 +29,7 @@ import { postProcessAiGeneratedImageQueries } from "@/lib/server/ai/sanitizeImag
 import {
   ABSOLUTE_MAX_BODY_CHARS,
   buildTemplateContextForPrompt,
+  buildTemplateContextForPromptSelection,
 } from "@/lib/server/ai/templateContextForPrompt";
 import { searchImage } from "@/lib/server/imageSearch";
 import { normalizeImageUrlForDedupe, normalizeQueryForCache } from "@/lib/server/imageSearchUtils";
@@ -568,21 +569,29 @@ export async function generateCarousel(formData: FormData): Promise<
     }
   }
 
-  // Resolve template for prompt so AI gets zone limits (font size, width, height, has headline/body).
-  let templateForPrompt: Awaited<ReturnType<typeof getTemplate>> = null;
   const orderedRequestedTemplateIds = (data.template_ids?.length ? data.template_ids : (data.template_id ? [data.template_id] : [])).slice(0, 3);
-  if (orderedRequestedTemplateIds[0]) {
-    templateForPrompt = await getTemplate(user.id, orderedRequestedTemplateIds[0]);
-  } else {
+  // Resolve template(s) for prompt so AI gets slot-aware zone limits.
+  const selectedTemplatesForPrompt: NonNullable<Awaited<ReturnType<typeof getTemplate>>>[] = [];
+  for (const templateId of orderedRequestedTemplateIds) {
+    const tpl = await getTemplate(user.id, templateId);
+    if (tpl) selectedTemplatesForPrompt.push(tpl);
+  }
+
+  if (selectedTemplatesForPrompt.length === 0) {
     const defaultForPrompt =
       carouselFor === "linkedin"
         ? await getDefaultLinkedInTemplate(user.id)
         : await getDefaultTemplateForNewCarousel(user.id);
     const defaultId = defaultForPrompt?.templateId ?? null;
-    if (defaultId) templateForPrompt = await getTemplate(user.id, defaultId);
+    if (defaultId) {
+      const fallbackTemplate = await getTemplate(user.id, defaultId);
+      if (fallbackTemplate) selectedTemplatesForPrompt.push(fallbackTemplate);
+    }
   }
-  const templateContext = buildTemplateContextForPrompt(templateForPrompt?.config ?? null);
-  const template_context = templateContext?.promptSection?.trim() ?? undefined;
+  const template_context =
+    buildTemplateContextForPromptSelection(selectedTemplatesForPrompt.map((t) => t.config as Json)) ??
+    buildTemplateContextForPrompt(selectedTemplatesForPrompt[0]?.config as Json | null | undefined)?.promptSection?.trim() ??
+    undefined;
 
   const ctx = {
     tone_preset: project.tone_preset,
@@ -798,15 +807,11 @@ export async function generateCarousel(formData: FormData): Promise<
     }
     return t1 ?? null;
   };
-  const slideTemplateIdByIndex = new Map<number, string>();
   const totalSlideCount = validated.slides.length;
-  for (const s of validated.slides) {
-    const templateId = chooseTemplateIdForSlideIndex(s.slide_index, totalSlideCount);
-    if (templateId) slideTemplateIdByIndex.set(s.slide_index, templateId);
-  }
   const isFollowCta = carouselFor !== "linkedin" && (defaultTemplate && "isFollowCta" in defaultTemplate ? defaultTemplate.isFollowCta : false);
 
-  const slideRows = validated.slides.map((s) => {
+  const slideRows = validated.slides.map((s, idx) => {
+    const templateIdForSlide = chooseTemplateIdForSlideIndex(idx + 1, totalSlideCount);
     const rawHeadline = s.slide_index === 1 ? stripLinksFromText(validated.title) : stripLinksFromText(s.headline);
     const rawBody = s.body ? stripLinksFromText(s.body) : "";
     const fullHeadline = ensureListNewlines(rawHeadline);
@@ -814,9 +819,7 @@ export async function generateCarousel(formData: FormData): Promise<
     const mainHeadlineWords = sanitizeHighlightWordsForText(fullHeadline, s.headline_highlight_words);
     const mainBodyWords = sanitizeHighlightWordsForText(fullBody, s.body_highlight_words);
     const alternates = (s as { shorten_alternates?: { headline: string; body?: string; headline_highlight_words?: string[]; body_highlight_words?: string[] }[] }).shorten_alternates;
-    const slideTemplate = slideTemplateIdByIndex.get(s.slide_index)
-      ? resolvedTemplates.get(slideTemplateIdByIndex.get(s.slide_index)!)
-      : selectedTemplate;
+    const slideTemplate = templateIdForSlide ? resolvedTemplates.get(templateIdForSlide) : selectedTemplate;
     const templateConfigParsed = slideTemplate ? templateConfigSchema.safeParse(slideTemplate.config) : null;
     const bodyZoneForRewrite =
       templateConfigParsed?.success ? templateConfigParsed.data.textZones.find((z) => z.id === "body") : undefined;
@@ -863,20 +866,26 @@ export async function generateCarousel(formData: FormData): Promise<
       slide_type: s.slide_type,
       headline: fullHeadline,
       body: fullBody || null,
-      template_id: slideTemplateIdByIndex.get(s.slide_index) ?? defaultTemplateId,
+      template_id: templateIdForSlide ?? defaultTemplateId,
       background: {},
       meta: meta as Json,
     };
   });
 
   const createdSlides = await replaceSlides(user.id, carousel.id, slideRows);
+  const createdSlidesOrdered = [...createdSlides].sort((a, b) => a.slide_index - b.slide_index);
+  const templateIdBySlideId = new Map<string, string>();
+  for (let i = 0; i < createdSlidesOrdered.length; i++) {
+    const templateId = chooseTemplateIdForSlideIndex(i + 1, createdSlidesOrdered.length);
+    if (templateId) templateIdBySlideId.set(createdSlidesOrdered[i]!.id, templateId);
+  }
   const templateAllowsImageById = new Map<string, boolean>();
   for (const [templateId, template] of resolvedTemplates.entries()) {
     const parsedConfig = templateConfigSchema.safeParse(template.config);
     templateAllowsImageById.set(templateId, parsedConfig.success ? parsedConfig.data.backgroundRules.allowImage !== false : true);
   }
   const slideCanUseImage = (slide: (typeof createdSlides)[number]) => {
-    const assignedTemplateId = slideTemplateIdByIndex.get(slide.slide_index);
+    const assignedTemplateId = templateIdBySlideId.get(slide.id);
     if (!assignedTemplateId) return true;
     return templateAllowsImageById.get(assignedTemplateId) !== false;
   };
@@ -1555,7 +1564,7 @@ export async function generateCarousel(formData: FormData): Promise<
   if (defaultTemplateId || templateIdsForRun.length > 0) {
     LOG("backgrounds", "applying template defaults to slides");
     for (const slide of createdSlides) {
-      const templateIdForSlide = slideTemplateIdByIndex.get(slide.slide_index) ?? defaultTemplateId;
+      const templateIdForSlide = templateIdBySlideId.get(slide.id) ?? defaultTemplateId;
       if (!templateIdForSlide) continue;
       const result = await setSlideTemplate(slide.id, templateIdForSlide);
       if (!result.ok) LOG("backgrounds", `setSlideTemplate failed for ${slide.id}: ${result.error}`);

@@ -411,6 +411,7 @@ export default async function CarouselEditorPage({
             exportSize={getExportSize(carousel)}
             exportFormat={getExportFormat(carousel)}
             isPro={hasFullAccess}
+            isAdmin={userIsAdmin}
             disabled={isGenerating}
             downloadFilenameSlug={slugifyForFilename([project.name, carousel.title].filter(Boolean).join(" - ")) || undefined}
             enableBackgroundHydrationPoll={useAiBackgroundsCarousel || aiBackgroundsPendingFlag}

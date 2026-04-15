@@ -188,3 +188,16 @@ export function zoneBoxChromeInlineCss(zone: ZoneBoxChromeInput): string {
   if (!c) return "";
   return computedToInlineCss(c);
 }
+
+/** Scale px lengths in inline chrome CSS (e.g. export HTML chrome when positions use chromeScale). */
+export function scaleZoneBoxChromeInlineCss(css: string, scale: number): string {
+  if (!css || scale === 1 || !Number.isFinite(scale)) return css;
+  return css.replace(/([\d.]+)px/g, (_, n) => {
+    const v = Math.round(Number(n) * scale * 100) / 100;
+    return `${v}px`;
+  });
+}
+
+export function zoneBoxChromeInlineCssScaled(zone: ZoneBoxChromeInput, scale: number): string {
+  return scaleZoneBoxChromeInlineCss(zoneBoxChromeInlineCss(zone), scale);
+}

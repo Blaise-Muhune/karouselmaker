@@ -13,6 +13,7 @@ import {
   normalizeSlideMetaForRender,
   getTemplateDefaultOverrides,
   mergeWithTemplateDefaults,
+  mergedHighlightStylesForSlideHtml,
 } from "@/lib/server/export/normalizeSlideMetaForRender";
 import { resolveImageDisplay } from "@/lib/server/export/resolveSlideBackgroundFromTemplate";
 import {
@@ -243,7 +244,7 @@ export async function GET(
   const fontOverrides = merged.fontOverrides;
   const zoneOverrides = merged.zoneOverrides;
   const chromeOverrides = merged.chromeOverrides;
-  const highlightStyles = merged.highlightStyles;
+  const highlightStyles = mergedHighlightStylesForSlideHtml(merged);
 
   const imageDisplayParam = resolveImageDisplay(config.data, slideBg, slideMeta);
 
@@ -256,6 +257,8 @@ export async function GET(
       slide_type: slide.slide_type,
     ...(merged.headline_highlights?.length && { headline_highlights: merged.headline_highlights }),
     ...(merged.body_highlights?.length && { body_highlights: merged.body_highlights }),
+    ...(merged.extraTextHighlights &&
+      Object.keys(merged.extraTextHighlights).length > 0 && { extra_text_highlights: merged.extraTextHighlights }),
   },
     config.data,
     brandKit,

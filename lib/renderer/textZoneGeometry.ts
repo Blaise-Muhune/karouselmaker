@@ -2,6 +2,10 @@
  * Text zones use `transform-origin: center` for rotation. Clamp top-left (x, y) so the
  * axis-aligned bounding box of the rotated w×h rectangle stays inside the canvas.
  * When rotation is 0 this matches the classic bounds: x ∈ [0, W−w], y ∈ [0, H−h].
+ *
+ * When the AABB is larger than the canvas in one axis, the valid center interval is empty.
+ * We still clamp with `max(min, min(max, v))`: that pins the center to the **edge** of the
+ * degenerate range (e.g. `minCy`), not to `canvasH/2`, so dragged zones do not "snap to the middle".
  */
 export function clampTextZonePositionToCanvas(
   x: number,
@@ -25,19 +29,11 @@ export function clampTextZonePositionToCanvas(
 
   const minCx = extentX;
   const maxCx = canvasW - extentX;
-  if (minCx <= maxCx) {
-    cx = Math.min(maxCx, Math.max(minCx, cx));
-  } else {
-    cx = canvasW / 2;
-  }
-
   const minCy = extentY;
   const maxCy = canvasH - extentY;
-  if (minCy <= maxCy) {
-    cy = Math.min(maxCy, Math.max(minCy, cy));
-  } else {
-    cy = canvasH / 2;
-  }
+
+  cx = Math.max(minCx, Math.min(maxCx, cx));
+  cy = Math.max(minCy, Math.min(maxCy, cy));
 
   return {
     x: Math.round(cx - hw),

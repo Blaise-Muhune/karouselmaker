@@ -183,6 +183,7 @@ export async function GET(
     getTemplateDefaultOverrides,
     mergeWithTemplateDefaults,
     getMergedImageDisplay,
+    mergedHighlightStylesForSlideHtml,
   } = await import("@/lib/server/export/normalizeSlideMetaForRender");
   const normalized = normalizeSlideMetaForRender(slideMeta);
   const templateDefaults = getTemplateDefaultOverrides(config.data);
@@ -193,7 +194,7 @@ export async function GET(
   const fontOverrides = merged.fontOverrides;
   const zoneOverrides = merged.zoneOverrides;
   const chromeOverrides = merged.chromeOverrides;
-  const highlightStyles = merged.highlightStyles;
+  const highlightStyles = mergedHighlightStylesForSlideHtml(merged);
   const imageDisplay = getMergedImageDisplay(config.data, slideBg, slideMeta);
 
   const carouselExportSize = (carousel as { export_size?: string }).export_size ?? "1080x1350";
@@ -212,6 +213,8 @@ export async function GET(
       slide_type: slide.slide_type,
     ...(merged.headline_highlights?.length && { headline_highlights: merged.headline_highlights }),
     ...(merged.body_highlights?.length && { body_highlights: merged.body_highlights }),
+    ...(merged.extraTextHighlights &&
+      Object.keys(merged.extraTextHighlights).length > 0 && { extra_text_highlights: merged.extraTextHighlights }),
   },
     config.data,
     brandKit,

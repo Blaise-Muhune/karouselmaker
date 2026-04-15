@@ -1,3 +1,6 @@
+import { clampFontWeight } from "@/lib/constants/fontWeight";
+import type { ChromeChipStyle } from "@/lib/renderer/chromeChipStyle";
+import { chromeChipStyleHasAny, extractChromeChipStyle } from "@/lib/renderer/chromeChipStyle";
 import type { TemplateConfig, TextZone } from "@/lib/server/renderer/templateSchema";
 import { fitTextToZone } from "./fitText";
 import { injectHighlightMarkers, stripHighlightMarkers, clampHighlightSpansToText, type HighlightSpan } from "@/lib/editor/inlineFormat";
@@ -14,6 +17,8 @@ export type SlideData = {
   headline_highlights?: HighlightSpan[];
   /** When set, body is plain text and we inject markers from these spans. */
   body_highlights?: HighlightSpan[];
+  /** Per extra text zone id: highlight spans (plain text indices). */
+  extra_text_highlights?: Record<string, HighlightSpan[]>;
 };
 
 export type BrandKit = {
@@ -81,7 +86,11 @@ export type SlideRenderModel = {
       maxHeight?: number;
       /** Text/icon color (hex). When unset, uses contrasting text color. */
       color?: string;
-    };
+    } & Partial<ChromeChipStyle>;
+    /** Counter (#) typography + outline + backdrop (from slide/template meta). */
+    counterChipStyle?: Partial<ChromeChipStyle>;
+    /** Bottom handle typography + outline + backdrop. */
+    madeWithChipStyle?: Partial<ChromeChipStyle>;
     /** "Made with" line: optional position/size from template or meta. */
     madeWithFontSize?: number;
     /** Horizontal position (px from left). When undefined, centered. */
@@ -172,7 +181,9 @@ export function normalizeZoneOverrideSingle(
             ? Math.min(32, Math.max(0, Math.round(n)))
             : key === "boxBackgroundBorderRadius"
               ? Math.min(64, Math.max(0, Math.round(n)))
-              : Math.round(n);
+              : key === "fontWeight"
+                ? clampFontWeight(Math.round(n))
+                : Math.round(n);
   }
   if (raw.align && ZONE_ALIGN_VALUES.has(raw.align as string)) out.align = raw.align;
   if (raw.textTransform && ZONE_TEXT_TRANSFORM_VALUES.has(raw.textTransform as string)) {
@@ -232,7 +243,7 @@ export function normalizeTextZoneOverrides(
 
 /** Per-slide or template defaults: counter, logo watermark, "Made with", and swipe hint. */
 export type ChromeOverrides = {
-  counter?: { top?: number; right?: number; fontSize?: number };
+  counter?: { top?: number; right?: number; fontSize?: number } & Partial<ChromeChipStyle>;
   watermark?: {
     position?: "top_left" | "top_right" | "bottom_left" | "bottom_right" | "custom";
     logoX?: number;
@@ -242,8 +253,16 @@ export type ChromeOverrides = {
     maxHeight?: number;
     /** Logo/watermark text color (hex). */
     color?: string;
-  };
-  madeWith?: { fontSize?: number; x?: number; y?: number; bottom?: number; text?: string; /** "Made with" line color (hex). */ color?: string };
+  } & Partial<ChromeChipStyle>;
+  madeWith?: {
+    fontSize?: number;
+    x?: number;
+    y?: number;
+    bottom?: number;
+    text?: string;
+    /** "Made with" line color (hex). */
+    color?: string;
+  } & Partial<ChromeChipStyle>;
   /** Override template showSwipe (visibility of swipe hint). */
   showSwipe?: boolean;
   /** Override template swipe hint style. */
@@ -309,7 +328,12 @@ export function buildSlideRenderModel(
         : zone.id === "body"
           ? slideData.body ?? ""
           : (slideData.extra_text_values?.[zone.id] ?? "");
-    const highlights = zone.id === "headline" ? slideData.headline_highlights : slideData.body_highlights;
+    const highlights =
+      zone.id === "headline"
+        ? slideData.headline_highlights
+        : zone.id === "body"
+          ? slideData.body_highlights
+          : slideData.extra_text_highlights?.[zone.id];
     if (highlights?.length) {
       const plainText = stripHighlightMarkers(text);
       const clamped = clampHighlightSpansToText(plainText, highlights);
@@ -329,11 +353,34 @@ export function buildSlideRenderModel(
     .replace("1", String(slideIndex))
     .replace("8", String(totalSlides));
 
-  const templateMadeWithZone =
+  const templateMeta =
     templateConfig.defaults?.meta && typeof templateConfig.defaults.meta === "object"
-      ? (templateConfig.defaults.meta as { made_with_zone_override?: Record<string, unknown> }).made_with_zone_override
+      ? (templateConfig.defaults.meta as Record<string, unknown>)
       : undefined;
+  const templateMadeWithZone = templateMeta?.made_with_zone_override;
   const tmw = templateMadeWithZone && typeof templateMadeWithZone === "object" ? templateMadeWithZone : undefined;
+  const tmwRec = tmw as Record<string, unknown> | undefined;
+  const tmplCounterOverride =
+    templateMeta?.counter_zone_override && typeof templateMeta.counter_zone_override === "object"
+      ? (templateMeta.counter_zone_override as Record<string, unknown>)
+      : undefined;
+  const tmplWatermarkOverride =
+    templateMeta?.watermark_zone_override && typeof templateMeta.watermark_zone_override === "object"
+      ? (templateMeta.watermark_zone_override as Record<string, unknown>)
+      : undefined;
+
+  const counterChipMerged = {
+    ...extractChromeChipStyle(tmplCounterOverride),
+    ...extractChromeChipStyle(chromeOverrides?.counter as Record<string, unknown> | undefined),
+  };
+  const wmChipMerged = {
+    ...extractChromeChipStyle(tmplWatermarkOverride),
+    ...extractChromeChipStyle(chromeOverrides?.watermark as Record<string, unknown> | undefined),
+  };
+  const mwChipMerged = {
+    ...extractChromeChipStyle(tmw as Record<string, unknown> | undefined),
+    ...extractChromeChipStyle(chromeOverrides?.madeWith as Record<string, unknown> | undefined),
+  };
 
   /** Headline zone color used as default for chrome (counter, logo, swipe) when not set. */
   const headlineZone = textBlocks.find((b) => b.zone.id === "headline")?.zone;
@@ -353,6 +400,7 @@ export function buildSlideRenderModel(
     maxWidth: wmOverrides?.maxWidth ?? (wm as { maxWidth?: number }).maxWidth,
     maxHeight: wmOverrides?.maxHeight ?? (wm as { maxHeight?: number }).maxHeight,
     color: wmOverrides?.color ?? (wm as { color?: string }).color ?? headlineColor,
+    ...wmChipMerged,
   };
 
   return {
@@ -385,17 +433,18 @@ export function buildSlideRenderModel(
       counterTop: chromeOverrides?.counter?.top,
       counterRight: chromeOverrides?.counter?.right,
       counterFontSize: chromeOverrides?.counter?.fontSize,
+      counterChipStyle: chromeChipStyleHasAny(counterChipMerged) ? counterChipMerged : undefined,
       watermark,
       madeWithFontSize:
         chromeOverrides?.madeWith?.fontSize ??
-        (typeof tmw?.fontSize === "number" && Number.isFinite(tmw.fontSize) ? tmw.fontSize : undefined),
+        (typeof tmwRec?.fontSize === "number" && Number.isFinite(tmwRec.fontSize) ? tmwRec.fontSize : undefined),
       madeWithX:
-        chromeOverrides?.madeWith?.x ?? (typeof tmw?.x === "number" && Number.isFinite(tmw.x) ? tmw.x : undefined),
+        chromeOverrides?.madeWith?.x ?? (typeof tmwRec?.x === "number" && Number.isFinite(tmwRec.x) ? tmwRec.x : undefined),
       madeWithY:
-        chromeOverrides?.madeWith?.y ?? (typeof tmw?.y === "number" && Number.isFinite(tmw.y) ? tmw.y : undefined),
+        chromeOverrides?.madeWith?.y ?? (typeof tmwRec?.y === "number" && Number.isFinite(tmwRec.y) ? tmwRec.y : undefined),
       madeWithBottom:
         chromeOverrides?.madeWith?.bottom ??
-        (typeof tmw?.bottom === "number" && Number.isFinite(tmw.bottom) ? tmw.bottom : undefined),
+        (typeof tmwRec?.bottom === "number" && Number.isFinite(tmwRec.bottom) ? tmwRec.bottom : undefined),
       madeWithText: (() => {
         const fromOverride = chromeOverrides?.madeWith?.text;
         if (typeof fromOverride === "string" && fromOverride.trim() !== "") return fromOverride.trim();
@@ -410,10 +459,11 @@ export function buildSlideRenderModel(
       madeWithColor: (() => {
         const over = chromeOverrides?.madeWith?.color;
         if (over && /^#([0-9A-Fa-f]{3}){1,2}$/.test(over)) return over;
-        const mwo = templateConfig.defaults?.meta && typeof templateConfig.defaults.meta === "object" ? (templateConfig.defaults.meta as { made_with_zone_override?: { color?: string } }).made_with_zone_override : undefined;
+        const mwo = templateMeta?.made_with_zone_override as { color?: string } | undefined;
         const c = mwo?.color;
         return c && /^#([0-9A-Fa-f]{3}){1,2}$/.test(c) ? c : undefined;
       })(),
+      madeWithChipStyle: chromeChipStyleHasAny(mwChipMerged) ? mwChipMerged : undefined,
     },
   };
 }

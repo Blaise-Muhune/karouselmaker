@@ -1,6 +1,16 @@
 import type { TextZoneOverrides, ChromeOverrides } from "@/lib/renderer/renderModel";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
+import { clampFontWeight, FONT_WEIGHT_MAX, FONT_WEIGHT_MIN } from "@/lib/constants/fontWeight";
+import type { HighlightStyleOverrides } from "@/lib/server/renderer/renderSlideHtml";
 import { HIGHLIGHT_COLORS } from "@/lib/editor/inlineFormat";
+import type { HighlightSpan } from "@/lib/editor/inlineFormat";
+import {
+  parseExtraTextBoldWeightsMap,
+  parseExtraTextHighlightStylesMap,
+  parseExtraTextHighlightsMap,
+  parseExtraTextOutlineStrokesMap,
+} from "@/lib/editor/extraTextZoneMeta";
+import { extractChromeChipStyle } from "@/lib/renderer/chromeChipStyle";
 
 /** Image display options for renderSlideHtml. Template defaults + slide overrides. */
 export type ImageDisplayForRender = {
@@ -82,9 +92,13 @@ export type NormalizedSlideMeta = {
   chromeOverrides: ChromeOverrides | undefined;
   highlightStyles: { headline?: "background"; body?: "background" };
   /** Outline stroke width (px); 0 = off. Independent of highlight style; can combine with Text or Bg. */
-  outlineStrokes?: { headline?: number; body?: number };
+  outlineStrokes?: { headline?: number; body?: number; extra?: Record<string, number> };
   /** Font weight for **bold** segments. Default 700. */
-  boldWeights?: { headline?: number; body?: number };
+  boldWeights?: { headline?: number; body?: number; extra?: Record<string, number> };
+  /** Per extra text zone: highlight spans (slide only; not inherited from template defaults). */
+  extraTextHighlights?: Record<string, HighlightSpan[]>;
+  /** Per extra zone: highlight render style. Merged with template defaults per zone id. */
+  extraTextHighlightStyles?: Record<string, "text" | "background">;
   /** Explicit slide choice; `undefined` = inherit from template default (same as preview `?? model.chrome.showCounter`). */
   showCounterOverride: boolean | undefined;
   showWatermarkOverride: boolean | undefined;
@@ -132,7 +146,9 @@ function normalizeZoneOverride(
             ? Math.min(32, Math.max(0, Math.round(n)))
             : key === "boxBackgroundBorderRadius"
               ? Math.min(64, Math.max(0, Math.round(n)))
-              : Math.round(n);
+              : key === "fontWeight"
+                ? clampFontWeight(Math.round(n))
+                : Math.round(n);
   }
   if (raw.align && ALIGN_VALUES.has(raw.align as string)) out.align = raw.align;
   if (typeof raw.color === "string" && /^#([0-9A-Fa-f]{3}){1,2}$/.test(raw.color)) out.color = raw.color;
@@ -200,6 +216,26 @@ export function getTemplateDefaultOverrides(config: TemplateConfig | null): Part
  * Highlights are never taken from template defaults — only the slide's own meta. Otherwise export
  * would show highlights the user never set (e.g. from a template saved with highlights).
  */
+function mergeStringKeyedRecords<T>(
+  base: Record<string, T> | undefined,
+  override: Record<string, T> | undefined
+): Record<string, T> | undefined {
+  const out: Record<string, T> = { ...(base ?? {}), ...(override ?? {}) };
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/** Headline/body + extra zone highlight styles for `renderSlideHtml` (template + slide merged). */
+export function mergedHighlightStylesForSlideHtml(merged: NormalizedSlideMeta): HighlightStyleOverrides {
+  return {
+    headline: merged.highlightStyles.headline,
+    body: merged.highlightStyles.body,
+    ...(merged.extraTextHighlightStyles &&
+      Object.keys(merged.extraTextHighlightStyles).length > 0 && {
+        extra: merged.extraTextHighlightStyles,
+      }),
+  };
+}
+
 export function mergeWithTemplateDefaults(
   normalized: NormalizedSlideMeta,
   templateDefaults: Partial<NormalizedSlideMeta>
@@ -209,8 +245,38 @@ export function mergeWithTemplateDefaults(
     fontOverrides: normalized.fontOverrides ?? templateDefaults.fontOverrides,
     chromeOverrides: normalized.chromeOverrides ?? templateDefaults.chromeOverrides,
     highlightStyles: normalized.highlightStyles,
-    outlineStrokes: normalized.outlineStrokes ?? templateDefaults.outlineStrokes,
-    boldWeights: normalized.boldWeights ?? templateDefaults.boldWeights,
+    outlineStrokes: (() => {
+      const n = normalized.outlineStrokes;
+      const t = templateDefaults.outlineStrokes;
+      const extra = mergeStringKeyedRecords(t?.extra, n?.extra);
+      const hasHead = n?.headline != null || t?.headline != null;
+      const hasBody = n?.body != null || t?.body != null;
+      if (!hasHead && !hasBody && !extra) return n ?? t;
+      return {
+        ...(hasHead && { headline: n?.headline ?? t?.headline }),
+        ...(hasBody && { body: n?.body ?? t?.body }),
+        ...(extra && { extra }),
+      };
+    })(),
+    boldWeights: (() => {
+      const n = normalized.boldWeights;
+      const t = templateDefaults.boldWeights;
+      const extra = mergeStringKeyedRecords(t?.extra, n?.extra);
+      const hasHead = n?.headline != null || t?.headline != null;
+      const hasBody = n?.body != null || t?.body != null;
+      if (!hasHead && !hasBody && !extra) return n ?? t;
+      return {
+        ...(hasHead && { headline: n?.headline ?? t?.headline }),
+        ...(hasBody && { body: n?.body ?? t?.body }),
+        ...(extra && { extra }),
+      };
+    })(),
+    /** Never take extra zone highlight spans from template defaults (same policy as headline_highlights). */
+    extraTextHighlights: normalized.extraTextHighlights,
+    extraTextHighlightStyles: mergeStringKeyedRecords(
+      templateDefaults.extraTextHighlightStyles,
+      normalized.extraTextHighlightStyles
+    ),
     showCounterOverride:
       normalized.showCounterOverride !== undefined
         ? normalized.showCounterOverride
@@ -257,6 +323,7 @@ export function normalizeSlideMetaForRender(meta: Record<string, unknown> | null
           ...(counterRaw.top != null && { top: Math.round(Number(counterRaw.top)) }),
           ...(counterRaw.right != null && { right: Math.round(Number(counterRaw.right)) }),
           ...(counterRaw.fontSize != null && { fontSize: Math.round(Number(counterRaw.fontSize)) }),
+          ...extractChromeChipStyle(counterRaw),
         }
       : undefined;
   const watermarkColorVal =
@@ -273,6 +340,7 @@ export function normalizeSlideMetaForRender(meta: Record<string, unknown> | null
           ...(watermarkRaw.maxWidth != null && { maxWidth: Math.round(Number(watermarkRaw.maxWidth)) }),
           ...(watermarkRaw.maxHeight != null && { maxHeight: Math.round(Number(watermarkRaw.maxHeight)) }),
           ...(watermarkColorVal && { color: watermarkColorVal }),
+          ...extractChromeChipStyle(watermarkRaw),
         }
       : watermarkColorVal
         ? { color: watermarkColorVal }
@@ -289,6 +357,7 @@ export function normalizeSlideMetaForRender(meta: Record<string, unknown> | null
           ...(madeWithRaw.y != null && { y: Math.round(Number(madeWithRaw.y)) }),
           ...(madeWithRaw.y == null && { bottom: madeWithRaw.bottom != null ? Math.round(Number(madeWithRaw.bottom)) : 16 }),
           ...(madeWithColorVal && { color: madeWithColorVal }),
+          ...extractChromeChipStyle(madeWithRaw),
         }
       : madeWithColorVal
         ? { color: madeWithColorVal }
@@ -361,23 +430,37 @@ export function normalizeSlideMetaForRender(meta: Record<string, unknown> | null
 
   const headlineOutline = m.headline_outline_stroke != null ? Number(m.headline_outline_stroke) : undefined;
   const bodyOutline = m.body_outline_stroke != null ? Number(m.body_outline_stroke) : undefined;
+  const extraOutlinesParsed = parseExtraTextOutlineStrokesMap(m.extra_text_outline_strokes);
+  const outlineExtra = Object.keys(extraOutlinesParsed).length > 0 ? extraOutlinesParsed : undefined;
   const outlineStrokes =
     (headlineOutline != null && !Number.isNaN(headlineOutline) && headlineOutline >= 0 && headlineOutline <= 8) ||
-    (bodyOutline != null && !Number.isNaN(bodyOutline) && bodyOutline >= 0 && bodyOutline <= 8)
+    (bodyOutline != null && !Number.isNaN(bodyOutline) && bodyOutline >= 0 && bodyOutline <= 8) ||
+    outlineExtra
       ? {
           ...(headlineOutline != null && !Number.isNaN(headlineOutline) && headlineOutline >= 0 && headlineOutline <= 8 && { headline: headlineOutline }),
           ...(bodyOutline != null && !Number.isNaN(bodyOutline) && bodyOutline >= 0 && bodyOutline <= 8 && { body: bodyOutline }),
+          ...(outlineExtra && { extra: outlineExtra }),
         }
       : undefined;
 
   const headlineBold = m.headline_bold_weight != null ? Number(m.headline_bold_weight) : undefined;
   const bodyBold = m.body_bold_weight != null ? Number(m.body_bold_weight) : undefined;
+  const extraBoldParsed = parseExtraTextBoldWeightsMap(m.extra_text_bold_weights);
+  const boldExtra = Object.keys(extraBoldParsed).length > 0 ? extraBoldParsed : undefined;
   const boldWeights =
-    (headlineBold != null && !Number.isNaN(headlineBold) && headlineBold >= 100 && headlineBold <= 900) ||
-    (bodyBold != null && !Number.isNaN(bodyBold) && bodyBold >= 100 && bodyBold <= 900)
+    (headlineBold != null &&
+      !Number.isNaN(headlineBold) &&
+      headlineBold >= FONT_WEIGHT_MIN &&
+      headlineBold <= FONT_WEIGHT_MAX) ||
+    (bodyBold != null && !Number.isNaN(bodyBold) && bodyBold >= FONT_WEIGHT_MIN && bodyBold <= FONT_WEIGHT_MAX) ||
+    boldExtra
       ? {
-          ...(headlineBold != null && !Number.isNaN(headlineBold) && headlineBold >= 100 && headlineBold <= 900 && { headline: Math.round(headlineBold) }),
-          ...(bodyBold != null && !Number.isNaN(bodyBold) && bodyBold >= 100 && bodyBold <= 900 && { body: Math.round(bodyBold) }),
+          ...(headlineBold != null &&
+            !Number.isNaN(headlineBold) &&
+            headlineBold >= FONT_WEIGHT_MIN &&
+            headlineBold <= FONT_WEIGHT_MAX && { headline: Math.round(headlineBold) }),
+          ...(bodyBold != null && !Number.isNaN(bodyBold) && bodyBold >= FONT_WEIGHT_MIN && bodyBold <= FONT_WEIGHT_MAX && { body: Math.round(bodyBold) }),
+          ...(boldExtra && { extra: boldExtra }),
         }
       : undefined;
 
@@ -387,6 +470,10 @@ export function normalizeSlideMetaForRender(meta: Record<string, unknown> | null
   const showMadeWithOverride = m.show_made_with as boolean | undefined;
   const headline_highlights = normalizeHighlightSpans(m.headline_highlights);
   const body_highlights = normalizeHighlightSpans(m.body_highlights);
+  const extraHl = parseExtraTextHighlightsMap(m.extra_text_highlights);
+  const extraTextHighlights = Object.keys(extraHl).length > 0 ? extraHl : undefined;
+  const extraStyles = parseExtraTextHighlightStylesMap(m.extra_text_highlight_styles);
+  const extraTextHighlightStyles = Object.keys(extraStyles).length > 0 ? extraStyles : undefined;
 
   return {
     zoneOverrides: zoneOverrides as TextZoneOverrides | undefined,
@@ -400,5 +487,7 @@ export function normalizeSlideMetaForRender(meta: Record<string, unknown> | null
     showMadeWithOverride,
     headline_highlights,
     body_highlights,
+    extraTextHighlights,
+    extraTextHighlightStyles,
   };
 }

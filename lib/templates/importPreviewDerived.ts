@@ -2,6 +2,7 @@ import type { ComponentProps } from "react";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import type { SlidePreview } from "@/components/renderer/SlidePreview";
 import type { HighlightSpan } from "@/lib/editor/inlineFormat";
+import { extractChromeChipStyle } from "@/lib/renderer/chromeChipStyle";
 
 export function parseHighlightSpansFromMeta(raw: unknown, text: string): HighlightSpan[] | undefined {
   if (!Array.isArray(raw) || text.length === 0) return undefined;
@@ -106,6 +107,7 @@ export function getImportPreviewDerived(config: TemplateConfig) {
             ...(c.top != null && { top: Number(c.top) }),
             ...(c.right != null && { right: Number(c.right) }),
             ...(c.fontSize != null && { fontSize: Number(c.fontSize) }),
+            ...extractChromeChipStyle(c),
           };
         })()
       : undefined;
@@ -124,6 +126,7 @@ export function getImportPreviewDerived(config: TemplateConfig) {
             ...(w.fontSize != null && { fontSize: Number(w.fontSize) }),
             ...(w.maxWidth != null && { maxWidth: Number(w.maxWidth) }),
             ...(w.maxHeight != null && { maxHeight: Number(w.maxHeight) }),
+            ...extractChromeChipStyle(w),
           };
         })()
       : undefined;
@@ -141,6 +144,7 @@ export function getImportPreviewDerived(config: TemplateConfig) {
             ...(mw.y == null && {
               bottom: mw.bottom != null ? Number(mw.bottom) : 16,
             }),
+            ...extractChromeChipStyle(mw),
           };
         })()
       : undefined;

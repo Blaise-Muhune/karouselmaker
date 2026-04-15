@@ -30,6 +30,8 @@ import { updateTemplateAction } from "@/app/actions/templates/updateTemplate";
 import { DEFAULT_TEMPLATE_CONFIG, LAYOUT_PRESETS } from "@/lib/templateDefaults";
 import { getTemplatePreviewBackgroundOverride } from "@/lib/renderer/getTemplatePreviewBackground";
 import { getTemplatePreviewImageUrls } from "@/lib/renderer/templatePreviewImages";
+import { getTemplatePreviewExtraTextValues } from "@/lib/renderer/templateDefaultsForSlidePreview";
+import { clampFontWeight, FONT_WEIGHT_MAX, FONT_WEIGHT_MIN } from "@/lib/constants/fontWeight";
 import { getSwipeRightXForFormat } from "@/lib/renderer/renderModel";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { TemplateOverlayShapesEditor } from "@/components/templates/TemplateOverlayShapesEditor";
@@ -419,6 +421,7 @@ export function TemplateBuilderForm({
                     slide={{
                       headline: previewHeadline || "Your headline text",
                       body: config.textZones.some((z) => z.id === "body") ? (previewBody || "Body text goes here.") : null,
+                      extra_text_values: getTemplatePreviewExtraTextValues(config),
                       slide_index: previewSlideIndex,
                       slide_type: "point",
                     }}
@@ -515,6 +518,7 @@ export function TemplateBuilderForm({
                       slide={{
                         headline: previewHeadline || "Your headline text",
                         body: config.textZones.some((z) => z.id === "body") ? (previewBody || "Body text goes here.") : null,
+                        extra_text_values: getTemplatePreviewExtraTextValues(config),
                         slide_index: previewSlideIndex,
                         slide_type: "point",
                       }}
@@ -882,7 +886,15 @@ export function TemplateBuilderForm({
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Font weight</Label>
-                    <StepperWithLongPress value={headlineZone.fontWeight} min={100} max={900} step={100} onChange={(next) => updateTextZone("headline", { fontWeight: next })} label="Font weight" className="w-full min-w-0" />
+                    <StepperWithLongPress
+                      value={clampFontWeight(Number(headlineZone.fontWeight))}
+                      min={FONT_WEIGHT_MIN}
+                      max={FONT_WEIGHT_MAX}
+                      step={100}
+                      onChange={(next) => updateTextZone("headline", { fontWeight: clampFontWeight(next) })}
+                      label="Font weight"
+                      className="w-full min-w-0"
+                    />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Line height</Label>
@@ -1088,7 +1100,15 @@ export function TemplateBuilderForm({
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Font weight</Label>
-                    <StepperWithLongPress value={bodyZone.fontWeight} min={100} max={900} step={100} onChange={(next) => updateTextZone("body", { fontWeight: next })} label="Font weight" className="w-full min-w-0" />
+                    <StepperWithLongPress
+                      value={clampFontWeight(Number(bodyZone.fontWeight))}
+                      min={FONT_WEIGHT_MIN}
+                      max={FONT_WEIGHT_MAX}
+                      step={100}
+                      onChange={(next) => updateTextZone("body", { fontWeight: clampFontWeight(next) })}
+                      label="Font weight"
+                      className="w-full min-w-0"
+                    />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Line height</Label>

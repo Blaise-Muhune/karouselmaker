@@ -18,6 +18,13 @@ import { GoogleDriveFolderPicker } from "@/components/drive/GoogleDriveFolderPic
 import { GoogleDriveMultiFilePicker } from "@/components/drive/GoogleDriveMultiFilePicker";
 import { importFromGoogleDrive, importFilesFromGoogleDrive } from "@/app/actions/assets/importFromGoogleDrive";
 import { TemplateSelectCards } from "@/components/carousels/TemplateSelectCards";
+import {
+  CHOOSE_TEMPLATE_MODAL_EMPHASIZE_LOAD_MORE,
+  CHOOSE_TEMPLATE_MODAL_DIALOG_CONTENT_CLASS,
+  CHOOSE_TEMPLATE_MODAL_INITIAL_VISIBLE_COUNT,
+  ChooseTemplateModalLayout,
+} from "@/components/carousels/ChooseTemplateModalLayout";
+import { ImportTemplateButton } from "@/components/templates/ImportTemplateButton";
 import type { TemplateOption } from "@/components/carousels/TemplateSelectCards";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -154,6 +161,8 @@ export function NewCarouselForm({
   defaultLinkedInTemplateId = null,
   defaultLinkedInTemplateConfig = null,
   primaryColor = "#0a0a0a",
+  /** Shown in template-import preview watermark when template has no logo. */
+  importTemplateWatermarkText,
   projectContentFocus = "general",
   /** Persisted project preference: apply saved recurring character (brief + face refs) when generating with AI images. */
   initialUseSavedUgcCharacter = true,
@@ -212,6 +221,7 @@ export function NewCarouselForm({
   defaultLinkedInTemplateId?: string | null;
   defaultLinkedInTemplateConfig?: TemplateConfig | null;
   primaryColor?: string;
+  importTemplateWatermarkText?: string;
   projectContentFocus?: string;
   initialUseSavedUgcCharacter?: boolean;
   hasProjectSavedUgcCharacter?: boolean;
@@ -1360,77 +1370,85 @@ export function NewCarouselForm({
               </p>
             </div>
             <Dialog open={templateModalOpen} onOpenChange={setTemplateModalOpen}>
-              <DialogContent className="flex flex-col max-w-[calc(100%-2rem)] max-h-[85vh] sm:max-w-2xl md:max-w-[92vw] md:max-h-[92vh] md:w-[92vw] md:h-[92vh] lg:max-w-[94vw] lg:max-h-[94vh] lg:w-[94vw] lg:h-[94vh]">
-                <DialogHeader>
-                  <DialogTitle>Choose templates</DialogTitle>
-                  <p className="text-muted-foreground text-sm mt-1">
-                    Pick up to 3 slots: first, middle, and last.
-                  </p>
-                </DialogHeader>
-                <p className="text-xs text-muted-foreground">
-                  Import template coming soon.
-                </p>
-                <div className="rounded-xl border border-border/70 bg-muted/20 p-2">
-                  <div className="mb-2 flex items-center justify-between gap-2 px-1">
-                    <p className="text-[11px] text-muted-foreground">Choose templates by slot</p>
-                    <button
-                      type="button"
-                      onClick={() => setShowTemplateSlotHelp((v) => !v)}
-                      className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
-                      title="Slot behavior help"
-                    >
-                      <InfoIcon className="size-3.5" />
-                      Info
-                    </button>
-                  </div>
-                  {showTemplateSlotHelp && (
-                    <div className="mb-2 rounded-lg border border-border/60 bg-background/80 px-2.5 py-2 text-[11px] text-muted-foreground leading-relaxed">
-                      First slot is always used. Middle and Last are optional. If you set Last without Middle, Middle
-                      automatically uses the First template.
-                    </div>
-                  )}
-                  <div className="flex flex-wrap gap-2">
-                    {(["First", "Middle (optional)", "Last (optional)"] as const).map((label, idx) => {
-                      const slot = idx as 0 | 1 | 2;
-                      const id = selectedTemplateIds[slot]?.trim() ?? "";
-                      const name = id ? templateOptions.find((t) => t.id === id)?.name ?? "Custom" : "Default";
-                      const active = templatePickerSlot === slot;
-                      return (
+              <DialogContent className={CHOOSE_TEMPLATE_MODAL_DIALOG_CONTENT_CLASS}>
+                <ChooseTemplateModalLayout
+                  title="Choose templates"
+                  description="Select a slot below, then pick a template for that part of the carousel. Empty slots use Default. Scroll to load more."
+                  topActions={
+                    <ImportTemplateButton
+                      layout="callout"
+                      isPro={isPro}
+                      atLimit={false}
+                      isAdmin={isAdminUser}
+                      watermarkText={importTemplateWatermarkText}
+                      className="shrink-0"
+                      onSuccess={() => router.refresh()}
+                      onCreated={() => router.refresh()}
+                    />
+                  }
+                  toolbar={
+                    <div className="rounded-xl border border-border/70 bg-muted/20 p-2">
+                      <div className="mb-2 flex items-center justify-between gap-2 px-1">
+                        <p className="text-[11px] text-muted-foreground">First, middle, and last slide templates</p>
                         <button
-                          key={label}
                           type="button"
-                          onClick={() => setTemplatePickerSlot(slot)}
-                          className={cn(
-                            "group inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium transition-all",
-                            active
-                              ? "bg-primary text-primary-foreground shadow-sm ring-1 ring-primary/40"
-                              : "bg-background text-foreground/80 hover:bg-background/80 border border-border/70"
-                          )}
+                          onClick={() => setShowTemplateSlotHelp((v) => !v)}
+                          className="inline-flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                          title="Slot behavior help"
                         >
-                          <span
-                            className={cn(
-                              "inline-flex size-5 items-center justify-center rounded-full text-[10px] font-semibold",
-                              active ? "bg-primary-foreground/20 text-primary-foreground" : "bg-muted text-muted-foreground"
-                            )}
-                          >
-                            {slot + 1}
-                          </span>
-                          <span>{label}</span>
-                          <span
-                            className={cn(
-                              "max-w-[150px] truncate font-normal",
-                              active ? "text-primary-foreground/90" : "text-muted-foreground"
-                            )}
-                            title={`${label} slot: ${name}`}
-                          >
-                            {name}
-                          </span>
+                          <InfoIcon className="size-3.5" />
+                          Info
                         </button>
-                      );
-                    })}
-                  </div>
-                </div>
-                <div className="overflow-y-auto overflow-x-hidden flex-1 min-h-0 min-w-0 w-full pr-1">
+                      </div>
+                      {showTemplateSlotHelp && (
+                        <div className="mb-2 rounded-lg border border-border/60 bg-background/80 px-2.5 py-2 text-[11px] text-muted-foreground leading-relaxed">
+                          First slot is always used. Middle and Last are optional. If you set Last without Middle, Middle
+                          automatically uses the First template.
+                        </div>
+                      )}
+                      <div className="flex flex-wrap gap-2">
+                        {(["First", "Middle (optional)", "Last (optional)"] as const).map((label, idx) => {
+                          const slot = idx as 0 | 1 | 2;
+                          const id = selectedTemplateIds[slot]?.trim() ?? "";
+                          const name = id ? templateOptions.find((t) => t.id === id)?.name ?? "Custom" : "Default";
+                          const active = templatePickerSlot === slot;
+                          return (
+                            <button
+                              key={label}
+                              type="button"
+                              onClick={() => setTemplatePickerSlot(slot)}
+                              className={cn(
+                                "group inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium transition-all",
+                                active
+                                  ? "bg-primary text-primary-foreground shadow-sm ring-1 ring-primary/40"
+                                  : "border border-border/70 bg-background text-foreground/80 hover:bg-background/80"
+                              )}
+                            >
+                              <span
+                                className={cn(
+                                  "inline-flex size-5 items-center justify-center rounded-full text-[10px] font-semibold",
+                                  active ? "bg-primary-foreground/20 text-primary-foreground" : "bg-muted text-muted-foreground"
+                                )}
+                              >
+                                {slot + 1}
+                              </span>
+                              <span>{label}</span>
+                              <span
+                                className={cn(
+                                  "max-w-[150px] truncate font-normal",
+                                  active ? "text-primary-foreground/90" : "text-muted-foreground"
+                                )}
+                                title={`${label} slot: ${name}`}
+                              >
+                                {name}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  }
+                >
                   <TemplateSelectCards
                     key={`${carouselFor}-${templateModalOpen}`}
                     templates={templateOptions}
@@ -1453,10 +1471,10 @@ export function NewCarouselForm({
                     }}
                     paginateInternally
                     showMyTemplatesSection
-                    initialVisibleCount={36}
-                    emphasizeLoadMoreButton
+                    initialVisibleCount={CHOOSE_TEMPLATE_MODAL_INITIAL_VISIBLE_COUNT}
+                    emphasizeLoadMoreButton={CHOOSE_TEMPLATE_MODAL_EMPHASIZE_LOAD_MORE}
                   />
-                </div>
+                </ChooseTemplateModalLayout>
               </DialogContent>
             </Dialog>
             </CardContent>

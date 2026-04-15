@@ -172,6 +172,8 @@ export const slideBackgroundSchema = z.object({
     }).optional(),
     /** Other approved URLs from the same search (per-slot shuffle). Must be preserved on save. */
     alternates: z.array(z.string()).optional(),
+    /** Previous AI-generated frames for this slide (carousel-assets paths). Slot 0 `storage_path` is active; shuffle rotates among these. */
+    storage_alternates: z.array(z.string()).max(20).optional(),
   })).max(4).optional(),
   fit: z.enum(["cover", "contain"]).optional(),
   /** Display options: position, frame, layout, gap. */
@@ -184,13 +186,35 @@ export const highlightStyleSchema = z.enum(["text", "background", "outline"]);
 export type HighlightStyle = z.output<typeof highlightStyleSchema>;
 
 /** Per-slide overrides for a text zone (position, size, font). */
+/** Typography + text outline + backdrop panel for slide chrome chips (counter, logo text, bottom handle). */
+const chromeChipStyleFieldsSchema = z.object({
+  fontFamily: z.string().max(80).optional(),
+  fontWeight: z.number().int().min(100).max(1500).optional(),
+  outlineStroke: z.number().min(0).max(8).optional(),
+  boxBackgroundColor: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
+  boxBackgroundOpacity: z.coerce.number().min(0).max(1).optional(),
+  boxBackgroundFrameOnly: z.boolean().optional(),
+  boxBackgroundBorderWidth: z.number().int().min(0).max(32).optional(),
+  boxBackgroundBorderSides: z
+    .object({
+      top: z.boolean().optional(),
+      right: z.boolean().optional(),
+      bottom: z.boolean().optional(),
+      left: z.boolean().optional(),
+    })
+    .optional(),
+  boxBackgroundBorderColor: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
+  boxBackgroundBorderOpacity: z.coerce.number().min(0).max(1).optional(),
+  boxBackgroundBorderRadius: z.number().int().min(0).max(64).optional(),
+});
+
 export const textZoneOverrideSchema = z.object({
   x: z.number().int().min(0).max(1080).optional(),
   y: z.number().int().min(0).max(1080).optional(),
   w: z.number().int().min(1).max(1080).optional(),
   h: z.number().int().min(1).max(1080).optional(),
   fontSize: z.number().int().min(8).max(280).optional(),
-  fontWeight: z.number().int().min(100).max(900).optional(),
+  fontWeight: z.number().int().min(100).max(1500).optional(),
   lineHeight: z.number().min(0.5).max(3).optional(),
   maxLines: z.number().int().min(1).max(30).optional(),
   align: z.enum(["left", "center", "right", "justify"]).optional(),
@@ -227,7 +251,7 @@ const extraTextZoneSchema = z.object({
   w: z.number().int().min(1).max(1080),
   h: z.number().int().min(1).max(1920),
   fontSize: z.number().int().min(8).max(280),
-  fontWeight: z.number().int().min(100).max(900),
+  fontWeight: z.number().int().min(100).max(1500),
   lineHeight: z.number().min(0.5).max(3),
   maxLines: z.number().int().min(1).max(30),
   align: z.enum(["left", "center", "right", "justify"]),
@@ -284,29 +308,41 @@ export const slideMetaSchema = z.object({
   extra_text_values: z.record(z.string(), z.string().max(2000)).optional(),
   /** Additional custom text zone definitions created in editor and not yet baked into template. */
   extra_text_zones: z.array(extraTextZoneSchema).max(12).optional(),
-  /** Slide number position & size: top (px), right (px), fontSize. */
-  counter_zone_override: z.object({
-    top: z.number().int().min(0).max(1920).optional(),
-    right: z.number().int().min(0).max(1080).optional(),
-    fontSize: z.number().int().min(10).max(48).optional(),
-  }).optional(),
-  /** Logo/custom text watermark position & size. */
-  watermark_zone_override: z.object({
-    position: z.enum(["top_left", "top_right", "bottom_left", "bottom_right", "custom"]).optional(),
-    logoX: z.number().int().min(0).max(1080).optional(),
-    logoY: z.number().int().min(0).max(1920).optional(),
-    fontSize: z.number().int().min(8).max(72).optional(),
-    maxWidth: z.number().int().min(24).max(400).optional(),
-    maxHeight: z.number().int().min(24).max(200).optional(),
-  }).optional(),
-  /** "Made with" line: fontSize, x and y (px from top-left), color (hex). Omit x,y for default (centered at bottom). */
-  made_with_zone_override: z.object({
-    fontSize: z.number().int().min(12).max(48).optional(),
-    x: z.number().int().min(0).max(1080).optional(),
-    y: z.number().int().min(0).max(1920).optional(),
-    bottom: z.number().int().min(0).max(200).optional(),
-    color: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
-  }).optional(),
+  /** Template-defined extra text zone ids hidden on this slide (user removed them). */
+  extra_text_zones_suppressed_ids: z.array(z.string().min(1).max(64)).max(24).optional(),
+  /** Slide number position & size + optional font/backdrop/outline (same knobs as headline text zone). */
+  counter_zone_override: z
+    .object({
+      top: z.number().int().min(0).max(1920).optional(),
+      right: z.number().int().min(0).max(1080).optional(),
+      fontSize: z.number().int().min(10).max(280).optional(),
+    })
+    .merge(chromeChipStyleFieldsSchema)
+    .optional(),
+  /** Logo/custom text watermark position, size, color, and optional font/backdrop/outline. */
+  watermark_zone_override: z
+    .object({
+      position: z.enum(["top_left", "top_right", "bottom_left", "bottom_right", "custom"]).optional(),
+      logoX: z.number().int().min(0).max(1080).optional(),
+      logoY: z.number().int().min(0).max(1920).optional(),
+      fontSize: z.number().int().min(8).max(280).optional(),
+      maxWidth: z.number().int().min(24).max(400).optional(),
+      maxHeight: z.number().int().min(24).max(200).optional(),
+      color: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
+    })
+    .merge(chromeChipStyleFieldsSchema)
+    .optional(),
+  /** Bottom handle / attribution: position, color, and optional font/backdrop/outline. */
+  made_with_zone_override: z
+    .object({
+      fontSize: z.number().int().min(12).max(280).optional(),
+      x: z.number().int().min(0).max(1080).optional(),
+      y: z.number().int().min(0).max(1920).optional(),
+      bottom: z.number().int().min(0).max(200).optional(),
+      color: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
+    })
+    .merge(chromeChipStyleFieldsSchema)
+    .optional(),
   /** Custom "Made with" attribution text (Pro). When set, overrides default. Default for Pro: Made with KarouselMaker.com/@username. */
   made_with_text: z.string().max(200).optional(),
   /** How headline {{color}} highlights render. */
@@ -317,14 +353,24 @@ export const slideMetaSchema = z.object({
   headline_outline_stroke: z.number().min(0).max(8).optional(),
   /** Outline stroke width (px) for body; 0 = off. Independent of highlight. 0–8. */
   body_outline_stroke: z.number().min(0).max(8).optional(),
-  /** Font weight (100–900) for **bold** in headline. Default 700. */
-  headline_bold_weight: z.number().int().min(100).max(900).optional(),
-  /** Font weight (100–900) for **bold** in body. Default 700. */
-  body_bold_weight: z.number().int().min(100).max(900).optional(),
+  /** Font weight (100–1500) for **bold** in headline. Default 700. */
+  headline_bold_weight: z.number().int().min(100).max(1500).optional(),
+  /** Font weight (100–1500) for **bold** in body. Default 700. */
+  body_bold_weight: z.number().int().min(100).max(1500).optional(),
   /** Headline highlight spans (plain text, no brackets). Each { start, end, color } with color as hex. */
   headline_highlights: z.array(z.object({ start: z.number().int().min(0), end: z.number().int().min(0), color: z.string() })).optional(),
   /** Body highlight spans. */
   body_highlights: z.array(z.object({ start: z.number().int().min(0), end: z.number().int().min(0), color: z.string() })).optional(),
+  /** Per extra text zone: highlight spans (plain text indices). */
+  extra_text_highlights: z
+    .record(z.string(), z.array(z.object({ start: z.number().int().min(0), end: z.number().int().min(0), color: z.string() })))
+    .optional(),
+  /** Per extra zone: how {{color}} highlights render. */
+  extra_text_highlight_styles: z.record(z.string(), z.enum(["text", "background"])).optional(),
+  /** Per extra zone: outline stroke width (px), 0–8. */
+  extra_text_outline_strokes: z.record(z.string(), z.number().min(0).max(8)).optional(),
+  /** Per extra zone: font weight for **bold** segments (100–1500). */
+  extra_text_bold_weights: z.record(z.string(), z.number().int().min(100).max(1500)).optional(),
   /** AI-suggested highlight words used as guidance for Auto highlight. */
   headline_highlight_words: z.array(z.string().min(1).max(60)).max(8).optional(),
   /** AI-suggested highlight words for body. */

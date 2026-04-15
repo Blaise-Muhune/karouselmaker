@@ -8,6 +8,7 @@ import { overlayShapeSchema, templateConfigSchema } from "@/lib/server/renderer/
 import type { OverlayShape, TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { DEFAULT_TEMPLATE_CONFIG } from "@/lib/templateDefaults";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
+import { clampFontWeight, FONT_WEIGHT_MAX, FONT_WEIGHT_MIN } from "@/lib/constants/fontWeight";
 import { PREVIEW_FONTS } from "@/lib/constants/previewFonts";
 import { captureImportTemplatePreviewPng } from "@/lib/server/templates/importPreviewScreenshot";
 import { collectImportLayoutIssues, importRefinementMode } from "@/lib/server/templates/importLayoutHeuristics";
@@ -596,11 +597,11 @@ function normalizeToValidConfig(parsed: unknown): TemplateConfig {
       }
       if (meta.headline_bold_weight != null) {
         const n = Number(meta.headline_bold_weight);
-        meta.headline_bold_weight = Number.isFinite(n) ? Math.min(900, Math.max(100, Math.round(n))) : undefined;
+        meta.headline_bold_weight = Number.isFinite(n) ? clampFontWeight(Math.round(n)) : undefined;
       }
       if (meta.body_bold_weight != null) {
         const n = Number(meta.body_bold_weight);
-        meta.body_bold_weight = Number.isFinite(n) ? Math.min(900, Math.max(100, Math.round(n))) : undefined;
+        meta.body_bold_weight = Number.isFinite(n) ? clampFontWeight(Math.round(n)) : undefined;
       }
       if (meta.made_with_text != null && typeof meta.made_with_text === "string") {
         meta.made_with_text = String(meta.made_with_text).trim().slice(0, 200) || undefined;
@@ -721,7 +722,7 @@ function normalizeToValidConfig(parsed: unknown): TemplateConfig {
         w: clamp(n(zone.w, fallback.w), 1, 1080),
         h: clamp(n(zone.h, fallback.h), 1, 1080),
         fontSize: clamp(n(zone.fontSize, fallback.fontSize), 8, 280),
-        fontWeight: clamp(n(zone.fontWeight, fallback.fontWeight), 100, 900),
+        fontWeight: clamp(n(zone.fontWeight, fallback.fontWeight), FONT_WEIGHT_MIN, FONT_WEIGHT_MAX),
         lineHeight: Math.min(3, Math.max(0.5, n(zone.lineHeight, fallback.lineHeight))),
         maxLines: clamp(n(zone.maxLines, fallback.maxLines), 1, 30),
         align: ["left", "center", "right", "justify"].includes(String(zone.align)) ? zone.align : fallback.align,
@@ -893,7 +894,7 @@ LAYOUT & SAFE AREA:
 - safeArea: { top, right, bottom, left } numbers 0–200 (padding from edges)
 
 TEXT TAB (textZones and defaults.meta text/font)—extract headline and body separately:
-- textZones: array. Each zone: id ("headline" or "body"), x, y, w, h, fontSize (8–280), fontWeight (100–900), lineHeight (0.5–3), maxLines (1–30 for headline, 1–20 for body), align ("left"|"center"|"right"|"justify"), color (hex, required). For each zone set fontFamily from the font you see (use exactly one of: ${ALLOWED_FONT_LIST}). Same or different as in the image. rotation? (-180–180). Headline zone: use w 900–936 and h 400–600 for hero/full-width text so the font size applies without clipping. Body zone: use w 800–936 for multi-line body.
+- textZones: array. Each zone: id ("headline" or "body"), x, y, w, h, fontSize (8–280), fontWeight (100–1500), lineHeight (0.5–3), maxLines (1–30 for headline, 1–20 for body), align ("left"|"center"|"right"|"justify"), color (hex, required). For each zone set fontFamily from the font you see (use exactly one of: ${ALLOWED_FONT_LIST}). Same or different as in the image. rotation? (-180–180). Headline zone: use w 900–936 and h 400–600 for hero/full-width text so the font size applies without clipping. Body zone: use w 800–936 for multi-line body.
 - defaults.meta: headline_font_size, body_font_size (match textZones). headline_font_family, body_font_family—set from the same fonts as textZones headline/body. When some words are in an accent color, set headline_highlights or body_highlights to [{ start, end, color }] (0-based character indices, hex color). headline_zone_override?, body_zone_override?, headline_highlight_style?, body_highlight_style?, headline_outline_stroke? (0–8), body_outline_stroke?.
 
 BACKGROUND TAB (overlays, defaults.background, backgroundRules, defaults.meta background):

@@ -4,16 +4,19 @@ import Link from "next/link";
 import { useEffect, useState, useTransition } from "react";
 import { SlidePreview } from "@/components/renderer/SlidePreview";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import {
   TemplateSelectCards,
   type TemplateOption,
 } from "@/components/carousels/TemplateSelectCards";
+import {
+  CHOOSE_TEMPLATE_MODAL_EMPHASIZE_LOAD_MORE,
+  CHOOSE_TEMPLATE_MODAL_DIALOG_CONTENT_CLASS,
+  CHOOSE_TEMPLATE_MODAL_INITIAL_VISIBLE_COUNT,
+  ChooseTemplateModalLayout,
+} from "@/components/carousels/ChooseTemplateModalLayout";
+import { ImportTemplateButton } from "@/components/templates/ImportTemplateButton";
+import { cn } from "@/lib/utils";
 import { setSlideTemplate } from "@/app/actions/slides/setSlideTemplate";
 import { getTemplateConfigAction } from "@/app/actions/templates/getTemplateConfig";
 import { reorderSlides } from "@/app/actions/slides/reorderSlides";
@@ -22,6 +25,7 @@ import { deleteSlide as deleteSlideAction } from "@/app/actions/slides/deleteSli
 import { createSlide as createSlideAction } from "@/app/actions/slides/createSlide";
 import { updateSlide as updateSlideAction } from "@/app/actions/slides/updateSlide";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
+import { extractChromeChipStyle } from "@/lib/renderer/chromeChipStyle";
 import type { BrandKit } from "@/lib/renderer/renderModel";
 import type { SlideBackgroundOverride } from "@/components/renderer/SlidePreview";
 import { getTemplatePreviewBackgroundOverride } from "@/lib/renderer/getTemplatePreviewBackground";
@@ -30,7 +34,7 @@ import { resolveOverlayShapesForRender } from "@/lib/editor/slideOverlayShapes";
 import type { Slide, Template } from "@/lib/server/db/types";
 import { useRouter } from "next/navigation";
 import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, DownloadIcon, GripVerticalIcon, Images, LayoutTemplateIcon, Loader2Icon, PencilIcon, PlusIcon, Shuffle, SquareIcon, Trash2Icon } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { FONT_WEIGHT_MAX, FONT_WEIGHT_MIN } from "@/lib/constants/fontWeight";
 
 const PREVIEW_SCALE = 0.25;
 
@@ -79,6 +83,8 @@ type SlideGridProps = {
   exportSize?: "1080x1080" | "1080x1350" | "1080x1920";
   exportFormat?: "png" | "jpeg" | "pdf";
   isPro?: boolean;
+  /** When true, template import callout shows admin hints. */
+  isAdmin?: boolean;
   /** When true, disable editing and navigation (e.g. carousel is generating). */
   disabled?: boolean;
   /** Slug for personalized image download filenames (e.g. "My-Project - Carousel-Title"). */
@@ -152,6 +158,7 @@ function getZoneAndFontOverridesFromTemplate(config: TemplateConfig | null): {
           ...(counterRaw.top != null && { top: Number(counterRaw.top) }),
           ...(counterRaw.right != null && { right: Number(counterRaw.right) }),
           ...(counterRaw.fontSize != null && { fontSize: Number(counterRaw.fontSize) }),
+          ...extractChromeChipStyle(counterRaw as Record<string, unknown>),
         }
       : undefined;
   const watermark =
@@ -163,6 +170,7 @@ function getZoneAndFontOverridesFromTemplate(config: TemplateConfig | null): {
           ...(watermarkRaw.fontSize != null && { fontSize: Number(watermarkRaw.fontSize) }),
           ...(watermarkRaw.maxWidth != null && { maxWidth: Number(watermarkRaw.maxWidth) }),
           ...(watermarkRaw.maxHeight != null && { maxHeight: Number(watermarkRaw.maxHeight) }),
+          ...extractChromeChipStyle(watermarkRaw as Record<string, unknown>),
         }
       : undefined;
   const madeWith =
@@ -172,6 +180,7 @@ function getZoneAndFontOverridesFromTemplate(config: TemplateConfig | null): {
           ...(madeWithRaw.x != null && { x: Number(madeWithRaw.x) }),
           ...(madeWithRaw.y != null && { y: Number(madeWithRaw.y) }),
           ...((madeWithRaw as { y?: number }).y == null && { bottom: (madeWithRaw as { bottom?: number }).bottom != null ? Number((madeWithRaw as { bottom: number }).bottom) : 16 }),
+          ...extractChromeChipStyle(madeWithRaw as Record<string, unknown>),
         }
       : undefined;
   const chromeOverrides =
@@ -274,8 +283,12 @@ type SlideMeta = {
 function getBoldWeights(slide: Slide): { headlineBoldWeight?: number; bodyBoldWeight?: number } {
   const m = slide.meta as SlideMeta | null;
   if (m == null) return {};
-  const h = m.headline_bold_weight != null && m.headline_bold_weight >= 100 && m.headline_bold_weight <= 900 ? m.headline_bold_weight : undefined;
-  const b = m.body_bold_weight != null && m.body_bold_weight >= 100 && m.body_bold_weight <= 900 ? m.body_bold_weight : undefined;
+  const h =
+    m.headline_bold_weight != null && m.headline_bold_weight >= FONT_WEIGHT_MIN && m.headline_bold_weight <= FONT_WEIGHT_MAX
+      ? m.headline_bold_weight
+      : undefined;
+  const b =
+    m.body_bold_weight != null && m.body_bold_weight >= FONT_WEIGHT_MIN && m.body_bold_weight <= FONT_WEIGHT_MAX ? m.body_bold_weight : undefined;
   if (h == null && b == null) return {};
   return { ...(h != null && { headlineBoldWeight: h }), ...(b != null && { bodyBoldWeight: b }) };
 }
@@ -317,12 +330,13 @@ function getChromeOverrides(slide: Slide): import("@/lib/renderer/renderModel").
   const madeWith =
     m.made_with_zone_override && Object.keys(m.made_with_zone_override).length > 0
       ? (() => {
-          const raw = m.made_with_zone_override as { fontSize?: number; x?: number; y?: number; bottom?: number };
+          const raw = m.made_with_zone_override as Record<string, unknown>;
           return {
-            ...(raw.fontSize != null && { fontSize: raw.fontSize }),
-            ...(raw.x != null && { x: raw.x }),
-            ...(raw.y != null && { y: raw.y }),
-            ...(raw.y == null && { bottom: raw.bottom ?? 16 }),
+            ...(raw.fontSize != null && { fontSize: Number(raw.fontSize) }),
+            ...(raw.x != null && { x: Number(raw.x) }),
+            ...(raw.y != null && { y: Number(raw.y) }),
+            ...(raw.y == null && { bottom: raw.bottom != null ? Number(raw.bottom) : 16 }),
+            ...extractChromeChipStyle(raw),
           };
         })()
       : undefined;
@@ -504,6 +518,7 @@ export function SlideGrid({
   exportSize = "1080x1350",
   exportFormat = "png",
   isPro = true,
+  isAdmin = false,
   disabled = false,
   downloadFilenameSlug,
   enableBackgroundHydrationPoll = false,
@@ -918,6 +933,14 @@ export function SlideGrid({
                             slide={{
                               headline: slide.headline,
                               body: slide.body,
+                              extra_text_values:
+                                slide.meta &&
+                                typeof slide.meta === "object" &&
+                                (slide.meta as Record<string, unknown>).extra_text_values &&
+                                typeof (slide.meta as Record<string, unknown>).extra_text_values === "object"
+                                  ? ((slide.meta as Record<string, unknown>).extra_text_values as Record<string, string>)
+                                  : undefined,
+                              meta: slide.meta,
                               slide_index: slide.slide_index,
                               slide_type: slide.slide_type,
                             }}
@@ -1026,6 +1049,14 @@ export function SlideGrid({
                             slide={{
                               headline: slide.headline,
                               body: slide.body,
+                              extra_text_values:
+                                slide.meta &&
+                                typeof slide.meta === "object" &&
+                                (slide.meta as Record<string, unknown>).extra_text_values &&
+                                typeof (slide.meta as Record<string, unknown>).extra_text_values === "object"
+                                  ? ((slide.meta as Record<string, unknown>).extra_text_values as Record<string, string>)
+                                  : undefined,
+                              meta: slide.meta,
                               slide_index: slide.slide_index,
                               slide_type: slide.slide_type,
                             }}
@@ -1251,7 +1282,7 @@ export function SlideGrid({
         <DialogContent
           showCloseButton={!isApplyingTemplate}
           overlayClassName="z-[100]"
-          className="z-[101] flex flex-col min-h-0 overflow-hidden max-w-[calc(100%-2rem)] max-h-[85vh] sm:max-w-2xl md:max-w-[92vw] md:max-h-[92vh] md:w-[92vw] md:h-[92vh] lg:max-w-[94vw] lg:max-h-[94vh] lg:w-[94vw] lg:h-[94vh]"
+          className={cn(CHOOSE_TEMPLATE_MODAL_DIALOG_CONTENT_CLASS, "z-[101]")}
           aria-busy={isApplyingTemplate}
           onPointerDownOutside={(e) => {
             if (isApplyingTemplate) e.preventDefault();
@@ -1260,36 +1291,40 @@ export function SlideGrid({
             if (isApplyingTemplate) e.preventDefault();
           }}
         >
-          {isApplyingTemplate && (
-            <div
-              className="absolute inset-0 z-[110] flex flex-col items-center justify-center gap-3 rounded-lg bg-background/92 backdrop-blur-sm px-6 text-center"
-              role="status"
-              aria-live="polite"
-              aria-label={bulkTemplateProgress ? "Applying template to slides" : "Applying template"}
-            >
-              <Loader2Icon className="size-10 animate-spin text-primary shrink-0" aria-hidden />
-              <p className="text-sm font-medium text-foreground">
-                {bulkTemplateProgress
-                  ? `Applying template… ${bulkTemplateProgress.done} / ${bulkTemplateProgress.total}`
-                  : "Applying template…"}
-              </p>
-              <p className="text-xs text-muted-foreground max-w-xs">
-                {bulkTemplateProgress
-                  ? "Keep this window open until all frames are updated."
-                  : "Saving layout to your slide…"}
-              </p>
-            </div>
-          )}
-          <DialogHeader>
-            <DialogTitle>
-              {isBulkTemplateOpen ? `Apply template to ${bulkApplyTemplateIds!.length} slides` : "Choose template"}
-            </DialogTitle>
-          </DialogHeader>
-          <p className="text-muted-foreground text-sm -mt-2">
-            {isBulkTemplateOpen
-              ? "Pick a layout to apply to all selected slides. Filters are optional—choose All templates to see everything."
-              : "Pick a layout for this slide. Filters default to this frame’s template type; switch to All for every template."}
-          </p>
+          <ChooseTemplateModalLayout
+            title={isBulkTemplateOpen ? `Apply template to ${bulkApplyTemplateIds!.length} slides` : "Choose template"}
+            description={
+              isBulkTemplateOpen
+                ? "Pick a layout to apply to all selected slides. Scroll to load more."
+                : "Pick a layout for this slide. Scroll to load more."
+            }
+            applying={isApplyingTemplate}
+            applyingTitle={
+              bulkTemplateProgress
+                ? `Applying template… ${bulkTemplateProgress.done} / ${bulkTemplateProgress.total}`
+                : "Applying template…"
+            }
+            applyingHint={
+              bulkTemplateProgress
+                ? "Keep this window open until all frames are updated."
+                : "Saving layout to your slide…"
+            }
+            applyingOverlayClassName="z-[110]"
+            topActions={
+              canEdit ? (
+                <ImportTemplateButton
+                  layout="callout"
+                  isPro={isPro}
+                  atLimit={false}
+                  isAdmin={isAdmin}
+                  watermarkText={brandKit.watermark_text}
+                  className="shrink-0"
+                  onSuccess={() => router.refresh()}
+                  onCreated={() => router.refresh()}
+                />
+              ) : null
+            }
+          >
           {isBulkTemplateOpen && (() => {
             const ids = bulkApplyTemplateIds!;
             const firstSlide = slidesOrder.find((s) => s.id === ids[0]);
@@ -1300,7 +1335,6 @@ export function SlideGrid({
                   : (slideBackgroundImageUrls[firstSlide.id] as string[])
                 : undefined;
             return (
-              <div className="overflow-y-auto overflow-x-hidden flex-1 min-h-[min(50vh,520px)] min-w-0 w-full pr-1 -mb-2">
                 <TemplateSelectCards
                   key={`bulk-${ids.join("-")}`}
                   templates={templateOptions}
@@ -1310,6 +1344,11 @@ export function SlideGrid({
                   showLayoutFilter
                   value={null}
                   previewImageUrls={previewImageUrlsForBulk}
+                  isAdmin={isAdmin}
+                  isPro={isPro}
+                  onTemplateDeleted={() => {
+                    router.refresh();
+                  }}
                   onChange={async (id) => {
                     const templateId = id === null ? templates[0]?.id ?? null : id;
                     if (!templateId) return;
@@ -1350,8 +1389,9 @@ export function SlideGrid({
                   }}
                   primaryColor={brandKit.primary_color ?? undefined}
                   paginateInternally
+                  initialVisibleCount={CHOOSE_TEMPLATE_MODAL_INITIAL_VISIBLE_COUNT}
+                  emphasizeLoadMoreButton={CHOOSE_TEMPLATE_MODAL_EMPHASIZE_LOAD_MORE}
                 />
-              </div>
             );
           })()}
           {templateModalSlideId != null && !isBulkTemplateOpen && (() => {
@@ -1366,7 +1406,6 @@ export function SlideGrid({
                   ? slideBgImages
                   : undefined;
             return (
-              <div className="overflow-y-auto overflow-x-hidden flex-1 min-h-[min(50vh,520px)] min-w-0 w-full pr-1 -mb-2">
                 <TemplateSelectCards
                   key={templateModalSlideId}
                   templates={templateOptions}
@@ -1376,6 +1415,12 @@ export function SlideGrid({
                   showLayoutFilter
                   value={currentTemplateIdForModal === templates[0]?.id ? null : currentTemplateIdForModal}
                   previewImageUrls={previewImageUrlsForModal}
+                  isAdmin={isAdmin}
+                  isPro={isPro}
+                  onTemplateDeleted={() => {
+                    setTemplateModalSlideId(null);
+                    router.refresh();
+                  }}
                   onChange={async (id) => {
                     const templateId = id === null ? templates[0]?.id ?? null : id;
                     if (!templateId || templateId === slideForModal.template_id) {
@@ -1415,10 +1460,12 @@ export function SlideGrid({
                   }}
                   primaryColor={brandKit.primary_color ?? undefined}
                   paginateInternally
+                  initialVisibleCount={CHOOSE_TEMPLATE_MODAL_INITIAL_VISIBLE_COUNT}
+                  emphasizeLoadMoreButton={CHOOSE_TEMPLATE_MODAL_EMPHASIZE_LOAD_MORE}
                 />
-              </div>
             );
           })()}
+          </ChooseTemplateModalLayout>
         </DialogContent>
       </Dialog>
     </>

@@ -7,6 +7,7 @@ import { getTemplate, getSlide, updateSlide } from "@/lib/server/db";
 import { templateConfigSchema, type TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import type { Json } from "@/lib/server/db/types";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
+import { reconcileExtraTextZonesForTemplateChange } from "@/lib/editor/reconcileExtraTextZonesForTemplateChange";
 
 export type SetSlideTemplateResult =
   | {
@@ -334,6 +335,13 @@ export async function setSlideTemplate(
       delete m.overlay_shapes;
       delete m.overlay_shapes_replace_template;
       patch.meta = m as Json;
+    }
+
+    if (parsed.success && parsed.data?.textZones) {
+      patch.meta = reconcileExtraTextZonesForTemplateChange(
+        (patch.meta as Record<string, unknown>) ?? {},
+        parsed.data.textZones
+      ) as Json;
     }
 
     updated = await updateSlide(user.id, slideId, patch);

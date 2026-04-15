@@ -31,8 +31,12 @@ export function StepperWithLongPress({
 }) {
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const directionRef = useRef<1 | -1 | null>(null);
-  const valueRef = useRef(value);
-  valueRef.current = value;
+  const valueRef = useRef<number>(
+    typeof value === "number" && Number.isFinite(value) ? value : min
+  );
+  if (typeof value === "number" && Number.isFinite(value)) {
+    valueRef.current = value;
+  }
 
   const clearTimers = useCallback(() => {
     if (timeoutRef.current) {
@@ -44,12 +48,16 @@ export function StepperWithLongPress({
 
   const apply = useCallback(
     (dir: 1 | -1) => {
-      const current = valueRef.current;
+      const fromRef =
+        typeof valueRef.current === "number" && Number.isFinite(valueRef.current) ? valueRef.current : null;
+      const fromProp = typeof value === "number" && Number.isFinite(value) ? value : null;
+      const current = fromRef ?? fromProp ?? min;
       const next = Math.min(max, Math.max(min, current + dir * step));
+      if (!Number.isFinite(next)) return;
       valueRef.current = next;
       onChange(next);
     },
-    [min, max, step, onChange]
+    [min, max, step, onChange, value]
   );
 
   const startRepeat = useCallback(
@@ -122,7 +130,7 @@ export function StepperWithLongPress({
         )}
         aria-hidden
       >
-        {formatDisplay(value)}
+        {formatDisplay(typeof value === "number" && Number.isFinite(value) ? value : min)}
       </span>
       <Button
         type="button"

@@ -3,10 +3,12 @@
  * (series bible, UGC/product refs, notes) plus the current frame as image-to-image baseline.
  */
 
+import { randomUUID } from "crypto";
 import { getCarousel, getProject, getSlide, listSlides, updateSlide } from "@/lib/server/db";
 import type { Json } from "@/lib/server/db/types";
 import { downloadStorageImageBuffer } from "@/lib/server/export/fetchImageAsDataUrl";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { generateImageFromPrompt, parseAspectRatioFromNotes } from "@/lib/server/openaiImageGenerate";
 import { uploadGeneratedImage } from "@/lib/server/storage/uploadGeneratedImage";
 import { mergeStyleReferenceAssetIds, summarizeStyleReferenceImages } from "@/lib/server/ai/summarizeStyleReferenceImages";
@@ -24,6 +26,7 @@ import {
 import { SLIDE_AI_REGEN_INSTRUCTION_MAX_CHARS } from "@/lib/constants";
 
 const BUCKET = "carousel-assets";
+const MAX_AI_BG_STORAGE_VERSIONS = 15;
 
 export function isAiGeneratedSlideStoragePath(
   userId: string,
@@ -34,19 +37,38 @@ export function isAiGeneratedSlideStoragePath(
   const p = storagePath?.trim() ?? "";
   if (!p) return false;
   const expected = `user/${userId}/generated/${carouselId}/${slideId}.jpg`;
-  return p === expected || p.endsWith(`/generated/${carouselId}/${slideId}.jpg`);
+  if (p === expected || p.endsWith(`/generated/${carouselId}/${slideId}.jpg`)) return true;
+  const historyPrefix = `user/${userId}/generated/${carouselId}/regen-history/${slideId}/`;
+  return p.startsWith(historyPrefix);
+}
+
+async function copyStorageObjectSameBucket(fromKey: string, toKey: string): Promise<boolean> {
+  const supabase = createAdminClient();
+  const { error } = await supabase.storage.from(BUCKET).copy(fromKey, toKey);
+  if (!error) return true;
+  try {
+    const buf = await downloadStorageImageBuffer(BUCKET, fromKey);
+    if (!buf?.length) return false;
+    const { error: upErr } = await supabase.storage.from(BUCKET).upload(toKey, buf, {
+      contentType: "image/jpeg",
+      upsert: true,
+    });
+    return !upErr;
+  } catch {
+    return false;
+  }
 }
 
 function primaryBackgroundStoragePath(bg: Record<string, unknown> | null | undefined): string | undefined {
   if (!bg || typeof bg !== "object") return undefined;
   const mode = (bg as { mode?: string }).mode;
   if (mode !== "image") return undefined;
+  const images = (bg as { images?: { storage_path?: string }[] }).images;
+  if (Array.isArray(images) && images[0]?.storage_path?.trim()) {
+    return images[0].storage_path.trim();
+  }
   const direct = (bg as { storage_path?: string }).storage_path?.trim();
   if (direct) return direct;
-  const images = (bg as { images?: { storage_path?: string }[] }).images;
-  if (Array.isArray(images) && images.length === 1) {
-    return images[0]?.storage_path?.trim();
-  }
   return undefined;
 }
 
@@ -57,7 +79,17 @@ function toPersistableHttpUrl(value: unknown): string | undefined {
 }
 
 export type RegenerateSlideAiBackgroundResult =
-  | { ok: true; backgroundImageUrl: string }
+  | {
+      ok: true;
+      /** Signed URL for the new primary image (matches `primaryStoragePath`). */
+      backgroundImageUrl: string;
+      /** New object key under carousel-assets (authoritative primary). */
+      primaryStoragePath: string;
+      /** Other on-disk versions (newest first after this run). */
+      storage_alternates?: string[];
+      /** Signed URLs for [primary, ...storage_alternates] (client preview + shuffle pool). */
+      allSignedUrls?: string[];
+    }
   | { ok: false; error: string };
 
 export async function regenerateSlideAiBackgroundForUser(params: {
@@ -90,8 +122,17 @@ export async function regenerateSlideAiBackgroundForUser(params: {
     return { ok: false, error: "This frame does not use an AI-generated image from storage." };
   }
 
-  if ((bg as { images?: unknown[] })?.images && ((bg as { images: unknown[] }).images.length ?? 0) > 1) {
-    return { ok: false, error: "Regenerate one image at a time: multi-image frames are not supported yet." };
+  const imagesArr = (bg as { images?: unknown[] }).images;
+  if (Array.isArray(imagesArr) && imagesArr.length > 1) {
+    const others = imagesArr.slice(1) as { storage_path?: string; asset_id?: string }[];
+    const otherUsesStorage = others.some((slot) => !!(slot?.storage_path?.trim() || slot?.asset_id));
+    if (otherUsesStorage) {
+      return {
+        ok: false,
+        error:
+          "Regenerate is only available when this frame has a single storage-backed image slot (remove extra library/storage slots, or use shuffle on the first slot).",
+      };
+    }
   }
 
   let regenBuffer: Buffer;
@@ -251,36 +292,49 @@ export async function regenerateSlideAiBackgroundForUser(params: {
   const genResult = await generateImageFromPrompt(firstQuery, { context: imageContext });
   if (!genResult.ok) return { ok: false, error: genResult.error };
 
-  const newPath = await uploadGeneratedImage(params.userId, carousel.id, slide.id, genResult.buffer);
-  if (!newPath) return { ok: false, error: "Failed to save the new image." };
-
   const imageSlotsRaw = (bg as { images?: unknown[] } | null | undefined)?.images;
   const firstImageSlot =
     Array.isArray(imageSlotsRaw) && imageSlotsRaw.length > 0
       ? (imageSlotsRaw[0] as Record<string, unknown>)
       : undefined;
-  const previousPrimaryImage: Record<string, unknown> = {
-    ...(storagePath ? { storage_path: storagePath } : {}),
-    ...(toPersistableHttpUrl((bg as { image_url?: unknown } | null | undefined)?.image_url) ? { image_url: toPersistableHttpUrl((bg as { image_url?: unknown } | null | undefined)?.image_url) } : {}),
+  const existingStorageAltsRaw = firstImageSlot?.storage_alternates;
+  const existingStorageAlts = Array.isArray(existingStorageAltsRaw)
+    ? (existingStorageAltsRaw as unknown[])
+        .map((x) => (typeof x === "string" ? x.trim() : ""))
+        .filter((x): x is string => x.length > 0 && x !== storagePath)
+    : [];
+
+  const historyKey = `user/${params.userId}/generated/${carousel.id}/regen-history/${slide.id}/${randomUUID()}.jpg`;
+  const copied = await copyStorageObjectSameBucket(storagePath, historyKey);
+  if (!copied) {
+    return { ok: false, error: "Could not archive the current image before saving the new one. Try again." };
+  }
+
+  const newPath = await uploadGeneratedImage(params.userId, carousel.id, slide.id, genResult.buffer);
+  if (!newPath) return { ok: false, error: "Failed to save the new image." };
+
+  const nextAlternates = [historyKey, ...existingStorageAlts].filter((p) => p && p !== newPath).slice(0, MAX_AI_BG_STORAGE_VERSIONS - 1);
+
+  const restImageSlots =
+    Array.isArray(imageSlotsRaw) && imageSlotsRaw.length > 1 ? imageSlotsRaw.slice(1) : [];
+
+  const slot0: Record<string, unknown> = {
+    storage_path: newPath,
+    alternates: Array.isArray(firstImageSlot?.alternates) ? firstImageSlot.alternates : [],
+    ...(nextAlternates.length ? { storage_alternates: nextAlternates } : {}),
     ...(toPersistableHttpUrl(firstImageSlot?.image_url) ? { image_url: toPersistableHttpUrl(firstImageSlot?.image_url) } : {}),
     ...(typeof firstImageSlot?.source === "string" ? { source: firstImageSlot.source } : {}),
     ...(firstImageSlot?.unsplash_attribution ? { unsplash_attribution: firstImageSlot.unsplash_attribution } : {}),
     ...(firstImageSlot?.pixabay_attribution ? { pixabay_attribution: firstImageSlot.pixabay_attribution } : {}),
     ...(firstImageSlot?.pexels_attribution ? { pexels_attribution: firstImageSlot.pexels_attribution } : {}),
-    alternates: [],
   };
+
   const mergedBg: Record<string, unknown> = {
     ...(typeof bg === "object" && bg !== null ? bg : {}),
     mode: "image",
     storage_path: newPath,
     fit: (bg as { fit?: string }).fit ?? "cover",
-    images:
-      storagePath && storagePath !== newPath
-        ? [
-            { storage_path: newPath, alternates: [] },
-            previousPrimaryImage,
-          ]
-        : [{ storage_path: newPath, alternates: [] }],
+    images: restImageSlots.length ? [slot0, ...restImageSlots] : [slot0],
     image_url: undefined,
     asset_id: undefined,
     secondary_image_url: undefined,
@@ -292,9 +346,12 @@ export async function regenerateSlideAiBackgroundForUser(params: {
     background: mergedBg as Json,
   });
 
-  let backgroundImageUrl: string;
+  const chainPaths = [newPath, ...nextAlternates];
+  const allSignedUrls: string[] = [];
   try {
-    backgroundImageUrl = await getSignedImageUrl(BUCKET, newPath, 3600);
+    for (const p of chainPaths) {
+      allSignedUrls.push(await getSignedImageUrl(BUCKET, p, 3600));
+    }
   } catch {
     return {
       ok: false,
@@ -302,5 +359,11 @@ export async function regenerateSlideAiBackgroundForUser(params: {
     };
   }
 
-  return { ok: true, backgroundImageUrl };
+  return {
+    ok: true,
+    backgroundImageUrl: allSignedUrls[0]!,
+    primaryStoragePath: newPath,
+    ...(nextAlternates.length ? { storage_alternates: nextAlternates } : {}),
+    ...(allSignedUrls.length > 1 ? { allSignedUrls } : {}),
+  };
 }

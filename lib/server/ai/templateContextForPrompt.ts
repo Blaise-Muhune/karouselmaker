@@ -209,3 +209,46 @@ export function buildTemplateContextForPrompt(templateConfig: Json | null | unde
     promptSection: lines.join(" "),
   };
 }
+
+function slotLabelForSelection(index: number, total: number): string {
+  if (total >= 3) {
+    if (index === 0) return "first slide slot";
+    if (index === 1) return "middle slides slot";
+    return "last slide slot";
+  }
+  if (total === 2) {
+    if (index === 0) return "first + last slides slot";
+    return "middle slides slot";
+  }
+  return "all slides slot";
+}
+
+/**
+ * Build prompt context for 1-3 selected templates so the LLM can shape copy by slot.
+ * Falls back to the first valid section if slot data is incomplete.
+ */
+export function buildTemplateContextForPromptSelection(
+  templateConfigs: Array<Json | null | undefined>
+): string | undefined {
+  const sections = templateConfigs
+    .map((cfg) => buildTemplateContextForPrompt(cfg)?.promptSection?.trim() ?? "")
+    .filter((s) => s.length > 0);
+  if (sections.length === 0) return undefined;
+  if (sections.length === 1) return sections[0];
+
+  const intro = [
+    "MULTI-TEMPLATE SLOT LIMITS:",
+    "- Multiple templates are selected for this generation.",
+    sections.length >= 3
+      ? "- Slot mapping: first slide uses slot 1 limits, middle slides use slot 2 limits, last slide uses slot 3 limits."
+      : "- Slot mapping: first and last slides use slot 1 limits, middle slides use slot 2 limits.",
+    "- Keep each slide's copy within the limits of the slot used by that slide index.",
+  ];
+
+  const slotSections = sections.map((s, i) => {
+    const label = slotLabelForSelection(i, sections.length);
+    return `\n[${label.toUpperCase()}] ${s}`;
+  });
+
+  return `${intro.join(" ")}${slotSections.join(" ")}`.trim();
+}

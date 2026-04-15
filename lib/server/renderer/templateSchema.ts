@@ -25,7 +25,7 @@ const textZoneSchema = z.object({
   w: z.number().int().min(1),
   h: z.number().int().min(1),
   fontSize: z.number().int().min(8).max(280),
-  fontWeight: z.number().int().min(100).max(900),
+  fontWeight: z.number().int().min(100).max(1500),
   lineHeight: z.number().min(0.5).max(3),
   maxLines: z.number().int().min(1).max(30),
   align: z.enum(["left", "center", "right", "justify"]),
@@ -313,8 +313,8 @@ const templateDefaultsSchema = z
         headline_outline_stroke: z.number().min(0).max(8).optional(),
         /** Outline stroke width for body (0 = off). Used when body_highlight_style is "outline". */
         body_outline_stroke: z.number().min(0).max(8).optional(),
-        headline_bold_weight: z.number().int().min(100).max(900).optional(),
-        body_bold_weight: z.number().int().min(100).max(900).optional(),
+        headline_bold_weight: z.number().int().min(100).max(1500).optional(),
+        body_bold_weight: z.number().int().min(100).max(1500).optional(),
         headline_highlights: z.array(z.object({ start: z.number(), end: z.number(), color: z.string() })).optional(),
         body_highlights: z.array(z.object({ start: z.number(), end: z.number(), color: z.string() })).optional(),
         /** Image layout: pip, full, side-by-side, stacked, grid, overlay-circles, etc. Saved with template. */

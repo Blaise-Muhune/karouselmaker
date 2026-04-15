@@ -8,7 +8,7 @@ import {
   getTemplatePreviewImageUrls,
   getTemplateIntendedBackgroundImageSlotCount,
 } from "@/lib/renderer/templatePreviewImages";
-import { getSlidePreviewSpreadFromTemplateConfig } from "@/lib/renderer/templateDefaultsForSlidePreview";
+import { getSlidePreviewSpreadFromTemplateConfig, getTemplatePreviewExtraTextValues } from "@/lib/renderer/templateDefaultsForSlidePreview";
 import { LayoutTemplateIcon } from "lucide-react";
 
 /** Build imageDisplay from template defaults so PIP and full templates render exactly as designed. */
@@ -116,7 +116,10 @@ export function TemplatePreviewThumb({
         }}
       >
         <SlidePreview
-          slide={SAMPLE_SLIDE}
+          slide={{
+            ...SAMPLE_SLIDE,
+            extra_text_values: getTemplatePreviewExtraTextValues(config),
+          }}
           templateConfig={config}
           brandKit={brandKit}
           totalSlides={8}

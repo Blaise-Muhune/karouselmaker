@@ -23,6 +23,7 @@ import {
   normalizeSlideMetaForRender,
   mergeWithTemplateDefaults,
   getTemplateDefaultOverrides,
+  mergedHighlightStylesForSlideHtml,
 } from "@/lib/server/export/normalizeSlideMetaForRender";
 import { resolveSlideBackgroundUrls } from "@/lib/server/export/resolveSlideBackgroundUrls";
 import {
@@ -260,7 +261,7 @@ export async function POST(
       const fontOverrides = merged.fontOverrides;
       const zoneOverrides = merged.zoneOverrides;
       const chromeOverrides = merged.chromeOverrides;
-      const highlightStyles = merged.highlightStyles;
+      const highlightStyles = mergedHighlightStylesForSlideHtml(merged);
       const imageDisplayParam =
         slideBg?.image_display != null && typeof slideBg.image_display === "object" && !Array.isArray(slideBg.image_display)
           ? (slideBg.image_display as Record<string, unknown>)
@@ -281,6 +282,8 @@ export async function POST(
           slide_type: slide.slide_type,
           ...(merged.headline_highlights?.length && { headline_highlights: merged.headline_highlights }),
           ...(merged.body_highlights?.length && { body_highlights: merged.body_highlights }),
+          ...(merged.extraTextHighlights &&
+            Object.keys(merged.extraTextHighlights).length > 0 && { extra_text_highlights: merged.extraTextHighlights }),
         },
         videoTemplateConfig,
         brandKit,
@@ -333,6 +336,8 @@ export async function POST(
             slide_type: slide.slide_type,
             ...(merged.headline_highlights?.length && { headline_highlights: merged.headline_highlights }),
             ...(merged.body_highlights?.length && { body_highlights: merged.body_highlights }),
+            ...(merged.extraTextHighlights &&
+              Object.keys(merged.extraTextHighlights).length > 0 && { extra_text_highlights: merged.extraTextHighlights }),
           },
         videoTemplateConfig,
         brandKit,
