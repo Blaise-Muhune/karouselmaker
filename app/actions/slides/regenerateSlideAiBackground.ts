@@ -15,6 +15,7 @@ export async function regenerateSlideAiBackgroundAction(
       ok: true;
       backgroundImageUrl: string;
       primaryStoragePath: string;
+      imageHistory: { storagePath: string; backgroundImageUrl?: string }[];
       previousStoragePath?: string;
       previousBackgroundImageUrl?: string;
     }

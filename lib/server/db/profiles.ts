@@ -7,6 +7,7 @@ import type { Plan, Profile } from "./types";
 type ProfilePlanPayload = {
   display_name?: string;
   plan?: Plan;
+  how_found_us?: string | null;
   stripe_customer_id?: string | null;
   stripe_subscription_id?: string | null;
 };

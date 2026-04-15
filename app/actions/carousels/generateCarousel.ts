@@ -334,6 +334,7 @@ export async function generateCarousel(formData: FormData): Promise<
         return undefined;
       }
     })(),
+    product_service_input: ((formData.get("product_service_input") as string | null) ?? "").trim() || undefined,
     use_ai_backgrounds: formData.get("use_ai_backgrounds") ?? undefined,
     use_stock_photos: formData.get("use_stock_photos") ?? undefined,
     use_ai_generate: formData.get("use_ai_generate") ?? undefined,
@@ -489,6 +490,7 @@ export async function generateCarousel(formData: FormData): Promise<
   let useAiGenerate = requestedAiGenerate && (fullProFeatures || userIsAdmin);
   const requestedUseAiBackgrounds = !!data.use_ai_backgrounds;
   const productRefIdsForRun = data.product_reference_asset_ids ?? [];
+  const productServiceInput = data.product_service_input?.trim() || undefined;
   /** UGC + Instagram/TikTok: stock and web images clash with creator-style backgrounds; require AI generate (or user turns AI images off). */
   if (
     contentFocusId === "ugc" &&
@@ -613,6 +615,7 @@ export async function generateCarousel(formData: FormData): Promise<
     carousel_for: carouselFor,
     template_context,
     product_reference_summary: productReferenceSummary,
+    product_service_input: productServiceInput,
   };
 
   LOG("AI", useWebSearch ? "calling LLM with web search" : "calling LLM (JSON mode)");
@@ -694,14 +697,31 @@ export async function generateCarousel(formData: FormData): Promise<
     return { error: "Generation failed" };
   }
 
-  // Fallback: ensure last slide always has a follow/subscribe CTA
+  // Fallback: ensure last slide CTA matches product/service intent when provided.
   if (validated.slides.length > 0) {
     const lastSlide = validated.slides.reduce((a, b) => (a.slide_index > b.slide_index ? a : b));
     const headline = (lastSlide.headline ?? "").trim().toLowerCase();
+    const productOrServiceKnown = !!productServiceInput || productRefIdsForRun.length > 0 || !!productReferenceSummary;
+    const productHint = (productServiceInput ?? "").trim();
+    const compactProductHint = productHint.slice(0, 56).trim();
     const hasFollowSubscribe =
       /\b(follow|subscribe|more\s+(like\s+this|every\s+week|content)|@\w+)/i.test(headline) ||
       (!!creatorHandle && (headline.includes(creatorHandle.toLowerCase()) || headline.includes(creatorHandle.replace(/^@/, "").toLowerCase())));
-    if (lastSlide.slide_type === "cta" && !hasFollowSubscribe) {
+    const hasProductTryCta = /\b(try|start|book|demo|get|check|use|bio|dm)\b/i.test(headline);
+    if (lastSlide.slide_type === "cta" && productOrServiceKnown && !hasProductTryCta) {
+      const newHeadline = compactProductHint
+        ? `Try ${compactProductHint} today`
+        : "Try this product today";
+      const newBody = creatorHandle
+        ? `Want details? DM ${creatorHandle.startsWith("@") ? creatorHandle : `@${creatorHandle}`}.`
+        : "Use the link in bio to get started.";
+      validated = {
+        ...validated,
+        slides: validated.slides.map((s) =>
+          s.slide_index === lastSlide.slide_index ? { ...s, headline: newHeadline, body: newBody } : s
+        ),
+      };
+    } else if (lastSlide.slide_type === "cta" && !hasFollowSubscribe && !productOrServiceKnown) {
       const handle = creatorHandle?.trim()
         ? (creatorHandle.startsWith("@") ? creatorHandle : `@${creatorHandle}`)
         : null;
@@ -758,6 +778,7 @@ export async function generateCarousel(formData: FormData): Promise<
     ...(data.product_reference_asset_ids != null && {
       product_reference_asset_ids: data.product_reference_asset_ids,
     }),
+    ...(productServiceInput && { product_service_input: productServiceInput }),
     ...(validated.similar_ideas?.length && {
       similar_carousel_ideas: validated.similar_ideas,
     }),
@@ -1456,14 +1477,6 @@ export async function generateCarousel(formData: FormData): Promise<
           }
           return null;
         };
-        const dedupeByUrl = (results: ImageResult[]): ImageResult[] => {
-          const seen = new Set<string>();
-          return results.filter((r) => {
-            if (seen.has(r.url)) return false;
-            seen.add(r.url);
-            return true;
-          });
-        };
         const processOneSearchSlide = async (job: { slide: (typeof createdSlides)[number]; queries: string[]; image_provider: StockProvider }) => {
           const { slide, queries, image_provider } = job;
           let imageResults: ImageResult[] = [];
@@ -1594,7 +1607,8 @@ export async function generateCarousel(formData: FormData): Promise<
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes("generation_options") || msg.includes("column")) {
-      const { generation_options: _go, ...fallback } = carouselFinalUpdate;
+      const fallback = { ...carouselFinalUpdate };
+      delete fallback.generation_options;
       /** Must clear generation_started or the client keeps polling forever. */
       await updateCarousel(user.id, carousel.id, {
         ...fallback,
@@ -1731,6 +1745,7 @@ export async function startCarouselGeneration(formData: FormData): Promise<
         return undefined;
       }
     })(),
+    product_service_input: ((formData.get("product_service_input") as string | null) ?? "").trim() || undefined,
     use_ai_backgrounds: formData.get("use_ai_backgrounds") ?? undefined,
     use_stock_photos: formData.get("use_stock_photos") ?? undefined,
     use_ai_generate: formData.get("use_ai_generate") ?? undefined,
@@ -1886,6 +1901,7 @@ export async function startCarouselGeneration(formData: FormData): Promise<
     ai_style_reference_asset_ids: data.ai_style_reference_asset_ids ?? [],
     ugc_character_reference_asset_ids: data.ugc_character_reference_asset_ids ?? [],
     product_reference_asset_ids: data.product_reference_asset_ids ?? [],
+    product_service_input: data.product_service_input,
     ...(parsed.data.carousel_for && { carousel_for: parsed.data.carousel_for }),
   };
 

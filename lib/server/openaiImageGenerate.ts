@@ -603,11 +603,11 @@ const UGC_IMAGE_EDIT_PREFIX =
 
 /** When product refs are attached after UGC refs in the same `images.edit` call. */
 const PRODUCT_I2I_AFTER_UGC =
-  "Additional attached images are product, app, UI, packaging, or service references. Use them for image-to-image fidelity (shapes, colors, layout, recognizable UI regions) while honoring the creator identity rules above. Produce one new photograph with natural scene integration—not a pasted collage or flat composite. ";
+  "Additional attached images are product, app, UI, packaging, or service references. Use them for image-to-image fidelity (shapes, colors, layout, recognizable UI regions) while honoring the creator identity rules above. Do not alter product identity: keep original shape/silhouette, dominant color palette, and apparent size/proportions in scene context. Produce one new photograph with natural scene integration—not a pasted collage or flat composite. ";
 
 /** Product-only `images.edit` (no UGC face refs). */
 const PRODUCT_I2I_PREFIX_ALONE =
-  "The attached image(s) are product, app, UI, packaging, or service references. Use image-to-image conditioning: preserve the offering’s recognizable visual identity (colors, proportions, UI structure, packaging cues) while generating one NEW photograph for the scene described below—believable lighting and context, integrated into the environment rather than a floating overlay. ";
+  "The attached image(s) are product, app, UI, packaging, or service references. Use image-to-image conditioning: preserve the offering’s recognizable visual identity (colors, proportions, UI structure, packaging cues) while generating one NEW photograph for the scene described below—believable lighting and context, integrated into the environment rather than a floating overlay. Never redesign or morph the product: keep original shape/silhouette, core colors, and realistic scene-relative size. ";
 
 const MAX_EDIT_REFERENCE_IMAGES = 8;
 

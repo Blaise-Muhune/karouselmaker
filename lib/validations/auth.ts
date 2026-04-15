@@ -7,6 +7,7 @@ export const loginSchema = z.object({
 
 export const signupSchema = loginSchema.extend({
   confirmPassword: z.string().min(1, "Confirm password"),
+  howFoundUs: z.string().min(1, "Please choose how you found us").max(80, "Keep this short"),
 }).refine((data) => data.password === data.confirmPassword, {
   message: "Passwords do not match",
   path: ["confirmPassword"],

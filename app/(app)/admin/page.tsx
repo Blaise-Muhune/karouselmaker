@@ -150,6 +150,7 @@ export default async function AdminPage() {
                   <tr>
                     <th className="text-left font-medium text-muted-foreground px-4 py-3">Name</th>
                     <th className="text-left font-medium text-muted-foreground px-4 py-3">Email</th>
+                    <th className="text-left font-medium text-muted-foreground px-4 py-3">Found us via</th>
                     <th className="text-right font-medium text-muted-foreground px-4 py-3">Carousels</th>
                     <th className="text-right font-medium text-muted-foreground px-4 py-3">Projects</th>
                     <th className="text-right font-medium text-muted-foreground px-4 py-3">Exports</th>
@@ -166,6 +167,7 @@ export default async function AdminPage() {
                         </Link>
                       </td>
                       <td className="px-4 py-2.5 text-muted-foreground">{u.email ?? "—"}</td>
+                      <td className="px-4 py-2.5 text-muted-foreground">{u.howFoundUs ?? "—"}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums">{u.carouselCount}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums">{u.projectCount}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums">{u.exportCount}</td>

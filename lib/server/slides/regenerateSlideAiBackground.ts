@@ -44,7 +44,7 @@ function primaryBackgroundStoragePath(bg: Record<string, unknown> | null | undef
   const direct = (bg as { storage_path?: string }).storage_path?.trim();
   if (direct) return direct;
   const images = (bg as { images?: { storage_path?: string }[] }).images;
-  if (Array.isArray(images) && images.length === 1) {
+  if (Array.isArray(images) && images.length > 0) {
     return images[0]?.storage_path?.trim();
   }
   return undefined;
@@ -63,6 +63,8 @@ export type RegenerateSlideAiBackgroundResult =
       backgroundImageUrl: string;
       /** New object key under carousel-assets (authoritative primary). */
       primaryStoragePath: string;
+      /** Full history list in display order (newest first). */
+      imageHistory: { storagePath: string; backgroundImageUrl?: string }[];
       /** When the prior image was kept as a second slot, its storage path and signed preview URL. */
       previousStoragePath?: string;
       previousBackgroundImageUrl?: string;
@@ -97,10 +99,6 @@ export async function regenerateSlideAiBackgroundForUser(params: {
     !isAiGeneratedSlideStoragePath(params.userId, carousel.id, slide.id, storagePath)
   ) {
     return { ok: false, error: "This frame does not use an AI-generated image from storage." };
-  }
-
-  if ((bg as { images?: unknown[] })?.images && ((bg as { images: unknown[] }).images.length ?? 0) > 1) {
-    return { ok: false, error: "Regenerate one image at a time: multi-image frames are not supported yet." };
   }
 
   let regenBuffer: Buffer;
@@ -264,10 +262,13 @@ export async function regenerateSlideAiBackgroundForUser(params: {
   if (!newPath) return { ok: false, error: "Failed to save the new image." };
 
   const imageSlotsRaw = (bg as { images?: unknown[] } | null | undefined)?.images;
-  const firstImageSlot =
-    Array.isArray(imageSlotsRaw) && imageSlotsRaw.length > 0
-      ? (imageSlotsRaw[0] as Record<string, unknown>)
-      : undefined;
+  const existingSlots = Array.isArray(imageSlotsRaw)
+    ? imageSlotsRaw.filter(
+        (slot): slot is Record<string, unknown> =>
+          !!slot && typeof slot === "object" && !Array.isArray(slot)
+      )
+    : [];
+  const firstImageSlot = existingSlots.length > 0 ? existingSlots[0]! : undefined;
   const previousPrimaryImage: Record<string, unknown> = {
     ...(storagePath ? { storage_path: storagePath } : {}),
     ...(toPersistableHttpUrl((bg as { image_url?: unknown } | null | undefined)?.image_url) ? { image_url: toPersistableHttpUrl((bg as { image_url?: unknown } | null | undefined)?.image_url) } : {}),
@@ -278,18 +279,36 @@ export async function regenerateSlideAiBackgroundForUser(params: {
     ...(firstImageSlot?.pexels_attribution ? { pexels_attribution: firstImageSlot.pexels_attribution } : {}),
     alternates: [],
   };
+  const historySlots: Record<string, unknown>[] = [{ storage_path: newPath, alternates: [] }];
+  const pushHistorySlot = (slot: Record<string, unknown>) => {
+    const path = typeof slot.storage_path === "string" ? slot.storage_path.trim() : "";
+    if (!path || path === newPath) return;
+    if (
+      historySlots.some(
+        (existing) =>
+          typeof existing.storage_path === "string" && existing.storage_path.trim() === path
+      )
+    ) {
+      return;
+    }
+    historySlots.push({
+      ...slot,
+      storage_path: path,
+      alternates: Array.isArray(slot.alternates) ? slot.alternates : [],
+    });
+  };
+  if (storagePath && storagePath !== newPath) {
+    pushHistorySlot(previousPrimaryImage);
+  }
+  for (const slot of existingSlots) {
+    pushHistorySlot(slot);
+  }
   const mergedBg: Record<string, unknown> = {
     ...(typeof bg === "object" && bg !== null ? bg : {}),
     mode: "image",
     storage_path: newPath,
     fit: (bg as { fit?: string }).fit ?? "cover",
-    images:
-      storagePath && storagePath !== newPath
-        ? [
-            { storage_path: newPath, alternates: [] },
-            previousPrimaryImage,
-          ]
-        : [{ storage_path: newPath, alternates: [] }],
+    images: historySlots,
     image_url: undefined,
     asset_id: undefined,
     secondary_image_url: undefined,
@@ -312,19 +331,28 @@ export async function regenerateSlideAiBackgroundForUser(params: {
   }
 
   const keptPrevious = Boolean(storagePath && storagePath !== newPath);
-  let previousBackgroundImageUrl: string | undefined;
-  if (keptPrevious && storagePath) {
+  const imageHistory: { storagePath: string; backgroundImageUrl?: string }[] = [];
+  for (const slot of historySlots) {
+    const slotPath = typeof slot.storage_path === "string" ? slot.storage_path.trim() : "";
+    if (!slotPath) continue;
+    let signed: string | undefined;
     try {
-      previousBackgroundImageUrl = await getSignedImageUrl(BUCKET, storagePath, 3600);
+      signed = await getSignedImageUrl(BUCKET, slotPath, 3600);
     } catch {
-      previousBackgroundImageUrl = undefined;
+      signed = undefined;
     }
+    imageHistory.push({ storagePath: slotPath, ...(signed ? { backgroundImageUrl: signed } : {}) });
   }
+  const previousBackgroundImageUrl =
+    keptPrevious && storagePath
+      ? imageHistory.find((x) => x.storagePath === storagePath)?.backgroundImageUrl
+      : undefined;
 
   return {
     ok: true,
     backgroundImageUrl,
     primaryStoragePath: newPath,
+    imageHistory,
     ...(keptPrevious && storagePath
       ? {
           previousStoragePath: storagePath,

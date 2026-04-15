@@ -892,11 +892,36 @@ export function SlideEditForm({
           const hasLibraryAsset = !!(img.asset_id && img.storage_path);
           return isKnownStockSource && !hasLibraryAsset;
         });
+      const canCoalesceRegeneratedHistorySet =
+        !hasAnyAlternates &&
+        images.length > 1 &&
+        images.every((img) => {
+          const hasSource = !!img.source;
+          const hasStorageOnly = !!img.storage_path && !img.asset_id;
+          return hasStorageOnly && !hasSource;
+        }) &&
+        Array.isArray(initialBackgroundImageUrls) &&
+        initialBackgroundImageUrls.length >= images.length;
       if (canCoalesceLegacyStockSet) {
         // Legacy stock search set stored as flat list [url1, url2, ...]. Coalesce into one slot for shuffle.
         const first = images[0]!;
         const pool = [first.image_url ?? "", ...images.slice(1).map((img) => img.image_url ?? "").filter((u) => u.trim() && /^https?:\/\//i.test(u))];
         return [{ url: pool[0] ?? "", source: (first.source === "brave" || first.source === "unsplash" || first.source === "google" || first.source === "pixabay" || first.source === "pexels" ? first.source : undefined) as ImageUrlItem["source"], unsplash_attribution: first.unsplash_attribution, pixabay_attribution: first.pixabay_attribution, pexels_attribution: first.pexels_attribution, alternates: pool.slice(1), _pool: pool.length > 0 ? pool : undefined, _index: 0 }];
+      }
+      if (canCoalesceRegeneratedHistorySet) {
+        const first = images[0]!;
+        const pool = initialBackgroundImageUrls
+          .slice(0, images.length)
+          .filter((u) => u.trim() && /^https?:\/\//i.test(u));
+        return [
+          {
+            url: pool[0] ?? "",
+            ...(first.storage_path ? { storage_path: first.storage_path } : {}),
+            alternates: pool.slice(1),
+            _pool: pool.length > 0 ? pool : undefined,
+            _index: 0,
+          },
+        ];
       }
       let resolvedSlotIdx = 0;
       return images.map((img) => {
@@ -3480,26 +3505,37 @@ export function SlideEditForm({
         setAiRegenError(r.error);
         return;
       }
-      /** Match DB written by regenerate: primary + optional previous as second `images[]` slot (storage-backed). */
+      /** Keep full regenerate history (newest first) as storage-backed slots. */
+      const history = (r.imageHistory?.length ? r.imageHistory : [{ storagePath: r.primaryStoragePath }]).filter(
+        (item) => typeof item.storagePath === "string" && item.storagePath.trim().length > 0
+      );
       setBackground((b) => ({
         ...b,
         mode: "image" as const,
         storage_path: r.primaryStoragePath,
         image_url: undefined,
         asset_id: undefined,
-        images:
-          r.previousStoragePath && r.previousBackgroundImageUrl
-            ? [
-                { storage_path: r.primaryStoragePath, alternates: [] as string[] },
-                { storage_path: r.previousStoragePath, alternates: [] as string[] },
-              ]
-            : [{ storage_path: r.primaryStoragePath, alternates: [] as string[] }],
+        images: history.map((item) => ({ storage_path: item.storagePath, alternates: [] as string[] })),
       }));
       setBackgroundImageUrlForPreview(r.backgroundImageUrl);
-      if (r.previousStoragePath && r.previousBackgroundImageUrl) {
+      const signedHistory = history
+        .map((item) => ({
+          storagePath: item.storagePath,
+          url:
+            r.imageHistory?.find((x) => x.storagePath === item.storagePath)?.backgroundImageUrl ??
+            (item.storagePath === r.primaryStoragePath ? r.backgroundImageUrl : ""),
+        }))
+        .filter((item) => item.url.trim() && /^https?:\/\//i.test(item.url));
+      const pool = signedHistory.map((item) => item.url);
+      if (pool.length > 0) {
         setImageUrls([
-          { url: r.backgroundImageUrl, storage_path: r.primaryStoragePath, alternates: [] },
-          { url: r.previousBackgroundImageUrl, storage_path: r.previousStoragePath, alternates: [] },
+          {
+            url: pool[0]!,
+            storage_path: r.primaryStoragePath,
+            alternates: pool.slice(1),
+            _pool: pool,
+            _index: 0,
+          },
         ]);
       } else {
         setImageUrls((rows) => {

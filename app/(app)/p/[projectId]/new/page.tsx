@@ -103,6 +103,7 @@ export default async function NewCarouselPage({
     number_of_slides?: unknown;
     viral_shorts_style?: boolean;
     use_saved_ugc_character?: boolean;
+    product_service_input?: string;
   };
   const genOpts = (settingsSourceCarousel?.generation_options ?? undefined) as GenOpts | undefined;
   const initialUseStockPhotosFromOpts =
@@ -234,6 +235,10 @@ export default async function NewCarouselPage({
           initialProductReferenceAssetIds={
             (settingsSourceCarousel?.generation_options as { product_reference_asset_ids?: string[] } | undefined)
               ?.product_reference_asset_ids
+          }
+          initialProductServiceInput={
+            (settingsSourceCarousel?.generation_options as { product_service_input?: string } | undefined)
+              ?.product_service_input
           }
           templateOptions={templateOptions}
           defaultTemplateId={defaultTemplateId}

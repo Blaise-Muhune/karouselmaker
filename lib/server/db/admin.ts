@@ -34,6 +34,7 @@ export type AdminUserRow = {
   email: string | null;
   name: string;
   plan: Plan | null;
+  howFoundUs: string | null;
   createdAt: string | null;
   carouselCount: number;
   projectCount: number;
@@ -69,7 +70,7 @@ export async function getAdminUsers(): Promise<AdminUserRow[]> {
 
   const userIds = rows.map((r) => r.id);
   const [profilesRes, carouselsRes, projectsRes, exportsRes] = await Promise.all([
-    supabase.from("profiles").select("user_id, display_name, plan").in("user_id", userIds),
+    supabase.from("profiles").select("user_id, display_name, plan, how_found_us").in("user_id", userIds),
     supabase.from("carousels").select("user_id").in("user_id", userIds),
     supabase.from("projects").select("user_id").in("user_id", userIds),
     supabase.from("exports").select("user_id").in("user_id", userIds),
@@ -79,7 +80,7 @@ export async function getAdminUsers(): Promise<AdminUserRow[]> {
   const profileByUserId = new Map(
     profiles.map((p) => [
       (p as { user_id: string; display_name: string | null; plan: string | null }).user_id,
-      p as { display_name: string | null; plan: string | null },
+      p as { display_name: string | null; plan: string | null; how_found_us: string | null },
     ])
   );
 
@@ -107,6 +108,7 @@ export async function getAdminUsers(): Promise<AdminUserRow[]> {
       email: u.email ?? null,
       name,
       plan: profilePlanLabel(profile?.plan),
+      howFoundUs: profile?.how_found_us?.trim() || null,
       createdAt: u.created_at,
       carouselCount: carouselByUser.get(u.id) ?? 0,
       projectCount: projectByUser.get(u.id) ?? 0,

@@ -18,6 +18,16 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { PremiumCard } from "@/components/subscription/PremiumCard";
+import { cn } from "@/lib/utils";
+
+const HOW_FOUND_US_OPTIONS = [
+  "Google search",
+  "YouTube",
+  "Instagram",
+  "TikTok",
+  "Friend",
+  "X / Twitter",
+] as const;
 
 export default function SignupPage() {
   const [state, formAction] = useActionState(
@@ -29,7 +39,7 @@ export default function SignupPage() {
 
   const form = useForm<SignupInput>({
     resolver: zodResolver(signupSchema),
-    defaultValues: { email: "", password: "", confirmPassword: "" },
+    defaultValues: { email: "", password: "", confirmPassword: "", howFoundUs: "" },
   });
 
   return (
@@ -82,6 +92,45 @@ export default function SignupPage() {
                   <FormLabel>Confirm password</FormLabel>
                   <FormControl>
                     <Input type="password" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="howFoundUs"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>How did you find us?</FormLabel>
+                  <FormControl>
+                    <div className="space-y-2">
+                      <input type="hidden" name={field.name} value={field.value ?? ""} />
+                      <div className="flex flex-wrap gap-2">
+                        {HOW_FOUND_US_OPTIONS.map((option) => (
+                          <Button
+                            key={option}
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className={cn(
+                              "h-8 rounded-full",
+                              field.value === option && "border-primary bg-primary/10 text-primary"
+                            )}
+                            onClick={() => form.setValue("howFoundUs", option, { shouldValidate: true })}
+                          >
+                            {option}
+                          </Button>
+                        ))}
+                      </div>
+                      <Input
+                        placeholder="Other (optional)"
+                        value={HOW_FOUND_US_OPTIONS.includes((field.value ?? "") as (typeof HOW_FOUND_US_OPTIONS)[number]) ? "" : (field.value ?? "")}
+                        onChange={(e) =>
+                          form.setValue("howFoundUs", e.target.value.trimStart(), { shouldValidate: true })
+                        }
+                      />
+                    </div>
                   </FormControl>
                   <FormMessage />
                 </FormItem>

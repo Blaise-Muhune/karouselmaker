@@ -2,6 +2,8 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { signupSchema } from "@/lib/validations/auth";
+import { upsertProfileAsAdmin } from "@/lib/server/db/profiles";
 
 export async function signInWithGoogle() {
   const supabase = await createClient();
@@ -23,18 +25,33 @@ export async function signInWithGoogle() {
 }
 
 export async function signUp(formData: FormData) {
-  const email = (formData.get("email") as string)?.trim();
-  const password = formData.get("password") as string;
-
-  if (!email || !password) {
-    return { error: "Email and password are required." };
+  const parsed = signupSchema.safeParse({
+    email: (formData.get("email") as string)?.trim(),
+    password: (formData.get("password") as string) ?? "",
+    confirmPassword: (formData.get("confirmPassword") as string) ?? "",
+    howFoundUs: (formData.get("howFoundUs") as string)?.trim() ?? "",
+  });
+  if (!parsed.success) {
+    const first =
+      parsed.error.issues.find((i) => i.message)?.message ??
+      "Please check your signup info and try again.";
+    return { error: first };
   }
+  const { email, password, howFoundUs } = parsed.data;
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.signUp({ email, password });
+  const { data, error } = await supabase.auth.signUp({ email, password });
 
   if (error) {
     return { error: error.message };
+  }
+  const userId = data.user?.id;
+  if (userId) {
+    try {
+      await upsertProfileAsAdmin(userId, { how_found_us: howFoundUs.slice(0, 80) });
+    } catch {
+      // Non-blocking: auth account is created; profile metadata can be fixed later by admin.
+    }
   }
 
   redirect("/projects");

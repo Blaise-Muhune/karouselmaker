@@ -148,6 +148,7 @@ export function NewCarouselForm({
   initialAiStyleReferenceAssetIds,
   initialUgcCharacterReferenceAssetIds,
   initialProductReferenceAssetIds,
+  initialProductServiceInput,
   /** When opening /new from “Similar ideas” on another carousel — reuse that run’s image/template/ref settings; notes stay empty. */
   initialSettingsCarriedFromCarousel = false,
   initialSelectedTemplateId,
@@ -203,6 +204,8 @@ export function NewCarouselForm({
   initialUgcCharacterReferenceAssetIds?: string[];
   /** Product / app / service refs (LLM + image-to-image when using AI generate). */
   initialProductReferenceAssetIds?: string[];
+  /** Product/service name, handle, or link to guide CTA and copy. */
+  initialProductServiceInput?: string;
   /** True when `fromCarousel` loaded — enables same image-source inference as regenerate (e.g. web images). */
   initialSettingsCarriedFromCarousel?: boolean;
   /** Pre-fill template from source carousel `generation_options.template_id`. */
@@ -279,6 +282,7 @@ export function NewCarouselForm({
     () => isAdminUser && (initialViralShortsStyle === true)
   );
   const [notes, setNotes] = useState(initialNotes ?? "");
+  const [productServiceInput, setProductServiceInput] = useState(initialProductServiceInput ?? "");
   const [aiStyleRefIds, setAiStyleRefIds] = useState<string[]>(() => {
     const raw = initialAiStyleReferenceAssetIds ?? [];
     return Array.isArray(raw) ? raw.slice(0, MAX_CAROUSEL_COMBINED_REFERENCE_ASSETS) : [];
@@ -597,6 +601,10 @@ export function NewCarouselForm({
       setError(`Notes are too long (max ${CAROUSEL_NOTES_MAX_CHARS.toLocaleString()} characters).`);
       return;
     }
+    if (productServiceInput.length > 600) {
+      setError("Product or service info is too long (max 600 characters).");
+      return;
+    }
     const shouldForceAiGenerateForProductRefs =
       useAiBackgrounds && carouselFor !== "linkedin" && productRefIds.length > 0;
     if (shouldForceAiGenerateForProductRefs && !canUseAiGenerate) {
@@ -665,6 +673,9 @@ export function NewCarouselForm({
       formData.set("use_saved_ugc_character", useSavedUgcCharacter ? "true" : "false");
       if (productRefIds.length > 0) {
         formData.set("product_reference_asset_ids", JSON.stringify(productRefIds));
+      }
+      if (productServiceInput.trim()) {
+        formData.set("product_service_input", productServiceInput.trim());
       }
       formData.set("carousel_for", carouselFor);
       if (useWebSearch) formData.set("use_web_search", "true");
@@ -1706,6 +1717,30 @@ export function NewCarouselForm({
                       </button>
                     </div>
                     <p className="text-muted-foreground text-xs">Leave empty to let AI choose.</p>
+                  </div>
+                  <div className="space-y-2 sm:col-span-2 sm:col-start-1">
+                    <Label htmlFor="product_service_input" className="text-sm font-medium">Product/service name or link (optional)</Label>
+                    <Input
+                      id="product_service_input"
+                      type="text"
+                      placeholder="e.g. Acme Planner app or https://acme.com"
+                      className="min-w-0 w-full"
+                      value={productServiceInput}
+                      maxLength={600}
+                      onChange={(e) => setProductServiceInput(e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      When set, AI makes the final slide a CTA for this product/service.
+                    </p>
+                    <p
+                      className={cn(
+                        "text-xs tabular-nums text-muted-foreground",
+                        productServiceInput.length >= 600 && "font-medium text-destructive"
+                      )}
+                    >
+                      {productServiceInput.length}/600 characters
+                      {productServiceInput.length >= 600 ? " — limit reached" : ""}
+                    </p>
                   </div>
                   <div className="space-y-2 sm:col-span-2 sm:col-start-1">
                     <Label htmlFor="notes" className="text-sm font-medium">Notes (optional)</Label>
