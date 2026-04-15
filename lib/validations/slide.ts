@@ -172,8 +172,6 @@ export const slideBackgroundSchema = z.object({
     }).optional(),
     /** Other approved URLs from the same search (per-slot shuffle). Must be preserved on save. */
     alternates: z.array(z.string()).optional(),
-    /** Previous AI-generated frames for this slide (carousel-assets paths). Slot 0 `storage_path` is active; shuffle rotates among these. */
-    storage_alternates: z.array(z.string()).max(20).optional(),
   })).max(4).optional(),
   fit: z.enum(["cover", "contain"]).optional(),
   /** Display options: position, frame, layout, gap. */

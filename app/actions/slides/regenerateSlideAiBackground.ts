@@ -15,8 +15,8 @@ export async function regenerateSlideAiBackgroundAction(
       ok: true;
       backgroundImageUrl: string;
       primaryStoragePath: string;
-      storage_alternates?: string[];
-      allSignedUrls?: string[];
+      previousStoragePath?: string;
+      previousBackgroundImageUrl?: string;
     }
   | { ok: false; error: string }
 > {

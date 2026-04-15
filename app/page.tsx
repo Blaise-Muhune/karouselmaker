@@ -11,11 +11,6 @@ import {
   Sparkles,
   Palette,
   Share2,
-  Users,
-  ShoppingBag,
-  GraduationCap,
-  BookOpenText,
-  CircleDotDashed,
 } from "lucide-react";
 import { HeroCarouselPreview } from "@/components/landing/HeroCarouselPreview";
 import { LandingDemoCarousel } from "@/components/landing/LandingDemoCarousel";
@@ -36,61 +31,34 @@ export default async function Home() {
         <div className="absolute inset-0 bg-linear-to-b from-primary/5 via-transparent to-transparent pointer-events-none" />
         <div className="mx-auto max-w-3xl text-center space-y-6 sm:space-y-8 relative">
           <h1 className="text-3xl font-bold tracking-tight sm:text-4xl md:text-5xl lg:text-6xl">
-            AI carousel maker for{" "}
+            Turn any idea into a{" "}
             <span className="text-primary">publish-ready carousel</span>
           </h1>
           <p className="text-muted-foreground text-base sm:text-lg max-w-2xl mx-auto leading-relaxed">
-            Paste a topic or link and get a complete multi-slide carousel draft in minutes. Edit copy and visuals in
-            live preview, then export social-ready slides.
+            Paste a topic, link, or draft and generate a full Instagram/TikTok carousel in minutes. Edit everything in
+            live preview, then export platform-ready images.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 pt-2">
             <Button size="lg" className="gap-2 w-full sm:w-auto transition-transform hover:scale-[1.02] active:scale-[0.98]" asChild>
               <Link href="/signup">
                 <ArrowRight className="size-4 sm:size-5" />
-                Start free now
+                Get started free
               </Link>
             </Button>
             <Button variant="outline" size="lg" className="w-full sm:w-auto transition-transform hover:scale-[1.02] active:scale-[0.98]" asChild>
-              <Link href="/login">I already have an account</Link>
+              <Link href="/login">Sign in</Link>
             </Button>
           </div>
           <div className="mx-auto grid max-w-2xl grid-cols-1 gap-2 pt-1 text-left text-xs sm:grid-cols-3">
             {[
-              "1) Generate carousel slides from a topic or URL",
-              "2) Edit text + design in live preview",
-              "3) Export ready-to-post slides for social",
+              "Template-locked layouts for consistent design",
+              "Live slide preview with instant edits",
+              "Export-ready sizes for feed and stories",
             ].map((item) => (
               <div key={item} className="rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-muted-foreground">
                 {item}
               </div>
             ))}
-          </div>
-          <div className="mx-auto max-w-3xl pt-3 text-left">
-            <div className="rounded-xl border border-primary/25 bg-primary/5 p-3 sm:p-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-primary mb-2">
-                Choose your content style
-              </p>
-              <p className="text-xs text-muted-foreground mb-3">
-                Start with the format that matches your goal. The AI adapts hooks, structure, and image direction.
-              </p>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5">
-                {[
-                  { label: "General", icon: CircleDotDashed },
-                  { label: "UGC", icon: Users },
-                  { label: "Product", icon: ShoppingBag },
-                  { label: "Educational", icon: GraduationCap },
-                  { label: "Storytelling", icon: BookOpenText },
-                ].map((style) => (
-                  <div
-                    key={style.label}
-                    className="rounded-lg border border-primary/20 bg-background/90 px-2.5 py-2 text-[11px] font-medium text-foreground flex items-center gap-1.5"
-                  >
-                    <style.icon className="size-3.5 text-primary shrink-0" />
-                    <span className="truncate">{style.label}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
           </div>
         </div>
 
@@ -111,13 +79,13 @@ export default async function Home() {
 
           <div className="flex flex-wrap justify-center gap-4 sm:gap-6">
             {[
-              { num: 1, title: "Create project", desc: "Set your niche, tone, and content style once.", example: "Fitness tips" },
-              { num: 2, title: "Enter topic or link", desc: "AI writes the full slide sequence: hook, value slides, and CTA.", example: "5 habits of founders" },
-              { num: 3, title: "Slides generated", desc: "Template-structured slides are ready in seconds.", example: null },
+              { num: 1, title: "Create project", desc: "Organize carousels by brand, niche, and tone.", example: "Fitness tips" },
+              { num: 2, title: "Enter topic or link", desc: "One prompt or URL—AI drafts hooks, points, and CTAs.", example: "5 habits of founders" },
+              { num: 3, title: "Slides generated", desc: "Structured slides match your template—ready to refine.", example: null },
               {
                 num: 4,
                 title: "Edit & ship",
-                desc: "Polish copy and visuals in live preview, then export and post.",
+                desc: "Adjust text, highlights, backgrounds, slide chrome, and sizes—then export PNG/JPEG.",
                 example: "Square · 4:5 · Stories",
               },
             ].map((step, i) => (
@@ -163,7 +131,7 @@ export default async function Home() {
             Everything you need to publish scroll-stopping carousels
           </h2>
           <p className="text-center text-muted-foreground text-sm max-w-xl mx-auto mb-8">
-            Built to go from idea to posted carousel fast: structured AI output, locked templates, and quick editing.
+            Built for creators: structured AI output, template-locked design, and a fast editor—without turning you into a designer.
           </p>
           <ul className="grid gap-4 sm:gap-5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 justify-items-stretch">
             <li className="rounded-xl border border-border/50 bg-muted/5 p-4 sm:p-5 text-left transition-colors hover:border-primary/30">
@@ -225,53 +193,6 @@ export default async function Home() {
 
         <div className="scroll-reveal [content-visibility:auto] mx-auto mt-14 sm:mt-16 md:mt-20 max-w-5xl w-full px-4">
           <p className="text-muted-foreground text-center mb-3 text-xs font-medium uppercase tracking-wider">
-            Featured templates
-          </p>
-          <h2 className="text-center font-semibold text-foreground text-lg sm:text-xl mb-2 max-w-2xl mx-auto">
-            Proven layouts you can start with instantly
-          </h2>
-          <p className="text-center text-muted-foreground text-sm max-w-xl mx-auto mb-7">
-            Pick a structure, add your topic, and keep every slide consistent from hook to CTA.
-          </p>
-          <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-3 mb-6">
-            {[
-              {
-                name: "Hook + value list",
-                desc: "Strong opening slide, then clear points people can save.",
-              },
-              {
-                name: "Before / after story",
-                desc: "Narrative flow with setup, shift, and outcome.",
-              },
-              {
-                name: "Expert framework",
-                desc: "Educational sequence with skimmable, structured teaching.",
-              },
-            ].map((template) => (
-              <div key={template.name} className="rounded-xl border border-border/60 bg-muted/10 p-4">
-                <p className="text-sm font-semibold text-foreground">{template.name}</p>
-                <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">{template.desc}</p>
-              </div>
-            ))}
-          </div>
-          <div className="rounded-xl sm:rounded-2xl border border-border/50 bg-muted/10 p-4 sm:p-6">
-            <p className="text-center text-muted-foreground text-xs mb-3">
-              Real renderer preview from the same slide engine used in the editor
-            </p>
-            <LandingDemoCarousel variant="strip" />
-            <div className="mt-4 flex justify-center">
-              <Button variant="outline" className="gap-2" asChild>
-                <Link href="/signup">
-                  Start free with these templates
-                  <ArrowRight className="size-4" />
-                </Link>
-              </Button>
-            </div>
-          </div>
-        </div>
-
-        <div className="scroll-reveal [content-visibility:auto] mx-auto mt-14 sm:mt-16 md:mt-20 max-w-5xl w-full px-4">
-          <p className="text-muted-foreground text-center mb-3 text-xs font-medium uppercase tracking-wider">
             Why creators choose us
           </p>
           <h2 className="text-center font-semibold text-foreground text-lg sm:text-xl mb-8">
@@ -305,8 +226,8 @@ export default async function Home() {
         <div className="scroll-reveal [content-visibility:auto] mx-auto mt-12 sm:mt-14 max-w-2xl w-full px-4">
           <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 sm:p-6 text-center transition-colors hover:border-primary/30">
             <p className="text-foreground text-sm sm:text-base font-medium">
-              Create a full carousel from one input, edit in one place, and export ready-to-post slides. Less design
-              friction, more consistent publishing.
+              Carousels consistently outperform single static posts for many creators. We handle structure and design so
+              you can focus on ideas and publishing.
             </p>
           </div>
         </div>
@@ -351,12 +272,12 @@ export default async function Home() {
               Ready to ship your first carousel?
             </h3>
             <p className="text-muted-foreground text-xs sm:text-sm mb-4 sm:mb-5 max-w-md mx-auto">
-              Start free. Generate your first deck in minutes, edit quickly, and export in the exact format your platform needs.
+              Templates keep every slide on-brand. You edit copy, visuals, and chrome—then export in the format your platform needs.
             </p>
             <Button size="lg" className="w-full sm:w-auto gap-2" asChild>
               <Link href="/signup">
                 <ArrowRight className="size-4 sm:size-5" />
-                Start free now
+                Get started free
               </Link>
             </Button>
           </div>
