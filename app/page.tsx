@@ -5,12 +5,10 @@ import { Button } from "@/components/ui/button";
 import {
   LayoutTemplate,
   FileText,
-  Package,
   ArrowRight,
   ChevronsRight,
   Sparkles,
   Palette,
-  Share2,
 } from "lucide-react";
 import { HeroCarouselPreview } from "@/components/landing/HeroCarouselPreview";
 import { LandingDemoCarousel } from "@/components/landing/LandingDemoCarousel";
@@ -35,8 +33,7 @@ export default async function Home() {
             <span className="text-primary">publish-ready carousel</span>
           </h1>
           <p className="text-muted-foreground text-base sm:text-lg max-w-2xl mx-auto leading-relaxed">
-            Paste a topic, link, or draft and generate a full Instagram/TikTok carousel in minutes. Edit everything in
-            live preview, then export platform-ready images.
+            Paste a topic or link, get a clean draft, edit fast, and export.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3 pt-2">
             <Button size="lg" className="gap-2 w-full sm:w-auto transition-transform hover:scale-[1.02] active:scale-[0.98]" asChild>
@@ -51,9 +48,9 @@ export default async function Home() {
           </div>
           <div className="mx-auto grid max-w-2xl grid-cols-1 gap-2 pt-1 text-left text-xs sm:grid-cols-3">
             {[
-              "Template-locked layouts for consistent design",
-              "Live slide preview with instant edits",
-              "Export-ready sizes for feed and stories",
+              "Template-locked layouts",
+              "Live preview editing",
+              "Export-ready sizes",
             ].map((item) => (
               <div key={item} className="rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-muted-foreground">
                 {item}
@@ -74,18 +71,18 @@ export default async function Home() {
             How it works
           </p>
           <h2 className="text-center font-semibold text-foreground text-lg sm:text-xl mb-8">
-            4 steps to your first carousel
+            4 quick steps
           </h2>
 
           <div className="flex flex-wrap justify-center gap-4 sm:gap-6">
             {[
-              { num: 1, title: "Create project", desc: "Organize carousels by brand, niche, and tone.", example: "Fitness tips" },
-              { num: 2, title: "Enter topic or link", desc: "One prompt or URL—AI drafts hooks, points, and CTAs.", example: "5 habits of founders" },
-              { num: 3, title: "Slides generated", desc: "Structured slides match your template—ready to refine.", example: null },
+              { num: 1, title: "Create project", desc: "Set your brand and tone.", example: "Fitness tips" },
+              { num: 2, title: "Enter topic or link", desc: "AI drafts your slide flow.", example: "5 habits of founders" },
+              { num: 3, title: "Slides generated", desc: "Clean structure, ready to refine.", example: null },
               {
                 num: 4,
                 title: "Edit & ship",
-                desc: "Adjust text, highlights, backgrounds, slide chrome, and sizes—then export PNG/JPEG.",
+                desc: "Tweak and export PNG/JPEG.",
                 example: "Square · 4:5 · Stories",
               },
             ].map((step, i) => (
@@ -128,11 +125,9 @@ export default async function Home() {
             Features
           </p>
           <h2 className="text-center font-semibold text-foreground text-lg sm:text-xl mb-2 max-w-2xl mx-auto">
-            Everything you need to publish scroll-stopping carousels
+            Everything you need to publish
           </h2>
-          <p className="text-center text-muted-foreground text-sm max-w-xl mx-auto mb-8">
-            Built for creators: structured AI output, template-locked design, and a fast editor—without turning you into a designer.
-          </p>
+          <p className="text-center text-muted-foreground text-sm max-w-xl mx-auto mb-8">Simple flow, fast output.</p>
           <ul className="grid gap-4 sm:gap-5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 justify-items-stretch">
             <li className="rounded-xl border border-border/50 bg-muted/5 p-4 sm:p-5 text-left transition-colors hover:border-primary/30">
               <div className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-lg bg-primary/10 text-primary mb-3">
@@ -170,100 +165,10 @@ export default async function Home() {
                 Use stock, web, uploads, or AI backgrounds and keep control of image placement and layout.
               </p>
             </li>
-            <li className="rounded-xl border border-border/50 bg-muted/5 p-4 sm:p-5 text-left transition-colors hover:border-primary/30">
-              <div className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-lg bg-primary/10 text-primary mb-3">
-                <Package className="size-4 sm:size-5" />
-              </div>
-              <h3 className="font-semibold text-foreground text-sm sm:text-base">Export images & ZIP</h3>
-              <p className="text-muted-foreground text-xs sm:text-sm mt-1.5 leading-relaxed">
-                Export one slide or the full deck in the exact sizes you need for social publishing.
-              </p>
-            </li>
-            <li className="rounded-xl border border-border/50 bg-muted/5 p-4 sm:p-5 text-left transition-colors hover:border-primary/30">
-              <div className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-lg bg-primary/10 text-primary mb-3">
-                <Share2 className="size-4 sm:size-5" />
-              </div>
-              <h3 className="font-semibold text-foreground text-sm sm:text-base">Apply-to-all controls</h3>
-              <p className="text-muted-foreground text-xs sm:text-sm mt-1.5 leading-relaxed">
-                Apply repeated style and visibility updates across slides in one action.
-              </p>
-            </li>
           </ul>
         </div>
 
-        <div className="scroll-reveal [content-visibility:auto] mx-auto mt-14 sm:mt-16 md:mt-20 max-w-5xl w-full px-4">
-          <p className="text-muted-foreground text-center mb-3 text-xs font-medium uppercase tracking-wider">
-            Why creators choose us
-          </p>
-          <h2 className="text-center font-semibold text-foreground text-lg sm:text-xl mb-8">
-            Built for fast publishing, not endless design work
-          </h2>
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div className="rounded-xl border border-border/60 bg-muted/10 p-4 sm:p-5">
-              <h3 className="text-sm font-semibold text-foreground">Karouselmaker</h3>
-              <p className="mt-2 text-xs text-muted-foreground leading-relaxed">
-                Structured AI + template rules + export-ready output in one flow.
-              </p>
-            </div>
-            <div className="rounded-xl border border-border/60 bg-muted/5 p-4 sm:p-5">
-              <h3 className="text-sm font-semibold text-foreground">Manual design tools</h3>
-              <p className="mt-2 text-xs text-muted-foreground leading-relaxed">
-                Maximum control, but slower production and repeated formatting work.
-              </p>
-            </div>
-            <div className="rounded-xl border border-border/60 bg-muted/5 p-4 sm:p-5">
-              <h3 className="text-sm font-semibold text-foreground">Generic AI tools</h3>
-              <p className="mt-2 text-xs text-muted-foreground leading-relaxed">
-                Fast draft output, but often inconsistent slide structure and styling.
-              </p>
-            </div>
-          </div>
-        </div>
-
         <MarketingPricingSection />
-
-        {/* Outcome hook */}
-        <div className="scroll-reveal [content-visibility:auto] mx-auto mt-12 sm:mt-14 max-w-2xl w-full px-4">
-          <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 sm:p-6 text-center transition-colors hover:border-primary/30">
-            <p className="text-foreground text-sm sm:text-base font-medium">
-              Carousels consistently outperform single static posts for many creators. We handle structure and design so
-              you can focus on ideas and publishing.
-            </p>
-          </div>
-        </div>
-
-        <div className="scroll-reveal [content-visibility:auto] mx-auto mt-14 sm:mt-16 max-w-3xl w-full px-4">
-          <p className="text-muted-foreground text-center mb-3 text-xs font-medium uppercase tracking-wider">FAQ</p>
-          <div className="space-y-3">
-            {[
-              {
-                q: "Can I fully edit the AI output?",
-                a: "Yes. You can edit text, backgrounds, styles, template slots, and per-slide visual settings before export.",
-              },
-              {
-                q: "Do I need design skills?",
-                a: "No. Templates lock the core layout so your slides stay clean and consistent while you focus on content.",
-              },
-              {
-                q: "Can I use my own images?",
-                a: "Yes. Upload from your library or import from Drive, then combine with stock, web, or AI images based on your workflow.",
-              },
-              {
-                q: "What formats can I export?",
-                a: "You can export single slides or full sets as PNG/JPEG in common social sizes, plus ZIP export flows.",
-              },
-              {
-                q: "Is this built for solo creators?",
-                a: "Yes. The product is optimized for fast creator workflows: idea to published carousel with minimal friction.",
-              },
-            ].map((item) => (
-              <div key={item.q} className="rounded-xl border border-border/60 bg-muted/10 p-4">
-                <h3 className="text-sm font-semibold text-foreground">{item.q}</h3>
-                <p className="mt-1.5 text-xs text-muted-foreground leading-relaxed">{item.a}</p>
-              </div>
-            ))}
-          </div>
-        </div>
 
         {/* CTA */}
         <div className="scroll-reveal [content-visibility:auto] mx-auto mt-14 sm:mt-16 md:mt-20 max-w-xl w-full px-4">

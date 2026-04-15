@@ -12,11 +12,11 @@ import { FREE_FULL_ACCESS_GENERATIONS } from "@/lib/constants";
 export const metadata: Metadata = {
   title: "Pricing",
   description:
-    "Karouselmaker plans: Starter, Pro, and Studio. AI carousels, exports, custom templates, and higher limits as you grow. Monthly pricing in USD.",
+    "Karouselmaker plans: Free, Starter, Pro, and Studio. AI carousels, exports, custom templates, and higher limits as you grow. Monthly pricing in USD.",
   openGraph: {
     title: "Pricing | Karouselmaker",
     description:
-      "Starter, Pro, and Studio — same features, higher limits. AI carousels, exports, and templates for creators.",
+      "Free, Starter, Pro, and Studio — same features, higher limits. AI carousels, exports, and templates for creators.",
   },
 };
 

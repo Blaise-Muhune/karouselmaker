@@ -56,10 +56,13 @@ export function UpgradePlansDialog({ open: controlledOpen, onOpenChange, trigger
         <DialogHeader>
           <DialogTitle>Choose a plan</DialogTitle>
           <DialogDescription>
-            Starter, Pro, and Studio are solo plans—same features, higher limits on each step up. Cancel anytime in
-            billing.
+            Free is available by default. Starter, Pro, and Studio unlock higher limits. Cancel anytime in billing.
           </DialogDescription>
         </DialogHeader>
+        <div className="rounded-lg border border-border/60 bg-muted/10 px-3 py-2 text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">Free:</span> {PLAN_LIMITS.free.carouselsPerMonth} carousels / mo
+          · {PLAN_LIMITS.free.exportsPerMonth} exports / mo · {PLAN_LIMITS.free.assets} library images.
+        </div>
         <div className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/15 p-1">
           <button
             type="button"

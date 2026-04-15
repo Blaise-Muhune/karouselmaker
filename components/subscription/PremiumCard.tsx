@@ -21,9 +21,9 @@ export function PremiumCard({
             <Gem className="size-5" />
           </div>
           <div>
-            <h3 className="font-semibold text-foreground text-lg">Starter · Pro · Studio</h3>
+            <h3 className="font-semibold text-foreground text-lg">Free · Starter · Pro · Studio</h3>
             <p className="text-sm text-muted-foreground">
-              {STARTER_PRICE_DISPLAY} → {PRO_PRICE_DISPLAY} → {STUDIO_PRICE_DISPLAY}/mo
+              $0 → {STARTER_PRICE_DISPLAY} → {PRO_PRICE_DISPLAY} → {STUDIO_PRICE_DISPLAY}/mo
             </p>
           </div>
         </div>
