@@ -103,6 +103,14 @@ export type ImagePromptContext = {
    * so later slides can image-to-image from the same identity anchor.
    */
   establishSeriesFaceAnchor?: boolean;
+  /**
+   * Slides 2+ when the first `images.edit` attachment is the hook JPEG: the model must not recast—same person as ref 0.
+   */
+  strictReuseFirstSlideIdentity?: boolean;
+  /**
+   * Regenerate slide 1: first attachment is a later slide (stronger face lock) so the hook matches the rest of the deck.
+   */
+  hookIdentityRealignmentFromRef?: boolean;
 };
 
 /** Parse user notes for aspect ratio preference. Default 4:5 if no match. */
@@ -582,6 +590,11 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
   }
 
   if (context?.isHookSlide) {
+    if (context?.hookIdentityRealignmentFromRef) {
+      parts.push(
+        "HOOK REALIGNMENT: The first attached image is a **later slide** from this same carousel that already locked the host’s look. Recreate slide 1’s hook **scene and energy** from the headline/body—but the **human must be the same person** as that reference (same face shape, hair, skin undertone, age read, and build). Product/garment rules from any additional product references still apply; do not introduce a different model."
+      );
+    }
     if (!hasReferenceStyle) {
       parts.push(
         ugcPhone
@@ -796,7 +809,19 @@ export async function generateImageFromPrompt(
   );
   const useImageRefEdit = refBuffers.length > 0;
   const basePrompt = queryToPrompt(query, options?.context);
-  const prompt = useImageRefEdit ? `${editPrefix}${basePrompt}` : basePrompt;
+  const preLocks: string[] = [];
+  if (useImageRefEdit && editProductCount > 0) {
+    preLocks.push(
+      "GARMENT / PRODUCT PIXEL LOCK (non-negotiable): uploaded product reference images define the exact physical item—color, wash, silhouette, hardware, pocket layout. If any wording below conflicts with those pixels for the garment, **follow the references**, not the conflicting words. "
+    );
+  }
+  if (useImageRefEdit && options?.context?.strictReuseFirstSlideIdentity === true && editUgcCount > 0) {
+    preLocks.push(
+      "IDENTITY LOCK (non-negotiable): the first attached image is the hook output from this same carousel run. **Keep the same human** (face, hair, skin undertone, age, build)—do not recast or “beauty swap” to match the scene text. "
+    );
+  }
+  const lockBlock = preLocks.join("");
+  const prompt = useImageRefEdit ? `${editPrefix}${lockBlock}${basePrompt}` : basePrompt;
   const model = options?.model ?? getDefaultImageModel();
   const quality = model === "gpt-image-1.5" ? "medium" : "low";
   const continuityLock = (() => {

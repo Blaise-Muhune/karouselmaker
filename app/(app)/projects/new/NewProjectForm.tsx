@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useTransition } from "react";
 import Link from "next/link";
 import { createProject } from "@/app/actions/projects/createProject";
 import { BackgroundImagesPickerModal } from "@/components/carousels/BackgroundImagesPickerModal";
@@ -68,7 +67,6 @@ export function NewProjectForm({
   isAdmin?: boolean;
   maxUgcAvatarReferenceAssets?: number;
 }) {
-  const [isPending, startTransition] = useTransition();
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [ugcAvatarPickerOpen, setUgcAvatarPickerOpen] = useState(false);
@@ -100,7 +98,9 @@ export function NewProjectForm({
     },
   });
 
-  function onSubmit(data: ProjectFormInput) {
+  async function onSubmit(data: ProjectFormInput) {
+    form.clearErrors("root");
+    form.clearErrors("name");
     const fd = new FormData();
     fd.set("name", data.name);
     fd.set("niche", data.niche ?? "");
@@ -125,24 +125,30 @@ export function NewProjectForm({
     if (logoFile && logoFile instanceof File && logoFile.size > 0) {
       fd.set("logo", logoFile);
     }
-    startTransition(async () => {
-      try {
-        const result = await createProject(fd);
-        if (result && "error" in result && result.error) {
-          const fieldErrors = result.error as Record<string, string[] | undefined>;
-          if (fieldErrors.name?.[0]) {
-            form.setError("name", { type: "server", message: fieldErrors.name[0] });
-          } else {
-            form.setError("root", { type: "server", message: "Failed to create project. Try again." });
-          }
-          return;
+    try {
+      const result = await createProject(fd);
+      if (result && "error" in result && result.error) {
+        const fieldErrors = result.error as Record<string, string[] | undefined>;
+        if (fieldErrors.name?.[0]) {
+          form.setError("name", { type: "server", message: fieldErrors.name[0] });
+        } else {
+          const first =
+            Object.values(fieldErrors).find((v) => Array.isArray(v) && v[0])?.[0] ??
+            "Could not create this project. Check your connection and try again.";
+          form.setError("root", { type: "server", message: first });
         }
-      } catch (err) {
-        if (err && typeof err === "object" && "digest" in err && (err as { digest?: string }).digest === "NEXT_REDIRECT") return;
-        console.error(err);
-        form.setError("root", { type: "server", message: "Failed to create project. Try again." });
       }
-    });
+    } catch (err) {
+      if (err && typeof err === "object" && "digest" in err && (err as { digest?: string }).digest === "NEXT_REDIRECT") {
+        return;
+      }
+      console.error(err);
+      const msg =
+        err instanceof Error && (err.message.includes("fetch") || err.message.includes("network"))
+          ? "Network error while creating the project. Try again."
+          : "Failed to create project. Try again.";
+      form.setError("root", { type: "server", message: msg });
+    }
   }
 
   return (
@@ -423,8 +429,12 @@ export function NewProjectForm({
               <p className="text-destructive text-sm">{form.formState.errors.root.message}</p>
             )}
             <div className="flex gap-4">
-              <Button type="submit" disabled={isPending} loading={isPending}>
-                {isPending ? "Creating…" : "Create project"}
+              <Button
+                type="submit"
+                disabled={form.formState.isSubmitting}
+                loading={form.formState.isSubmitting}
+              >
+                {form.formState.isSubmitting ? "Creating…" : "Create project"}
               </Button>
               <Button type="button" variant="outline" asChild>
                 <Link href="/projects">Cancel</Link>

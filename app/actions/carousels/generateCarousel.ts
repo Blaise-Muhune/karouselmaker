@@ -7,7 +7,7 @@ import { getSubscription, getEffectivePlanLimits, hasFullProFeatureAccess } from
 import { getProject, updateProject } from "@/lib/server/db/projects";
 import { getDefaultTemplateForNewCarousel, getDefaultTemplateForNewCarouselImage, getDefaultLinkedInTemplate, getTemplate } from "@/lib/server/db/templates";
 import { createCarousel, getCarousel, updateCarousel, countCarouselsThisMonth, countCarouselsLifetime, countAiGenerateCarouselsThisMonth } from "@/lib/server/db/carousels";
-import { replaceSlides, updateSlide } from "@/lib/server/db/slides";
+import { replaceSlides, updateSlide, getSlide } from "@/lib/server/db/slides";
 import type { Json } from "@/lib/server/db/types";
 import { getAsset } from "@/lib/server/db/assets";
 import {
@@ -52,6 +52,7 @@ import { summarizeUgcAvatarReferencesForConsistency } from "@/lib/server/ai/summ
 import { preferRecognizablePublicFiguresForImages } from "@/lib/server/ai/topicFictionHeuristic";
 import { extractInputTextFromDocument } from "@/lib/server/documents/extractInputText";
 import { uploadGeneratedImage } from "@/lib/server/storage/uploadGeneratedImage";
+import { downloadStorageImageBuffer } from "@/lib/server/export/fetchImageAsDataUrl";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
 import { setSlideTemplate } from "@/app/actions/slides/setSlideTemplate";
 import { generateCarouselInputSchema } from "@/lib/validations/carousel";
@@ -1321,6 +1322,11 @@ export async function generateCarousel(formData: FormData): Promise<
           Boolean(ugcCarouselChainFaceBufferForSlide()) ||
           productPixelsAttached ||
           establishSeriesFaceAnchor;
+        const strictReuseFirstSlideIdentity =
+          !isHookSlide &&
+          chainedGeneratedFaceRefMode &&
+          !hadUgcRefBuffersForRun &&
+          (effectiveUgcReferenceBuffers()?.length ?? 0) > 0;
         const imageContext = {
           carouselTitle: validated.title?.trim() || undefined,
           topic: data.input_value?.trim() || undefined,
@@ -1344,6 +1350,7 @@ export async function generateCarousel(formData: FormData): Promise<
           preferRecognizablePublicFigures: preferPublicFigures || undefined,
           omitDefaultInclusivePeopleLine: omitDefaultInclusivePeopleLine || undefined,
           ...(establishSeriesFaceAnchor ? { establishSeriesFaceAnchor: true as const } : {}),
+          ...(strictReuseFirstSlideIdentity ? { strictReuseFirstSlideIdentity: true as const } : {}),
         };
         const genResult = await generateImageFromPrompt(firstQuery, { context: imageContext });
         if (genResult.ok) {
@@ -1412,6 +1419,7 @@ export async function generateCarousel(formData: FormData): Promise<
               genericFacesOnly: preferPublicFigures || undefined,
               omitDefaultInclusivePeopleLine: omitDefaultInclusivePeopleLine || undefined,
               ...(fallbackEstablishAnchor ? { establishSeriesFaceAnchor: true as const } : {}),
+              ...(strictReuseFirstSlideIdentity ? { strictReuseFirstSlideIdentity: true as const } : {}),
             },
           });
           if (fallbackResult.ok) {
@@ -1443,6 +1451,107 @@ export async function generateCarousel(formData: FormData): Promise<
       if (runAiSlidesSequentially) {
         for (const job of aiGenJobs) {
           await processOneAiSlide(job);
+        }
+        /** Hook was text/product-only; mid-deck i2i often locks a different face. Re-run slide 1 once using the first strong face slide as identity master so slide 1 matches the rest. */
+        if (
+          chainedGeneratedFaceRefMode &&
+          !hadUgcRefBuffersForRun &&
+          !preferPublicFigures &&
+          aiGenJobs.length >= 2
+        ) {
+          const sortedJobs = [...aiGenJobs].sort((a, b) => a.aiSlide.slide_index - b.aiSlide.slide_index);
+          const hookJob = sortedJobs.find((j) => j.aiSlide.slide_index === 1);
+          const identityJob =
+            sortedJobs.find(
+              (j) =>
+                j.aiSlide.slide_index > 1 &&
+                slidesWithImage.has(j.slide.id) &&
+                ugcSlideLikelyShowsHostFaceForChainRef(j.aiSlide)
+            ) ?? sortedJobs.find((j) => j.aiSlide.slide_index === 2 && slidesWithImage.has(j.slide.id));
+          if (hookJob && identityJob && hookJob.slide.id !== identityJob.slide.id && slidesWithImage.has(hookJob.slide.id)) {
+            try {
+              const srcRow = await getSlide(user.id, identityJob.slide.id);
+              const bgPath = (srcRow?.background as { storage_path?: string } | null)?.storage_path?.trim() ?? "";
+              if (
+                bgPath.startsWith(`user/${user.id}/`) &&
+                bgPath.includes(`/generated/${carousel.id}/`)
+              ) {
+                const idBuf = await downloadStorageImageBuffer("carousel-assets", bgPath);
+                if (idBuf && idBuf.length > 0) {
+                  const hookAi = hookJob.aiSlide;
+                  const hookQueries =
+                    hookAi?.image_queries?.filter((q) => q?.trim()) ??
+                    hookAi?.unsplash_queries?.filter((q) => q?.trim()) ??
+                    (hookAi?.image_query?.trim()
+                      ? [hookAi.image_query.trim()]
+                      : hookAi?.unsplash_query?.trim()
+                        ? [hookAi.unsplash_query.trim()]
+                        : []);
+                  const hookQuery = hookQueries[0];
+                  if (hookQuery) {
+                    const hookCtx = hookAi?.image_context;
+                    const hookProductShow =
+                      (productReferenceImageBuffers?.length ?? 0) > 0 ||
+                      (productOrServiceKnown &&
+                        (hookAi?.slide_index === 1 ||
+                          hookAi?.slide_index === validated.slides.length ||
+                          (hookAi?.slide_index ?? 0) % 2 === 0));
+                    const realignResult = await generateImageFromPrompt(hookQuery, {
+                      context: {
+                        carouselTitle: validated.title?.trim() || undefined,
+                        topic: data.input_value?.trim() || undefined,
+                        slideHeadline: hookAi?.headline?.trim() || undefined,
+                        slideBody: hookAi?.body?.trim() || undefined,
+                        year: hookCtx?.year?.trim() || undefined,
+                        location: hookCtx?.location?.trim() || undefined,
+                        isHookSlide: true,
+                        hookIdentityRealignmentFromRef: true,
+                        userNotes: data.notes?.trim() || undefined,
+                        projectImageStyleNotes: projectRulesForImages.trim() || undefined,
+                        referenceStyleSummary,
+                        productReferenceSummary,
+                        productMustAppear: hookProductShow || undefined,
+                        seriesVisualConsistency,
+                        ugcCharacterLock,
+                        ugcReferenceImageBuffers: [idBuf],
+                        productReferenceImageBuffers,
+                        ugcCasualPhoneLook: contentFocusId === "ugc" || undefined,
+                        aspectRatio: imageAspectRatio,
+                        preferRecognizablePublicFigures: preferPublicFigures || undefined,
+                        omitDefaultInclusivePeopleLine: true,
+                      },
+                    });
+                    if (realignResult.ok) {
+                      imageCostTrack[realignResult.provider] += 1;
+                      const newPath = await uploadGeneratedImage(
+                        user.id,
+                        carousel.id,
+                        hookJob.slide.id,
+                        realignResult.buffer
+                      );
+                      if (newPath) {
+                        await updateSlide(user.id, hookJob.slide.id, {
+                          background: {
+                            mode: "image",
+                            storage_path: newPath,
+                            fit: "cover",
+                            overlay: overlayForImageSlide,
+                          },
+                        });
+                        firstSequentialAiPortraitAnchor = Buffer.from(realignResult.buffer);
+                        LOG("backgrounds", "hook identity realigned to match mid-deck host");
+                      }
+                    }
+                  }
+                }
+              }
+            } catch (e) {
+              LOG(
+                "backgrounds",
+                `hook identity realign skipped: ${e instanceof Error ? e.message : String(e)}`
+              );
+            }
+          }
         }
       } else {
         for (let i = 0; i < aiGenJobs.length; i += AI_IMAGE_CONCURRENCY) {
