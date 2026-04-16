@@ -327,6 +327,14 @@ function slideMentionsAnyNeedle(text: string, needles: string[]): boolean {
   });
 }
 
+function inferHostGenderHint(text: string | undefined): "female" | "male" | undefined {
+  const t = (text ?? "").toLowerCase();
+  if (!t) return undefined;
+  if (/\b(woman|female|girl|she|her|hers)\b/.test(t)) return "female";
+  if (/\b(man|male|boy|he|him|his)\b/.test(t)) return "male";
+  return undefined;
+}
+
 export async function generateCarousel(formData: FormData): Promise<
   | { carouselId: string }
   | { carouselId: string; partialError: string }
@@ -541,8 +549,35 @@ export async function generateCarousel(formData: FormData): Promise<
   }
   let useAiGenerate = requestedAiGenerate && (fullProFeatures || userIsAdmin);
   const requestedUseAiBackgrounds = !!data.use_ai_backgrounds;
-  const productRefIdsForRun = data.product_reference_asset_ids ?? [];
-  const productServiceInput = data.product_service_input?.trim() || undefined;
+  const previousGenOpts = (carousel.generation_options ?? {}) as {
+    product_reference_asset_ids?: unknown;
+    product_service_input?: unknown;
+  };
+  const previousProductRefIds = Array.isArray(previousGenOpts.product_reference_asset_ids)
+    ? previousGenOpts.product_reference_asset_ids
+        .filter((id): id is string => typeof id === "string" && id.trim().length > 0)
+    : [];
+  const submittedProductRefIds = data.product_reference_asset_ids ?? [];
+  const productRefIdsForRun =
+    submittedProductRefIds.length > 0 ? submittedProductRefIds : previousProductRefIds;
+  const submittedProductServiceInput = data.product_service_input?.trim() || "";
+  const previousProductServiceInput =
+    typeof previousGenOpts.product_service_input === "string"
+      ? previousGenOpts.product_service_input.trim()
+      : "";
+  const productServiceInput =
+    submittedProductServiceInput || previousProductServiceInput || undefined;
+  if (
+    data.carousel_id &&
+    submittedProductRefIds.length === 0 &&
+    submittedProductServiceInput.length === 0 &&
+    (previousProductRefIds.length > 0 || previousProductServiceInput.length > 0)
+  ) {
+    LOG(
+      "product",
+      `regen inherited previous product context refs=${previousProductRefIds.length} serviceInput=${previousProductServiceInput ? "yes" : "no"}`
+    );
+  }
   /** UGC + Instagram/TikTok: stock and web images clash with creator-style backgrounds; require AI generate (or user turns AI images off). */
   if (
     contentFocusId === "ugc" &&
@@ -751,6 +786,13 @@ export async function generateCarousel(formData: FormData): Promise<
 
   const productOrServiceKnown =
     !!productServiceInput || productRefIdsForRun.length > 0 || !!productReferenceSummary;
+  const apparelProductLikely = /\b(jacket|denim|hoodie|shirt|t-?shirt|tee|dress|jeans|pants|trousers|coat|blazer|cardigan|sweater|top|skirt|outfit|wear|worn|sneaker|shoe|boots)\b/i.test(
+    `${productServiceInput ?? ""} ${productReferenceSummary ?? ""}`
+  );
+  LOG(
+    "product",
+    `known=${productOrServiceKnown} refs=${productRefIdsForRun.length} serviceInput=${productServiceInput ? "yes" : "no"} summary=${productReferenceSummary ? "yes" : "no"}`
+  );
   const normalizedProductLabel = (() => {
     const raw = (productServiceInput ?? "").trim();
     if (!raw) return "this product";
@@ -782,6 +824,7 @@ export async function generateCarousel(formData: FormData): Promise<
 
     let mentionCount = countProductMentions(validated.slides);
     const minMentions = Math.max(2, Math.ceil(validated.slides.length * 0.4));
+    LOG("product", `text mention coverage before patch: ${mentionCount}/${validated.slides.length} (min ${minMentions})`);
     if (mentionCount < minMentions) {
       const sorted = [...validated.slides].sort((a, b) => a.slide_index - b.slide_index);
       const patchByIndex = new Map<number, CarouselOutput["slides"][number]>();
@@ -805,6 +848,11 @@ export async function generateCarousel(formData: FormData): Promise<
           ...validated,
           slides: validated.slides.map((s) => patchByIndex.get(s.slide_index) ?? s),
         };
+        mentionCount = countProductMentions(validated.slides);
+        LOG(
+          "product",
+          `text mention coverage patched: +${patchByIndex.size} slide(s), now ${mentionCount}/${validated.slides.length}`
+        );
       }
     }
   }
@@ -813,17 +861,17 @@ export async function generateCarousel(formData: FormData): Promise<
   if (validated.slides.length > 0) {
     const lastSlide = validated.slides.reduce((a, b) => (a.slide_index > b.slide_index ? a : b));
     const headline = (lastSlide.headline ?? "").trim().toLowerCase();
-    const compactProductHint = normalizedProductLabel;
+    const bodyLower = (lastSlide.body ?? "").trim().toLowerCase();
     const hasFollowSubscribe =
-      /\b(follow|subscribe|more\s+(like\s+this|every\s+week|content)|@\w+)/i.test(headline) ||
+      /\b(follow|subscribe|more\s+(like\s+this|every\s+week|content)|@\w+)/i.test(`${headline} ${bodyLower}`) ||
       (!!creatorHandle && (headline.includes(creatorHandle.toLowerCase()) || headline.includes(creatorHandle.replace(/^@/, "").toLowerCase())));
-    const hasProductTryCta = /\b(try|start|book|demo|get|check|use|bio|dm|grab|download|shop|order)\b/i.test(
-      headline
+    const hasProductTryCta = /\b(try|start|book|demo|get|check|use|bio|dm|grab|download|shop|order|ready)\b/i.test(
+      `${headline} ${bodyLower}`
     );
     const finalSlideLooksLikeClosingCta =
       lastSlide.slide_type === "cta" ||
-      /\b(follow|subscribe|save|share|dm|bio|link\s+in)\b/i.test(headline);
-    if (productOrServiceKnown && finalSlideLooksLikeClosingCta && !hasProductTryCta) {
+      /\b(follow|subscribe|save|share|dm|bio|link\s+in|try|book|demo|shop|order)\b/i.test(`${headline} ${bodyLower}`);
+    if (productOrServiceKnown && (!hasProductTryCta || !finalSlideLooksLikeClosingCta || lastSlide.slide_type !== "cta")) {
       const newHeadline =
         shortProductCloseLabel && shortProductCloseLabel !== "this product"
           ? "When you want that same ease"
@@ -840,6 +888,7 @@ export async function generateCarousel(formData: FormData): Promise<
             : s
         ),
       };
+      LOG("product", "last-slide CTA patched to explicit product close");
     } else if (lastSlide.slide_type === "cta" && !hasFollowSubscribe && !productOrServiceKnown) {
       const handle = creatorHandle?.trim()
         ? (creatorHandle.startsWith("@") ? creatorHandle : `@${creatorHandle}`)
@@ -900,8 +949,8 @@ export async function generateCarousel(formData: FormData): Promise<
     ...(data.ugc_character_reference_asset_ids != null && {
       ugc_character_reference_asset_ids: data.ugc_character_reference_asset_ids,
     }),
-    ...(data.product_reference_asset_ids != null && {
-      product_reference_asset_ids: data.product_reference_asset_ids,
+    ...(productRefIdsForRun.length > 0 && {
+      product_reference_asset_ids: productRefIdsForRun,
     }),
     ...(productServiceInput && { product_service_input: productServiceInput }),
     ...(validated.similar_ideas?.length && {
@@ -1138,7 +1187,7 @@ export async function generateCarousel(formData: FormData): Promise<
         : (data.ugc_character_reference_asset_ids ?? [])
       : [];
     const ugcAvatarIdSet = new Set(ugcAvatarAssetIds);
-    const productRefIdSet = new Set(data.product_reference_asset_ids ?? []);
+    const productRefIdSet = new Set(productRefIdsForRun ?? []);
     const ugcBriefSaved = applySavedUgcCharacter
       ? ((project as { ugc_character_brief?: string | null }).ugc_character_brief?.trim() ?? "")
       : "";
@@ -1225,6 +1274,7 @@ export async function generateCarousel(formData: FormData): Promise<
       const hadUgcRefBuffersForRun = (userUploadedUgcRefBuffers?.length ?? 0) > 0;
       /** First successful AI slide JPEG when the user had no library face refs—reused as the sole i2i identity anchor for slides 2+ (avoids drift from slide-to-slide chaining). */
       let firstSequentialAiPortraitAnchor: Buffer | undefined;
+      let recurringHostGenderHint: "female" | "male" | undefined;
       const ugcChainFaceBuf: { current?: Buffer } = {};
       const effectiveUgcReferenceBuffers = (): Buffer[] | undefined => {
         if (userUploadedUgcRefBuffers && userUploadedUgcRefBuffers.length > 0) {
@@ -1327,6 +1377,16 @@ export async function generateCarousel(formData: FormData): Promise<
           chainedGeneratedFaceRefMode &&
           !hadUgcRefBuffersForRun &&
           (effectiveUgcReferenceBuffers()?.length ?? 0) > 0;
+        const guessedGender =
+          inferHostGenderHint(firstQuery) ??
+          inferHostGenderHint(aiSlide?.headline) ??
+          inferHostGenderHint(aiSlide?.body) ??
+          inferHostGenderHint(seriesVisualConsistency);
+        if (!recurringHostGenderHint && guessedGender) recurringHostGenderHint = guessedGender;
+        LOG(
+          "product",
+          `slide ${aiSlide.slide_index}: productRefs=${productReferenceImageBuffers?.length ?? 0} mustAppear=${shouldShowProduct ? "yes" : "no"} i2iUGCRefs=${effectiveUgcReferenceBuffers()?.length ?? 0}`
+        );
         const imageContext = {
           carouselTitle: validated.title?.trim() || undefined,
           topic: data.input_value?.trim() || undefined,
@@ -1340,6 +1400,7 @@ export async function generateCarousel(formData: FormData): Promise<
           referenceStyleSummary,
           productReferenceSummary,
           productMustAppear: shouldShowProduct || undefined,
+          preferProductWornByHost: (apparelProductLikely && shouldShowProduct) || undefined,
           seriesVisualConsistency,
           ugcCharacterLock,
           ugcReferenceImageBuffers: effectiveUgcReferenceBuffers(),
@@ -1348,6 +1409,7 @@ export async function generateCarousel(formData: FormData): Promise<
           ugcCasualPhoneLook: contentFocusId === "ugc" || undefined,
           aspectRatio: imageAspectRatio,
           preferRecognizablePublicFigures: preferPublicFigures || undefined,
+          recurringHostGenderHint,
           omitDefaultInclusivePeopleLine: omitDefaultInclusivePeopleLine || undefined,
           ...(establishSeriesFaceAnchor ? { establishSeriesFaceAnchor: true as const } : {}),
           ...(strictReuseFirstSlideIdentity ? { strictReuseFirstSlideIdentity: true as const } : {}),
@@ -1375,7 +1437,10 @@ export async function generateCarousel(formData: FormData): Promise<
               firstSequentialAiPortraitAnchor = Buffer.from(genResult.buffer);
             }
             maybeCaptureUgcChainFaceRef(genResult.buffer, aiSlide);
+            LOG("product", `slide ${aiSlide.slide_index}: image generated via ${genResult.provider}`);
           }
+        } else {
+          LOG("product", `slide ${aiSlide.slide_index}: primary generation failed (${genResult.error})`);
         }
         if (!genResult.ok || !slidesWithImage.has(slide.id)) {
           const topicFallback =
@@ -1405,6 +1470,7 @@ export async function generateCarousel(formData: FormData): Promise<
               referenceStyleSummary,
               productReferenceSummary,
               productMustAppear: shouldShowProduct || undefined,
+              preferProductWornByHost: (apparelProductLikely && shouldShowProduct) || undefined,
               seriesVisualConsistency,
               ugcCharacterLock,
               ugcReferenceImageBuffers: effectiveUgcReferenceBuffers(),
@@ -1416,6 +1482,7 @@ export async function generateCarousel(formData: FormData): Promise<
               isHookSlide: isHookSlide || undefined,
               aspectRatio: imageAspectRatio,
               preferRecognizablePublicFigures: false,
+              recurringHostGenderHint,
               genericFacesOnly: preferPublicFigures || undefined,
               omitDefaultInclusivePeopleLine: omitDefaultInclusivePeopleLine || undefined,
               ...(fallbackEstablishAnchor ? { establishSeriesFaceAnchor: true as const } : {}),
@@ -1444,7 +1511,10 @@ export async function generateCarousel(formData: FormData): Promise<
                 firstSequentialAiPortraitAnchor = Buffer.from(fallbackResult.buffer);
               }
               maybeCaptureUgcChainFaceRef(fallbackResult.buffer, aiSlide);
+              LOG("product", `slide ${aiSlide.slide_index}: fallback image generated via ${fallbackResult.provider}`);
             }
+          } else {
+            LOG("product", `slide ${aiSlide.slide_index}: fallback generation failed (${fallbackResult.error})`);
           }
         }
       };
@@ -1511,6 +1581,8 @@ export async function generateCarousel(formData: FormData): Promise<
                         referenceStyleSummary,
                         productReferenceSummary,
                         productMustAppear: hookProductShow || undefined,
+                        preferProductWornByHost:
+                          (apparelProductLikely && hookProductShow) || undefined,
                         seriesVisualConsistency,
                         ugcCharacterLock,
                         ugcReferenceImageBuffers: [idBuf],
@@ -1518,6 +1590,7 @@ export async function generateCarousel(formData: FormData): Promise<
                         ugcCasualPhoneLook: contentFocusId === "ugc" || undefined,
                         aspectRatio: imageAspectRatio,
                         preferRecognizablePublicFigures: preferPublicFigures || undefined,
+                        recurringHostGenderHint,
                         omitDefaultInclusivePeopleLine: true,
                       },
                     });

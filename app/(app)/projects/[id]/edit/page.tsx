@@ -90,7 +90,9 @@ export default async function EditProjectPage({
           </Button>
           <div>
             <h1 className="text-xl font-semibold tracking-tight">Edit project</h1>
-            <p className="text-muted-foreground text-sm mt-0.5">Your project is where your carousels live. Change name and niche here; use Advanced settings for language, tone, and brand.</p>
+            <p className="text-muted-foreground text-sm mt-0.5">
+              Your project is where your carousels live. Change name, niche, content style, and recurring character below; use Advanced settings for language, tone, rules, brand kit, and AI style references.
+            </p>
           </div>
         </div>
         <ProjectEditForm

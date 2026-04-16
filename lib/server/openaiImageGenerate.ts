@@ -111,6 +111,10 @@ export type ImagePromptContext = {
    * Regenerate slide 1: first attachment is a later slide (stronger face lock) so the hook matches the rest of the deck.
    */
   hookIdentityRealignmentFromRef?: boolean;
+  /** Optional lock when carousel establishes one recurring host presentation. */
+  recurringHostGenderHint?: "female" | "male";
+  /** Apparel product runs: prefer host wearing the item in relatable scenes. */
+  preferProductWornByHost?: boolean;
 };
 
 /** Parse user notes for aspect ratio preference. Default 4:5 if no match. */
@@ -524,12 +528,27 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
         "This slide requires visible product presence: include the product/app/service clearly in frame (in hand, on screen, on desk, worn, or actively used) while keeping scene realism."
       );
     }
+    if (context?.preferProductWornByHost) {
+      parts.push(
+        "Apparel relatability rule: prioritize scenes where the recurring host is clearly **wearing** the garment on body in a natural day-to-day moment (mirror, doorway, street, cafe, conversation). Avoid isolated flat-lay/hanger-only product shots unless the slide explicitly asks for a detail-only view."
+      );
+    }
   }
 
   const ugcLock = context?.ugcCharacterLock?.trim();
   if (ugcLock) {
     parts.push(
       `Recurring character / person lock (mandatory when a person appears): same identity every slide—face shape, features, hairstyle (cut, length, texture, part, hairline, color) as a high-priority anchor, skin tone, body type, age read, recurring casual wardrobe (same garment colors/types and dress level), jewelry and accessories (watch, earrings, necklace, glasses) when visible, and stable look for any recurring partner or friend in the story. For one continuous day or outing in the carousel, do not randomize outfit, hair, or companions between slides unless notes or slide text signal a change. Do not drift to a different model. Vary pose, expression, framing, and background. ${truncateForContext(ugcLock, 480)}`
+    );
+  }
+
+  if (context?.recurringHostGenderHint === "female") {
+    parts.push(
+      "Recurring host presentation lock: keep the same woman host across slides when the recurring host appears; do not recast to a man."
+    );
+  } else if (context?.recurringHostGenderHint === "male") {
+    parts.push(
+      "Recurring host presentation lock: keep the same man host across slides when the recurring host appears; do not recast to a woman."
     );
   }
 
@@ -608,7 +627,7 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
     }
     if (context?.establishSeriesFaceAnchor) {
       parts.push(
-        "Series face anchor (no library refs this run): if a recurring human appears, one **stable recognizable face**—neutral practical light on skin, close enough to read eyes, hair texture, and skin undertone (normal selfie or arm’s-length distance is fine). **Hold one consistent invented look** (face, hair, skin, age read) for every later slide—**not** a studio beauty headshot, still casual phone energy; avoid tiny distant faces, heavy silhouette-only hooks, or faceless POV-only frames that would make the next slides unable to match the same person. Do not pick a hook look just to satisfy generic “diversity” stereotypes."
+        "Series face anchor (no library refs this run): if a recurring human appears, one **stable recognizable face**—neutral practical light on skin, close enough to read eyes, hair texture, and skin undertone (normal selfie or arm’s-length distance is fine). **Hold one consistent invented look** (face, hair, skin, age read) for every later slide—**not** a studio beauty headshot, still casual phone energy; avoid tiny distant faces, heavy silhouette-only hooks, or faceless POV-only frames that would make the next slides unable to match the same person. When no face refs exist, do not default to the same demographic template across runs; choose a plausible non-stereotyped host from topic/notes, then keep that exact person for this carousel."
       );
     }
     if (isBibleChristianTopic) {
@@ -1012,6 +1031,16 @@ export async function generateImageFromPrompt(
       }
     }
     if (!extracted) {
+      if (canEdit && editProductCount > 0) {
+        imageGenDebug(
+          "i2i exhausted with product refs; refusing silent text-only fallback (would drop product pixels)"
+        );
+        return {
+          ok: false,
+          error:
+            "Product image-to-image failed; skipping text-only fallback because it would ignore product reference pixels.",
+        };
+      }
       if (canEdit) {
         imageGenDebug("i2i exhausted; falling back to images.generate with base prompt only (reference pixels not sent)");
       }

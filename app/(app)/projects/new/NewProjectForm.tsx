@@ -163,7 +163,9 @@ export function NewProjectForm({
           </Button>
           <div>
             <h1 className="text-xl font-semibold tracking-tight">New project</h1>
-            <p className="text-muted-foreground text-sm mt-0.5">Your project is where your carousels live—one place per niche or brand. Name it and go; add language, tone, and brand in Advanced settings if you like.</p>
+            <p className="text-muted-foreground text-sm mt-0.5">
+              Your project is where your carousels live—one place per niche or brand. Set content style and recurring character below; open Advanced for language, tone, rules, and brand kit.
+            </p>
           </div>
         </div>
 
@@ -195,6 +197,46 @@ export function NewProjectForm({
                 </FormItem>
               )}
             />
+
+            <div className="space-y-6">
+              <FormField
+                control={form.control}
+                name="content_focus"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Content style</FormLabel>
+                    <p className="text-muted-foreground text-xs mb-2">Tunes copy + topic ideas for the whole deck.</p>
+                    <div className="flex flex-col gap-2">
+                      {CONTENT_FOCUS_OPTIONS.map((opt) => {
+                        const selected = field.value === opt.id;
+                        return (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => field.onChange(opt.id)}
+                            className={cn(
+                              "rounded-lg border px-3 py-2.5 text-left text-sm transition-colors",
+                              selected
+                                ? "border-primary bg-primary/5 ring-1 ring-primary"
+                                : "border-border/60 bg-background hover:bg-muted/40"
+                            )}
+                          >
+                            <span className="font-medium">{opt.label}</span>
+                            <span className="text-muted-foreground mt-0.5 block text-xs leading-snug">{opt.description}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <UgcProjectCharacterSection
+                control={form.control}
+                maxAvatarAssets={maxUgcAvatarReferenceAssets}
+                onOpenAvatarPicker={() => setUgcAvatarPickerOpen(true)}
+              />
+            </div>
 
             <div className="space-y-3">
               <Button
@@ -266,43 +308,6 @@ export function NewProjectForm({
                   <FormMessage />
                 </FormItem>
               )}
-            />
-            <FormField
-              control={form.control}
-              name="content_focus"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Content style</FormLabel>
-                  <p className="text-muted-foreground text-xs mb-2">Tunes copy + topic ideas for the whole deck.</p>
-                  <div className="flex flex-col gap-2">
-                    {CONTENT_FOCUS_OPTIONS.map((opt) => {
-                      const selected = field.value === opt.id;
-                      return (
-                        <button
-                          key={opt.id}
-                          type="button"
-                          onClick={() => field.onChange(opt.id)}
-                          className={cn(
-                            "rounded-lg border px-3 py-2.5 text-left text-sm transition-colors",
-                            selected
-                              ? "border-primary bg-primary/5 ring-1 ring-primary"
-                              : "border-border/60 bg-background hover:bg-muted/40"
-                          )}
-                        >
-                          <span className="font-medium">{opt.label}</span>
-                          <span className="text-muted-foreground mt-0.5 block text-xs leading-snug">{opt.description}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <UgcProjectCharacterSection
-              control={form.control}
-              maxAvatarAssets={maxUgcAvatarReferenceAssets}
-              onOpenAvatarPicker={() => setUgcAvatarPickerOpen(true)}
             />
             <div className="space-y-2">
               <Label>Rules or context (optional)</Label>
