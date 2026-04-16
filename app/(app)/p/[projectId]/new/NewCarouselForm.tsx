@@ -1186,6 +1186,28 @@ export function NewCarouselForm({
                       <p className="text-[10px] text-muted-foreground/90 leading-snug -mt-1">
                         Screenshots, packaging, or product photos.
                       </p>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="product_service_input" className="text-[11px] font-medium">
+                          Product/service name or link
+                        </Label>
+                        <Input
+                          id="product_service_input"
+                          type="text"
+                          placeholder="e.g. Acme Planner app or https://acme.com"
+                          className="h-8 text-xs"
+                          value={productServiceInput}
+                          maxLength={600}
+                          onChange={(e) => setProductServiceInput(e.target.value)}
+                        />
+                        <p
+                          className={cn(
+                            "text-[10px] tabular-nums text-muted-foreground",
+                            productServiceInput.length >= 600 && "font-medium text-destructive"
+                          )}
+                        >
+                          {productServiceInput.length}/600
+                        </p>
+                      </div>
                       <div className="flex flex-wrap items-center gap-2">
                         <Button
                           type="button"
@@ -1309,6 +1331,28 @@ export function NewCarouselForm({
                     uses them to align copy and image search keywords with what you actually sell or ship (no AI-generated
                     backgrounds in this mode).
                   </p>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="product_service_input_off" className="text-[11px] font-medium">
+                      Product/service name or link
+                    </Label>
+                    <Input
+                      id="product_service_input_off"
+                      type="text"
+                      placeholder="e.g. Acme Planner app or https://acme.com"
+                      className="h-8 text-xs"
+                      value={productServiceInput}
+                      maxLength={600}
+                      onChange={(e) => setProductServiceInput(e.target.value)}
+                    />
+                    <p
+                      className={cn(
+                        "text-[10px] tabular-nums text-muted-foreground",
+                        productServiceInput.length >= 600 && "font-medium text-destructive"
+                      )}
+                    >
+                      {productServiceInput.length}/600
+                    </p>
+                  </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <Button
                       type="button"
@@ -1717,30 +1761,6 @@ export function NewCarouselForm({
                       </button>
                     </div>
                     <p className="text-muted-foreground text-xs">Leave empty to let AI choose.</p>
-                  </div>
-                  <div className="space-y-2 sm:col-span-2 sm:col-start-1">
-                    <Label htmlFor="product_service_input" className="text-sm font-medium">Product/service name or link (optional)</Label>
-                    <Input
-                      id="product_service_input"
-                      type="text"
-                      placeholder="e.g. Acme Planner app or https://acme.com"
-                      className="min-w-0 w-full"
-                      value={productServiceInput}
-                      maxLength={600}
-                      onChange={(e) => setProductServiceInput(e.target.value)}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      When set, AI makes the final slide a CTA for this product/service.
-                    </p>
-                    <p
-                      className={cn(
-                        "text-xs tabular-nums text-muted-foreground",
-                        productServiceInput.length >= 600 && "font-medium text-destructive"
-                      )}
-                    >
-                      {productServiceInput.length}/600 characters
-                      {productServiceInput.length >= 600 ? " — limit reached" : ""}
-                    </p>
                   </div>
                   <div className="space-y-2 sm:col-span-2 sm:col-start-1">
                     <Label htmlFor="notes" className="text-sm font-medium">Notes (optional)</Label>

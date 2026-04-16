@@ -233,6 +233,11 @@ export async function regenerateSlideAiBackgroundForUser(params: {
   ].filter(Boolean);
   const firstQuery = queryParts.join(" ");
 
+  const omitDefaultInclusivePeopleLine =
+    (ugcReferenceImageBuffers?.length ?? 0) > 0 ||
+    (productReferenceImageBuffers?.length ?? 0) > 0 ||
+    Boolean(regenBuffer?.length);
+
   const imageContext = {
     carouselTitle: carousel.title?.trim() || undefined,
     topic: inputValue || undefined,
@@ -253,6 +258,7 @@ export async function regenerateSlideAiBackgroundForUser(params: {
     ugcCasualPhoneLook: contentFocusId === "ugc" || undefined,
     aspectRatio: imageAspectRatio,
     preferRecognizablePublicFigures: preferPublicFigures || undefined,
+    omitDefaultInclusivePeopleLine: omitDefaultInclusivePeopleLine || undefined,
   };
 
   const genResult = await generateImageFromPrompt(firstQuery, { context: imageContext });

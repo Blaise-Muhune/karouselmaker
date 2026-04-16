@@ -74,10 +74,19 @@ export async function promoteCarouselGeneratedFacesToUgcAvatarAssets(params: {
     };
   }
 
-  const faceLikely = withGeneratedPath.filter((x) =>
+  /** Slide 1 is the series identity anchor when present—always list it first for project face refs. */
+  const slide1Entry = withGeneratedPath.find((x) => x.slide.slide_index === 1);
+  const restByIndex = withGeneratedPath.filter((x) => x.slide.slide_index !== 1);
+  const faceLikelyRest = restByIndex.filter((x) =>
     ugcSlideLikelyShowsHostFaceForChainRef(slideAsAiSlideForHeuristic(x.slide))
   );
-  const ordered = faceLikely.length > 0 ? faceLikely : withGeneratedPath;
+  const nonFaceRest = restByIndex.filter((x) => !faceLikelyRest.includes(x));
+  const ordered =
+    slide1Entry != null
+      ? [slide1Entry, ...faceLikelyRest, ...nonFaceRest]
+      : faceLikelyRest.length > 0
+        ? [...faceLikelyRest, ...nonFaceRest]
+        : withGeneratedPath;
 
   const assetIds: string[] = [];
   for (const { path } of ordered) {

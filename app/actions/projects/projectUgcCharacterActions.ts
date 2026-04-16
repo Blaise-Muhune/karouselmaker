@@ -43,21 +43,14 @@ export async function saveUgcCharacterBriefFromCarousel(
   if (genOpts.use_ai_backgrounds !== true || genOpts.use_ai_generate !== true) {
     return { ok: false, error: "This carousel did not use AI-generated backgrounds." };
   }
-  const singleCharacterModeOnRun = genOpts.ugc_single_character_mode === true;
-  const recurringEntityModeOnRun = genOpts.ugc_recurring_entity_mode === true;
-  if (!singleCharacterModeOnRun && !recurringEntityModeOnRun) {
-    return {
-      ok: false,
-      error:
-        "This carousel was not generated with recurring-entity continuity mode. Generate with Same character from project (or character refs) when the same person/animal/mascot/object should persist.",
-    };
-  }
+  const carouselFor = genOpts.carousel_for;
+  const notLinkedIn = carouselFor !== "linkedin";
 
   if (genOpts.ugc_used_project_avatar_refs === true) {
     return {
       ok: false,
       error:
-        "This run already used your project’s saved face images—there’s no new AI-only character to save from it.",
+        "This run already used your project’s saved face references in image-to-image—there’s no new look to promote from these slides.",
     };
   }
 
@@ -92,7 +85,14 @@ export async function saveUgcCharacterBriefFromCarousel(
   if (!hasGeneratedUgcBackdrops) {
     return {
       ok: false,
-      error: "No AI-generated slide backgrounds found—we need frames from this run to copy as face references.",
+      error: "No AI-generated slide backgrounds found—we need frames from this run to copy as anchor references.",
+    };
+  }
+
+  if (!notLinkedIn) {
+    return {
+      ok: false,
+      error: "Promoting a character look from AI slides is only available for Instagram-style carousels.",
     };
   }
 

@@ -8,7 +8,7 @@ import {
 const uuidSchema = z.string().uuid();
 
 const checkboxBoolSchema = z
-  .union([z.literal("true"), z.literal(true), z.literal("on")])
+  .union([z.literal("true"), z.literal("false"), z.literal(true), z.literal(false), z.literal("on")])
   .optional()
   .transform((v) => v === "true" || v === true || v === "on");
 

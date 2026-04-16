@@ -6,51 +6,35 @@ import { UserRoundIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { saveUgcCharacterBriefFromCarousel } from "@/app/actions/projects/projectUgcCharacterActions";
 
+/**
+ * Promotes this carousel’s AI-generated recurring look into the project (text lock + anchor frames).
+ * Parent should render only when promotion is allowed (see carousel page eligibility).
+ */
 export function SaveUgcCharacterFromCarouselButton({
   projectId,
   carouselId,
   hasExistingSavedBrief,
-  canSave,
-  disabledHint,
 }: {
   projectId: string;
   carouselId: string;
   /** When true, label reads "Update…" instead of "Save…". */
   hasExistingSavedBrief: boolean;
-  /** When false, the button is disabled and `disabledHint` explains why. */
-  canSave: boolean;
-  disabledHint: string;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
   return (
-    <div
-      className={`rounded-lg border border-border/60 bg-muted/20 px-4 py-3 space-y-2 ${!canSave ? "opacity-90" : ""}`}
-    >
+    <div className="rounded-lg border border-border/60 bg-muted/20 px-4 py-3 space-y-2">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex gap-2 min-w-0">
           <UserRoundIcon className="size-5 shrink-0 text-muted-foreground mt-0.5" aria-hidden />
           <div className="min-w-0 space-y-1">
             <p className="text-sm text-muted-foreground leading-snug">
-              {canSave ? (
-                <>
-                  Save this carousel’s <span className="text-foreground font-medium">recurring AI entity</span> to the
-                  project: we copy the text lock and a few anchor frames into your library for the next run (person,
-                  animal, mascot, toy/object, product pack, icon/avatar, or other repeated character).
-                </>
-              ) : (
-                <>
-                  When a carousel is built with <span className="text-foreground font-medium">AI images</span> (Instagram /
-                  TikTok) and <span className="text-foreground font-medium">without</span> your project’s saved character
-                  references, you can save that recurring entity here for reuse.
-                </>
-              )}
+              <span className="text-foreground font-medium">Promote this carousel’s AI look</span> to your project: we
+              copy a text lock and a few anchor frames into your library for the next run (same person, animal, mascot,
+              object, or other repeated entity).
             </p>
-            {!canSave && disabledHint ? (
-              <p className="text-xs text-muted-foreground leading-snug">{disabledHint}</p>
-            ) : null}
           </div>
         </div>
         <Button
@@ -58,10 +42,8 @@ export function SaveUgcCharacterFromCarouselButton({
           variant="secondary"
           size="sm"
           className="shrink-0"
-          disabled={pending || !canSave}
-          title={!canSave ? disabledHint : undefined}
+          disabled={pending}
           onClick={() => {
-            if (!canSave) return;
             setMessage(null);
             startTransition(async () => {
               const r = await saveUgcCharacterBriefFromCarousel(projectId, carouselId);
@@ -79,7 +61,7 @@ export function SaveUgcCharacterFromCarouselButton({
             });
           }}
         >
-          {pending ? "Saving…" : hasExistingSavedBrief ? "Update saved character" : "Save character for future carousels"}
+          {pending ? "Saving…" : hasExistingSavedBrief ? "Update saved character" : "Promote to project"}
         </Button>
       </div>
       {message && (

@@ -55,6 +55,8 @@ export type ImagePromptContext = {
   referenceStyleSummary?: string;
   /** Product / app / service reference summary—pairs with image-to-image pixel refs when generating. */
   productReferenceSummary?: string;
+  /** When true, this slide should visibly include the product/app/service in the scene. */
+  productMustAppear?: boolean;
   /** One carousel-level paragraph for recurring character/world/palette consistency across AI slides. */
   seriesVisualConsistency?: string;
   /** UGC: face/body lock (vision summary of user avatar +/or saved brief)—injected even when referenceStyleSummary is set. */
@@ -90,6 +92,17 @@ export type ImagePromptContext = {
   preferRecognizablePublicFigures?: boolean;
   /** Retry / fallback: invented generic people only—no specific real-person or celebrity likeness. */
   genericFacesOnly?: boolean;
+  /**
+   * When true, skip the generic “inclusive / diverse / no single default ethnicity” line in the text
+   * prompt. That line helps text-only generation avoid a single default look, but it fights
+   * `images.edit` when reference pixels already define the person (carousel chain, uploaded UGC).
+   */
+  omitDefaultInclusivePeopleLine?: boolean;
+  /**
+   * First AI slide when the carousel has no library face refs: nudge a stable, readable face lock
+   * so later slides can image-to-image from the same identity anchor.
+   */
+  establishSeriesFaceAnchor?: boolean;
 };
 
 /** Parse user notes for aspect ratio preference. Default 4:5 if no match. */
@@ -223,6 +236,7 @@ function buildSafeRetryPrompt(
     referenceStyleSummary?: string;
     productReferenceSummary?: string;
     ugcNaturalPhone?: boolean;
+    continuityLock?: string;
   }
 ): string {
   const q = query
@@ -242,20 +256,24 @@ function buildSafeRetryPrompt(
     : "";
   const ref = opts?.referenceStyleSummary?.trim();
   const prod = opts?.productReferenceSummary?.trim();
+  const continuity = opts?.continuityLock?.trim();
   const prodBit = prod
     ? ` Product/service fidelity when relevant: ${truncateForContext(prod, 320)}`
+    : "";
+  const continuityBit = continuity
+    ? ` Continuity lock: ${truncateForContext(continuity, 520)}`
     : "";
   if (ref) {
     const refBrief = truncateForContext(ref, 480);
     const phone = opts?.ugcNaturalPhone
       ? " Natural smartphone realism: slight sensor grain in shadows, soft focus, muted **neutral** colors (no default orange cast)—like a real phone in that lighting—not studio HDR, beauty retouch, or AI-smooth plastic skin. Avoid stock-catalog staging."
       : "";
-    return `Generate one image that closely matches this user reference style: ${refBrief}. Subject and scene: ${concept}.${prodBit}${phone} No text, no logos. Stay faithful to the reference look; lighting and time of day should follow the reference and the scene.${faceLine}`;
+    return `Generate one image that closely matches this user reference style: ${refBrief}. Subject and scene: ${concept}.${prodBit}${continuityBit}${phone} No text, no logos. Stay faithful to the reference look; lighting and time of day should follow the reference and the scene.${faceLine}`;
   }
   if (opts?.ugcNaturalPhone) {
-    return `Generate one candid phone-camera image (iPhone-style main camera: natural dynamic range, **neutral white balance** unless the scene is inherently warm, slight grain in shadows, soft not razor-sharp, muted highlights—no ad gloss, no synthetic perfection, no orange filter cast) that closely resembles: ${concept}.${prodBit} Must look like a real snapshot, not a polished AI still. No text, no logos.${faceLine}`;
+    return `Generate one candid phone-camera image (iPhone-style main camera: natural dynamic range, **neutral white balance** unless the scene is inherently warm, slight grain in shadows, soft not razor-sharp, muted highlights—no ad gloss, no synthetic perfection, no orange filter cast) that closely resembles: ${concept}.${prodBit}${continuityBit} Must look like a real snapshot, not a polished AI still. No text, no logos.${faceLine}`;
   }
-  return `Generate a single professional image that closely resembles the following concept. Same subject, setting, and mood—appropriate for a general audience.${prodBit} No text, no logos. Concept: ${concept}. Lighting natural to the scene, suitable as a background.${faceLine}`;
+  return `Generate a single professional image that closely resembles the following concept. Same subject, setting, and mood—appropriate for a general audience.${prodBit}${continuityBit} No text, no logos. Concept: ${concept}. Lighting natural to the scene, suitable as a background.${faceLine}`;
 }
 
 /**
@@ -265,7 +283,12 @@ function buildSafeRetryPrompt(
  */
 function buildSafeFallbackPrompt(
   query: string,
-  opts?: { referenceStyleSummary?: string; productReferenceSummary?: string; ugcNaturalPhone?: boolean }
+  opts?: {
+    referenceStyleSummary?: string;
+    productReferenceSummary?: string;
+    ugcNaturalPhone?: boolean;
+    continuityLock?: string;
+  }
 ): string {
   const q = query
     .replace(/\b(3000x2000|4k|official photo|wallpaper)\b/gi, "")
@@ -280,24 +303,26 @@ function buildSafeFallbackPrompt(
   }
   const ref = opts?.referenceStyleSummary?.trim();
   const prod = opts?.productReferenceSummary?.trim();
+  const continuity = opts?.continuityLock?.trim();
   const prodBit = prod ? ` ${truncateForContext(prod, 280)}` : "";
+  const continuityBit = continuity ? ` ${truncateForContext(continuity, 480)}` : "";
   if (ref) {
     const phone = opts?.ugcNaturalPhone
       ? " Keep smartphone-candid imperfections: light grain, believable indoor light, not over-sharpened."
       : "";
-    return `Match this reference visual style: ${truncateForContext(ref, 420)}. Subject: ${subject}.${prodBit}${phone} No text, no logos. Preserve palette and camera feel from the style description—avoid generic cinematic stock look.`;
+    return `Match this reference visual style: ${truncateForContext(ref, 420)}. Subject: ${subject}.${prodBit}${continuityBit}${phone} No text, no logos. Preserve palette and camera feel from the style description—avoid generic cinematic stock look.`;
   }
   if (opts?.ugcNaturalPhone) {
-    return `Candid phone-camera image: ${subject}.${prodBit} Natural **neutral** light for the scene, slight sensor noise, soft focus, muted colors—no default orange warmth; real person could have taken it on a phone; avoid HDR stock look and overly convenient AI composition. No text, no logos.`;
+    return `Candid phone-camera image: ${subject}.${prodBit}${continuityBit} Natural **neutral** light for the scene, slight sensor noise, soft focus, muted colors—no default orange warmth; real person could have taken it on a phone; avoid HDR stock look and overly convenient AI composition. No text, no logos.`;
   }
-  return `Professional photograph: ${subject}.${prodBit} Lighting and mood that fit the subject and setting. No text, no logos. High quality, suitable as a background.`;
+  return `Professional photograph: ${subject}.${prodBit}${continuityBit} Lighting and mood that fit the subject and setting. No text, no logos. High quality, suitable as a background.`;
 }
 
 const SEXUAL_SAFE_EDIT_PREAMBLE =
-  "STRICT general-audience edit: output one photograph suitable for a Fortune 500 homepage or LinkedIn article hero. " +
-  "Everyone fully clothed in business-casual or everyday modest attire (long pants or knee-length skirt, shirt with sleeves; no swimwear, sleepwear, visible underwear, athletic bra alone, or bare midriff). " +
+  "STRICT general-audience edit: output one realistic photograph suitable for broad public audiences. " +
+  "Everyone fully clothed in casual everyday modest attire (long pants or knee-length skirt, shirt with sleeves; no swimwear, sleepwear, visible underwear, athletic bra alone, or bare midriff). " +
   "Poses: standing, seated at desk, walking, holding phone or coffee, or relaxed conversation at arm's length—no reclining pairs, no close intimate framing, no glamor or boudoir staging. " +
-  "Lighting: bright neutral daylight or soft office—avoid moody bedroom or club lighting. ";
+  "Lighting: natural daylight or soft indoor light—avoid moody bedroom or club lighting. ";
 
 /**
  * `images.edit` retry text after `safety_violations=[sexual]`: short concept + hard wardrobe/pose rules so the model steers modest while keeping refs.
@@ -309,6 +334,7 @@ function buildSexualSafeImageEditRetryPrompt(
     referenceStyleSummary?: string;
     productReferenceSummary?: string;
     ugcNaturalPhone?: boolean;
+    continuityLock?: string;
   }
 ): string {
   const q = query
@@ -328,7 +354,9 @@ function buildSexualSafeImageEditRetryPrompt(
     : "";
   const ref = opts?.referenceStyleSummary?.trim();
   const prod = opts?.productReferenceSummary?.trim();
+  const continuity = opts?.continuityLock?.trim();
   const prodBit = prod ? ` Product context (keep modest staging): ${truncateForContext(prod, 200)}.` : "";
+  const continuityBit = continuity ? ` Continuity lock: ${truncateForContext(continuity, 360)}.` : "";
   const phone = opts?.ugcNaturalPhone
     ? " Camera: plain smartphone snapshot look, neutral white balance, slight natural grain—still fully modest wardrobe and poses."
     : "";
@@ -337,12 +365,12 @@ function buildSexualSafeImageEditRetryPrompt(
       SEXUAL_SAFE_EDIT_PREAMBLE +
       `Match reference palette, lens, and grading only; interpret wardrobe as modest office-appropriate even if references look casual.${faceLine}${phone} ` +
       `Style hints: ${truncateForContext(ref, 220)}. ` +
-      `Scene to depict (tame): ${concept}.${prodBit} No text, no logos.`
+      `Scene to depict (tame): ${concept}.${prodBit}${continuityBit} No text, no logos.`
     );
   }
   return (
     SEXUAL_SAFE_EDIT_PREAMBLE +
-    `Create one coherent photograph.${faceLine}${phone} Subject: ${concept}.${prodBit} No text, no logos.`
+    `Create one coherent photograph.${faceLine}${phone} Subject: ${concept}.${prodBit}${continuityBit} No text, no logos.`
   );
 }
 
@@ -442,6 +470,9 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
         : `Professional photo: ${subject}. Suitable as a background. No text, no logos.`;
 
   const parts: string[] = [];
+  parts.push(
+    "Safety baseline (apply from first generation): keep imagery general-audience and non-sexual. No nudity, lingerie, fetishized body emphasis, intimate framing, or suggestive posing. Default styling should feel casual and realistic unless notes explicitly request a specific formal/art direction."
+  );
 
   const notesLower = (context?.userNotes ?? "").toLowerCase();
   const projectStyleLower = (context?.projectImageStyleNotes ?? "").toLowerCase();
@@ -472,6 +503,11 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
       "Product / service / app references: when this slide is about the user's offering, match the attached reference description and any pixel references—UI layout, product shape, packaging, colors, and key branding cues. Use image-to-image conditioning: one coherent new photograph with the offering integrated naturally in the scene (device, hands, environment)—not a flat pasted mockup unless the brief explicitly calls for a clean UI crop. Do not swap in a different product or invented UI unless the slide is clearly not about this offering."
     );
     parts.push(truncateForContext(productSummary, MAX_PRODUCT_REFERENCE_IN_PROMPT));
+    if (context?.productMustAppear) {
+      parts.push(
+        "This slide requires visible product presence: include the product/app/service clearly in frame (in hand, on screen, on desk, worn, or actively used) while keeping scene realism."
+      );
+    }
   }
 
   const ugcLock = context?.ugcCharacterLock?.trim();
@@ -503,7 +539,9 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
         "Non-fiction carousel: when the slide is about real public figures (athletes, leaders, artists, etc.), aim for a recognizable portrayal—accurate era, team colors, venue, or role. If a specific likeness is not possible, keep the same person’s context without inventing a different identity."
       );
     }
-    parts.push(GLOBAL_REAL_PEOPLE_LINE);
+    if (!context?.omitDefaultInclusivePeopleLine) {
+      parts.push(GLOBAL_REAL_PEOPLE_LINE);
+    }
   }
 
   const seriesConsistency = context?.seriesVisualConsistency?.trim();
@@ -541,6 +579,11 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
     } else {
       parts.push(
         "First slide (hook): subject from slide/topic; composition, camera angle, palette, and lighting must match the reference style above—same production look as references, not a different aesthetic."
+      );
+    }
+    if (context?.establishSeriesFaceAnchor) {
+      parts.push(
+        "Series face anchor (no library refs this run): if a recurring human appears, one **stable recognizable face**—neutral practical light on skin, close enough to read eyes, hair texture, and skin undertone (normal selfie or arm’s-length distance is fine). Same apparent ethnicity, age read, and hairstyle identity you will keep for every later slide—**not** a studio beauty headshot or catalog model, still casual phone energy, but avoid tiny distant faces, heavy silhouette-only hooks, or faceless POV-only frames that would make the next slides unable to match the same person."
       );
     }
     if (isBibleChristianTopic) {
@@ -599,7 +642,7 @@ function aspectToOpenAISize(aspect: "1:1" | "4:5" | "9:16" | "2:3" | "16:9"): "1
 
 /** Prepended when using images.edit with UGC reference photos (multimodal identity conditioning). */
 const UGC_IMAGE_EDIT_PREFIX =
-  "The attached image(s) are reference photos of the recurring character. Preserve their facial identity, hairstyle (cut/length/texture/part/hairline), hair color, skin tone, and approximate build. **Lighting:** default **neutral** illumination for the new scene—do not force an orange or heavy warm cast unless the described setting or the references’ grading clearly warrant it (creators often re-grade in edit). Generate one NEW photograph for the scene below—fresh, interesting phone-native framing vs the references (distance, angle, POV), not a crop or collage of the uploads; still believable handheld candor, not cinematic crane/glam hero or synthetic stock staging. **Avoid hyper-convenient staging:** do not depict unlikely moments as if professionally set up; when the scene implies something fleeting or awkward, a believable adjacent moment (reaction, environment, after) is better than literal perfection. Often face-visible but not every output needs razor-sharp facial detail—soft focus and casual framing are OK. Back-of-head or over-shoulder are fine when they read as a real post. Do not add tattoos by default; only include tattoos if explicitly requested in notes or clearly present in the provided references. Match iPhone-main-camera realism (natural grain, soft detail, believable light)—not a beauty-app portrait, CGI avatar, or glossy render unless notes request production polish. ";
+  "The attached image(s) are reference photos of the recurring character. Preserve their facial identity, hairstyle (cut/length/texture/part/hairline), hair color, skin tone, and approximate build. **Do not change who this is:** keep the same apparent ethnicity, skin undertone, facial proportions, nose/lips/eye shape, and age read as the references—this is image-to-image continuity, not a new cast member. **Lighting:** default **neutral** illumination for the new scene—do not force an orange or heavy warm cast unless the described setting or the references’ grading clearly warrant it (creators often re-grade in edit). Generate one NEW photograph for the scene below—fresh, interesting phone-native framing vs the references (distance, angle, POV), not a crop or collage of the uploads; still believable handheld candor, not cinematic crane/glam hero or synthetic stock staging. **Avoid hyper-convenient staging:** do not depict unlikely moments as if professionally set up; when the scene implies something fleeting or awkward, a believable adjacent moment (reaction, environment, after) is better than literal perfection. Often face-visible but not every output needs razor-sharp facial detail—soft focus and casual framing are OK. Back-of-head or over-shoulder are fine when they read as a real post. Do not add tattoos by default; only include tattoos if explicitly requested in notes or clearly present in the provided references. Match iPhone-main-camera realism (natural grain, soft detail, believable light)—not a beauty-app portrait, CGI avatar, or glossy render unless notes request production polish. ";
 
 /** When product refs are attached after UGC refs in the same `images.edit` call. */
 const PRODUCT_I2I_AFTER_UGC =
@@ -610,6 +653,13 @@ const PRODUCT_I2I_PREFIX_ALONE =
   "The attached image(s) are product, app, UI, packaging, or service references. Use image-to-image conditioning: preserve the offering’s recognizable visual identity (colors, proportions, UI structure, packaging cues) while generating one NEW photograph for the scene described below—believable lighting and context, integrated into the environment rather than a floating overlay. Never redesign or morph the product: keep original shape/silhouette, core colors, and realistic scene-relative size. ";
 
 const MAX_EDIT_REFERENCE_IMAGES = 8;
+
+/**
+ * When both UGC and product refs exist, cap static UGC first so at least some product
+ * images always reach `images.edit`. Otherwise UGC can consume all 8 slots and product
+ * conditioning is dropped entirely (outputs won't match the upload).
+ */
+const MIN_PRODUCT_EDIT_SLOTS_WHEN_PRODUCT_REFS = 3;
 
 /** When the last UGC attachment is the previous slide JPEG from the same carousel run. */
 const UGC_IMAGE_EDIT_CHAIN_SLIDE_SUFFIX =
@@ -633,12 +683,23 @@ function combineImageEditReferenceBuffers(context?: ImagePromptContext): {
 
   const ugcRaw = context?.ugcReferenceImageBuffers ?? [];
   const ugcFiltered = ugcRaw.filter((b) => Buffer.isBuffer(b) && b.length > 0);
-  const maxForStaticUgc = Math.max(0, maxPair - reserveChainSlot);
-  const ugcTake = ugcFiltered.slice(0, maxForStaticUgc);
 
   const prodRaw = context?.productReferenceImageBuffers ?? [];
   const prodFiltered = prodRaw.filter((b) => Buffer.isBuffer(b) && b.length > 0);
-  const roomForProduct = Math.max(0, maxPair - ugcTake.length - reserveChainSlot);
+
+  /** Space for static UGC + product before the optional chain slot is appended to the UGC list. */
+  const slotsBudget = Math.max(0, maxPair - reserveChainSlot);
+  const minProductReserve =
+    prodFiltered.length > 0
+      ? Math.min(prodFiltered.length, MIN_PRODUCT_EDIT_SLOTS_WHEN_PRODUCT_REFS)
+      : 0;
+  const maxForStaticUgc =
+    prodFiltered.length > 0
+      ? Math.max(0, slotsBudget - minProductReserve)
+      : slotsBudget;
+  const ugcTake = ugcFiltered.slice(0, maxForStaticUgc);
+
+  const roomForProduct = Math.max(0, slotsBudget - ugcTake.length);
   const productTake = prodFiltered.slice(0, roomForProduct);
 
   const ugcWithChain = hasChain ? [...ugcTake, Buffer.from(chainRaw!)] : ugcTake;
@@ -726,6 +787,28 @@ export async function generateImageFromPrompt(
   const prompt = useImageRefEdit ? `${editPrefix}${basePrompt}` : basePrompt;
   const model = options?.model ?? getDefaultImageModel();
   const quality = model === "gpt-image-1.5" ? "medium" : "low";
+  const continuityLock = (() => {
+    const parts: string[] = [];
+    if (options?.context?.seriesVisualConsistency?.trim()) {
+      parts.push(`Series: ${options.context.seriesVisualConsistency.trim()}`);
+    }
+    if (options?.context?.ugcCharacterLock?.trim()) {
+      parts.push(`Character: ${options.context.ugcCharacterLock.trim()}`);
+    }
+    if (options?.context?.slideHeadline?.trim()) {
+      parts.push(`Slide headline: ${options.context.slideHeadline.trim()}`);
+    }
+    if (options?.context?.slideBody?.trim()) {
+      parts.push(`Slide body: ${options.context.slideBody.trim()}`);
+    }
+    if (options?.context?.year?.trim()) {
+      parts.push(`Year: ${options.context.year.trim()}`);
+    }
+    if (options?.context?.location?.trim()) {
+      parts.push(`Location: ${options.context.location.trim()}`);
+    }
+    return parts.join(" | ").trim() || undefined;
+  })();
 
   let refFiles: File[] | undefined;
   if (useImageRefEdit) {
@@ -845,6 +928,7 @@ export async function generateImageFromPrompt(
           referenceStyleSummary: options?.context?.referenceStyleSummary,
           productReferenceSummary: options?.context?.productReferenceSummary,
           ugcNaturalPhone: isUgcNaturalPhoneLookActive(options?.context),
+          continuityLock,
         };
         const sexualFirst = isSexualSafetyViolation(first.errorMessage);
         const retryShort = sexualFirst
@@ -917,6 +1001,7 @@ export async function generateImageFromPrompt(
         referenceStyleSummary: options?.context?.referenceStyleSummary,
         productReferenceSummary: options?.context?.productReferenceSummary,
         ugcNaturalPhone: isUgcNaturalPhoneLookActive(options?.context),
+        continuityLock,
       };
       const sexualOuter = isSexualSafetyViolation(msg);
       const retryShort = sexualOuter
@@ -969,6 +1054,7 @@ export async function generateImageFromPrompt(
         referenceStyleSummary: options?.context?.referenceStyleSummary,
         productReferenceSummary: options?.context?.productReferenceSummary,
         ugcNaturalPhone: isUgcNaturalPhoneLookActive(options?.context),
+        continuityLock,
       });
       console.log("[openaiImageGenerate] OpenAI retry failed. Using Replicate:", replicatePrompt, "| aspect:", aspect, "\n");
       const replicateResult = await generateImageViaReplicate(replicatePrompt, aspect);

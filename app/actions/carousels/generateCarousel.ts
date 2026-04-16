@@ -275,6 +275,57 @@ function parseAndValidate(raw: string): CarouselOutput | { error: string } {
   return result.data;
 }
 
+/** Tokens for post-check: is the product/service clearly present in slide text? */
+function buildProductMentionNeedles(
+  productServiceInput: string | undefined,
+  productReferenceSummary: string | undefined,
+  normalizedProductLabel: string
+): string[] {
+  const needles: string[] = [];
+  const push = (raw: string) => {
+    const s = raw.trim();
+    if (s.length < 2) return;
+    const low = s.toLowerCase();
+    if (needles.some((n) => n.toLowerCase() === low)) return;
+    needles.push(s.length > 52 ? s.slice(0, 52) : s);
+  };
+  push(normalizedProductLabel);
+  const svc = (productServiceInput ?? "").trim();
+  if (svc) {
+    const withoutUrls = svc.replace(/https?:\/\/[^\s]+/gi, " ");
+    const parts = withoutUrls
+      .split(/[\s,.;:|\\/]+/)
+      .map((p) => p.replace(/^[@#\s]+|[\s]+$/g, ""))
+      .filter((p) => p.length >= 3 && !/^(https?|www)$/i.test(p));
+    for (const p of parts) {
+      push(p);
+      if (needles.length >= 12) break;
+    }
+  }
+  const summary = (productReferenceSummary ?? "").trim();
+  if (summary) {
+    const words = summary.split(/\s+/).filter((w) => /^[A-Za-z0-9][\w'-]*$/.test(w) && w.length >= 4);
+    for (const w of words.slice(0, 8)) {
+      push(w);
+      if (needles.length >= 14) break;
+    }
+  }
+  return needles;
+}
+
+function slideMentionsAnyNeedle(text: string, needles: string[]): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  return needles.some((needle) => {
+    const esc = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    try {
+      return new RegExp(esc, "i").test(t);
+    } catch {
+      return t.toLowerCase().includes(needle.toLowerCase());
+    }
+  });
+}
+
 export async function generateCarousel(formData: FormData): Promise<
   | { carouselId: string }
   | { carouselId: string; partialError: string }
@@ -697,28 +748,95 @@ export async function generateCarousel(formData: FormData): Promise<
     return { error: "Generation failed" };
   }
 
-  // Fallback: ensure last slide CTA matches product/service intent when provided.
+  const productOrServiceKnown =
+    !!productServiceInput || productRefIdsForRun.length > 0 || !!productReferenceSummary;
+  const normalizedProductLabel = (() => {
+    const raw = (productServiceInput ?? "").trim();
+    if (!raw) return "this product";
+    const noProto = raw.replace(/^https?:\/\//i, "").replace(/^www\./i, "");
+    const host = noProto.split("/")[0]?.trim() ?? "";
+    const clean = (host || raw).replace(/[?#].*$/, "").trim();
+    return clean.slice(0, 56) || "this product";
+  })();
+  /** Human-readable snippet for desire-led copy (prefer typed input over domain-only). */
+  const shortProductCloseLabel = (() => {
+    const t = (productServiceInput ?? "").trim();
+    if (t) return t.replace(/https?:\/\/\S+/gi, "").trim().slice(0, 56) || normalizedProductLabel;
+    return (productReferenceSummary ?? "").trim().slice(0, 56) || normalizedProductLabel;
+  })();
+
+  if (productOrServiceKnown && validated.slides.length > 0) {
+    const needles = buildProductMentionNeedles(
+      productServiceInput,
+      productReferenceSummary,
+      normalizedProductLabel
+    );
+    const shortProductLabel = shortProductCloseLabel;
+
+    const countProductMentions = (slides: CarouselOutput["slides"]) =>
+      slides.reduce((count, s) => {
+        const text = `${s.headline ?? ""} ${s.body ?? ""}`.trim();
+        return count + (slideMentionsAnyNeedle(text, needles) ? 1 : 0);
+      }, 0);
+
+    let mentionCount = countProductMentions(validated.slides);
+    const minMentions = Math.max(2, Math.ceil(validated.slides.length * 0.4));
+    if (mentionCount < minMentions) {
+      const sorted = [...validated.slides].sort((a, b) => a.slide_index - b.slide_index);
+      const patchByIndex = new Map<number, CarouselOutput["slides"][number]>();
+      for (const s of sorted) {
+        if (mentionCount >= minMentions) break;
+        const h = (s.headline ?? "").trim();
+        const b = (s.body ?? "").trim();
+        if (slideMentionsAnyNeedle(`${h} ${b}`, needles)) continue;
+        const prefix =
+          s.slide_index === 1
+            ? `The outcome I wanted (what I reach for: ${shortProductLabel}). `
+            : s.slide_index === sorted[sorted.length - 1]?.slide_index
+              ? `When that moment hits, ${shortProductLabel} is what I grab. `
+              : `${shortProductLabel} fits this beat. `;
+        const newBody = (b ? `${prefix}${b}` : `${prefix}`.trim()).slice(0, 280);
+        patchByIndex.set(s.slide_index, { ...s, body: newBody });
+        mentionCount += 1;
+      }
+      if (patchByIndex.size > 0) {
+        validated = {
+          ...validated,
+          slides: validated.slides.map((s) => patchByIndex.get(s.slide_index) ?? s),
+        };
+      }
+    }
+  }
+
+  // Fallback: ensure **final** slide invites the offering (models often use slide_type "generic" with follow copy).
   if (validated.slides.length > 0) {
     const lastSlide = validated.slides.reduce((a, b) => (a.slide_index > b.slide_index ? a : b));
     const headline = (lastSlide.headline ?? "").trim().toLowerCase();
-    const productOrServiceKnown = !!productServiceInput || productRefIdsForRun.length > 0 || !!productReferenceSummary;
-    const productHint = (productServiceInput ?? "").trim();
-    const compactProductHint = productHint.slice(0, 56).trim();
+    const compactProductHint = normalizedProductLabel;
     const hasFollowSubscribe =
       /\b(follow|subscribe|more\s+(like\s+this|every\s+week|content)|@\w+)/i.test(headline) ||
       (!!creatorHandle && (headline.includes(creatorHandle.toLowerCase()) || headline.includes(creatorHandle.replace(/^@/, "").toLowerCase())));
-    const hasProductTryCta = /\b(try|start|book|demo|get|check|use|bio|dm)\b/i.test(headline);
-    if (lastSlide.slide_type === "cta" && productOrServiceKnown && !hasProductTryCta) {
-      const newHeadline = compactProductHint
-        ? `Try ${compactProductHint} today`
-        : "Try this product today";
+    const hasProductTryCta = /\b(try|start|book|demo|get|check|use|bio|dm|grab|download|shop|order)\b/i.test(
+      headline
+    );
+    const finalSlideLooksLikeClosingCta =
+      lastSlide.slide_type === "cta" ||
+      /\b(follow|subscribe|save|share|dm|bio|link\s+in)\b/i.test(headline);
+    if (productOrServiceKnown && finalSlideLooksLikeClosingCta && !hasProductTryCta) {
+      const newHeadline =
+        shortProductCloseLabel && shortProductCloseLabel !== "this product"
+          ? "When you want that same ease"
+          : "When you're ready for the payoff";
+      const productBridge = `${shortProductCloseLabel} is part of how I get there.`.slice(0, 120);
       const newBody = creatorHandle
-        ? `Want details? DM ${creatorHandle.startsWith("@") ? creatorHandle : `@${creatorHandle}`}.`
-        : "Use the link in bio to get started.";
+        ? `${productBridge} Curious? DM ${creatorHandle.startsWith("@") ? creatorHandle : `@${creatorHandle}`} or check the bio.`.slice(0, 280)
+        : `${productBridge} Link in bio if you want to try what I use.`.slice(0, 280);
       validated = {
         ...validated,
         slides: validated.slides.map((s) =>
-          s.slide_index === lastSlide.slide_index ? { ...s, headline: newHeadline, body: newBody } : s
+          s.slide_index === lastSlide.slide_index
+            ? { ...s, slide_type: "cta", headline: newHeadline, body: newBody }
+            : s
         ),
       };
     } else if (lastSlide.slide_type === "cta" && !hasFollowSubscribe && !productOrServiceKnown) {
@@ -735,8 +853,14 @@ export async function generateCarousel(formData: FormData): Promise<
             : s
         ),
       };
-    } else if (lastSlide.slide_type === "cta" && creatorHandle && !headline.includes(creatorHandle.toLowerCase()) && !headline.includes(creatorHandle.replace(/^@/, "").toLowerCase())) {
-      // Has follow/subscribe vibe but missing handle—inject it
+    } else if (
+      lastSlide.slide_type === "cta" &&
+      !productOrServiceKnown &&
+      creatorHandle &&
+      !headline.includes(creatorHandle.toLowerCase()) &&
+      !headline.includes(creatorHandle.replace(/^@/, "").toLowerCase())
+    ) {
+      // Has follow/subscribe vibe but missing handle—inject it (skip when product run: desire-close body already carries @)
       const handle = creatorHandle.startsWith("@") ? creatorHandle : `@${creatorHandle}`;
       validated = {
         ...validated,
@@ -1086,7 +1210,8 @@ export async function generateCarousel(formData: FormData): Promise<
       /** AI recurring character: sequential order + rolling previous-slide ref (all content styles). */
       const ugcAiIdentitySequence = aiCharacterPipelineActive && !preferPublicFigures;
       const runAiSlidesSequentially = ugcAiIdentitySequence || chainedGeneratedFaceRefMode;
-      ugcRecurringEntityModeForCarousel = runAiSlidesSequentially && !preferPublicFigures;
+      /** Any Instagram/TikTok AI-image run can promote a look except public-figure / nonfiction likeness runs. */
+      ugcRecurringEntityModeForCarousel = aiCharacterPipelineActive && !preferPublicFigures;
       if (runAiSlidesSequentially) {
         aiGenJobs.sort((a, b) => a.aiSlide.slide_index - b.aiSlide.slide_index);
       }
@@ -1097,22 +1222,28 @@ export async function generateCarousel(formData: FormData): Promise<
           : `AI generate: ${aiGenJobs.length} slides (concurrency ${AI_IMAGE_CONCURRENCY})`
       );
       const hadUgcRefBuffersForRun = (userUploadedUgcRefBuffers?.length ?? 0) > 0;
+      /** First successful AI slide JPEG when the user had no library face refs—reused as the sole i2i identity anchor for slides 2+ (avoids drift from slide-to-slide chaining). */
+      let firstSequentialAiPortraitAnchor: Buffer | undefined;
       const ugcChainFaceBuf: { current?: Buffer } = {};
       const effectiveUgcReferenceBuffers = (): Buffer[] | undefined => {
         if (userUploadedUgcRefBuffers && userUploadedUgcRefBuffers.length > 0) {
           return userUploadedUgcRefBuffers;
         }
-        if (chainedGeneratedFaceRefMode && ugcChainFaceBuf.current) {
-          return [ugcChainFaceBuf.current];
+        if (chainedGeneratedFaceRefMode && firstSequentialAiPortraitAnchor) {
+          return [firstSequentialAiPortraitAnchor];
         }
         return undefined;
       };
-      const ugcCarouselChainFaceBufferForSlide = (): Buffer | undefined =>
-        ugcAiIdentitySequence && ugcChainFaceBuf.current ? ugcChainFaceBuf.current : undefined;
+      /** When the user uploaded library UGC refs, append the rolling previous-slide JPEG after them in `images.edit`.
+       * No-upload runs use `firstSequentialAiPortraitAnchor` only (see `effectiveUgcReferenceBuffers`). */
+      const ugcCarouselChainFaceBufferForSlide = (): Buffer | undefined => {
+        if (!ugcAiIdentitySequence || !ugcChainFaceBuf.current) return undefined;
+        if (hadUgcRefBuffersForRun) return ugcChainFaceBuf.current;
+        return undefined;
+      };
       const maybeCaptureUgcChainFaceRef = (buf: Buffer, aiSlide: (typeof validated.slides)[number]) => {
+        if (!hadUgcRefBuffersForRun) return;
         if (ugcAiIdentitySequence) {
-          /** Keep a first-appearance anchor for recurring entities (person or object), then
-           * keep upgrading the chain when we detect a likely face-forward frame. */
           if (!ugcChainFaceBuf.current) {
             ugcChainFaceBuf.current = Buffer.from(buf);
             return;
@@ -1171,6 +1302,21 @@ export async function generateCarousel(formData: FormData): Promise<
         const firstQuery = queries[0]!;
         const slideContext = aiSlide?.image_context;
         const isHookSlide = aiSlide?.slide_index === 1;
+        const shouldShowProduct =
+          productOrServiceKnown &&
+          (aiSlide?.slide_index === 1 ||
+            aiSlide?.slide_index === validated.slides.length ||
+            (aiSlide?.slide_index ?? 0) % 2 === 0);
+        const omitDefaultInclusivePeopleLine =
+          (effectiveUgcReferenceBuffers()?.length ?? 0) > 0 ||
+          Boolean(ugcCarouselChainFaceBufferForSlide());
+        const establishSeriesFaceAnchor =
+          isHookSlide &&
+          runAiSlidesSequentially &&
+          chainedGeneratedFaceRefMode &&
+          !hadUgcRefBuffersForRun &&
+          !preferPublicFigures &&
+          !firstSequentialAiPortraitAnchor;
         const imageContext = {
           carouselTitle: validated.title?.trim() || undefined,
           topic: data.input_value?.trim() || undefined,
@@ -1183,6 +1329,7 @@ export async function generateCarousel(formData: FormData): Promise<
           projectImageStyleNotes: projectRulesForImages.trim() || undefined,
           referenceStyleSummary,
           productReferenceSummary,
+          productMustAppear: shouldShowProduct || undefined,
           seriesVisualConsistency,
           ugcCharacterLock,
           ugcReferenceImageBuffers: effectiveUgcReferenceBuffers(),
@@ -1191,6 +1338,8 @@ export async function generateCarousel(formData: FormData): Promise<
           ugcCasualPhoneLook: contentFocusId === "ugc" || undefined,
           aspectRatio: imageAspectRatio,
           preferRecognizablePublicFigures: preferPublicFigures || undefined,
+          omitDefaultInclusivePeopleLine: omitDefaultInclusivePeopleLine || undefined,
+          ...(establishSeriesFaceAnchor ? { establishSeriesFaceAnchor: true as const } : {}),
         };
         const genResult = await generateImageFromPrompt(firstQuery, { context: imageContext });
         if (genResult.ok) {
@@ -1206,6 +1355,14 @@ export async function generateCarousel(formData: FormData): Promise<
                 overlay: overlayForImageSlide,
               },
             });
+            if (
+              chainedGeneratedFaceRefMode &&
+              !hadUgcRefBuffersForRun &&
+              runAiSlidesSequentially &&
+              !firstSequentialAiPortraitAnchor
+            ) {
+              firstSequentialAiPortraitAnchor = Buffer.from(genResult.buffer);
+            }
             maybeCaptureUgcChainFaceRef(genResult.buffer, aiSlide);
           }
         }
@@ -1220,6 +1377,12 @@ export async function generateCarousel(formData: FormData): Promise<
               : preferPublicFigures
                 ? `Photorealistic scene inspired by: ${topicFallback}. If people appear, use invented generic adults only—no specific celebrity or public figure. Atmospheric, no text, no logos.`
                 : `Dramatic atmospheric scene related to: ${topicFallback}. No text.`;
+          const fallbackEstablishAnchor =
+            isHookSlide &&
+            runAiSlidesSequentially &&
+            chainedGeneratedFaceRefMode &&
+            !hadUgcRefBuffersForRun &&
+            !firstSequentialAiPortraitAnchor;
           const fallbackResult = await generateImageFromPrompt(fallbackQuery, {
             context: {
               carouselTitle: validated.title?.trim(),
@@ -1230,6 +1393,7 @@ export async function generateCarousel(formData: FormData): Promise<
               projectImageStyleNotes: projectRulesForImages.trim() || undefined,
               referenceStyleSummary,
               productReferenceSummary,
+              productMustAppear: shouldShowProduct || undefined,
               seriesVisualConsistency,
               ugcCharacterLock,
               ugcReferenceImageBuffers: effectiveUgcReferenceBuffers(),
@@ -1242,6 +1406,8 @@ export async function generateCarousel(formData: FormData): Promise<
               aspectRatio: imageAspectRatio,
               preferRecognizablePublicFigures: false,
               genericFacesOnly: preferPublicFigures || undefined,
+              omitDefaultInclusivePeopleLine: omitDefaultInclusivePeopleLine || undefined,
+              ...(fallbackEstablishAnchor ? { establishSeriesFaceAnchor: true as const } : {}),
             },
           });
           if (fallbackResult.ok) {
@@ -1257,6 +1423,14 @@ export async function generateCarousel(formData: FormData): Promise<
                   overlay: overlayForImageSlide,
                 },
               });
+              if (
+                chainedGeneratedFaceRefMode &&
+                !hadUgcRefBuffersForRun &&
+                runAiSlidesSequentially &&
+                !firstSequentialAiPortraitAnchor
+              ) {
+                firstSequentialAiPortraitAnchor = Buffer.from(fallbackResult.buffer);
+              }
               maybeCaptureUgcChainFaceRef(fallbackResult.buffer, aiSlide);
             }
           }

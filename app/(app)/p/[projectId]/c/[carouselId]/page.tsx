@@ -187,8 +187,6 @@ export default async function CarouselEditorPage({
     generationErrorRecovery && similarCarouselIdeasFromOpts.length === 0 && carouselForGen !== "linkedin";
 
   const usedProjectFaceRefsOnRun = genOpts.ugc_used_project_avatar_refs === true;
-  const singleCharacterModeOnRun = genOpts.ugc_single_character_mode === true;
-  const recurringEntityModeOnRun = genOpts.ugc_recurring_entity_mode === true;
   const hasGeneratedUgcBackdrops = slides.some((s) => {
     const bg = s.background as { mode?: string; storage_path?: string } | null;
     const path = bg?.storage_path?.trim() ?? "";
@@ -198,29 +196,16 @@ export default async function CarouselEditorPage({
       path.startsWith(`user/${user.id}/`)
     );
   });
-  /** AI images, run did not use project library face refs, and we can copy AI frames + a brief. */
-  const saveUgcCharacterCanApply =
+  /** Instagram/TikTok-style run with AI-generated slide images (promote UI only applies in this band). */
+  const saveUgcPromoteBaseline =
     useAiBackgroundsCarousel === true &&
     genOpts.use_ai_generate === true &&
-    carouselForGen !== "linkedin" &&
-    (singleCharacterModeOnRun || recurringEntityModeOnRun) &&
-    !usedProjectFaceRefsOnRun &&
-    hasGeneratedUgcBackdrops;
-  const saveUgcCharacterDisabledHint = !saveUgcCharacterCanApply
-    ? !useAiBackgroundsCarousel
-      ? "This carousel didn’t use AI backgrounds (or they’re off). Generate with AI images on to capture a character lock."
-      : genOpts.use_ai_generate !== true
-        ? "Needs AI-generated backgrounds—stock or web images don’t store a character lock for this carousel."
-        : carouselForGen === "linkedin"
-          ? "LinkedIn carousels use stock images here—save character is for Instagram/TikTok-style AI runs."
-          : !singleCharacterModeOnRun && !recurringEntityModeOnRun
-            ? "This run did not detect recurring-entity continuity. Use Same character from project (or character refs) when the same person/animal/mascot/object should carry across slides."
-          : usedProjectFaceRefsOnRun
-            ? "This run already used your project’s saved character references—nothing new to promote from the carousel."
-            : !hasGeneratedUgcBackdrops
-              ? "No AI-generated slide images on this carousel yet—wait for generation to finish or regenerate with AI images."
-              : ""
-    : "";
+    carouselForGen !== "linkedin";
+  /** Can copy this run’s AI frames + series brief into the project library. */
+  const saveUgcCharacterCanApply =
+    saveUgcPromoteBaseline && !usedProjectFaceRefsOnRun && hasGeneratedUgcBackdrops;
+  /** Already conditioned on library face refs—nothing to promote from this carousel. */
+  const showSaveUgcAlreadyUsingProjectLine = saveUgcPromoteBaseline && usedProjectFaceRefsOnRun;
   const projectUgcBrief = (project as { ugc_character_brief?: string | null }).ugc_character_brief?.trim() ?? "";
 
   // Collect Unsplash attributions from slides for credits section
@@ -266,13 +251,18 @@ export default async function CarouselEditorPage({
     <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">
       <div className="mx-auto max-w-4xl space-y-6">
         {showGenerationPartial && <GenerationPartialBanner />}
-        <SaveUgcCharacterFromCarouselButton
-          projectId={projectId}
-          carouselId={carouselId}
-          hasExistingSavedBrief={projectUgcBrief.length > 0}
-          canSave={saveUgcCharacterCanApply}
-          disabledHint={saveUgcCharacterDisabledHint}
-        />
+        {showSaveUgcAlreadyUsingProjectLine ? (
+          <p className="text-sm text-muted-foreground rounded-lg border border-border/60 bg-muted/20 px-4 py-3 leading-snug">
+            This carousel used your project’s saved character face references—there’s nothing new to promote from
+            these slides.
+          </p>
+        ) : saveUgcCharacterCanApply ? (
+          <SaveUgcCharacterFromCarouselButton
+            projectId={projectId}
+            carouselId={carouselId}
+            hasExistingSavedBrief={projectUgcBrief.length > 0}
+          />
+        ) : null}
         {!subscription.isPro && (
           hasFullAccess ? (
             <p className="text-sm text-muted-foreground">

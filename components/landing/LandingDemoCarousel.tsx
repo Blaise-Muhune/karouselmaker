@@ -14,7 +14,7 @@ const IDLE_MS = 2500;
 
 /** Transform scale = cardWidth / 1080 for square cards */
 const SCALE = {
-  hero: "scale-[0.0925925926] sm:scale-[0.1296296296] md:scale-[0.1481481481]",
+  hero: "scale-[0.1388888889] sm:scale-[0.1944444444] md:scale-[0.2407407407]",
   strip: "scale-[0.1296296296] sm:scale-[0.1481481481] md:scale-[0.1666666667]",
 } as const;
 
@@ -26,7 +26,7 @@ type LandingDemoCarouselProps = {
 };
 
 const CARD_FRAME = {
-  hero: "w-[100px] sm:w-[140px] md:w-[160px]",
+  hero: "w-[150px] sm:w-[210px] md:w-[260px]",
   strip: "w-[140px] sm:w-[160px] md:w-[180px]",
 } as const;
 
