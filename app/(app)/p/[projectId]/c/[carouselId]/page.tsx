@@ -169,6 +169,7 @@ export default async function CarouselEditorPage({
   const hashtags = Array.isArray(carousel.hashtags) ? carousel.hashtags : [];
   const genOpts = (carousel.generation_options ?? {}) as Record<string, unknown>;
   const useAiBackgroundsCarousel = genOpts.use_ai_backgrounds === true;
+  const useAiGenerateCarousel = genOpts.use_ai_generate === true;
   const aiBackgroundsPendingFlag = genOpts.ai_backgrounds_pending === true;
   const generationErrorRecovery = genOpts.generation_error_recovery === true;
   const similarCarouselIdeasFromOpts = Array.isArray(genOpts.similar_carousel_ideas)
@@ -405,6 +406,7 @@ export default async function CarouselEditorPage({
             disabled={isGenerating}
             downloadFilenameSlug={slugifyForFilename([project.name, carousel.title].filter(Boolean).join(" - ")) || undefined}
             enableBackgroundHydrationPoll={useAiBackgroundsCarousel || aiBackgroundsPendingFlag}
+            aiImageGenerationPending={useAiBackgroundsCarousel && useAiGenerateCarousel && aiBackgroundsPendingFlag}
           />
         </section>
 

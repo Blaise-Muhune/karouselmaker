@@ -115,6 +115,10 @@ export type ImagePromptContext = {
   recurringHostGenderHint?: "female" | "male";
   /** Apparel product runs: prefer host wearing the item in relatable scenes. */
   preferProductWornByHost?: boolean;
+  /** 1-based slide index—used to rotate UGC shot-diversity hints so frames are not all the same angle. */
+  slideIndex?: number;
+  /** Total slides in the carousel (optional; pairs with slideIndex). */
+  slideCount?: number;
 };
 
 /** Parse user notes for aspect ratio preference. Default 4:5 if no match. */
@@ -163,6 +167,32 @@ function isUgcNaturalPhoneLookActive(context?: ImagePromptContext): boolean {
     context.userNotes ?? "",
     context.projectImageStyleNotes ?? ""
   );
+}
+
+/** Per-slide composition bias so decks do not collapse into the same medium portrait + mushy bokeh. */
+const UGC_SHOT_VARIETY_DIRECTIVES: readonly string[] = [
+  "Shot-diversity lock: favor a **mirror selfie or reflective window full-body**—room/location reads clearly; not a vague blurred street blob.",
+  "Shot-diversity lock: **low phone height from hip/knee** looking slightly up—shoes + pants + jacket silhouette; keep identifiable background texture (tiles, doorway, railing, stairs).",
+  "Shot-diversity lock: **high angle / POV down** while walking or standing—jacket drape and outfit blocks read; avoid another centered chest-up portrait.",
+  "Shot-diversity lock: **small subject, big environment**—step back so the figure is smaller in frame with readable street/hall/transit context (IG candid scale).",
+  "Shot-diversity lock: **seated candid** (curb, booth, chair edge)—asymmetrical limbs, natural jacket rumples; not symmetrical catalog posing.",
+  "Shot-diversity lock: **over-shoulder / 3/4 walking candid** with light motion; keep a landmark partly sharp (shopfront, tiles, shelter)—not uniform bokeh soup.",
+  "Shot-diversity lock: **tight garment detail**—hands on collar/cuffs/buttons/stitching; face may be cropped; not the same medium distance as a generic portrait.",
+  "Shot-diversity lock: **doorway / corridor depth**—frame-within-frame; mid-step; full-body readable with architectural lines.",
+];
+
+function shotVarietyDirectiveForUgcSlide(context?: ImagePromptContext): string | null {
+  if (!context) return null;
+  const rawIdx = context.slideIndex;
+  if (typeof rawIdx !== "number" || !Number.isFinite(rawIdx) || rawIdx < 1) return null;
+  if (!isUgcNaturalPhoneLookActive(context)) return null;
+  const total =
+    typeof context.slideCount === "number" && Number.isFinite(context.slideCount) && context.slideCount >= 1
+      ? Math.floor(context.slideCount)
+      : 8;
+  const i = Math.floor(rawIdx) - 1;
+  const bucket = (i + (total % 3)) % UGC_SHOT_VARIETY_DIRECTIVES.length;
+  return `${UGC_SHOT_VARIETY_DIRECTIVES[bucket]!} Mix **camera height** (low / eye / high) across the carousel; avoid iPhone portrait-mode **heavy background blur on every slide**—some frames should show a recognizable setting (UGC fit-check, not catalog headshots).`;
 }
 
 /** True when an API error message indicates OpenAI safety/moderation (edit or generate). */
@@ -530,7 +560,7 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
     }
     if (context?.preferProductWornByHost) {
       parts.push(
-        "Apparel relatability rule: prioritize scenes where the recurring host is clearly **wearing** the garment on body in a natural day-to-day moment (mirror, doorway, street, cafe, conversation). Avoid isolated flat-lay/hanger-only product shots unless the slide explicitly asks for a detail-only view."
+        "Apparel relatability rule: prioritize scenes where the recurring host is clearly **wearing** the garment on body in a natural day-to-day moment (mirror, doorway, street, cafe, conversation). Keep framing native to organic Instagram/UGC, not studio catalog/ecommerce backdrop. **Do not** repeat the same centered medium portrait with identical mushy background blur slide after slide—rotate camera height, distance, and setting. Avoid isolated flat-lay/hanger-only product shots unless the slide explicitly asks for a detail-only view."
       );
     }
   }
@@ -561,6 +591,8 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
     parts.push(
       "Camera: real-phone energy—interesting but **not** every slide a crisp hero portrait. Often face-visible, but allow environmental shots where the subject is smaller, slight profile, or face softly out of critical focus when it feels like a real casual post. Vary distance and POV: asymmetrical crop, slight handheld tilt, doorway frame, reaction close-up, wide room shot, over-shoulder at phone. Avoid repeating one centered medium shot every time. Back-of-head / over-shoulder / top-down-no-face are fine when they match a believable posting moment—not only for 'literal' story beats. Plausible focal length; avoid ultra-wide face distortion unless the scene fits. No crane, drone, floating product, glam hero low-angle, sunset silhouette, or blockbuster polish unless the slide is literally about that. **Match the emotional beat** of headline/body—same story chapter—without forcing hyper-literal illustration of awkward or unfilmable moments. Candid and human, not generic stock or obvious AI staging."
     );
+    const shotVariety = shotVarietyDirectiveForUgcSlide(context);
+    if (shotVariety) parts.push(shotVariety);
     parts.push(ugcAntiConvenienceLine);
   }
 
@@ -686,7 +718,7 @@ function aspectToOpenAISize(aspect: "1:1" | "4:5" | "9:16" | "2:3" | "16:9"): "1
 
 /** Prepended when using images.edit with UGC reference photos (multimodal identity conditioning). */
 const UGC_IMAGE_EDIT_PREFIX =
-  "The attached image(s) are reference photos of the recurring character. Preserve their facial identity, hairstyle (cut/length/texture/part/hairline), hair color, skin tone, and approximate build. **Do not change who this is:** keep the same apparent ethnicity, skin undertone, facial proportions, nose/lips/eye shape, and age read as the references—this is image-to-image continuity, not a new cast member. **Lighting:** default **neutral** illumination for the new scene—do not force an orange or heavy warm cast unless the described setting or the references’ grading clearly warrant it (creators often re-grade in edit). Generate one NEW photograph for the scene below—fresh, interesting phone-native framing vs the references (distance, angle, POV), not a crop or collage of the uploads; still believable handheld candor, not cinematic crane/glam hero or synthetic stock staging. **Avoid hyper-convenient staging:** do not depict unlikely moments as if professionally set up; when the scene implies something fleeting or awkward, a believable adjacent moment (reaction, environment, after) is better than literal perfection. Often face-visible but not every output needs razor-sharp facial detail—soft focus and casual framing are OK. Back-of-head or over-shoulder are fine when they read as a real post. Do not add tattoos by default; only include tattoos if explicitly requested in notes or clearly present in the provided references. Match iPhone-main-camera realism (natural grain, soft detail, believable light)—not a beauty-app portrait, CGI avatar, or glossy render unless notes request production polish. ";
+  "The attached image(s) are reference photos of the recurring character. Preserve their facial identity, hairstyle (cut/length/texture/part/hairline), hair color, skin tone, and approximate build. **Do not change who this is:** keep the same apparent ethnicity, skin undertone, facial proportions, nose/lips/eye shape, and age read as the references—this is image-to-image continuity, not a new cast member. **Lighting:** default **neutral** illumination for the new scene—do not force an orange or heavy warm cast unless the described setting or the references’ grading clearly warrant it (creators often re-grade in edit). Generate one NEW photograph for the scene below—fresh, interesting phone-native framing vs the references (distance, angle, POV), not a crop or collage of the uploads; still believable handheld candor, not cinematic crane/glam hero or synthetic stock staging. **Camera variety:** vary **camera height** (low / eye / high) and distance vs a default “centered medium portrait + heavy portrait-mode bokeh on a vague city street”—some frames should keep **recognizable environment texture** (tiles, doorway, mirror edge, café seating) partly sharp, like real IG outfit posts. **Avoid hyper-convenient staging:** do not depict unlikely moments as if professionally set up; when the scene implies something fleeting or awkward, a believable adjacent moment (reaction, environment, after) is better than literal perfection. Often face-visible but not every output needs razor-sharp facial detail—soft focus and casual framing are OK. Back-of-head or over-shoulder are fine when they read as a real post. Do not add tattoos by default; only include tattoos if explicitly requested in notes or clearly present in the provided references. Match iPhone-main-camera realism (natural grain, soft detail, believable light)—not a beauty-app portrait, CGI avatar, or glossy render unless notes request production polish. ";
 
 /** When product refs are attached after UGC refs in the same `images.edit` call. */
 const PRODUCT_I2I_AFTER_UGC =

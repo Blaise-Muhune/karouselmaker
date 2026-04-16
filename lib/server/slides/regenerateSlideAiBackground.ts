@@ -246,6 +246,8 @@ export async function regenerateSlideAiBackgroundForUser(params: {
     year: slideContext?.year?.trim() || undefined,
     location: slideContext?.location?.trim() || undefined,
     isHookSlide: slide.slide_index === 1 || undefined,
+    slideIndex: slide.slide_index,
+    slideCount: sorted.length,
     userNotes: notes || undefined,
     projectImageStyleNotes: projectRulesForImages.trim() || undefined,
     referenceStyleSummary,

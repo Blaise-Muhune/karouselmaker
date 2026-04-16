@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { SlidePreview } from "@/components/renderer/SlidePreview";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -94,6 +94,11 @@ type SlideGridProps = {
    * and show a short “Loading image…” overlay on those frames.
    */
   enableBackgroundHydrationPoll?: boolean;
+  /**
+   * True when this carousel run is still generating AI backgrounds. While true, each slide shows
+   * a loading overlay until an image background is available for that slide.
+   */
+  aiImageGenerationPending?: boolean;
 };
 
 /** Build overlay object from template gradient for optimistic UI update. */
@@ -522,6 +527,7 @@ export function SlideGrid({
   disabled = false,
   downloadFilenameSlug,
   enableBackgroundHydrationPoll = false,
+  aiImageGenerationPending = false,
 }: SlideGridProps) {
   const canEdit = isPro && !disabled;
   const previewDims = getPreviewDimensions(exportSize);
@@ -536,6 +542,8 @@ export function SlideGrid({
   const [addingSlide, setAddingSlide] = useState(false);
   const router = useRouter();
   const editorPath = `/p/${projectId}/c/${carouselId}`;
+  const wasHydratingRef = useRef(false);
+  const completionReloadedRef = useRef(false);
 
   const backgroundHydrationKey = slidesOrder
     .map((s) => {
@@ -549,6 +557,14 @@ export function SlideGrid({
   useEffect(() => {
     if (!enableBackgroundHydrationPoll) return;
     const needs = slidesOrder.some((s) => slideBackgroundImageStillHydrating(s, slideBackgroundImageUrls));
+    if (needs) {
+      wasHydratingRef.current = true;
+    } else if (wasHydratingRef.current && !completionReloadedRef.current) {
+      completionReloadedRef.current = true;
+      // Requested UX: hard refresh once when all slide images are ready.
+      window.location.reload();
+      return;
+    }
     if (!needs) return;
     let n = 0;
     const id = setInterval(() => {
@@ -844,8 +860,11 @@ export function SlideGrid({
           const hasBackgroundImage =
             (typeof bgUrls === "string" && bgUrls.length > 0) ||
             (Array.isArray(bgUrls) && (bgUrls as string[]).some((u) => typeof u === "string" && u.length > 0));
+          const imageLoadingPending =
+            aiImageGenerationPending && !hasBackgroundImage;
           const stillHydratingBackground =
-            enableBackgroundHydrationPoll && slideBackgroundImageStillHydrating(slide, slideBackgroundImageUrls);
+            enableBackgroundHydrationPoll &&
+            (slideBackgroundImageStillHydrating(slide, slideBackgroundImageUrls) || imageLoadingPending);
           /** Match SlideEditForm / SlidePreview: show user images when template has allowImage false (LinkedIn-style, etc.). */
           const allowBackgroundImageOverride =
             (slide.meta as { allow_background_image_override?: boolean } | null)?.allow_background_image_override === true ||
@@ -989,7 +1008,7 @@ export function SlideGrid({
                             aria-label="Loading background image"
                           >
                             <Loader2Icon className="size-6 animate-spin text-primary" />
-                            <span className="text-[10px] font-medium text-foreground">Loading image…</span>
+                            <span className="text-[10px] font-medium text-foreground">Generating image…</span>
                           </div>
                         )}
                       </Link>
@@ -1105,7 +1124,7 @@ export function SlideGrid({
                           aria-label="Loading background image"
                         >
                           <Loader2Icon className="size-6 animate-spin text-primary" />
-                          <span className="text-[10px] font-medium text-foreground">Loading image…</span>
+                          <span className="text-[10px] font-medium text-foreground">Generating image…</span>
                         </div>
                       )}
                     </Link>
