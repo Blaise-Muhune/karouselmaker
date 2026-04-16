@@ -1302,14 +1302,13 @@ export async function generateCarousel(formData: FormData): Promise<
         const firstQuery = queries[0]!;
         const slideContext = aiSlide?.image_context;
         const isHookSlide = aiSlide?.slide_index === 1;
+        const productPixelsAttached = (productReferenceImageBuffers?.length ?? 0) > 0;
         const shouldShowProduct =
-          productOrServiceKnown &&
-          (aiSlide?.slide_index === 1 ||
-            aiSlide?.slide_index === validated.slides.length ||
-            (aiSlide?.slide_index ?? 0) % 2 === 0);
-        const omitDefaultInclusivePeopleLine =
-          (effectiveUgcReferenceBuffers()?.length ?? 0) > 0 ||
-          Boolean(ugcCarouselChainFaceBufferForSlide());
+          productPixelsAttached ||
+          (productOrServiceKnown &&
+            (aiSlide?.slide_index === 1 ||
+              aiSlide?.slide_index === validated.slides.length ||
+              (aiSlide?.slide_index ?? 0) % 2 === 0));
         const establishSeriesFaceAnchor =
           isHookSlide &&
           runAiSlidesSequentially &&
@@ -1317,6 +1316,11 @@ export async function generateCarousel(formData: FormData): Promise<
           !hadUgcRefBuffersForRun &&
           !preferPublicFigures &&
           !firstSequentialAiPortraitAnchor;
+        const omitDefaultInclusivePeopleLine =
+          (effectiveUgcReferenceBuffers()?.length ?? 0) > 0 ||
+          Boolean(ugcCarouselChainFaceBufferForSlide()) ||
+          productPixelsAttached ||
+          establishSeriesFaceAnchor;
         const imageContext = {
           carouselTitle: validated.title?.trim() || undefined,
           topic: data.input_value?.trim() || undefined,

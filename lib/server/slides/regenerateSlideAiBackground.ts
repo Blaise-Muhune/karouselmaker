@@ -236,7 +236,7 @@ export async function regenerateSlideAiBackgroundForUser(params: {
   const omitDefaultInclusivePeopleLine =
     (ugcReferenceImageBuffers?.length ?? 0) > 0 ||
     (productReferenceImageBuffers?.length ?? 0) > 0 ||
-    Boolean(regenBuffer?.length);
+    Boolean(regenBuffer?.length); // skip generic “diversity default” line when pixels already lock identity
 
   const imageContext = {
     carouselTitle: carousel.title?.trim() || undefined,

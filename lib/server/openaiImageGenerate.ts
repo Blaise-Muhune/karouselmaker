@@ -412,9 +412,9 @@ const MAX_PRODUCT_REFERENCE_IN_PROMPT = 1150;
 const REFERENCE_STYLE_FIRST_LINE =
   "User attached reference images: match their visual language as closely as possible—palette and color grading, lighting direction and quality, lens/DOF/bokeh, typical camera angles and shot scale, background treatment, and wardrobe/styling level when people appear. Do not substitute unrelated generic social-feed looks or forced drama just for variety. Subject and story come from the slide text and topic below; references define HOW the image should look. Carousel notes override only when they explicitly conflict.";
 
-/** Short global line: real people accurate, inclusive. Reused instead of long repeated preamble. */
+/** Short global line for text-only image generation. Kept off when pixel refs or series anchors already lock identity—otherwise models often overfit “diversity” into a repetitive hook demographic. */
 const GLOBAL_REAL_PEOPLE_LINE =
-  "Real people/places/events: photorealistic and accurate. Inclusive, diverse depiction; no single default ethnicity.";
+  "People and places: photorealistic when depicted. Avoid stereotypical or biased portrayals. When **one** recurring invented person carries the carousel, pick **any** single plausible adult look and **hold it** across slides—do not rotate ethnicity, age, or hair for artificial variety, and do not treat diversity language as a reason to default the hook toward one demographic.";
 
 /**
  * When the user attached reference images, vision produced `referenceStyleSummary`.
@@ -498,11 +498,19 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
   }
 
   const productSummary = context?.productReferenceSummary?.trim();
+  const hasProductPixelRefs =
+    Array.isArray(context?.productReferenceImageBuffers) &&
+    context.productReferenceImageBuffers.some((b) => Buffer.isBuffer(b) && b.length > 0);
   if (productSummary) {
     parts.push(
       "Product / service / app references: when this slide is about the user's offering, match the attached reference description and any pixel references—UI layout, product shape, packaging, colors, and key branding cues. Use image-to-image conditioning: one coherent new photograph with the offering integrated naturally in the scene (device, hands, environment)—not a flat pasted mockup unless the brief explicitly calls for a clean UI crop. Do not swap in a different product or invented UI unless the slide is clearly not about this offering."
     );
     parts.push(truncateForContext(productSummary, MAX_PRODUCT_REFERENCE_IN_PROMPT));
+    if (hasProductPixelRefs) {
+      parts.push(
+        "Pixel product references are attached: the **physical product or garment is ground truth** for color, wash, silhouette, stitching, buttons, pocket layout, and any legible tags—describe **pose, scene, and moment** in the scene text; do **not** override the reference with a different item (e.g. another jacket color/cut or generic “utility jacket”)."
+      );
+    }
     if (context?.productMustAppear) {
       parts.push(
         "This slide requires visible product presence: include the product/app/service clearly in frame (in hand, on screen, on desk, worn, or actively used) while keeping scene realism."
@@ -539,7 +547,11 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
         "Non-fiction carousel: when the slide is about real public figures (athletes, leaders, artists, etc.), aim for a recognizable portrayal—accurate era, team colors, venue, or role. If a specific likeness is not possible, keep the same person’s context without inventing a different identity."
       );
     }
-    if (!context?.omitDefaultInclusivePeopleLine) {
+    const suppressInclusiveDefaultLine =
+      context?.omitDefaultInclusivePeopleLine === true ||
+      context?.establishSeriesFaceAnchor === true ||
+      hasProductPixelRefs;
+    if (!suppressInclusiveDefaultLine) {
       parts.push(GLOBAL_REAL_PEOPLE_LINE);
     }
   }
@@ -583,7 +595,7 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
     }
     if (context?.establishSeriesFaceAnchor) {
       parts.push(
-        "Series face anchor (no library refs this run): if a recurring human appears, one **stable recognizable face**—neutral practical light on skin, close enough to read eyes, hair texture, and skin undertone (normal selfie or arm’s-length distance is fine). Same apparent ethnicity, age read, and hairstyle identity you will keep for every later slide—**not** a studio beauty headshot or catalog model, still casual phone energy, but avoid tiny distant faces, heavy silhouette-only hooks, or faceless POV-only frames that would make the next slides unable to match the same person."
+        "Series face anchor (no library refs this run): if a recurring human appears, one **stable recognizable face**—neutral practical light on skin, close enough to read eyes, hair texture, and skin undertone (normal selfie or arm’s-length distance is fine). **Hold one consistent invented look** (face, hair, skin, age read) for every later slide—**not** a studio beauty headshot, still casual phone energy; avoid tiny distant faces, heavy silhouette-only hooks, or faceless POV-only frames that would make the next slides unable to match the same person. Do not pick a hook look just to satisfy generic “diversity” stereotypes."
       );
     }
     if (isBibleChristianTopic) {
@@ -646,11 +658,11 @@ const UGC_IMAGE_EDIT_PREFIX =
 
 /** When product refs are attached after UGC refs in the same `images.edit` call. */
 const PRODUCT_I2I_AFTER_UGC =
-  "Additional attached images are product, app, UI, packaging, or service references. Use them for image-to-image fidelity (shapes, colors, layout, recognizable UI regions) while honoring the creator identity rules above. Do not alter product identity: keep original shape/silhouette, dominant color palette, and apparent size/proportions in scene context. Produce one new photograph with natural scene integration—not a pasted collage or flat composite. ";
+  "Additional attached images are product, app, UI, packaging, or service references. Use them for image-to-image fidelity (shapes, colors, layout, recognizable UI regions) while honoring the creator identity rules above. Do not alter product identity: keep original shape/silhouette, dominant color palette, and apparent size/proportions in scene context. **Apparel / wearables:** do **not** swap in a different jacket archetype, wash, or color—the garment must read as the **same physical piece** as the references (pocket shape, placket stitching, buttons, collar, visible tags). Produce one new photograph with natural scene integration—not a pasted collage or flat composite. ";
 
 /** Product-only `images.edit` (no UGC face refs). */
 const PRODUCT_I2I_PREFIX_ALONE =
-  "The attached image(s) are product, app, UI, packaging, or service references. Use image-to-image conditioning: preserve the offering’s recognizable visual identity (colors, proportions, UI structure, packaging cues) while generating one NEW photograph for the scene described below—believable lighting and context, integrated into the environment rather than a floating overlay. Never redesign or morph the product: keep original shape/silhouette, core colors, and realistic scene-relative size. ";
+  "The attached image(s) are product, app, UI, packaging, or service references. Use image-to-image conditioning: preserve the offering’s recognizable visual identity (colors, proportions, UI structure, packaging cues) while generating one NEW photograph for the scene described below—believable lighting and context, integrated into the environment rather than a floating overlay. Never redesign or morph the product: keep original shape/silhouette, core colors, and realistic scene-relative size. **Apparel:** match the reference garment’s fabric, wash, hardware, and cut exactly—do not substitute a generic similar jacket or different colorway. ";
 
 const MAX_EDIT_REFERENCE_IMAGES = 8;
 
