@@ -17,6 +17,7 @@ import {
 } from "@/components/carousels/ChooseTemplateModalLayout";
 import { ImportTemplateButton } from "@/components/templates/ImportTemplateButton";
 import { cn } from "@/lib/utils";
+import { triggerBlobDownload } from "@/lib/client/blobDownload";
 import { setSlideTemplate } from "@/app/actions/slides/setSlideTemplate";
 import { getTemplateConfigAction } from "@/app/actions/templates/getTemplateConfig";
 import { reorderSlides } from "@/app/actions/slides/reorderSlides";
@@ -1172,12 +1173,7 @@ export function SlideGrid({
                           const res = await fetch(url);
                           if (!res.ok) throw new Error("Download failed");
                           const blob = await res.blob();
-                          const blobUrl = URL.createObjectURL(blob);
-                          const a = document.createElement("a");
-                          a.href = blobUrl;
-                          a.download = filename;
-                          a.click();
-                          URL.revokeObjectURL(blobUrl);
+                          triggerBlobDownload(blob, filename);
                         } finally {
                           setDownloadingSlideId(null);
                         }

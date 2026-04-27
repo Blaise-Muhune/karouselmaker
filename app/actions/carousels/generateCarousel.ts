@@ -43,6 +43,7 @@ import {
   summarizeStyleReferenceImages,
 } from "@/lib/server/ai/summarizeStyleReferenceImages";
 import { summarizeProductReferenceImages } from "@/lib/server/ai/summarizeProductReferenceImages";
+import { computeProductMustAppearForSlide } from "@/lib/server/ai/computeProductMustAppearForSlide";
 import { buildCarouselSeriesVisualConsistency } from "@/lib/server/ai/carouselSeriesVisualConsistency";
 import { matchBackgroundAssetsToSlides } from "@/lib/server/ai/matchBackgroundAssetsToSlides";
 import { mergeProjectUgcAvatarAssetIds } from "@/lib/server/ai/mergeProjectUgcAvatarAssetIds";
@@ -1354,12 +1355,12 @@ export async function generateCarousel(formData: FormData): Promise<
         const slideContext = aiSlide?.image_context;
         const isHookSlide = aiSlide?.slide_index === 1;
         const productPixelsAttached = (productReferenceImageBuffers?.length ?? 0) > 0;
-        const shouldShowProduct =
-          productPixelsAttached ||
-          (productOrServiceKnown &&
-            (aiSlide?.slide_index === 1 ||
-              aiSlide?.slide_index === validated.slides.length ||
-              (aiSlide?.slide_index ?? 0) % 2 === 0));
+        const shouldShowProduct = computeProductMustAppearForSlide({
+          slideIndex: aiSlide?.slide_index ?? 0,
+          slideCount: validated.slides.length,
+          productPixelsAttached,
+          productOrServiceKnown,
+        });
         const establishSeriesFaceAnchor =
           isHookSlide &&
           runAiSlidesSequentially &&
@@ -1564,12 +1565,12 @@ export async function generateCarousel(formData: FormData): Promise<
                   const hookQuery = hookQueries[0];
                   if (hookQuery) {
                     const hookCtx = hookAi?.image_context;
-                    const hookProductShow =
-                      (productReferenceImageBuffers?.length ?? 0) > 0 ||
-                      (productOrServiceKnown &&
-                        (hookAi?.slide_index === 1 ||
-                          hookAi?.slide_index === validated.slides.length ||
-                          (hookAi?.slide_index ?? 0) % 2 === 0));
+                    const hookProductShow = computeProductMustAppearForSlide({
+                      slideIndex: hookAi?.slide_index ?? 1,
+                      slideCount: validated.slides.length,
+                      productPixelsAttached: (productReferenceImageBuffers?.length ?? 0) > 0,
+                      productOrServiceKnown,
+                    });
                     const realignResult = await generateImageFromPrompt(hookQuery, {
                       context: {
                         carouselTitle: validated.title?.trim() || undefined,

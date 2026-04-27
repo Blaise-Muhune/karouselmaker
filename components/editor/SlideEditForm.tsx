@@ -52,6 +52,7 @@ import { uploadProjectLogo } from "@/app/actions/projects/uploadProjectLogo";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
 import { buildBodyRewriteVariants } from "@/lib/renderer/bodyRewriteVariants";
 import { cn, slugifyForFilename } from "@/lib/utils";
+import { triggerBlobDownload } from "@/lib/client/blobDownload";
 import { imageSourceDisplayName } from "@/lib/utils/imageSourceDisplay";
 import { isSupabaseSignedUrl } from "@/lib/server/storage/signedUrlUtils";
 import { getTemplatePreviewBackgroundOverride } from "@/lib/renderer/getTemplatePreviewBackground";
@@ -1779,7 +1780,8 @@ export function SlideEditForm({
   useEffect(() => {
     if (!pendingDownload) return;
     const clickTimer = setTimeout(() => pendingDownloadLinkRef.current?.click(), 50);
-    const clearTimer = setTimeout(clearPendingDownload, 800);
+    /** Long window so users can tap “Save” on mobile; blob URL is revoked on tap or unmount. */
+    const clearTimer = setTimeout(clearPendingDownload, 600_000);
     return () => {
       clearTimeout(clickTimer);
       clearTimeout(clearTimer);
@@ -3199,20 +3201,14 @@ export function SlideEditForm({
       const res = await fetch(url, { credentials: "include" });
       if (!res.ok) return;
       const blob = await res.blob();
-      const blobUrl = URL.createObjectURL(blob);
       setDownloading(false);
       if (isMobile) {
+        const blobUrl = URL.createObjectURL(blob);
         if (pendingBlobUrlRef.current) URL.revokeObjectURL(pendingBlobUrlRef.current);
         pendingBlobUrlRef.current = blobUrl;
         setPendingDownload({ url: blobUrl, filename });
       } else {
-        const a = document.createElement("a");
-        a.href = blobUrl;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(blobUrl);
+        triggerBlobDownload(blob, filename);
       }
     } catch {
       setDownloading(false);
@@ -3619,18 +3615,16 @@ export function SlideEditForm({
       }
       if (contentType.includes("application/zip") || contentType.includes("application/pdf")) {
         const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
         const suggested = res.headers.get("X-Suggested-Filename");
-        a.download =
+        const filename =
           suggested ||
           (contentType.includes("application/pdf")
             ? `${downloadSlug || "carousel"}.pdf`
             : `${downloadSlug || "carousel"}.zip`);
-        a.click();
-        URL.revokeObjectURL(url);
-        router.refresh();
+        triggerBlobDownload(blob, filename);
+        window.setTimeout(() => {
+          router.refresh();
+        }, 2000);
         return;
       }
       const data = (await res.json().catch(() => ({}))) as { downloadUrl?: string };
@@ -3641,8 +3635,15 @@ export function SlideEditForm({
         a.download = `${downloadSlug || "carousel"}.zip`;
         a.target = "_blank";
         a.rel = "noopener noreferrer";
-        a.click();
-        router.refresh();
+        document.body.appendChild(a);
+        try {
+          a.click();
+        } finally {
+          a.remove();
+        }
+        window.setTimeout(() => {
+          router.refresh();
+        }, 2000);
       }
     } catch {
       setExportFullError("Export failed");

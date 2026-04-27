@@ -10,7 +10,7 @@ import { downloadStorageImageAsDataUrl } from "@/lib/server/export/fetchImageAsD
 const BUCKET = "carousel-assets";
 const MAX_OUT = 480;
 
-const SYSTEM_SINGLE = `The user uploaded a reference photo for their own UGC-style carousel. They want AI-generated slide backgrounds to show ONE recurring person who matches this reference across many slides—**tight character consistency** (face shape, features, hair color and length, skin tone, approximate age, build, casual wardrobe colors and silhouette).
+const SYSTEM_SINGLE = `The user uploaded a reference photo for their own UGC-style carousel. They want AI-generated slide backgrounds to show ONE recurring person who matches this reference across many slides—**tight character consistency** (face shape, features, hair color and length, skin tone, approximate age, build; visible clothing colors/silhouette when shown—**face and body are primary**; generated outfits may be **more stylized or interesting** than the upload as long as identity matches).
 
 Write ONE dense paragraph (max ~350 characters) the image model can follow. Rules:
 - Describe only visible, neutral traits. No names, no claims this is a real public figure.
@@ -24,7 +24,7 @@ const SYSTEM_MULTI = `The user uploaded MULTIPLE reference photos of the SAME pe
 
 Write ONE dense paragraph (max ~420 characters) merging what is stable across all images. Rules:
 - Resolve conflicts by favoring **frontal / clearest face** views for facial structure; use other angles only to confirm hair, build, skin tone, and wardrobe.
-- **Lock** identity anchors: face shape, eye area, nose/mouth proportions, hair (color, length, style), skin tone, approximate age, body type, recurring casual clothing colors/silhouette.
+- **Lock** identity anchors: face shape, eye area, nose/mouth proportions, hair (color, length, style), skin tone, approximate age, body type, visible clothing colors/silhouette when stable across refs (identity first—outfits in generated slides may be **more interesting** than uploads if face/hair/body stay true).
 - Ignore background and lighting differences between uploads—describe the **person**, not the rooms.
 - **Look & camera** for generated images: natural smartphone realism—slight grain, soft focus, muted colors, practical light—not studio beauty or ad gloss; avoid synthetic perfection and convenient AI staging unless user notes demand production polish.
 - Say explicitly: invented depiction for illustration, not a biometric copy; match the *gist* across angles.

@@ -446,6 +446,15 @@ export function renderSlideHtml(
     ? "transparent"
     : (backgroundOverride?.color ?? model.background.backgroundColor);
   const bgColorCss = escapeHtml(backgroundColor ?? "#0a0a0a");
+  /** When `tintColor` is omitted, match SlidePreview: template default background color (not slide `backgroundColor`). */
+  const tmplBgForTint = (templateConfig.defaults?.background as { color?: string } | undefined)?.color?.trim();
+  const tintColorFallbackHex =
+    tmplBgForTint && /^#([0-9A-Fa-f]{3}){1,2}$/.test(tmplBgForTint) ? tmplBgForTint : "#0a0a0a";
+  const tintFillEscaped = (() => {
+    const raw = backgroundOverride?.tintColor;
+    if (typeof raw === "string" && /^#([0-9A-Fa-f]{3}){1,2}$/.test(raw.trim())) return escapeHtml(raw.trim());
+    return escapeHtml(tintColorFallbackHex);
+  })();
   const isPatternBg = !overlayOnly && backgroundOverride?.style === "pattern" && backgroundOverride?.pattern && ["dots", "ovals", "lines", "circles"].includes(backgroundOverride.pattern);
   const slideBackgroundStyle = isPatternBg
     ? getPatternBackgroundStyle(bgColorCss, backgroundOverride.pattern as "dots" | "ovals" | "lines" | "circles")
@@ -465,11 +474,18 @@ export function renderSlideHtml(
         escapeHtml
       )
     : "";
-  /** Only when there is a background image: gate gradient/tint on top of the picture. */
+  /** Only when there is a background image: gate gradient on top of the picture (same rules as SlidePreview). */
   const overlayEnabled = backgroundOverride?.overlayEnabled !== false;
+  const baseUseGradient =
+    backgroundOverride?.gradientOn !== undefined
+      ? backgroundOverride.gradientOn
+      : model.background.useGradient;
+  const defaultStyle = templateConfig.backgroundRules?.defaultStyle;
+  const templateAllowsOverlay = defaultStyle !== "none" && defaultStyle !== "blur";
+  const userExplicitlyEnabledGradient = backgroundOverride?.gradientOn === true && overlayEnabled;
   const useGradient = hasImageForOverlay
-    ? overlayEnabled && (backgroundOverride?.gradientOn !== undefined ? backgroundOverride.gradientOn : model.background.useGradient)
-    : (backgroundOverride?.gradientOn !== undefined ? backgroundOverride.gradientOn : model.background.useGradient);
+    ? overlayEnabled && baseUseGradient && (templateAllowsOverlay || userExplicitlyEnabledGradient)
+    : baseUseGradient;
   const useGradientRendered = pictureOnlyActive ? false : useGradient;
   const gradientDir = gradientDirectionToCss(
     backgroundOverride?.gradientDirection,
@@ -1093,12 +1109,12 @@ export function renderSlideHtml(
 <body>
   <div class="slide-wrap">
   ${(() => { const preloadUrls = [resolvedBgUrl, ...(multiUrls ?? []), ...(multiUrlsCandidate ?? []), secondaryBackgroundImageUrl].filter(Boolean) as string[]; const seen = new Set<string>(); const deduped = preloadUrls.filter((u) => (seen.has(u) ? false : (seen.add(u), true))); return deduped.length ? deduped.map((url) => `<img src="${escapeHtml(url)}" alt="" decoding="async" class="slide-preload-img" style="position:absolute;width:0;height:0;opacity:0;pointer-events:none;visibility:hidden" />`).join("") : ""; })()}
-  ${useFullCanvasBackground ? `<div class="slide-fullcanvas-bg" style="position:absolute;left:0;top:0;width:${dimW}px;height:${dimH}px;overflow:hidden;z-index:0"><img src="${escapeHtml(resolvedBgUrl!)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:${singleBgPosition};display:block${fullImgRotateSuffix}" />${!noTextOrChrome && (backgroundOverride?.tintOpacity ?? 0) > 0 ? `<div style="position:absolute;inset:0;background-color:${escapeHtml(backgroundOverride?.tintColor ?? backgroundColor ?? "#0a0a0a")};opacity:${Math.min(1, Math.max(0, backgroundOverride?.tintOpacity ?? 0))};pointer-events:none"></div>` : ""}${!noTextOrChrome && useGradientRendered ? `<div style="position:absolute;inset:0;background:${gradientStyle};pointer-events:none"></div>` : ""}</div>` : ""}
+  ${useFullCanvasBackground ? `<div class="slide-fullcanvas-bg" style="position:absolute;left:0;top:0;width:${dimW}px;height:${dimH}px;overflow:hidden;z-index:0"><div style="position:absolute;inset:0;background-color:${bgColorCss};pointer-events:none"></div><img src="${escapeHtml(resolvedBgUrl!)}" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:${singleBgPosition};display:block${fullImgRotateSuffix}" />${!noTextOrChrome && (backgroundOverride?.tintOpacity ?? 0) > 0 ? `<div style="position:absolute;inset:0;background-color:${tintFillEscaped};opacity:${Math.min(1, Math.max(0, backgroundOverride?.tintOpacity ?? 0))};pointer-events:none"></div>` : ""}${!noTextOrChrome && useGradientRendered ? `<div style="position:absolute;inset:0;background:${gradientStyle};pointer-events:none"></div>` : ""}</div>` : ""}
   <div class="slide">
   <div class="slide-inner">
     ${decorationHtml}
     ${overlayOnly ? "" : useFullCanvasBackground ? "" : (allPipHtml || (multiUrls ? multiImagesHtml : singleBgImgHtml || (isSingleImage && disp.mode !== "pip" ? `<div class="slide-bg-image" style="${bgFrameStyle}${bgImageStyle}${fullImgRotateSuffix}"></div>` : "")))}
-    ${!noTextOrChrome && !useFullCanvasBackground && (resolvedBgUrl || multiUrls || multiUrlsCandidate) && (backgroundOverride?.tintOpacity ?? 0) > 0 ? `<div style="position:absolute;inset:0;background-color:${escapeHtml(backgroundOverride?.tintColor ?? backgroundColor ?? "#0a0a0a")};opacity:${Math.min(1, Math.max(0, backgroundOverride?.tintOpacity ?? 0))};pointer-events:none;z-index:0"></div>` : ""}
+    ${!noTextOrChrome && !useFullCanvasBackground && (resolvedBgUrl || multiUrls || multiUrlsCandidate) && (backgroundOverride?.tintOpacity ?? 0) > 0 ? `<div style="position:absolute;inset:0;background-color:${tintFillEscaped};opacity:${Math.min(1, Math.max(0, backgroundOverride?.tintOpacity ?? 0))};pointer-events:none;z-index:0"></div>` : ""}
     ${noTextOrChrome ? "" : useFullCanvasBackground ? "" : "<div class=\"slide-gradient\"></div>"}
     ${hookCircleHtml}
     ${overlayShapesHtml}

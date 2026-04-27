@@ -452,7 +452,7 @@ const MAX_PRODUCT_REFERENCE_IN_PROMPT = 1150;
 
 /** When user attached reference images: dominate the prompt—no house stock defaults that fight the refs. */
 const REFERENCE_STYLE_FIRST_LINE =
-  "User attached reference images: match their visual language as closely as possible—palette and color grading, lighting direction and quality, lens/DOF/bokeh, typical camera angles and shot scale, background treatment, and wardrobe/styling level when people appear. Do not substitute unrelated generic social-feed looks or forced drama just for variety. Subject and story come from the slide text and topic below; references define HOW the image should look. Carousel notes override only when they explicitly conflict.";
+  "User attached reference images: match their visual language as closely as possible—palette and color grading, lighting direction and quality, lens/DOF/bokeh, typical camera angles and shot scale, background treatment, and wardrobe/styling level when people appear. Do not substitute unrelated generic social-feed looks or forced drama just for variety. Subject and story come from the slide text and topic below; references define HOW the image should look. **Carousel notes** (when that section appears in the instructions below) also steer **images**—including hair, wardrobe, props, and mood—even when not phrased as a direct “conflict” with the refs.";
 
 /** Short global line for text-only image generation. Kept off when pixel refs or series anchors already lock identity—otherwise models often overfit “diversity” into a repetitive hook demographic. */
 const GLOBAL_REAL_PEOPLE_LINE =
@@ -516,6 +516,13 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
     "Safety baseline (apply from first generation): keep imagery general-audience and non-sexual. No nudity, lingerie, fetishized body emphasis, intimate framing, or suggestive posing. Default styling should feel casual and realistic unless notes explicitly request a specific formal/art direction."
   );
 
+  const userNotesTrimmed = context?.userNotes?.trim();
+  if (userNotesTrimmed) {
+    parts.push(
+      `Carousel notes — **apply to this generated image** (not slide text only): any hair, beard, makeup, wardrobe, accessories, lighting, color grade, props, setting, or “vibe” in these notes **override** generic continuity rules, reference-photo hairstyle, style-reference defaults, and series boilerplate when they differ. Treat notes as art direction for pixels (including UGC). Full notes: ${truncateForContext(userNotesTrimmed, 900)}`
+    );
+  }
+
   const notesLower = (context?.userNotes ?? "").toLowerCase();
   const projectStyleLower = (context?.projectImageStyleNotes ?? "").toLowerCase();
   const allowTattooDetails =
@@ -557,6 +564,10 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
       parts.push(
         "This slide requires visible product presence: include the product/app/service clearly in frame (in hand, on screen, on desk, worn, or actively used) while keeping scene realism."
       );
+    } else if (hasProductPixelRefs) {
+      parts.push(
+        "This slide does **not** need the product or packaging as the hero: prefer natural lifestyle or host-first framing (workout, commute, candid moment, environment, hands in activity) with **no** centered product tub, bottle, box, or packshot unless the scene text explicitly calls for it. Attached product images keep **SKU continuity** for other slides—do not invent a different item; here a believable native post often has **no** product visible."
+      );
     }
     if (context?.preferProductWornByHost) {
       parts.push(
@@ -568,7 +579,7 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
   const ugcLock = context?.ugcCharacterLock?.trim();
   if (ugcLock) {
     parts.push(
-      `Recurring character / person lock (mandatory when a person appears): same identity every slide—face shape, features, hairstyle (cut, length, texture, part, hairline, color) as a high-priority anchor, skin tone, body type, age read, recurring casual wardrobe (same garment colors/types and dress level), jewelry and accessories (watch, earrings, necklace, glasses) when visible, and stable look for any recurring partner or friend in the story. For one continuous day or outing in the carousel, do not randomize outfit, hair, or companions between slides unless notes or slide text signal a change. Do not drift to a different model. Vary pose, expression, framing, and background. ${truncateForContext(ugcLock, 480)}`
+      `Recurring character / person lock (when a person appears): same **face and body identity** every slide—face shape, features, skin tone, body type, age read. **Hair, beard, makeup, outfit:** follow the **Carousel notes** section above (when present) when it specifies grooming or wardrobe; otherwise keep continuity with the character summary below and reference photos. Recurring wardrobe (**cohesive but interesting**—clear color/layer read; not anonymous grey basics unless the scene demands it; same garment colors/types and dress level within one same-day or same-outing span unless notes say otherwise), jewelry when visible, stable recurring companions. For one continuous day or outing, do not randomize outfit, hair, or companions between slides **unless** Carousel notes or slide text signal a change. Do not drift to a different model. Vary pose, expression, framing, and background. ${truncateForContext(ugcLock, 480)}`
     );
   }
 
@@ -585,8 +596,8 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
   if (ugcPhone) {
     parts.push(
       allowTattooDetails
-        ? "Identity details: keep hairstyle continuity precise across slides. If tattoos are requested in notes, render them consistently in placement/size/style for the same person."
-        : "Identity details: keep hairstyle continuity precise across slides. Do not invent/add tattoos by default; include tattoos only when explicitly requested in carousel/project notes or clearly visible in provided reference images."
+        ? "Identity details: keep hairstyle continuity across slides **unless** the Carousel notes section above specifies different hair or grooming for this run. If tattoos are requested in notes, render them consistently in placement/size/style for the same person."
+        : "Identity details: keep hairstyle continuity across slides **unless** the Carousel notes section above specifies different hair or grooming. Do not invent/add tattoos by default; include tattoos only when explicitly requested in carousel/project notes or clearly visible in provided reference images."
     );
     parts.push(
       "Camera: real-phone energy—interesting but **not** every slide a crisp hero portrait. Often face-visible, but allow environmental shots where the subject is smaller, slight profile, or face softly out of critical focus when it feels like a real casual post. Vary distance and POV: asymmetrical crop, slight handheld tilt, doorway frame, reaction close-up, wide room shot, over-shoulder at phone. Avoid repeating one centered medium shot every time. Back-of-head / over-shoulder / top-down-no-face are fine when they match a believable posting moment—not only for 'literal' story beats. Plausible focal length; avoid ultra-wide face distortion unless the scene fits. No crane, drone, floating product, glam hero low-angle, sunset silhouette, or blockbuster polish unless the slide is literally about that. **Match the emotional beat** of headline/body—same story chapter—without forcing hyper-literal illustration of awkward or unfilmable moments. Candid and human, not generic stock or obvious AI staging."
@@ -634,16 +645,11 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
       `Project image/copy context (use if not contradicted by carousel notes): ${truncateForContext(context.projectImageStyleNotes, 480)}`
     );
   }
-  if (context?.userNotes?.trim()) {
-    parts.push(
-      `Carousel notes (highest priority—override project/reference above when they conflict): ${truncateForContext(context.userNotes, 900)}`
-    );
-  }
 
   if (context?.isHookSlide) {
     if (context?.hookIdentityRealignmentFromRef) {
       parts.push(
-        "HOOK REALIGNMENT: The first attached image is a **later slide** from this same carousel that already locked the host’s look. Recreate slide 1’s hook **scene and energy** from the headline/body—but the **human must be the same person** as that reference (same face shape, hair, skin undertone, age read, and build). Product/garment rules from any additional product references still apply; do not introduce a different model."
+        "HOOK REALIGNMENT: The first attached image is a **later slide** from this same carousel that already locked the host’s look. Recreate slide 1’s hook **scene and energy** from the headline/body—but the **human must be the same person** as that reference (same face shape, skin undertone, age read, and build). **Hair/grooming:** match the reference **unless** the Carousel notes section above specifies different hair or beard for this run—then follow those notes while keeping the same face identity. Product/garment rules from any additional product references still apply; do not introduce a different model."
       );
     }
     if (!hasReferenceStyle) {
@@ -659,7 +665,7 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
     }
     if (context?.establishSeriesFaceAnchor) {
       parts.push(
-        "Series face anchor (no library refs this run): if a recurring human appears, one **stable recognizable face**—neutral practical light on skin, close enough to read eyes, hair texture, and skin undertone (normal selfie or arm’s-length distance is fine). **Hold one consistent invented look** (face, hair, skin, age read) for every later slide—**not** a studio beauty headshot, still casual phone energy; avoid tiny distant faces, heavy silhouette-only hooks, or faceless POV-only frames that would make the next slides unable to match the same person. When no face refs exist, do not default to the same demographic template across runs; choose a plausible non-stereotyped host from topic/notes, then keep that exact person for this carousel."
+        "Series face anchor (no library refs this run): if a recurring human appears, one **stable recognizable face**—neutral practical light on skin, close enough to read eyes and skin undertone (normal selfie or arm’s-length distance is fine). **Hold one consistent invented look** (face, skin, age read) for every later slide; **hair and styling** follow the **Carousel notes** section above when they specify them, otherwise pick one memorable look and hold it—**not** a studio beauty headshot, still casual phone energy; avoid tiny distant faces, heavy silhouette-only hooks, or faceless POV-only frames that would make the next slides unable to match the same person. When no face refs exist, do not default to the same demographic template across runs; choose a plausible non-stereotyped host from topic/notes, then keep that exact person for this carousel."
       );
     }
     if (isBibleChristianTopic) {
@@ -718,7 +724,7 @@ function aspectToOpenAISize(aspect: "1:1" | "4:5" | "9:16" | "2:3" | "16:9"): "1
 
 /** Prepended when using images.edit with UGC reference photos (multimodal identity conditioning). */
 const UGC_IMAGE_EDIT_PREFIX =
-  "The attached image(s) are reference photos of the recurring character. Preserve their facial identity, hairstyle (cut/length/texture/part/hairline), hair color, skin tone, and approximate build. **Do not change who this is:** keep the same apparent ethnicity, skin undertone, facial proportions, nose/lips/eye shape, and age read as the references—this is image-to-image continuity, not a new cast member. **Lighting:** default **neutral** illumination for the new scene—do not force an orange or heavy warm cast unless the described setting or the references’ grading clearly warrant it (creators often re-grade in edit). Generate one NEW photograph for the scene below—fresh, interesting phone-native framing vs the references (distance, angle, POV), not a crop or collage of the uploads; still believable handheld candor, not cinematic crane/glam hero or synthetic stock staging. **Camera variety:** vary **camera height** (low / eye / high) and distance vs a default “centered medium portrait + heavy portrait-mode bokeh on a vague city street”—some frames should keep **recognizable environment texture** (tiles, doorway, mirror edge, café seating) partly sharp, like real IG outfit posts. **Avoid hyper-convenient staging:** do not depict unlikely moments as if professionally set up; when the scene implies something fleeting or awkward, a believable adjacent moment (reaction, environment, after) is better than literal perfection. Often face-visible but not every output needs razor-sharp facial detail—soft focus and casual framing are OK. Back-of-head or over-shoulder are fine when they read as a real post. Do not add tattoos by default; only include tattoos if explicitly requested in notes or clearly present in the provided references. Match iPhone-main-camera realism (natural grain, soft detail, believable light)—not a beauty-app portrait, CGI avatar, or glossy render unless notes request production polish. ";
+  "The attached image(s) are reference photos of the recurring character. Preserve **facial** identity: bone structure, eyes, nose/lips, skin tone, apparent ethnicity, and approximate build—**do not recast a different person.** **Hair and facial hair:** default to matching the references for continuity **unless** the **Carousel notes** section in the instructions **below** (immediately after the safety baseline) explicitly describes different hair (cut, length, color, texture, part), bangs, extensions, beard, or grooming—then **follow those carousel notes** while keeping the same underlying face. **Lighting:** default **neutral** illumination for the new scene—do not force an orange or heavy warm cast unless the described setting or the references’ grading clearly warrant it (creators often re-grade in edit). Generate one NEW photograph for the scene below—fresh, interesting phone-native framing vs the references (distance, angle, POV), not a crop or collage of the uploads; still believable handheld candor, not cinematic crane/glam hero or synthetic stock staging. **Camera variety:** vary **camera height** (low / eye / high) and distance vs a default “centered medium portrait + heavy portrait-mode bokeh on a vague city street”—some frames should keep **recognizable environment texture** (tiles, doorway, mirror edge, café seating) partly sharp, like real IG outfit posts. **Avoid hyper-convenient staging:** do not depict unlikely moments as if professionally set up; when the scene implies something fleeting or awkward, a believable adjacent moment (reaction, environment, after) is better than literal perfection. Often face-visible but not every output needs razor-sharp facial detail—soft focus and casual framing are OK. Back-of-head or over-shoulder are fine when they read as a real post. Do not add tattoos by default; only include tattoos if explicitly requested in notes or clearly present in the provided references. Match iPhone-main-camera realism (natural grain, soft detail, believable light)—not a beauty-app portrait, CGI avatar, or glossy render unless notes request production polish. ";
 
 /** When product refs are attached after UGC refs in the same `images.edit` call. */
 const PRODUCT_I2I_AFTER_UGC =
@@ -868,7 +874,7 @@ export async function generateImageFromPrompt(
   }
   if (useImageRefEdit && options?.context?.strictReuseFirstSlideIdentity === true && editUgcCount > 0) {
     preLocks.push(
-      "IDENTITY LOCK (non-negotiable): the first attached image is the hook output from this same carousel run. **Keep the same human** (face, hair, skin undertone, age, build)—do not recast or “beauty swap” to match the scene text. "
+      "IDENTITY LOCK (non-negotiable): the first attached image is the hook output from this same carousel run. **Keep the same human** (face, skin undertone, age, build)—do not recast or “beauty swap” to match the scene text. **Hair/grooming** may differ from that attachment **only** when the **Carousel notes** section in the text below specifies different hair or beard; otherwise keep hair consistent with the attachment. "
     );
   }
   const lockBlock = preLocks.join("");
@@ -877,6 +883,9 @@ export async function generateImageFromPrompt(
   const quality = model === "gpt-image-1.5" ? "medium" : "low";
   const continuityLock = (() => {
     const parts: string[] = [];
+    if (options?.context?.userNotes?.trim()) {
+      parts.push(`Carousel notes (override hair/wardrobe/lighting): ${options.context.userNotes.trim()}`);
+    }
     if (options?.context?.seriesVisualConsistency?.trim()) {
       parts.push(`Series: ${options.context.seriesVisualConsistency.trim()}`);
     }

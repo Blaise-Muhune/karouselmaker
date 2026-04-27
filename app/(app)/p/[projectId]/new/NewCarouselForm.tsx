@@ -31,6 +31,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { UpgradePlansDialog } from "@/components/subscription/UpgradePlansDialog";
 import { WaitingGamesDialog } from "@/components/waiting/WaitingGamesDialog";
+import { GenerationProgressRing } from "@/components/carousels/GenerationProgressRing";
 import {
   Gem,
   GlobeIcon,
@@ -60,7 +61,7 @@ import {
 } from "@/lib/constants";
 
 /** Full page reload while generation overlay is open, so long runs can recover / see updated state. */
-const CAROUSEL_GENERATION_OVERLAY_REFRESH_MS = 3 * 60 * 1000 + 30 * 1000;
+const CAROUSEL_GENERATION_OVERLAY_REFRESH_MS = 5 * 60 * 1000;
 const WEB_IMAGES_DISCLAIMER_STORAGE_KEY = "km:web-images-disclaimer:skip";
 
 /** Carousel for: Instagram (default) or LinkedIn. LinkedIn uses B2B-optimized content and stock/own images only (no AI generate). */
@@ -732,12 +733,12 @@ export function NewCarouselForm({
           aria-busy="true"
         >
           <div className="mx-auto max-w-sm space-y-6 px-6 text-center">
-            <Loader2Icon className="mx-auto size-12 animate-spin text-primary" />
+            <GenerationProgressRing durationMs={CAROUSEL_GENERATION_OVERLAY_REFRESH_MS} />
             <p className="text-sm font-medium text-foreground">
               {regenerateCarouselId ? "Regenerating your carousel…" : "Generating your carousel…"}
             </p>
             <p className="text-xs text-muted-foreground">
-              This usually takes 2-4 minutes, if it takes longer <span className="font-semibold text-foreground">refresh the page</span>.
+              This ring fills in 5 minutes. If results are still not showing after refresh, refresh the page again.
             </p>
             <div className="flex justify-center">
               <WaitingGamesDialog

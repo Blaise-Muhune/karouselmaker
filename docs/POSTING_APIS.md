@@ -58,13 +58,54 @@ Below is where to find the official APIs and what you typically need.
 
 ## 5. YouTube
 
-- **Docs:** [YouTube Data API](https://developers.google.com/youtube/v3), [YouTube API – Uploading videos](https://developers.google.com/youtube/v3/guides/uploading_a_video).
-- **You need:**
-  - A project in [Google Cloud Console](https://console.cloud.google.com/) with **YouTube Data API v3** enabled.
-  - [OAuth 2.0 credentials](https://console.cloud.google.com/apis/credentials) (e.g. Web application) and consent screen.
-  - Scopes such as `https://www.googleapis.com/auth/youtube.upload` and `https://www.googleapis.com/auth/youtube` (or read-only where needed).
-  - **Client ID** and **Client Secret** in `.env`; store **refresh_token** (and optional channel ID) per user after OAuth.
-- **Video only:** YouTube is video-only; use the **Videos: insert** (resumable upload) flow for MP4 uploads. No carousel support.
+- **Official Docs:**
+  - [YouTube Data API docs](https://developers.google.com/youtube/v3)
+  - [Uploading videos with YouTube API](https://developers.google.com/youtube/v3/guides/uploading_a_video)
+
+- **Setup Requirements:**
+  - **Google Cloud Project:** Create a project in [Google Cloud Console](https://console.cloud.google.com/) and enable the **YouTube Data API v3** for it. This gives your app permission to manage videos, channels, and related data.
+  - **OAuth Credentials:** Create OAuth 2.0 credentials (type: Web application) in the [Credentials section](https://console.cloud.google.com/apis/credentials), including configuring an OAuth consent screen. You'll need to specify authorized redirect URIs that point to your app's OAuth callback endpoint for YouTube.
+  - **Required Scopes:**
+    - `https://www.googleapis.com/auth/youtube.upload` – allows uploading videos to the user's YouTube channel.
+    - `https://www.googleapis.com/auth/youtube` – broad write access (see [full scope list](https://developers.google.com/youtube/v3/guides/auth/server-side-web-apps#obtaining-authorization)).
+    - Optionally, you can request less-permissive (read-only) scopes if you just need basic info.
+  - **Client ID/Secret:** Set `YOUTUBE_CLIENT_ID` and `YOUTUBE_CLIENT_SECRET` (naming may vary) in your `.env` — **never expose the secret in frontend code**. After OAuth, securely store each user's **refresh_token** (needed for long-term API access, since the access token expires quickly) and optionally the YouTube channel ID in your database, linked to their account.
+
+- **OAuth Integration Flow:**
+  1. **User Initiates Connection:** User clicks "Connect YouTube" in your app, which redirects them to Google’s OAuth 2.0 consent screen with appropriate scopes.
+  2. **Callback & Token Exchange:** On approval, your backend (using the OAuth redirect callback) exchanges the authorization `code` for an **access token** (short-lived) and a **refresh token** (long-lived).
+  3. **Token Storage:** Store these tokens securely, along with any metadata (like channel ID). You will periodically use the refresh token to obtain a fresh access token when making API requests.
+
+- **Posting (Uploading) Videos:**
+  - YouTube is strictly video-only for uploads – (images are not supported as posts, and there's no concept of multi-image/carousel as in Insta/Facebook—each upload must be a video file).
+  - **API Method:** Use the [`videos.insert`](https://developers.google.com/youtube/v3/docs/videos/insert) endpoint to upload. You must use the **resumable upload** protocol, which is designed for large files and can resume if interrupted.
+    - Typical flow: Initiate upload with metadata (title, description, privacy, etc.), get an upload session URL, then upload the video content (e.g. exported MP4 from your carousel generator).
+    - You can set thumbnail and metadata after upload.
+  - **Rate Limits:** Be aware of YouTube Data API quotas (videos.upload has higher cost per call).
+  - **Error Handling:** Handle scenarios like invalid/expired tokens, quota errors, and video processing failures.
+
+- **API Quirks and Notes:**
+  - YouTube requires users to have an active channel; uploading to brand accounts and organization-managed channels has additional complexity.
+  - The API responds asynchronously: once you upload, the video is processed by YouTube after upload is complete.
+  - You can obtain the uploaded video’s URL from the API response to display in-app or copy for the user.
+
+- **Carousel support:** Not available. Each call to the API creates a single video post only. To simulate a "carousel", you must combine images/slides into a single exported video.
+
+- **Example User Data to Store:**
+  - `platform = "youtube"`
+  - `access_token` (expires quickly; use refresh token)
+  - `refresh_token` (persistent; critical)
+  - `channel_id` (optional, for targeting uploads)
+  - `token_expiry` (optional, track when to refresh)
+
+- **Libraries:** Use libraries for OAuth and YouTube Data API in your language of choice (e.g., [`googleapis`](https://www.npmjs.com/package/googleapis) for Node.js/TypeScript) to simplify token handling and file uploads.
+
+**Summary:**  
+YouTube upload integration is purely for video content, requires OAuth (with credential storage & refresh), and uses a multipart "resumable" upload API. There’s no direct support for posting carousels or images only. A common approach is to export the user's carousel as a video (MP4), then upload via the API.
+
+> **References:**  
+> [Google Developers – YouTube API Upload Guide](https://developers.google.com/youtube/v3/guides/uploading_a_video)  
+> [Managing OAuth 2.0 tokens for YouTube Data API](https://developers.google.com/identity/protocols/oauth2)
 
 ---
 

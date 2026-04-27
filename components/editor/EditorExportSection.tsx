@@ -35,6 +35,7 @@ import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
 import { WaitingGamesDialog } from "@/components/waiting/WaitingGamesDialog";
 import { PLAN_LIMITS } from "@/lib/constants";
 import { slugifyForFilename } from "@/lib/utils";
+import { isLikelyIosSafari, triggerBlobDownload } from "@/lib/client/blobDownload";
 import { PostToTiktokVideoButton } from "@/components/platforms/PostToTiktokVideoButton";
 import { PostToFacebookVideoButton } from "@/components/platforms/PostToFacebookVideoButton";
 import { PostToInstagramVideoButton } from "@/components/platforms/PostToInstagramVideoButton";
@@ -232,6 +233,8 @@ export function EditorExportSection({
   /** When true, video uses photo-only frames (no on-slide text/chrome); per-slide meta can also set this. Photo scrims are off for those slides. */
   const [photoCompositionOnlyOnVideo, setPhotoCompositionOnlyOnVideo] = useState(false);
   const [zipDownloading, setZipDownloading] = useState(false);
+  /** iOS Safari: programmatic blob save often no-ops; offer a real link tap (user gesture). */
+  const [iosExportSave, setIosExportSave] = useState<{ url: string; filename: string } | null>(null);
   const [withVoiceover, setWithVoiceover] = useState(true);
   const [selectedVoiceId, setSelectedVoiceId] = useState(ADAM_VOICE_ID);
   const [voiceSpeed, setVoiceSpeed] = useState(1);
@@ -296,6 +299,16 @@ export function EditorExportSection({
     setDownloadUrl(null);
     setSlideUrls([]);
     setSlideVideoData(null);
+    setIosExportSave((prev) => {
+      if (prev?.url) {
+        try {
+          URL.revokeObjectURL(prev.url);
+        } catch {
+          // ignore
+        }
+      }
+      return null;
+    });
     try {
       const res = await fetch(`/api/export/${carouselId}`, {
         method: "POST",
@@ -310,16 +323,17 @@ export function EditorExportSection({
       }
       if (contentType.includes("application/zip") || contentType.includes("application/pdf")) {
         const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
         const suggested = res.headers.get("X-Suggested-Filename");
-        a.download =
+        const filename =
           suggested ||
           (contentType.includes("application/pdf") ? `${downloadSlug}.pdf` : `${downloadSlug}.zip`);
-        a.click();
-        URL.revokeObjectURL(url);
-        router.refresh();
+        const objectUrl = triggerBlobDownload(blob, filename);
+        if (isLikelyIosSafari()) {
+          setIosExportSave({ url: objectUrl, filename });
+        }
+        window.setTimeout(() => {
+          router.refresh();
+        }, 2000);
 
         const exportId = res.headers.get("X-Export-Id");
         if (exportId) {
@@ -497,12 +511,7 @@ export function EditorExportSection({
       setGeneratedVideoBlob(blob);
       if (previousVideoUrl) URL.revokeObjectURL(previousVideoUrl);
       setGeneratedVideoUrl(URL.createObjectURL(blob));
-      const downloadUrl = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = downloadUrl;
-      a.download = `${downloadSlug}.mp4`;
-      a.click();
-      URL.revokeObjectURL(downloadUrl);
+      triggerBlobDownload(blob, `${downloadSlug}.mp4`);
     } catch (e) {
       setVideoDownloadError(e instanceof Error ? e.message : "Video download failed");
     } finally {
@@ -527,12 +536,7 @@ export function EditorExportSection({
       const res = await fetch(downloadUrl);
       if (!res.ok) throw new Error("Download failed");
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = res.headers.get("X-Suggested-Filename") || `${downloadSlug}.zip`;
-      a.click();
-      URL.revokeObjectURL(url);
+      triggerBlobDownload(blob, res.headers.get("X-Suggested-Filename") || `${downloadSlug}.zip`);
     } catch {
       setError("Download failed. Try opening in browser.");
     } finally {
@@ -607,6 +611,34 @@ export function EditorExportSection({
         <p className="text-muted-foreground text-xs mb-3 max-w-xl">
           Export downloads a single PDF (one page per slide) for LinkedIn document carousels. PNG/JPEG formats download a ZIP with slide images plus captions and credits.
         </p>
+      )}
+      {iosExportSave && (
+        <div
+          className="mb-3 rounded-md border border-border bg-muted/40 p-3 text-sm"
+          role="status"
+        >
+          <p className="text-muted-foreground mb-2">
+            If nothing downloaded, Safari on iPhone often needs a second step — tap{" "}
+            <span className="font-medium text-foreground">Save export</span> below, then use Share → Save to Files if
+            asked.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button asChild size="sm" variant="secondary">
+              <a href={iosExportSave.url} download={iosExportSave.filename} rel="noopener noreferrer">
+                <DownloadIcon className="mr-2 size-4" />
+                Save export
+              </a>
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => setIosExportSave(null)}
+            >
+              Dismiss
+            </Button>
+          </div>
+        </div>
       )}
       {exporting && (
         <div className="mb-4 flex flex-col items-center justify-center gap-4 rounded-lg border bg-muted/30 py-8 px-4 min-h-[180px]">
@@ -881,12 +913,7 @@ export function EditorExportSection({
                         variant="outline"
                         onClick={() => {
                           if (!generatedVideoBlob) return;
-                          const url = URL.createObjectURL(generatedVideoBlob);
-                          const a = document.createElement("a");
-                          a.href = url;
-                          a.download = `${downloadSlug}.mp4`;
-                          a.click();
-                          URL.revokeObjectURL(url);
+                          triggerBlobDownload(generatedVideoBlob, `${downloadSlug}.mp4`);
                         }}
                         disabled={!generatedVideoBlob}
                       >

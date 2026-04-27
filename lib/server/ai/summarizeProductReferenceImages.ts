@@ -21,7 +21,7 @@ const VISION_PROMPT = `These images are PRODUCT / SERVICE / APP references for i
 Extract what must stay visually faithful when this offering appears in a newly generated scene:
 - Type: physical product, apparel on body, packaged goods, software UI / website screenshot, dashboard, mobile app screen, logo shapes visible in-image, etc.
 - For UI/screenshots: layout regions, key components (nav, hero, cards, charts), approximate text density (do not transcribe long text), primary accent colors, light vs dark mode, device frame if visible.
-- For products: silhouette, proportions, dominant colors, materials, distinctive branding elements. **If any brand name, model name, or label text is legible in the image, transcribe it exactly** in your paragraph so copywriters may use the same words on slides (still no invented claims).
+- For products: silhouette, proportions, dominant colors, materials, distinctive branding elements. **If any brand name, model name, or label text is legible in the image, transcribe it exactly** in your paragraph so copywriters may use the same words on slides (still no invented claims). The paragraph is for **visual fidelity and naming**—marketing copy should still sell **outcomes and reasons to use** the thing, not describe packaging trivia (lid type, label color) as if that were the benefit.
 - For people + product: how the product is held or worn; keep product identity consistent with refs.
 
 Output rules:

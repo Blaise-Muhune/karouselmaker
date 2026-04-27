@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Loader2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { WaitingGamesDialog } from "@/components/waiting/WaitingGamesDialog";
+import { GenerationProgressRing } from "@/components/carousels/GenerationProgressRing";
 import { getCarouselGenerationSnapshot } from "@/app/actions/carousels/carouselActions";
 
 const POLL_STUCK_MS = 120_000;
@@ -114,6 +115,7 @@ export function CarouselGeneratingBanner() {
 
 /** After this many ms of polling, force a full reload once to bypass any stale router cache. */
 const POLL_FULL_RELOAD_AFTER_MS = 5 * 60 * 1000;
+const GENERATION_RELOAD_MARKER_PREFIX = "km:carousel-gen:reloaded:";
 
 /**
  * Full-page loading state when user lands on carousel page while status is still "generating".
@@ -131,8 +133,17 @@ export function CarouselGeneratingPage({
 }) {
   const router = useRouter();
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const reloadOnceRef = useRef(false);
+  const reloadMarker = `${GENERATION_RELOAD_MARKER_PREFIX}${carouselId}`;
+  const [hasReloadedAfterTimeout, setHasReloadedAfterTimeout] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      setHasReloadedAfterTimeout(window.sessionStorage.getItem(reloadMarker) === "1");
+    } catch {
+      setHasReloadedAfterTimeout(false);
+    }
+  }, [reloadMarker]);
 
   useEffect(() => {
     console.log("[carousel-gen] client: full-page loading — POST + poll until generation_complete");
@@ -153,14 +164,23 @@ export function CarouselGeneratingPage({
       });
 
     const tick = async () => {
-      if (!reloadOnceRef.current && Date.now() - startedAt >= POLL_FULL_RELOAD_AFTER_MS) {
-        reloadOnceRef.current = true;
+      if (!hasReloadedAfterTimeout && Date.now() - startedAt >= POLL_FULL_RELOAD_AFTER_MS) {
+        try {
+          window.sessionStorage.setItem(reloadMarker, "1");
+        } catch {
+          // Ignore sessionStorage access issues.
+        }
         window.location.reload();
         return;
       }
       const snap = await getCarouselGenerationSnapshot(carouselId);
       if (!snap.ok) return;
       if (isGenerationPollComplete(snap, startedAt)) {
+        try {
+          window.sessionStorage.removeItem(reloadMarker);
+        } catch {
+          // Ignore sessionStorage access issues.
+        }
         if (pollRef.current) {
           clearInterval(pollRef.current);
           pollRef.current = null;
@@ -173,7 +193,7 @@ export function CarouselGeneratingPage({
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
-  }, [carouselId, router]);
+  }, [carouselId, hasReloadedAfterTimeout, reloadMarker, router]);
 
   if (error) {
     return (
@@ -195,9 +215,16 @@ export function CarouselGeneratingPage({
       aria-busy="true"
     >
       <div className="mx-auto max-w-sm space-y-6 px-6 text-center">
-        <Loader2Icon className="mx-auto size-12 animate-spin text-primary" />
+        <GenerationProgressRing durationMs={POLL_FULL_RELOAD_AFTER_MS} />
         <p className="text-sm font-medium text-foreground">Generating your carousel…</p>
-        <p className="text-xs text-muted-foreground">Hang tight—this usually takes a minute or two.</p>
+        <p className="text-xs text-muted-foreground">
+          Hang tight. This ring fills in 5 minutes while we keep checking for your result.
+        </p>
+        {hasReloadedAfterTimeout && (
+          <p className="text-xs text-muted-foreground">
+            We auto-refreshed already. If results still are not showing, refresh the page again.
+          </p>
+        )}
         <div className="flex justify-center">
           <WaitingGamesDialog
             loadingMessage="Your carousel is still generating…"
