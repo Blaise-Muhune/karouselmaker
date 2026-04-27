@@ -9,6 +9,7 @@ import {
   getTemplateIntendedBackgroundImageSlotCount,
 } from "@/lib/renderer/templatePreviewImages";
 import { getSlidePreviewSpreadFromTemplateConfig, getTemplatePreviewExtraTextValues } from "@/lib/renderer/templateDefaultsForSlidePreview";
+import { getSampleSlideCopyForTemplatePreview } from "@/lib/templates/zoneCharBudget";
 import { LayoutTemplateIcon } from "lucide-react";
 
 /** Build imageDisplay from template defaults so PIP and full templates render exactly as designed. */
@@ -36,13 +37,6 @@ const PREVIEW_W = 136;
 const PREVIEW_H = 170;
 const INSET = 3;
 const SCALE = (PREVIEW_W - INSET * 2) / 1080;
-
-const SAMPLE_SLIDE = {
-  headline: "How to Get Better Results in Less Time",
-  body: "A few simple changes to your routine can make a real difference. Here's what works.",
-  slide_index: 1,
-  slide_type: "point" as const,
-};
 
 export type TemplatePreviewThumbProps = {
   config: TemplateConfig | null;
@@ -117,7 +111,9 @@ export function TemplatePreviewThumb({
       >
         <SlidePreview
           slide={{
-            ...SAMPLE_SLIDE,
+            ...getSampleSlideCopyForTemplatePreview(config),
+            slide_index: 1,
+            slide_type: "point",
             extra_text_values: getTemplatePreviewExtraTextValues(config),
           }}
           templateConfig={config}

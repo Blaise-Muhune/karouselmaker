@@ -1,58 +1,12 @@
 import type { Json } from "@/lib/server/db/types";
+import {
+  getHeadlineBodyMaxCharsFromTemplateConfig,
+  getTextZonesFromTemplateConfig,
+  maxCharsForExtraTextZone,
+  visualLinesForZone,
+} from "@/lib/templates/zoneCharBudget";
 
-/** Design canvas width (all templates use this base). */
-const DESIGN_WIDTH = 1080;
-
-/**
- * Conservative max characters that fit in a zone. Uses 0.58 (slightly more than fitText's 0.54)
- * so we recommend fewer characters and avoid overflow with real font metrics and padding.
- * Zone: { w, fontSize, maxLines } in design pixels.
- */
-function maxCharsForZone(zone: { w: number; fontSize: number; maxLines: number }): number {
-  const w = Number(zone.w);
-  const fontSize = Number(zone.fontSize);
-  const maxLines = Number(zone.maxLines);
-  if (!Number.isFinite(w) || !Number.isFinite(fontSize) || fontSize <= 0 || !Number.isFinite(maxLines) || maxLines < 1)
-    return 0;
-  const approxCharWidth = fontSize * 0.58;
-  const charsPerLine = Math.max(1, Math.floor(w / approxCharWidth));
-  /** Allow large body zones (many lines / small font); capped again per-field below. */
-  return Math.min(8000, charsPerLine * maxLines);
-}
-
-type ZoneLike = { id: string; w?: number; h?: number; fontSize?: number; maxLines?: number };
-
-function getTextZones(config: unknown): ZoneLike[] {
-  if (!config || typeof config !== "object") return [];
-  const c = config as Record<string, unknown>;
-  const zones = c.textZones;
-  if (!Array.isArray(zones)) return [];
-  return zones.filter((z): z is ZoneLike => z != null && typeof z === "object" && typeof (z as ZoneLike).id === "string");
-}
-
-/**
- * Approx visual line capacity from zone geometry.
- * Uses zone height and font metrics so prompts can reason about "what fits" in practice.
- */
-function visualLinesForZone(zone: {
-  h?: number;
-  fontSize?: number;
-  maxLines?: number;
-  lineHeight?: number;
-}): number {
-  const h = Number(zone.h);
-  const fontSize = Number(zone.fontSize);
-  const maxLines = Number(zone.maxLines);
-  const lineHeightRaw = Number(zone.lineHeight);
-  const lineHeight = Number.isFinite(lineHeightRaw) && lineHeightRaw > 0 ? lineHeightRaw : 1.2;
-  if (!Number.isFinite(h) || h <= 0 || !Number.isFinite(fontSize) || fontSize <= 0) {
-    return Number.isFinite(maxLines) && maxLines >= 1 ? Math.floor(maxLines) : 1;
-  }
-  const perLinePx = Math.max(1, fontSize * lineHeight);
-  const byHeight = Math.max(1, Math.floor(h / perLinePx));
-  if (!Number.isFinite(maxLines) || maxLines < 1) return byHeight;
-  return Math.max(1, Math.min(byHeight, Math.floor(maxLines)));
-}
+export { ABSOLUTE_MAX_BODY_CHARS, ABSOLUTE_MAX_HEADLINE_CHARS } from "@/lib/templates/zoneCharBudget";
 
 export type TemplateContextForPrompt = {
   hasHeadline: boolean;
@@ -64,10 +18,6 @@ export type TemplateContextForPrompt = {
   promptSection: string;
 };
 
-/** Hard caps for API / DB safety; template geometry is clamped to these. */
-export const ABSOLUTE_MAX_HEADLINE_CHARS = 2000;
-export const ABSOLUTE_MAX_BODY_CHARS = 8000;
-
 const DEFAULT_FALLBACK_HEADLINE = 120;
 const DEFAULT_FALLBACK_BODY = 600;
 
@@ -78,7 +28,7 @@ const DEFAULT_FALLBACK_BODY = 600;
  * the right amount of text.
  */
 export function buildTemplateContextForPrompt(templateConfig: Json | null | undefined): TemplateContextForPrompt | null {
-  const zones = getTextZones(templateConfig);
+  const zones = getTextZonesFromTemplateConfig(templateConfig);
   if (zones.length === 0) {
     return {
       hasHeadline: true,
@@ -90,71 +40,42 @@ export function buildTemplateContextForPrompt(templateConfig: Json | null | unde
     };
   }
 
-  const headlineZone = zones.find((z) => z.id === "headline");
-  const bodyZone = zones.find((z) => z.id === "body");
+  const m = getHeadlineBodyMaxCharsFromTemplateConfig(templateConfig);
   const extraZones = zones.filter((z) => z.id !== "headline" && z.id !== "body");
-  const hasHeadline = !!headlineZone;
-  const hasBody = !!bodyZone;
-  const headlineVisualLines = headlineZone
-    ? visualLinesForZone({
-        h: Number(headlineZone.h),
-        fontSize: Number(headlineZone.fontSize) || 48,
-        maxLines: Number(headlineZone.maxLines) || 3,
-        lineHeight: Number((headlineZone as unknown as { lineHeight?: number }).lineHeight) || 1.12,
-      })
-    : 0;
-  const bodyVisualLines = bodyZone
-    ? visualLinesForZone({
-        h: Number(bodyZone.h),
-        fontSize: Number(bodyZone.fontSize) || 32,
-        maxLines: Number(bodyZone.maxLines) || 5,
-        lineHeight: Number((bodyZone as unknown as { lineHeight?: number }).lineHeight) || 1.2,
-      })
-    : 0;
 
-  const headlineMaxChars = headlineZone
-    ? Math.min(
-        ABSOLUTE_MAX_HEADLINE_CHARS,
-        maxCharsForZone({
-          w: Number(headlineZone.w) || DESIGN_WIDTH,
-          fontSize: Number(headlineZone.fontSize) || 48,
-          maxLines: Number(headlineZone.maxLines) || 3,
-        })
-      )
-    : 0;
-  const bodyMaxChars = bodyZone
-    ? Math.min(
-        ABSOLUTE_MAX_BODY_CHARS,
-        maxCharsForZone({
-          w: Number(bodyZone.w) || DESIGN_WIDTH,
-          fontSize: Number(bodyZone.fontSize) || 32,
-          maxLines: Number(bodyZone.maxLines) || 5,
-        })
-      )
-    : 0;
+  const headlineMaxChars = m.headlineMaxChars;
+  const bodyMaxChars = m.bodyMaxChars;
+  const headlineVisualLines = m.headlineVisualLines;
+  const bodyVisualLines = m.bodyVisualLines;
 
   const lines: string[] = [];
   lines.push("TEMPLATE TEXT LIMITS (strict—never exceed; text must fit the visible container):");
-  if (hasHeadline) {
+  if (m.hasHeadline) {
     if (headlineMaxChars <= 12)
       lines.push("- Headline zone: tiny. Use one to four words only; a single word is fine. Do not exceed ~12 characters.");
     else if (headlineMaxChars <= 25)
       lines.push(`- Headline zone: very small (~${headlineMaxChars} chars max). One short phrase or a few words; one word is OK.`);
     else if (headlineMaxChars <= 45)
       lines.push(`- Headline zone: small (~${headlineMaxChars} chars). One short line; prefer fewer characters.`);
+    else if (headlineMaxChars >= 85)
+      lines.push(
+        `- Headline zone: **large capacity** (~${headlineMaxChars} chars). Use most of this budget: a **full, specific** headline—concrete detail, strong claim, or two short thoughts (use a single line break inside headline only if the template clearly supports multi-line headline). **Do not** leave a huge zone looking like a tiny billboard; match the layout scale.`
+      );
     else
       lines.push(`- Headline zone: max ~${headlineMaxChars} characters. Stay within this so text fits without overflow.`);
     if (headlineVisualLines <= 1) {
       lines.push("- Headline visual capacity: about 1 line. Keep headline to one compact line, avoid list formatting.");
     } else if (headlineVisualLines === 2) {
-      lines.push("- Headline visual capacity: about 2 lines. Keep headline tight; avoid multi-item headline lists.");
+      lines.push("- Headline visual capacity: about 2 lines. You may use two lines of meaning if the char limit allows; avoid cramped multi-item lists.");
     } else {
-      lines.push(`- Headline visual capacity: about ${headlineVisualLines} lines.`);
+      lines.push(
+        `- Headline visual capacity: about ${headlineVisualLines} lines. With a high character limit, fill the readable area with substantive headline text (still scannable)—not one short clause floating in empty space.`
+      );
     }
   } else {
     lines.push("- Headline zone: absent in this template. Omit headline (use empty string) on every slide.");
   }
-  if (hasBody) {
+  if (m.hasBody) {
     if (bodyMaxChars <= 15)
       lines.push("- Body zone: tiny. One to three words or omit. One word is fine.");
     else if (bodyMaxChars <= 40)
@@ -163,14 +84,19 @@ export function buildTemplateContextForPrompt(templateConfig: Json | null | unde
       lines.push(`- Body zone: small (~${bodyMaxChars} chars). One short sentence only.`);
     else if (bodyMaxChars <= 150)
       lines.push(`- Body zone: ~${bodyMaxChars} chars max. One or two short sentences.`);
-    else
-      lines.push(`- Body zone: max ~${bodyMaxChars} characters. Keep body within this.`);
+    else if (bodyMaxChars >= 200)
+      lines.push(
+        `- Body zone: **large capacity** (~${bodyMaxChars} chars). Use **most** of this budget with **useful** copy: specifics, mini-steps, contrast, or several tight sentences—**not** a single vague line that wastes the layout. Lists are OK when each line stays short and on-topic.`
+      );
+    else lines.push(`- Body zone: max ~${bodyMaxChars} characters. Keep body within this.`);
     if (bodyVisualLines <= 1) {
       lines.push("- Body visual capacity: about 1 line. Use one short sentence or short phrase. Avoid lists/bullets.");
     } else if (bodyVisualLines === 2) {
       lines.push("- Body visual capacity: about 2 lines. Keep body very concise; list formatting only if truly necessary.");
     } else {
-      lines.push(`- Body visual capacity: about ${bodyVisualLines} lines. Lists are allowed only when each line stays short.`);
+      lines.push(
+        `- Body visual capacity: about ${bodyVisualLines} lines. With high char limits, body should **read full** for this template—concrete beats, not padding—while staying within max characters.`
+      );
     }
   } else {
     lines.push("- Body zone: absent in this template. Omit body (use empty string or omit) on every slide.");
@@ -178,33 +104,36 @@ export function buildTemplateContextForPrompt(templateConfig: Json | null | unde
   if (extraZones.length > 0) {
     lines.push("- Extra text zones: When relevant, set slide.extra_text_values as an object keyed by exact zone id. Omit any optional zone when forcing text would hurt clarity.");
     for (const z of extraZones) {
-      const zMax = Math.min(
-        ABSOLUTE_MAX_BODY_CHARS,
-        maxCharsForZone({
-          w: Number(z.w) || DESIGN_WIDTH,
-          fontSize: Number(z.fontSize) || 28,
-          maxLines: Number(z.maxLines) || 2,
-        })
-      );
+      const zMax = maxCharsForExtraTextZone(z);
       const zLines = visualLinesForZone({
         h: Number(z.h),
         fontSize: Number(z.fontSize) || 28,
         maxLines: Number(z.maxLines) || 2,
-        lineHeight: Number((z as unknown as { lineHeight?: number }).lineHeight) || 1.2,
+        lineHeight: Number(z.lineHeight) || 1.2,
       });
-      const zLabel = (z as { label?: string }).label?.trim();
-      const zOptional = (z as { optional?: boolean }).optional === true;
+      const zLabel = z.label?.trim();
+      const zOptional = z.optional === true;
       lines.push(`- Extra zone "${z.id}"${zLabel ? ` (${zLabel})` : ""}: max ~${zMax} chars, ~${zLines} lines, ${zOptional ? "optional" : "required if present"} in layout.`);
+    }
+    if (extraZones.some((z) => maxCharsForExtraTextZone(z) >= 80)) {
+      lines.push(
+        "- When an extra zone shows **high** max characters, use meaningful copy that fits that space—not a 3-letter label only—unless the slide is intentionally minimal."
+      );
     }
     lines.push("- For every slide, keep extra_text_values keys limited to these exact zone ids only.");
   }
-  lines.push("Do not exceed these character counts. Prefer fewer characters when the limit is low; it is OK to use a single word or very few words. shorten_alternates can vary in length (short / normal / long).");
+  lines.push(
+    "**SCALE TO THE ZONE:** Match **main** slide headline and body density to the numbers above—**large limits = richer, more concrete copy** that still fits; **tiny limits = telegraphic**. Do not default to generic short copy when the template allows much more. shorten_alternates can still vary short / normal / long."
+  );
+  lines.push(
+    "Do not exceed these character counts. Prefer fewer characters only when the limit is low; it is OK to use a single word or very few words in tiny zones. shorten_alternates can vary in length (short / normal / long)."
+  );
 
   return {
-    hasHeadline,
-    hasBody,
-    headlineMaxChars: hasHeadline ? headlineMaxChars : 0,
-    bodyMaxChars: hasBody ? bodyMaxChars : 0,
+    hasHeadline: m.hasHeadline,
+    hasBody: m.hasBody,
+    headlineMaxChars: m.hasHeadline ? headlineMaxChars : 0,
+    bodyMaxChars: m.hasBody ? bodyMaxChars : 0,
     extraZoneIds: extraZones.map((z) => z.id),
     promptSection: lines.join(" "),
   };
@@ -243,6 +172,7 @@ export function buildTemplateContextForPromptSelection(
       ? "- Slot mapping: first slide uses slot 1 limits, middle slides use slot 2 limits, last slide uses slot 3 limits."
       : "- Slot mapping: first and last slides use slot 1 limits, middle slides use slot 2 limits.",
     "- Keep each slide's copy within the limits of the slot used by that slide index.",
+    "- **SCALE TO EACH SLOT:** use the full headline/body budget when a slot shows **large** max characters—do not shrink all slots to short generic copy.",
   ];
 
   const slotSections = sections.map((s, i) => {

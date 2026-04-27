@@ -246,9 +246,6 @@ export default async function NewCarouselPage({
           defaultLinkedInTemplateId={defaultLinkedInTemplateId}
           defaultLinkedInTemplateConfig={defaultLinkedInTemplateConfig}
           primaryColor={primaryColor}
-          importTemplateWatermarkText={
-            (project.brand_kit as { watermark_text?: string | null } | null)?.watermark_text?.trim() || undefined
-          }
           projectContentFocus={projectContentFocus}
           initialUseSavedUgcCharacter={initialUseSavedUgcCharacter}
           hasProjectSavedUgcCharacter={hasProjectSavedUgcCharacter}

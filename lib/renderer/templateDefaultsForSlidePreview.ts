@@ -1,6 +1,7 @@
 import type { SlidePreviewProps } from "@/components/renderer/SlidePreview";
 import { getTemplateDefaultOverrides } from "@/lib/server/export/normalizeSlideMetaForRender";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
+import { getSampleExtraTextValuesForTemplatePreview } from "@/lib/templates/zoneCharBudget";
 
 /**
  * Props to spread on `SlidePreview` so template picker / thumb match editor export:
@@ -59,12 +60,5 @@ export function getSlidePreviewSpreadFromTemplateConfig(
 export function getTemplatePreviewExtraTextValues(
   config: TemplateConfig | null | undefined
 ): Record<string, string> {
-  if (!config) return {};
-  const out: Record<string, string> = {};
-  for (const zone of config.textZones ?? []) {
-    if (!zone?.id || zone.id === "headline" || zone.id === "body") continue;
-    const label = typeof zone.label === "string" && zone.label.trim() ? zone.label.trim() : zone.id;
-    out[zone.id] = label;
-  }
-  return out;
+  return getSampleExtraTextValuesForTemplatePreview(config ?? undefined);
 }

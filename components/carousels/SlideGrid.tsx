@@ -15,7 +15,6 @@ import {
   CHOOSE_TEMPLATE_MODAL_INITIAL_VISIBLE_COUNT,
   ChooseTemplateModalLayout,
 } from "@/components/carousels/ChooseTemplateModalLayout";
-import { ImportTemplateButton } from "@/components/templates/ImportTemplateButton";
 import { cn } from "@/lib/utils";
 import { triggerBlobDownload } from "@/lib/client/blobDownload";
 import { setSlideTemplate } from "@/app/actions/slides/setSlideTemplate";
@@ -1325,20 +1324,6 @@ export function SlideGrid({
                 : "Saving layout to your slide…"
             }
             applyingOverlayClassName="z-[110]"
-            topActions={
-              canEdit ? (
-                <ImportTemplateButton
-                  layout="callout"
-                  isPro={isPro}
-                  atLimit={false}
-                  isAdmin={isAdmin}
-                  watermarkText={brandKit.watermark_text}
-                  className="shrink-0"
-                  onSuccess={() => router.refresh()}
-                  onCreated={() => router.refresh()}
-                />
-              ) : null
-            }
           >
           {isBulkTemplateOpen && (() => {
             const ids = bulkApplyTemplateIds!;

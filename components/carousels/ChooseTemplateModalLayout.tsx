@@ -55,7 +55,7 @@ export function ChooseTemplateModalLayout({
           )
         ) : null}
       </DialogHeader>
-      {topActions ? <div className="shrink-0 hidden md:block">{topActions}</div> : null}
+      {topActions ? <div className="shrink-0">{topActions}</div> : null}
       {toolbar ? <div className="shrink-0">{toolbar}</div> : null}
       <div className="relative flex flex-1 min-h-0 min-w-0 flex-col">
         {applying ? (

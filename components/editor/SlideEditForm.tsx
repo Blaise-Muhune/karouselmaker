@@ -16,7 +16,6 @@ import {
   CHOOSE_TEMPLATE_MODAL_INITIAL_VISIBLE_COUNT,
   ChooseTemplateModalLayout,
 } from "@/components/carousels/ChooseTemplateModalLayout";
-import { ImportTemplateButton } from "@/components/templates/ImportTemplateButton";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -5743,58 +5742,6 @@ export function SlideEditForm({
             description="Pick a layout for your slide. You can load more below."
             applying={applyingTemplate}
             applyingHint="Saving and refreshing"
-            topActions={
-              <ImportTemplateButton
-                layout="callout"
-                isPro={isPro}
-                atLimit={false}
-                isAdmin={isAdmin}
-                watermarkText={brandKit.watermark_text}
-                className="shrink-0"
-                onSuccess={(newId, newName, config) => {
-              setRecentlyCreatedTemplates((prev) => [...prev, { id: newId, name: newName, parsedConfig: config, isSystemTemplate: false }]);
-              setTemplateId(newId);
-              setOverrideTemplateConfig(config);
-              const templateBg = getTemplatePreviewBackgroundOverride(config);
-              const grad = config.overlays?.gradient;
-              const defaultBgColor =
-                config.defaults?.background && typeof config.defaults.background === "object" && "color" in config.defaults.background
-                  ? (config.defaults.background as { color?: string }).color
-                  : undefined;
-              const newColor =
-                (grad?.color && /^#[0-9A-Fa-f]{3,6}$/i.test(grad.color) ? grad.color : defaultBgColor) ?? templateBg.color ?? "#0a0a0a";
-              setBackground((prev) => ({
-                ...prev,
-                style: templateBg.style ?? "solid",
-                pattern: templateBg.pattern ?? prev.pattern,
-                color: newColor,
-                overlay: {
-                  ...prev.overlay,
-                  gradient: prev.overlay?.gradient ?? (grad?.enabled ?? true),
-                  darken: prev.overlay?.darken ?? (grad?.strength ?? 0.5),
-                  color: newColor,
-                  textColor: getContrastingTextColor(newColor),
-                  direction: prev.overlay?.direction ?? (grad?.direction ?? "bottom"),
-                  extent: prev.overlay?.extent ?? (grad?.extent ?? 50),
-                  solidSize: prev.overlay?.solidSize ?? (grad?.solidSize ?? 25),
-                },
-              }));
-              const metaImageDisplay = config.defaults?.meta && typeof config.defaults.meta === "object" && "image_display" in config.defaults.meta
-                ? (config.defaults.meta as { image_display?: unknown }).image_display
-                : undefined;
-              if (metaImageDisplay != null && typeof metaImageDisplay === "object" && !Array.isArray(metaImageDisplay)) {
-                const d = { ...metaImageDisplay } as ImageDisplayState;
-                const ds = d.dividerStyle as string | undefined;
-                if (ds === "dotted") d.dividerStyle = "dashed";
-                else if (ds === "double" || ds === "triple") d.dividerStyle = "scalloped";
-                setImageDisplay(d);
-              } else {
-                setImageDisplay({});
-              }
-                }}
-                onCreated={() => router.refresh()}
-              />
-            }
           >
             <TemplateSelectCards
               key={`${slide.id}-${templateModalOpen}`}

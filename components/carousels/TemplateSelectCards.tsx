@@ -12,6 +12,7 @@ import {
 import { CheckIcon, LayoutTemplateIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getSlidePreviewSpreadFromTemplateConfig, getTemplatePreviewExtraTextValues } from "@/lib/renderer/templateDefaultsForSlidePreview";
+import { getSampleSlideCopyForTemplatePreview } from "@/lib/templates/zoneCharBudget";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -231,14 +232,12 @@ export function TemplateSelectCards({
       pipPosition: d.mode === "pip" ? (validPipPos ?? "bottom_right") : undefined,
     } as ComponentProps<typeof SlidePreview>["imageDisplay"];
   };
-  const sampleSlide = {
-    headline: "How to Get Better Results in Less Time",
-    body: "A few simple changes to your routine can make a real difference. Here's what works.",
-    slide_index: 1,
-    slide_type: "point" as const,
-  };
-
   const renderCard = (t: TemplateOption, idx: number) => {
+    const sampleSlide = {
+      ...getSampleSlideCopyForTemplatePreview(t.parsedConfig),
+      slide_index: 1 as const,
+      slide_type: "point" as const,
+    };
     const isSystem = t.isSystemTemplate === true;
     const showDelete = (isAdmin && isSystem) || (!isSystem && isPro);
     const storedPreviewUrls = getTemplatePreviewImageUrls(t.parsedConfig);
@@ -418,7 +417,12 @@ export function TemplateSelectCards({
                 }}
               >
                 <SlidePreview
-                  slide={sampleSlide}
+                  slide={{
+                    ...getSampleSlideCopyForTemplatePreview(effectiveDefaultTemplateConfig),
+                    slide_index: 1,
+                    slide_type: "point",
+                    extra_text_values: getTemplatePreviewExtraTextValues(effectiveDefaultTemplateConfig),
+                  }}
                   templateConfig={effectiveDefaultTemplateConfig}
                   brandKit={brandKit}
                   totalSlides={8}

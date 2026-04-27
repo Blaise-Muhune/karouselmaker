@@ -24,7 +24,6 @@ import {
   CHOOSE_TEMPLATE_MODAL_INITIAL_VISIBLE_COUNT,
   ChooseTemplateModalLayout,
 } from "@/components/carousels/ChooseTemplateModalLayout";
-import { ImportTemplateButton } from "@/components/templates/ImportTemplateButton";
 import type { TemplateOption } from "@/components/carousels/TemplateSelectCards";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -163,8 +162,6 @@ export function NewCarouselForm({
   defaultLinkedInTemplateId = null,
   defaultLinkedInTemplateConfig = null,
   primaryColor = "#0a0a0a",
-  /** Shown in template-import preview watermark when template has no logo. */
-  importTemplateWatermarkText,
   projectContentFocus = "general",
   /** Persisted project preference: apply saved recurring character (brief + face refs) when generating with AI images. */
   initialUseSavedUgcCharacter = true,
@@ -225,7 +222,6 @@ export function NewCarouselForm({
   defaultLinkedInTemplateId?: string | null;
   defaultLinkedInTemplateConfig?: TemplateConfig | null;
   primaryColor?: string;
-  importTemplateWatermarkText?: string;
   projectContentFocus?: string;
   initialUseSavedUgcCharacter?: boolean;
   hasProjectSavedUgcCharacter?: boolean;
@@ -1430,18 +1426,6 @@ export function NewCarouselForm({
                 <ChooseTemplateModalLayout
                   title="Choose templates"
                   description="Select a slot below, then pick a template for that part of the carousel. Empty slots use Default. Scroll to load more."
-                  topActions={
-                    <ImportTemplateButton
-                      layout="callout"
-                      isPro={isPro}
-                      atLimit={false}
-                      isAdmin={isAdminUser}
-                      watermarkText={importTemplateWatermarkText}
-                      className="shrink-0"
-                      onSuccess={() => router.refresh()}
-                      onCreated={() => router.refresh()}
-                    />
-                  }
                   toolbar={
                     <div className="rounded-xl border border-border/70 bg-muted/20 p-2">
                       <div className="mb-2 flex items-center justify-between gap-2 px-1">
