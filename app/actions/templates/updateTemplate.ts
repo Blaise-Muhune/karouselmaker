@@ -5,7 +5,7 @@ import { hasFullProFeatureAccess } from "@/lib/server/subscription";
 import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { getTemplate, updateTemplate as updateTemplateDb, updateTemplateAsAdmin } from "@/lib/server/db";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
-import { normalizeNoImageTemplateDefaults } from "@/lib/server/renderer/normalizeTemplateConfig";
+import { normalizeNoImageTemplateDefaults, normalizeTemplateTextZoneMaxLines } from "@/lib/server/renderer/normalizeTemplateConfig";
 
 export async function updateTemplateAction(
   templateId: string,
@@ -25,7 +25,7 @@ export async function updateTemplateAction(
   if (payload.config !== undefined) {
     const parsed = templateConfigSchema.safeParse(payload.config);
     if (!parsed.success) return { ok: false, error: "Invalid template config." };
-    updatePayload.config = normalizeNoImageTemplateDefaults(parsed.data);
+    updatePayload.config = normalizeNoImageTemplateDefaults(normalizeTemplateTextZoneMaxLines(parsed.data));
   }
 
   if (isSystemTemplate) {

@@ -4,16 +4,13 @@
  */
 
 export const DESIGN_WIDTH = 1080;
-
-/** Hard caps for API / DB safety; geometry is clamped to these. */
-export const ABSOLUTE_MAX_HEADLINE_CHARS = 2000;
-export const ABSOLUTE_MAX_BODY_CHARS = 8000;
-
-const DEFAULT_FALLBACK_HEADLINE = 120;
-const DEFAULT_FALLBACK_BODY = 600;
+/** Default design canvas height (9:16) — used for placement hints in AI prompts. */
+export const DESIGN_HEIGHT = 1920;
 
 export type TextZoneLike = {
   id: string;
+  x?: number;
+  y?: number;
   w?: number;
   h?: number;
   fontSize?: number;
@@ -22,6 +19,34 @@ export type TextZoneLike = {
   label?: string;
   optional?: boolean;
 };
+
+/**
+ * Rough placement of a text zone on the slide (for AI: match copy role to where it sits).
+ * Uses zone center vs canvas thirds.
+ */
+export function placementBandsForTextZone(z: Pick<TextZoneLike, "x" | "y" | "w" | "h">): string {
+  const x = Number(z.x);
+  const y = Number(z.y);
+  const w = Number(z.w);
+  const h = Number(z.h);
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(w) || w <= 0 || !Number.isFinite(h) || h <= 0) {
+    return "";
+  }
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  const v =
+    cy < DESIGN_HEIGHT * 0.33 ? "top third" : cy > DESIGN_HEIGHT * 0.66 ? "bottom third" : "middle vertical band";
+  const horiz =
+    cx < DESIGN_WIDTH * 0.33 ? "left side" : cx > DESIGN_WIDTH * 0.66 ? "right side" : "center horizontal";
+  return `${v}, ${horiz}`;
+}
+
+/** Hard caps for API / DB safety; geometry is clamped to these. */
+export const ABSOLUTE_MAX_HEADLINE_CHARS = 2000;
+export const ABSOLUTE_MAX_BODY_CHARS = 8000;
+
+const DEFAULT_FALLBACK_HEADLINE = 120;
+const DEFAULT_FALLBACK_BODY = 600;
 
 /**
  * Conservative max characters that fit in a zone. Uses 0.58 (slightly more than fitText's 0.54)
@@ -46,6 +71,41 @@ export function getTextZonesFromTemplateConfig(config: unknown): TextZoneLike[] 
   return zones.filter(
     (z): z is TextZoneLike => z != null && typeof z === "object" && typeof (z as TextZoneLike).id === "string"
   );
+}
+
+/** Matches template `textZoneSchema.maxLines` upper bound. */
+export const TEMPLATE_TEXT_ZONE_MAX_LINES = 30;
+
+/**
+ * How many lines fit in the zone height at the given font size and line-height.
+ * Caps at `schemaMax` (template schema allows up to 30).
+ */
+export function maxLinesFittingZoneHeight(
+  zone: Pick<TextZoneLike, "h" | "fontSize" | "lineHeight">,
+  schemaMax: number = TEMPLATE_TEXT_ZONE_MAX_LINES
+): number {
+  const lhRaw = Number(zone.lineHeight);
+  const lineHeight = Number.isFinite(lhRaw) && lhRaw > 0 ? lhRaw : 1.2;
+  const h = Number(zone.h);
+  const fs = Number(zone.fontSize);
+  if (!Number.isFinite(h) || h <= 0 || !Number.isFinite(fs) || fs <= 0) return 1;
+  const linePx = fs * lineHeight;
+  return Math.max(1, Math.min(schemaMax, Math.floor(h / linePx)));
+}
+
+/**
+ * Persisted `maxLines` should never exceed what fits in `h` at `fontSize` × `lineHeight`
+ * (used for AI budgets, preview density, and layout). User can set a lower cap than geometry.
+ */
+export function clampMaxLinesToZoneGeometry(
+  zone: Pick<TextZoneLike, "h" | "fontSize" | "lineHeight" | "maxLines">,
+  options?: { schemaMax?: number }
+): number {
+  const schemaMax = options?.schemaMax ?? TEMPLATE_TEXT_ZONE_MAX_LINES;
+  const geometryMax = maxLinesFittingZoneHeight(zone, schemaMax);
+  const declared = Number(zone.maxLines);
+  if (!Number.isFinite(declared) || declared < 1) return geometryMax;
+  return Math.min(geometryMax, Math.min(schemaMax, Math.floor(declared)));
 }
 
 export function visualLinesForZone(zone: {

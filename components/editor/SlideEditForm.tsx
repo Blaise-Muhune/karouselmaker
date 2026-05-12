@@ -64,6 +64,8 @@ import { resolvePipLayoutsForImageCount } from "@/lib/renderer/resolvePipLayouts
 import { TextBackdropChromeFields } from "@/components/editor/TextBackdropChromeFields";
 import { ChromeChipStyleEditor } from "@/components/editor/ChromeChipStyleEditor";
 import type { OverlayShape, TemplateConfig, TextZone } from "@/lib/server/renderer/templateSchema";
+import { normalizeTemplateTextZoneMaxLines } from "@/lib/server/renderer/normalizeTemplateConfig";
+import { clampMaxLinesToZoneGeometry, TEMPLATE_TEXT_ZONE_MAX_LINES } from "@/lib/templates/zoneCharBudget";
 import {
   mergeTemplateAndSlideOverlayShapes,
   overlayShapeListsEqual,
@@ -1223,10 +1225,9 @@ export function SlideEditForm({
     boxBackgroundBorderOpacity?: number;
     boxBackgroundBorderRadius?: number;
   };
-  /** Max lines that fit in zone height (fontSize * lineHeight per line). Clamped 1–20. */
+  /** Max lines that fit in zone height (fontSize * lineHeight per line). Clamped to template schema max. */
   const computeMaxLinesForZone = useCallback((h: number, fontSize: number, lineHeight: number) => {
-    const linePx = fontSize * lineHeight;
-    return Math.max(1, Math.min(20, Math.floor(h / linePx)));
+    return clampMaxLinesToZoneGeometry({ h, fontSize, lineHeight, maxLines: TEMPLATE_TEXT_ZONE_MAX_LINES });
   }, []);
   const [headlineZoneOverride, setHeadlineZoneOverride] = useState<ZoneOverride | undefined>(() => {
     const m = slide.meta as { headline_zone_override?: ZoneOverride } | null;
@@ -4074,8 +4075,6 @@ export function SlideEditForm({
         ? { ...(prevTemplateBg as Record<string, unknown>), overlay: overlayPayloadForTemplate }
         : builtBackgroundFromSlide;
     const isBackgroundImage = (backgroundPayload as { mode?: string }).mode === "image";
-    const hasHeadlineZone = headlineZoneOverride != null && Object.keys(headlineZoneOverride).length > 0;
-    const hasBodyZone = bodyZoneOverride != null && Object.keys(bodyZoneOverride).length > 0;
     const hasCounterZone = counterZoneOverride != null && Object.keys(counterZoneOverride).length > 0;
     const hasWatermarkZone =
       (watermarkZoneOverride != null && Object.keys(watermarkZoneOverride).length > 0) ||
@@ -4114,8 +4113,6 @@ export function SlideEditForm({
         ...(bodyFontSize != null && { body_font_size: bodyFontSize }),
         ...(headlineFontFamily != null && headlineFontFamily.trim() !== "" && { headline_font_family: headlineFontFamily.trim() }),
         ...(bodyFontFamily != null && bodyFontFamily.trim() !== "" && { body_font_family: bodyFontFamily.trim() }),
-        ...(hasHeadlineZone && { headline_zone_override: { ...headlineZoneOverride } }),
-        ...(hasBodyZone && { body_zone_override: { ...bodyZoneOverride } }),
         ...(hasCounterZone && { counter_zone_override: { ...counterZoneOverride } }),
         ...(hasWatermarkZone && {
           watermark_zone_override: {
@@ -4149,15 +4146,28 @@ export function SlideEditForm({
       ? [...slideOverlayShapes]
       : mergeTemplateAndSlideOverlayShapes(templateConfig.overlayShapes, slideOverlayShapes);
     const textZonesForTemplate = (() => {
-      const base = [...templateConfig.textZones];
+      const base = [...templateConfig.textZones] as TextZone[];
+      const mergeHb = (zoneId: "headline" | "body", effectiveBase: TextZone | undefined, ovr: ZoneOverride | undefined) => {
+        const idx = base.findIndex((b) => b.id === zoneId);
+        if (idx < 0 || !effectiveBase) return;
+        const merged = { ...effectiveBase, ...(ovr ?? {}) } as TextZone;
+        base[idx] = { ...merged, maxLines: clampMaxLinesToZoneGeometry(merged) };
+      };
+      mergeHb("headline", effectiveHeadlineZoneBase, headlineZoneOverride);
+      mergeHb("body", effectiveBodyZoneBase, bodyZoneOverride);
       for (const z of extraTextZones) {
         const idx = base.findIndex((b) => b.id === z.id);
-        if (idx >= 0) base[idx] = { ...base[idx]!, ...z };
-        else base.push(z);
+        const merged = (idx >= 0 ? { ...base[idx]!, ...z } : { ...z }) as TextZone;
+        const fixed = { ...merged, maxLines: clampMaxLinesToZoneGeometry(merged) } as TextZone;
+        if (idx >= 0) base[idx] = fixed;
+        else base.push(fixed);
+      }
+      for (let i = 0; i < base.length; i++) {
+        base[i] = { ...base[i]!, maxLines: clampMaxLinesToZoneGeometry(base[i]!) };
       }
       return base;
     })();
-    return {
+    return normalizeTemplateTextZoneMaxLines({
       ...templateConfig,
       textZones: textZonesForTemplate,
       backgroundRules,
@@ -4188,7 +4198,7 @@ export function SlideEditForm({
       },
       defaults,
       overlayShapes: overlayShapesForTemplate,
-    };
+    });
   };
 
   const handleSaveTemplate = async () => {
@@ -7220,7 +7230,7 @@ export function SlideEditForm({
                                     <div className="grid grid-cols-2 gap-2 sm:gap-4 sm:grid-cols-4">
                                       <div className="space-y-1 sm:space-y-1.5 min-w-0">
                                         <Label className="text-xs">Max lines</Label>
-                                        <StepperWithLongPress value={zone.maxLines} min={1} max={20} step={1} onChange={(v) => updateZone({ maxLines: v })} label="max lines" className="w-full min-w-0" />
+                                        <StepperWithLongPress value={zone.maxLines} min={1} max={TEMPLATE_TEXT_ZONE_MAX_LINES} step={1} onChange={(v) => updateZone({ maxLines: v })} label="max lines" className="w-full min-w-0" />
                                       </div>
                                       <div className="space-y-1 sm:space-y-1.5 min-w-0">
                                         <Label className="text-xs">Font weight</Label>
@@ -7799,7 +7809,7 @@ export function SlideEditForm({
                                           <StepperWithLongPress
                                             value={headlineZoneOverride?.maxLines ?? (effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!).maxLines}
                                             min={1}
-                                            max={20}
+                                            max={TEMPLATE_TEXT_ZONE_MAX_LINES}
                                             step={1}
                                             onChange={(v) => setHeadlineZoneOverride((o) => ({ ...(effectiveHeadlineZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "headline")!), ...o, maxLines: v }))}
                                             label="max lines"
@@ -8472,7 +8482,7 @@ export function SlideEditForm({
                                           <StepperWithLongPress
                                             value={bodyZoneOverride?.maxLines ?? (effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!).maxLines}
                                             min={1}
-                                            max={20}
+                                            max={TEMPLATE_TEXT_ZONE_MAX_LINES}
                                             step={1}
                                             onChange={(v) => setBodyZoneOverride((o) => ({ ...(effectiveBodyZoneBase ?? templateConfig!.textZones!.find((z) => z.id === "body")!), ...o, maxLines: v }))}
                                             label="max lines"

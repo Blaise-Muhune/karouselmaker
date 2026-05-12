@@ -3,6 +3,7 @@ import {
   getHeadlineBodyMaxCharsFromTemplateConfig,
   getTextZonesFromTemplateConfig,
   maxCharsForExtraTextZone,
+  placementBandsForTextZone,
   visualLinesForZone,
 } from "@/lib/templates/zoneCharBudget";
 
@@ -102,7 +103,9 @@ export function buildTemplateContextForPrompt(templateConfig: Json | null | unde
     lines.push("- Body zone: absent in this template. Omit body (use empty string or omit) on every slide.");
   }
   if (extraZones.length > 0) {
-    lines.push("- Extra text zones: When relevant, set slide.extra_text_values as an object keyed by exact zone id. Omit any optional zone when forcing text would hurt clarity.");
+    lines.push(
+      "- **Extra text zones (`slide.extra_text_values`):** Real layout boxes keyed by exact zone `id`. On **every** slide, include a **non-empty** string for each **required** extra zone (any zone where optional is false or omitted). **Optional** zones: include when they add clarity (eyebrow, stat, badge, footnote); omit that key only when leaving it blank reads cleaner for that slide."
+    );
     for (const z of extraZones) {
       const zMax = maxCharsForExtraTextZone(z);
       const zLines = visualLinesForZone({
@@ -113,17 +116,29 @@ export function buildTemplateContextForPrompt(templateConfig: Json | null | unde
       });
       const zLabel = z.label?.trim();
       const zOptional = z.optional === true;
-      lines.push(`- Extra zone "${z.id}"${zLabel ? ` (${zLabel})` : ""}: max ~${zMax} chars, ~${zLines} lines, ${zOptional ? "optional" : "required if present"} in layout.`);
+      const placement = placementBandsForTextZone(z);
+      const scaleHint = extraZoneScaleHint(zMax, zLines);
+      const roleHint = zLabel
+        ? ` Use the editor label "${zLabel}" as the **semantic role** (what this box is for—e.g. kicker vs footer vs stat)—do not ignore it.`
+        : " Infer a sensible role from placement and size (e.g. top small box = eyebrow/kicker).";
+      lines.push(
+        `- Extra zone "${z.id}": max ~${zMax} chars, ~${zLines} visual lines; ${zOptional ? "**optional**" : "**required on every slide**"}.${placement ? ` On-slide placement: ${placement}.` : ""} ${scaleHint}${roleHint}`
+      );
     }
     if (extraZones.some((z) => maxCharsForExtraTextZone(z) >= 80)) {
       lines.push(
-        "- When an extra zone shows **high** max characters, use meaningful copy that fits that space—not a 3-letter label only—unless the slide is intentionally minimal."
+        "- When an extra zone has a **high** max character count, write **substantive** supporting copy for that role (second headline block, quote + attribution, metric + short context)—not a 3-letter filler unless the slide is intentionally minimal."
       );
     }
-    lines.push("- For every slide, keep extra_text_values keys limited to these exact zone ids only.");
+    lines.push(
+      "- **Do not repeat** the main headline verbatim in an extra zone unless the label/role explicitly calls for a repeated hook line. Extra zones should **complement** headline/body (context, contrast, label, stat, CTA chip)."
+    );
+    lines.push(
+      "- Keys in `extra_text_values` must be **only** the extra zone ids listed above (never invent new keys). Each `shorten_alternate` must include the **same keys** as the main slide for that slide, with values scaled shorter/longer to match short/normal/long like headline/body."
+    );
   }
   lines.push(
-    "**SCALE TO THE ZONE:** Match **main** slide headline and body density to the numbers above—**large limits = richer, more concrete copy** that still fits; **tiny limits = telegraphic**. Do not default to generic short copy when the template allows much more. shorten_alternates can still vary short / normal / long."
+    "**SCALE TO THE ZONE:** Match **main** slide headline, body, **and each extra text zone** density to the numbers above—**large limits = richer, more concrete copy** that still fits; **tiny limits = telegraphic**. Do not default to generic short copy when the template allows much more. shorten_alternates can still vary short / normal / long."
   );
   lines.push(
     "Do not exceed these character counts. Prefer fewer characters only when the limit is low; it is OK to use a single word or very few words in tiny zones. shorten_alternates can vary in length (short / normal / long)."
@@ -137,6 +152,18 @@ export function buildTemplateContextForPrompt(templateConfig: Json | null | unde
     extraZoneIds: extraZones.map((z) => z.id),
     promptSection: lines.join(" "),
   };
+}
+
+function extraZoneScaleHint(zMax: number, zLines: number): string {
+  if (zMax <= 14)
+    return "Scale: micro-label—1–4 words; stamp, badge, or tiny kicker only.";
+  if (zMax <= 32)
+    return "Scale: very short—one tight phrase; no long sentences.";
+  if (zMax <= 65)
+    return "Scale: short supporting line; one idea that backs headline/body without duplicating them.";
+  if (zMax >= 110 || zLines >= 4)
+    return "Scale: **large**—use most of the budget with on-role copy (mini paragraph, quote block, stat + explanation) so the box does not look empty.";
+  return "Scale: one or two clear supporting lines; stay within max chars.";
 }
 
 function slotLabelForSelection(index: number, total: number): string {
@@ -173,6 +200,7 @@ export function buildTemplateContextForPromptSelection(
       : "- Slot mapping: first and last slides use slot 1 limits, middle slides use slot 2 limits.",
     "- Keep each slide's copy within the limits of the slot used by that slide index.",
     "- **SCALE TO EACH SLOT:** use the full headline/body budget when a slot shows **large** max characters—do not shrink all slots to short generic copy.",
+    "- For `slide.extra_text_values`, use **only** the extra zone ids listed in the slot section that applies to that slide (first vs middle vs last)—do not mix zone ids from a different slot.",
   ];
 
   const slotSections = sections.map((s, i) => {

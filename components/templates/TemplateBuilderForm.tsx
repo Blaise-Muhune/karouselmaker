@@ -27,6 +27,7 @@ import { SlidePreview, PREVIEW_FONTS } from "@/components/renderer/SlidePreview"
 import { FontPickerModal } from "@/components/FontPickerModal";
 import { createTemplateAction } from "@/app/actions/templates/createTemplate";
 import { updateTemplateAction } from "@/app/actions/templates/updateTemplate";
+import { TEMPLATE_TEXT_ZONE_MAX_LINES } from "@/lib/templates/zoneCharBudget";
 import { DEFAULT_TEMPLATE_CONFIG, LAYOUT_PRESETS } from "@/lib/templateDefaults";
 import { getTemplatePreviewBackgroundOverride } from "@/lib/renderer/getTemplatePreviewBackground";
 import { getTemplatePreviewImageUrls } from "@/lib/renderer/templatePreviewImages";
@@ -911,7 +912,7 @@ export function TemplateBuilderForm({
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Max lines</Label>
-                    <StepperWithLongPress value={headlineZone.maxLines} min={1} max={20} step={1} onChange={(next) => updateTextZone("headline", { maxLines: next })} label="Max lines" className="w-full min-w-0" valueClassName="min-w-6" />
+                    <StepperWithLongPress value={headlineZone.maxLines} min={1} max={TEMPLATE_TEXT_ZONE_MAX_LINES} step={1} onChange={(next) => updateTextZone("headline", { maxLines: next })} label="Max lines" className="w-full min-w-0" valueClassName="min-w-6" />
                   </div>
                 </div>
                 <div className="space-y-1 mt-4">
@@ -1125,7 +1126,7 @@ export function TemplateBuilderForm({
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">Max lines</Label>
-                    <StepperWithLongPress value={bodyZone.maxLines} min={1} max={20} step={1} onChange={(next) => updateTextZone("body", { maxLines: next })} label="Max lines" className="w-full min-w-0" valueClassName="min-w-6" />
+                    <StepperWithLongPress value={bodyZone.maxLines} min={1} max={TEMPLATE_TEXT_ZONE_MAX_LINES} step={1} onChange={(next) => updateTextZone("body", { maxLines: next })} label="Max lines" className="w-full min-w-0" valueClassName="min-w-6" />
                   </div>
                 </div>
                 <div className="space-y-1 mt-4">

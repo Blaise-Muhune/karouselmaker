@@ -7,7 +7,7 @@ import { getTemplate, createTemplate, createSystemTemplate, countUserTemplates }
 import type { Json } from "@/lib/server/db/types";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
-import { normalizeNoImageTemplateDefaults } from "@/lib/server/renderer/normalizeTemplateConfig";
+import { normalizeNoImageTemplateDefaults, normalizeTemplateTextZoneMaxLines } from "@/lib/server/renderer/normalizeTemplateConfig";
 import { applyImportReferenceImageToConfig } from "@/lib/server/templates/applyImportReferenceImage";
 import { uploadImportReferenceImage } from "@/lib/server/templates/uploadImportReferenceImage";
 
@@ -54,7 +54,7 @@ export async function createTemplateAction(payload: {
     if (!base) return { ok: false, error: "Base template not found." };
     const parsed = templateConfigSchema.safeParse(base.config);
     if (!parsed.success) return { ok: false, error: "Invalid base template config." };
-    config = normalizeNoImageTemplateDefaults(parsed.data);
+    config = normalizeNoImageTemplateDefaults(normalizeTemplateTextZoneMaxLines(parsed.data));
   } else if (payload.config) {
     const parsed = templateConfigSchema.safeParse(payload.config);
     if (!parsed.success) return { ok: false, error: "Invalid template config." };
@@ -72,10 +72,10 @@ export async function createTemplateAction(payload: {
       });
       const reparse = templateConfigSchema.safeParse(merged);
       if (!reparse.success) return { ok: false, error: "Invalid template after adding reference image." };
-      config = reparse.data;
+      config = normalizeNoImageTemplateDefaults(normalizeTemplateTextZoneMaxLines(reparse.data));
+    } else {
+      config = normalizeNoImageTemplateDefaults(normalizeTemplateTextZoneMaxLines(config));
     }
-
-    config = normalizeNoImageTemplateDefaults(config);
   } else {
     return { ok: false, error: "Template config or base template is required." };
   }
