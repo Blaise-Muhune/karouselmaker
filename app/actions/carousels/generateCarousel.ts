@@ -26,6 +26,7 @@ import {
   normalizeContentFocusId,
 } from "@/lib/server/ai/projectContentFocus";
 import { postProcessAiGeneratedImageQueries } from "@/lib/server/ai/sanitizeImageQueries";
+import { resolveDesiredImageSlots } from "@/lib/server/ai/resolveImageSlotCount";
 import {
   ABSOLUTE_MAX_BODY_CHARS,
   buildTemplateContextForPrompt,
@@ -1876,16 +1877,21 @@ export async function generateCarousel(formData: FormData): Promise<
           await Promise.all(chunk.map(processOneSearchSlide));
         }
       } else {
-        // Brave (admin only): sequential — 1 req/sec rate limit.
+        // Brave / web images: sequential — 1 req/sec rate limit.
+        // One image slot per AI image_query (almost always 1; 2 only for comparison).
+        // Query variants are retries to find a good hit — not extra visible slots.
         /** Dedupe across the whole carousel: same normalized query + cache often yields identical top hits. */
         const usedBraveImageUrls = new Set<string>();
         const MAX_VARIANTS_PER_SLIDE = 10;
         for (const job of searchJobs) {
           const { slide, queries } = job;
           const aiSlide = aiSlideByIndex.get(slide.slide_index);
+          const trimmedQueries = queries.map((q) => q.trim()).filter(Boolean);
+          /** 1 by default; 2 for comparison; notes can raise to 3–4 (“3 images”, collage, etc.). */
+          const desiredSlots = resolveDesiredImageSlots(trimmedQueries.length, data.notes);
           const seenNormQueries = new Set<string>();
           const orderedQueries: string[] = [];
-          for (const q of queries.slice(0, 4)) {
+          for (const q of trimmedQueries.slice(0, 4)) {
             for (const v of buildWebSearchQueryVariants(q, {
               headline: aiSlide?.headline,
               body: typeof aiSlide?.body === "string" ? aiSlide.body : undefined,
@@ -1901,11 +1907,11 @@ export async function generateCarousel(formData: FormData): Promise<
           }
           const imageResults: ImageResult[] = [];
           for (const query of orderedQueries) {
+            if (imageResults.length >= desiredSlots) break;
             const result = await searchImage(query, { avoidUrls: usedBraveImageUrls });
             if (result) {
               usedBraveImageUrls.add(normalizeImageUrlForDedupe(result.url));
               imageResults.push(result as ImageResult);
-              if (imageResults.length >= 4) break;
             }
           }
           if (imageResults.length === 0) {
