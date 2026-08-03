@@ -401,6 +401,7 @@ export async function generateCarousel(formData: FormData): Promise<
     use_ai_generate: formData.get("use_ai_generate") ?? undefined,
     use_web_search: formData.get("use_web_search") ?? undefined,
     use_saved_ugc_character: formData.get("use_saved_ugc_character") ?? undefined,
+    images_related_to_topic: formData.get("images_related_to_topic") ?? undefined,
     notes: ((formData.get("notes") as string | null) ?? "").trim() || undefined,
     template_id: (formData.get("template_id") as string | null)?.trim() || undefined,
     template_ids: (() => {
@@ -550,6 +551,7 @@ export async function generateCarousel(formData: FormData): Promise<
   }
   let useAiGenerate = requestedAiGenerate && (fullProFeatures || userIsAdmin);
   const requestedUseAiBackgrounds = !!data.use_ai_backgrounds;
+  const imagesRelatedToTopic = data.images_related_to_topic !== false;
   const previousGenOpts = (carousel.generation_options ?? {}) as {
     product_reference_asset_ids?: unknown;
     product_service_input?: unknown;
@@ -699,6 +701,7 @@ export async function generateCarousel(formData: FormData): Promise<
     project_niche: project.niche?.trim() || undefined,
     language: projectLanguage,
     notes: data.notes,
+    images_related_to_topic: data.images_related_to_topic !== false,
     viral_shorts_style: !!parsed.data.viral_shorts_style && userIsAdmin,
     carousel_for: carouselFor,
     template_context,
@@ -939,6 +942,7 @@ export async function generateCarousel(formData: FormData): Promise<
     ugc_used_project_avatar_refs: ugcUsedProjectAvatarRefs,
     generation_started: false,
     ...(carouselFor && { carousel_for: carouselFor }),
+    images_related_to_topic: data.images_related_to_topic !== false,
     ...(data.notes?.trim() && { notes: data.notes.trim() }),
     ...(data.template_id && { template_id: data.template_id }),
     ...(data.template_ids?.length ? { template_ids: data.template_ids } : {}),
@@ -1399,6 +1403,7 @@ export async function generateCarousel(formData: FormData): Promise<
           slideIndex: aiSlide.slide_index,
           slideCount: validated.slides.length,
           userNotes: data.notes?.trim() || undefined,
+          imagesRelatedToTopic,
           projectImageStyleNotes: projectRulesForImages.trim() || undefined,
           referenceStyleSummary,
           productReferenceSummary,
@@ -1449,7 +1454,9 @@ export async function generateCarousel(formData: FormData): Promise<
           const topicFallback =
             (validated.title?.trim() || data.input_value?.trim() || "").slice(0, 60) || "a compelling scene";
           const fallbackQuery =
-            referenceStyleSummary
+            !imagesRelatedToTopic
+              ? "Atmospheric abstract light and texture, soft mood background, no text, no logos."
+              : referenceStyleSummary
               ? preferPublicFigures
                 ? `Photorealistic scene related to: ${topicFallback}. If people appear, invented generic adults only—no celebrity likeness. No text, no logos.`
                 : `Scene related to: ${topicFallback}. No text, no logos.`
@@ -1471,6 +1478,7 @@ export async function generateCarousel(formData: FormData): Promise<
               slideIndex: aiSlide.slide_index,
               slideCount: validated.slides.length,
               userNotes: data.notes?.trim() || undefined,
+              imagesRelatedToTopic,
               projectImageStyleNotes: projectRulesForImages.trim() || undefined,
               referenceStyleSummary,
               productReferenceSummary,
@@ -1584,6 +1592,7 @@ export async function generateCarousel(formData: FormData): Promise<
                         slideCount: validated.slides.length,
                         hookIdentityRealignmentFromRef: true,
                         userNotes: data.notes?.trim() || undefined,
+                        imagesRelatedToTopic,
                         projectImageStyleNotes: projectRulesForImages.trim() || undefined,
                         referenceStyleSummary,
                         productReferenceSummary,
@@ -1739,7 +1748,9 @@ export async function generateCarousel(formData: FormData): Promise<
         searchJobs.push({ slide, queries, image_provider });
       }
 
-      const topicFallbackBase = (validated.title?.trim() || data.input_value?.trim() || "").slice(0, 50) || "nature landscape peaceful";
+      const topicFallbackBase = imagesRelatedToTopic
+        ? (validated.title?.trim() || data.input_value?.trim() || "").slice(0, 50) || "nature landscape peaceful"
+        : "soft window light curtains photo";
       const applyImageResultsToSlide = async (slide: (typeof createdSlides)[number], imageResults: ImageResult[]) => {
         if (imageResults.length === 0) return;
         slidesWithImage.add(slide.id);
@@ -2118,6 +2129,7 @@ export async function startCarouselGeneration(formData: FormData): Promise<
     use_ai_generate: formData.get("use_ai_generate") ?? undefined,
     use_web_search: formData.get("use_web_search") ?? undefined,
     use_saved_ugc_character: formData.get("use_saved_ugc_character") ?? undefined,
+    images_related_to_topic: formData.get("images_related_to_topic") ?? undefined,
     notes: ((formData.get("notes") as string | null) ?? "").trim() || undefined,
     template_id: (formData.get("template_id") as string | null)?.trim() || undefined,
     template_ids: (() => {
@@ -2261,6 +2273,7 @@ export async function startCarouselGeneration(formData: FormData): Promise<
     generation_started: false,
     number_of_slides: data.number_of_slides,
     notes: data.notes,
+    images_related_to_topic: data.images_related_to_topic !== false,
     template_id: data.template_id,
     template_ids: data.template_ids,
     viral_shorts_style: !!parsed.data.viral_shorts_style && userIsAdmin,

@@ -31,6 +31,11 @@ export const generateCarouselInputSchema = z
     use_ai_generate: checkboxBoolSchema,
     use_web_search: checkboxBoolSchema,
     use_saved_ugc_character: checkboxBoolSchema,
+    /** When false, image_queries may be atmospheric/unrelated to the topic. Default true when omitted (legacy runs). */
+    images_related_to_topic: z
+      .union([z.literal("true"), z.literal("false"), z.literal(true), z.literal(false), z.literal("on")])
+      .optional()
+      .transform((v) => (v === undefined ? true : v === "true" || v === true || v === "on")),
     notes: z.string().trim().max(CAROUSEL_NOTES_MAX_CHARS).optional(),
     template_id: uuidSchema.optional(),
     template_ids: z.array(uuidSchema).max(3).optional(),

@@ -218,6 +218,7 @@ export async function regenerateSlideAiBackgroundForUser(params: {
   });
 
   const notes = typeof genOpts.notes === "string" ? genOpts.notes.trim() : "";
+  const imagesRelatedToTopic = genOpts.images_related_to_topic !== false;
   const imageAspectRatio = parseAspectRatioFromNotes(notes);
 
   const meta = (slide.meta ?? {}) as { image_context?: { year?: string; location?: string } };
@@ -249,6 +250,7 @@ export async function regenerateSlideAiBackgroundForUser(params: {
     slideIndex: slide.slide_index,
     slideCount: sorted.length,
     userNotes: notes || undefined,
+    imagesRelatedToTopic,
     projectImageStyleNotes: projectRulesForImages.trim() || undefined,
     referenceStyleSummary,
     productReferenceSummary,

@@ -49,6 +49,11 @@ export type ImagePromptContext = {
   isHookSlide?: boolean;
   /** User's optional notes (e.g. "focus on accuracy" or "stylized is ok"). When notes ask for a different style we follow that; otherwise we aim for accurate, realistic depictions of real things. */
   userNotes?: string;
+  /**
+   * When false, do not force topic-related rewrites or “must relate” lines.
+   * Default true when omitted.
+   */
+  imagesRelatedToTopic?: boolean;
   /** Project rules text applied to image mood/style; carousel notes override when they conflict. */
   projectImageStyleNotes?: string;
   /** Vision-derived structured style brief from user reference images (one carousel-level summary). */
@@ -476,7 +481,7 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
   if (context?.isHookSlide && isBibleChristianTopic && isBibleAsObjectOnly(q)) {
     q = "Bible story character or dramatic scene from the topic (e.g. prophet, David and Goliath, Moses, a key moment)—person or event, not the physical book";
   }
-  if (GENERIC_OFF_TOPIC.test(q) && (context?.carouselTitle?.trim() || context?.topic?.trim())) {
+  if (GENERIC_OFF_TOPIC.test(q) && context?.imagesRelatedToTopic !== false && (context?.carouselTitle?.trim() || context?.topic?.trim())) {
     const from = (context.carouselTitle?.trim() || context.topic?.trim() || "").slice(0, 70).trim();
     q = from
       ? hasReferenceStyle
@@ -672,13 +677,19 @@ function queryToPrompt(query: string, context?: ImagePromptContext): string {
       parts.push("No Bible as object; show a character or scene from the topic (e.g. David and Goliath, prophet), not the book.");
     }
   } else if (context?.carouselTitle || context?.topic || context?.slideHeadline || context?.slideBody) {
-    parts.push(
-      hasReferenceStyle
-        ? "Image must relate to this slide and the topic; avoid generic unrelated imagery."
-        : ugcPhone
-          ? "Image must fit this slide's **story beat** (mood, situation, relationship to the topic)—like something you might actually upload after or around that moment—not a perfectly staged reenactment of every line of copy. Adjacent beats (car, home, with the other person, post-mess reaction) beat literal unfilmable moments. Avoid generic interchangeable stock. Indoor = indoor lighting."
-          : "Image must relate to this slide and the topic. Avoid generic stock; use a specific moment or detail. Indoor = indoor lighting."
-    );
+    if (context?.imagesRelatedToTopic === false) {
+      parts.push(
+        "Images may be atmospheric or aesthetic-only and do not need to depict the carousel topic. Still make a clear, scroll-stopping frame. Follow Carousel notes above when present."
+      );
+    } else {
+      parts.push(
+        hasReferenceStyle
+          ? "Image must relate to this slide and the topic; avoid generic unrelated imagery."
+          : ugcPhone
+            ? "Image must fit this slide's **story beat** (mood, situation, relationship to the topic)—like something you might actually upload after or around that moment—not a perfectly staged reenactment of every line of copy. Adjacent beats (car, home, with the other person, post-mess reaction) beat literal unfilmable moments. Avoid generic interchangeable stock. Indoor = indoor lighting."
+            : "Image must relate to this slide and the topic. Avoid generic stock; use a specific moment or detail. Indoor = indoor lighting."
+      );
+    }
   }
 
   if (context?.carouselTitle?.trim()) parts.push(`Carousel: ${truncateForContext(context.carouselTitle, 80)}`);

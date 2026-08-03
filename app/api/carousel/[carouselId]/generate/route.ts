@@ -80,6 +80,8 @@ export async function POST(
   if (opts.use_saved_ugc_character === false) formData.set("use_saved_ugc_character", "false");
   else formData.set("use_saved_ugc_character", "true");
   if (opts.notes && typeof opts.notes === "string") formData.set("notes", opts.notes);
+  if (opts.images_related_to_topic === false) formData.set("images_related_to_topic", "false");
+  else formData.set("images_related_to_topic", "true");
   if (opts.template_id && typeof opts.template_id === "string")
     formData.set("template_id", opts.template_id);
   if (opts.template_ids != null && Array.isArray(opts.template_ids))

@@ -145,6 +145,7 @@ export function NewCarouselForm({
   initialUseWebSearch,
   initialCarouselFor,
   initialNotes,
+  initialImagesRelatedToTopic,
   initialAiStyleReferenceAssetIds,
   initialUgcCharacterReferenceAssetIds,
   initialProductReferenceAssetIds,
@@ -196,6 +197,8 @@ export function NewCarouselForm({
   initialCarouselFor?: "instagram" | "linkedin";
   /** Pre-fill Notes when regenerating (from carousel.generation_options.notes). */
   initialNotes?: string;
+  /** Pre-fill “images related to topic” (default true when omitted). */
+  initialImagesRelatedToTopic?: boolean;
   /** Per-run style reference asset IDs when regenerating (merged with project refs for AI generate). */
   initialAiStyleReferenceAssetIds?: string[];
   /** Per-run character refs (used when “Same character from project” is off). */
@@ -279,6 +282,9 @@ export function NewCarouselForm({
     () => isAdminUser && (initialViralShortsStyle === true)
   );
   const [notes, setNotes] = useState(initialNotes ?? "");
+  const [imagesRelatedToTopic, setImagesRelatedToTopic] = useState(
+    () => initialImagesRelatedToTopic !== false
+  );
   const [productServiceInput, setProductServiceInput] = useState(initialProductServiceInput ?? "");
   const [aiStyleRefIds, setAiStyleRefIds] = useState<string[]>(() => {
     const raw = initialAiStyleReferenceAssetIds ?? [];
@@ -676,6 +682,7 @@ export function NewCarouselForm({
       }
       formData.set("carousel_for", carouselFor);
       if (useWebSearch) formData.set("use_web_search", "true");
+      formData.set("images_related_to_topic", imagesRelatedToTopic ? "true" : "false");
       if (viralShortsStyle) formData.set("viral_shorts_style", "true");
       if (notes.trim()) formData.set("notes", notes.trim());
       const firstTemplate = selectedTemplateIds[0]?.trim() || "";
@@ -1071,6 +1078,22 @@ export function NewCarouselForm({
                     </span>
                   )}
                 </div>
+                <label className="flex items-start gap-2.5 cursor-pointer group rounded-lg border border-border/50 bg-muted/10 px-3 py-2.5">
+                  <input
+                    type="checkbox"
+                    checked={imagesRelatedToTopic}
+                    onChange={(e) => setImagesRelatedToTopic(e.target.checked)}
+                    className="mt-0.5 rounded border-input accent-primary size-4 shrink-0"
+                  />
+                  <span className="text-sm leading-snug">
+                    <span className="font-medium text-foreground group-hover:text-foreground/90">
+                      Images related to topic
+                    </span>
+                    <span className="block text-[11px] text-muted-foreground mt-0.5">
+                      On: stock, web, and AI images stay on-topic. Off: allow mood/aesthetic images that don&apos;t match the topic. Notes still override when you describe how images should look.
+                    </span>
+                  </span>
+                </label>
                 {imageSource === "ai_generate" && canUseAiGenerate && carouselFor !== "linkedin" && (
                   <div className="rounded-lg border border-border/60 bg-muted/15 px-3 py-3 space-y-3">
                     <div className="space-y-1">
@@ -1751,12 +1774,15 @@ export function NewCarouselForm({
                     <Label htmlFor="notes" className="text-sm font-medium">Notes (optional)</Label>
                     <Textarea
                       id="notes"
-                      placeholder="Optional guidance, tone, or constraints…"
+                      placeholder="Copy tone, constraints, or image direction (e.g. “blonde hair”, “cinematic lighting”, “images don’t need to match the topic”)…"
                       className="min-h-20 resize-y"
                       value={notes}
                       maxLength={CAROUSEL_NOTES_MAX_CHARS}
                       onChange={(e) => setNotes(e.target.value)}
                     />
+                    <p className="text-[11px] text-muted-foreground leading-snug">
+                      Notes override defaults for copy and images (stock, web, or AI generate).
+                    </p>
                     <p
                       className={cn(
                         "text-xs tabular-nums text-muted-foreground",

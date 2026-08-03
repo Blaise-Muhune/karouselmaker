@@ -67,7 +67,6 @@ import type { OverlayShape, TemplateConfig, TextZone } from "@/lib/server/render
 import { normalizeTemplateTextZoneMaxLines } from "@/lib/server/renderer/normalizeTemplateConfig";
 import { clampMaxLinesToZoneGeometry, TEMPLATE_TEXT_ZONE_MAX_LINES } from "@/lib/templates/zoneCharBudget";
 import {
-  mergeTemplateAndSlideOverlayShapes,
   overlayShapeListsEqual,
   parseSlideOverlayShapes,
   resolveOverlayShapesForRender,
@@ -4021,7 +4020,11 @@ export function SlideEditForm({
   };
 
   /** Build template config from current slide state (layout, overlay, chrome, defaults). Used by Save as template and Update template. */
-  const buildTemplateConfigFromSlide = (options?: { embedSlideImageBackground?: boolean }): TemplateConfig | null => {
+  const buildTemplateConfigFromSlide = (options?: {
+    embedSlideImageBackground?: boolean;
+    /** When set, use this list instead of resolving from current slide/template state. */
+    overlayShapes?: OverlayShape[];
+  }): TemplateConfig | null => {
     if (!templateConfig) return null;
     const validImageUrlsForTemplate = imageUrls.filter((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim()));
     const slideHasBackgroundImageForTemplate =
@@ -4141,10 +4144,14 @@ export function SlideEditForm({
       : isBackgroundImage
       ? (templateConfig.backgroundRules ?? { allowImage: true, defaultStyle: "darken" })
       : { allowImage: false as const, defaultStyle: "none" as const };
-    /** Baked template shapes: full slide stack when replace flag is on, else template + slide-only additions. */
-    const overlayShapesForTemplate = overlayShapesReplaceTemplate
-      ? [...slideOverlayShapes]
-      : mergeTemplateAndSlideOverlayShapes(templateConfig.overlayShapes, slideOverlayShapes);
+    /** Baked template shapes: prefer explicit snapshot (pre-await), else same resolve as live preview. */
+    const overlayShapesForTemplate =
+      options?.overlayShapes != null
+        ? [...options.overlayShapes]
+        : resolveOverlayShapesForRender(templateConfig.overlayShapes, {
+            overlay_shapes: slideOverlayShapes,
+            ...(overlayShapesReplaceTemplate ? { overlay_shapes_replace_template: true as const } : {}),
+          });
     const textZonesForTemplate = (() => {
       const base = [...templateConfig.textZones] as TextZone[];
       const mergeHb = (zoneId: "headline" | "body", effectiveBase: TextZone | undefined, ovr: ZoneOverride | undefined) => {
@@ -4205,13 +4212,21 @@ export function SlideEditForm({
     const name = templateName.trim();
     if (!name || !templateConfig) return;
     setSavingTemplate(true);
+    // Snapshot before await — performSave/refresh must not lose moved shape positions.
+    const overlayShapesSnapshot = resolveOverlayShapesForRender(templateConfig.overlayShapes, {
+      overlay_shapes: slideOverlayShapes,
+      ...(overlayShapesReplaceTemplate ? { overlay_shapes_replace_template: true as const } : {}),
+    });
     const saveResult = await performSave(false);
     if (!saveResult.ok) {
       setSavingTemplate(false);
       return;
     }
     const embedBg = !showIncludeImageInTemplateOption || saveTemplateIncludeImageBg;
-    const config = buildTemplateConfigFromSlide({ embedSlideImageBackground: embedBg });
+    const config = buildTemplateConfigFromSlide({
+      embedSlideImageBackground: embedBg,
+      overlayShapes: overlayShapesSnapshot,
+    });
     if (!config) {
       setSavingTemplate(false);
       return;
@@ -4237,6 +4252,9 @@ export function SlideEditForm({
       setTemplateName("");
       setSaveAsSystemTemplate(false);
       setTemplateId(newTemplateId);
+      // Keep live preview on the baked config (incl. moved shapes). Without this, clearing slide
+      // shapes falls back to the previous template’s overlayShapes and old positions reappear.
+      setOverrideTemplateConfig(config);
       setRecentlyCreatedTemplates((prev) => [
         ...prev.filter((t) => t.id !== newTemplateId),
         { id: newTemplateId, name, parsedConfig: config, isSystemTemplate: isAdmin && saveAsSystemTemplate },
@@ -4257,12 +4275,19 @@ export function SlideEditForm({
       alert("Template name is required.");
       return;
     }
+    const overlayShapesSnapshot = resolveOverlayShapesForRender(templateConfig.overlayShapes, {
+      overlay_shapes: slideOverlayShapes,
+      ...(overlayShapesReplaceTemplate ? { overlay_shapes_replace_template: true as const } : {}),
+    });
     const saveResult = await performSave(false);
     if (!saveResult.ok) {
       return;
     }
     const embedBg = !showIncludeImageInTemplateOption || updateTemplateIncludeImageBg;
-    const config = buildTemplateConfigFromSlide({ embedSlideImageBackground: embedBg });
+    const config = buildTemplateConfigFromSlide({
+      embedSlideImageBackground: embedBg,
+      overlayShapes: overlayShapesSnapshot,
+    });
     if (!config) return;
     setUpdatingTemplate(true);
     const result = await updateTemplateAction(templateId, { name, config, makeAvailableForAll: updateMakeAvailableForAll });

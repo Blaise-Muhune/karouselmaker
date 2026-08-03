@@ -96,6 +96,7 @@ export default async function NewCarouselPage({
     use_pixabay_only?: boolean;
     use_pexels_only?: boolean;
     notes?: string;
+    images_related_to_topic?: boolean;
     carousel_for?: "instagram" | "linkedin";
     template_id?: string;
     template_ids?: string[];
@@ -223,6 +224,9 @@ export default async function NewCarouselPage({
           initialCarouselFor={genOpts?.carousel_for}
           initialNotes={
             regenerateCarousel ? genOpts?.notes : carrySettingsCarousel ? "" : undefined
+          }
+          initialImagesRelatedToTopic={
+            settingsSourceCarousel ? genOpts?.images_related_to_topic !== false : undefined
           }
           initialAiStyleReferenceAssetIds={
             (settingsSourceCarousel?.generation_options as { ai_style_reference_asset_ids?: string[] } | undefined)
