@@ -67,21 +67,21 @@ export default async function ProjectDashboardPage({
           <Button size="lg" className="gap-2" asChild>
             <Link href={`/p/${projectId}/new`}>
               <PlusCircleIcon className="size-4" />
-              New carousel
+              New post
             </Link>
           </Button>
         </div>
 
         {carousels.length === 0 && (
           <p className="text-muted-foreground text-sm mb-6 rounded-lg border border-border/50 bg-muted/20 px-4 py-3">
-            Click <strong>New carousel</strong>, enter a topic or paste a URL, then hit Generate. We&apos;ll create the carousel and suggest images.
+            Click <strong>New post</strong>, pick a topic, then Generate. We&apos;ll draft problem-first slides that soft-sell your offer—ready for Instagram or TikTok.
           </p>
         )}
 
         {/* Carousels */}
         <section>
           <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
-            Carousels
+            Posts
           </p>
           {carousels.length > 0 ? (
             <ul className="divide-y divide-border/50">
@@ -100,13 +100,13 @@ export default async function ProjectDashboardPage({
           ) : (
             <div className="rounded-2xl border border-dashed border-border/60 bg-muted/20 py-12 text-center">
               <p className="text-muted-foreground text-sm">
-                No carousels yet
+                No posts yet
               </p>
               <p className="text-muted-foreground/80 mt-1 text-xs">
-                Paste a topic or URL and we&apos;ll create a carousel.
+                Generate an organic carousel for this niche and product.
               </p>
               <p className="text-muted-foreground/80 mt-1 text-xs">
-                Create your first carousel above.
+                Create your first post above.
               </p>
             </div>
           )}

@@ -6,7 +6,7 @@ import { getTextScaleForDimensions, getSwipeRightXForFormat, normalizeTextZoneOv
 import { getRoundedPolygonClipPath } from "@/lib/renderer/shapeClipPath";
 import { resolvePipLayoutsForImageCount } from "@/lib/renderer/resolvePipLayouts";
 import { fullImageRotationStyle, normalizeFullImageRotation } from "@/lib/renderer/fullImageRotation";
-import { parseZoneBoxChrome } from "@/lib/renderer/zoneBoxChrome";
+import { parseZoneBoxChrome, parseTextFitLineBackdrop } from "@/lib/renderer/zoneBoxChrome";
 import { getFontStack } from "@/components/FontPickerModal";
 import { clampTextZonePositionToCanvas } from "@/lib/renderer/textZoneGeometry";
 import type { OverlayShape, TemplateConfig } from "@/lib/server/renderer/templateSchema";
@@ -381,6 +381,11 @@ export type SlidePreviewProps = {
   onPipImageClick?: (slotIndex: number) => void;
   /** When set, headline/body font sizes are scaled so text fits at this export size (4:5, 9:16). */
   exportSize?: "1080x1080" | "1080x1350" | "1080x1920";
+  /**
+   * Template picker / thumbs: wrap and truncate to the zone's real line capacity.
+   * Editor/export leave this off so overflow past the box stays visible while editing.
+   */
+  respectZoneMaxLines?: boolean;
   className?: string;
   /** When set, headline is editable inline in the preview (editor only). */
   onHeadlineChange?: (value: string) => void;
@@ -692,6 +697,7 @@ export function SlidePreview({
   allowBackgroundImageOverride,
   imageDisplay,
   exportSize,
+  respectZoneMaxLines = false,
   headline_highlights,
   body_highlights,
   headlineFontSizeSpans,
@@ -1430,9 +1436,10 @@ export function SlidePreview({
     mergedZoneOverrides &&
     (Object.keys(mergedZoneOverrides.headline ?? {}).length > 0 || Object.keys(mergedZoneOverrides.body ?? {}).length > 0);
   const isEditablePreview = onHeadlineChange != null || onBodyChange != null;
-  const renderModelOptions = hasZoneOverrides
-    ? { zoneOverridesForWrap: mergedZoneOverrides }
-    : undefined;
+  const renderModelOptions = {
+    ...(hasZoneOverrides ? { zoneOverridesForWrap: mergedZoneOverrides } : {}),
+    ...(respectZoneMaxLines ? { respectZoneMaxLines: true } : {}),
+  };
   const suppressedExtraTextZoneSet = new Set(parseExtraTextZonesSuppressedIds(metaRec.extra_text_zones_suppressed_ids));
   const templateTextZonesBase = templateConfig.textZones.filter(
     (z) => z.id === "headline" || z.id === "body" || !suppressedExtraTextZoneSet.has(z.id)
@@ -1468,7 +1475,7 @@ export function SlidePreview({
     hasZoneOverrides ? mergedZoneOverrides : undefined,
     textScale,
     chromeOverrides ?? undefined,
-    renderModelOptions
+    Object.keys(renderModelOptions).length > 0 ? renderModelOptions : undefined
   );
 
   const backgroundColor =
@@ -3039,6 +3046,7 @@ export function SlidePreview({
               ? bodyBoldWeight
               : (extraZoneBoldWeightsMap[block.zone.id] ?? 700);
         const zoneBoxChromeStyle = parseZoneBoxChrome(block.zone);
+        const textFitLineStyle = parseTextFitLineBackdrop(block.zone);
         const zoneDragX = dragOffset != null && dragOffset.zone === block.zone.id ? dragOffset.x : 0;
         const zoneDragY = dragOffset != null && dragOffset.zone === block.zone.id ? dragOffset.y : 0;
         const isExtraZone = block.zone.id !== "headline" && block.zone.id !== "body";
@@ -3193,7 +3201,7 @@ export function SlidePreview({
           }
           return (
             <span key={i} className="block" style={{ whiteSpace: "nowrap", width: "100%" }}>
-              {items}
+              {textFitLineStyle ? <span style={textFitLineStyle}>{items}</span> : items}
             </span>
           );
         });
@@ -4475,7 +4483,7 @@ export function SlidePreview({
             style={{
               ...((): React.CSSProperties => {
                 const chip = model.chrome.counterChipStyle ?? {};
-                const box = parseZoneBoxChrome(chip);
+                const box = parseZoneBoxChrome(chip, { ignoreFit: true });
                 const outlinePx = (chip.outlineStroke ?? 0) * chromeScale;
                 const hasPanel = !!box?.backgroundColor || Number(box?.borderTopWidth ?? 0) > 0;
                 return {
@@ -4575,7 +4583,7 @@ export function SlidePreview({
                 style={{
                   ...((): React.CSSProperties => {
                     const wm = model.chrome.watermark;
-                    const box = parseZoneBoxChrome(wm);
+                    const box = parseZoneBoxChrome(wm, { ignoreFit: true });
                     const outlinePx = (wm.outlineStroke ?? 0) * chromeScale;
                     return {
                       ...(box ?? {}),
@@ -4704,7 +4712,7 @@ export function SlidePreview({
               maxWidth: 1032 * chromeScale,
               ...((): React.CSSProperties => {
                 const chip = model.chrome.madeWithChipStyle ?? {};
-                const box = parseZoneBoxChrome(chip);
+                const box = parseZoneBoxChrome(chip, { ignoreFit: true });
                 const outlinePx = (chip.outlineStroke ?? 0) * chromeScale;
                 const hasPanel = !!box?.backgroundColor || Number(box?.borderTopWidth ?? 0) > 0;
                 return {

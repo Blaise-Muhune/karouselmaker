@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { getUser } from "@/lib/server/auth/getUser";
 import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { getSubscription } from "@/lib/server/subscription";
-import { getSlide, getCarousel, getProject, listSlides, listTemplatesForUser, countCarouselsLifetime, getAsset } from "@/lib/server/db";
+import { getSlide, getCarousel, getProject, listSlides, listTemplatesForUser, listFavoriteTemplateIds, countCarouselsLifetime, getAsset } from "@/lib/server/db";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { resolveBrandKitLogo } from "@/lib/server/brandKit";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
@@ -46,12 +46,13 @@ export default async function EditSlidePage({
   const freeGenerationsUsed = Math.min(lifetimeCarouselCount, FREE_FULL_ACCESS_GENERATIONS);
   const freeGenerationsLeft = FREE_FULL_ACCESS_GENERATIONS - freeGenerationsUsed;
 
-  const [slide, carousel, project, slides, templatesRaw] = await Promise.all([
+  const [slide, carousel, project, slides, templatesRaw, favoriteIds] = await Promise.all([
     getSlide(user.id, slideId),
     getCarousel(user.id, carouselId),
     getProject(user.id, projectId),
     listSlides(user.id, carouselId),
     listTemplatesForUser(user.id, { includeSystem: true }),
+    listFavoriteTemplateIds(user.id),
   ]);
 
   const projectBrandKit = project?.brand_kit as { watermark_text?: string } | null | undefined;
@@ -63,13 +64,13 @@ export default async function EditSlidePage({
   if (!carousel) notFound();
   if (!project) notFound();
 
-  const templates: TemplateWithConfig[] = templatesRaw
-    .map((t) => {
-      const parsed = templateConfigSchema.safeParse(t.config);
-      if (!parsed.success) return null;
-      return { ...t, parsedConfig: parsed.data };
-    })
-    .filter((t): t is TemplateWithConfig => t != null);
+  const favoriteIdSet = new Set(favoriteIds);
+  const templates: TemplateWithConfig[] = [];
+  for (const t of templatesRaw) {
+    const parsed = templateConfigSchema.safeParse(t.config);
+    if (!parsed.success) continue;
+    templates.push({ ...t, parsedConfig: parsed.data, isFavorite: favoriteIdSet.has(t.id) });
+  }
 
   const brandKit: BrandKit = await resolveBrandKitLogo(project.brand_kit as Record<string, unknown> | null);
   const backHref = `/p/${projectId}/c/${carouselId}`;

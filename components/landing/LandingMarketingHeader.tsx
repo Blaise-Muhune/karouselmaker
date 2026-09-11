@@ -28,7 +28,7 @@ export function LandingMarketingHeader({ highlightPlans }: { highlightPlans?: bo
             <Link href="/login">Sign in</Link>
           </Button>
           <Button size="sm" asChild>
-            <Link href="/signup">Get started</Link>
+            <Link href="/signup">Start marketing</Link>
           </Button>
         </nav>
       </div>

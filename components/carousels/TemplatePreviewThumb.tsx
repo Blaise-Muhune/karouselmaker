@@ -121,6 +121,7 @@ export function TemplatePreviewThumb({
           totalSlides={8}
           backgroundImageUrl={firstUrl ?? undefined}
           backgroundImageUrls={multiUrls}
+          respectZoneMaxLines
           backgroundOverride={
             !hasPreviewPhoto
               ? getTemplatePreviewBackgroundOverride(config)

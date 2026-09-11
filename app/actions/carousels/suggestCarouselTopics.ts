@@ -102,6 +102,18 @@ export async function generateCarouselTopicBatch(
       ? JSON.stringify(project.project_rules).slice(0, 1200)
       : String(project.project_rules ?? "").slice(0, 1200);
 
+  const productBrief =
+    typeof project.project_rules === "object" &&
+    project.project_rules !== null &&
+    typeof (project.project_rules as { product_brief?: unknown }).product_brief === "string"
+      ? ((project.project_rules as { product_brief: string }).product_brief || "").trim()
+      : typeof project.project_rules === "object" &&
+          project.project_rules !== null &&
+          typeof (project.project_rules as { product_to_promote?: unknown }).product_to_promote ===
+            "string"
+        ? ((project.project_rules as { product_to_promote: string }).product_to_promote || "").trim()
+        : "";
+
   const blockedList =
     blocked.size > 0
       ? [...blocked]
@@ -116,28 +128,31 @@ export async function generateCarouselTopicBatch(
       ? `LinkedIn: topics should feel *discussion-worthy* in the feed—career stakes, contrarian but defensible takes, "what nobody tells you" professional angles, pattern breaks vs. generic career advice. Aim for saves and comments from peers, not bland thought leadership. Still credible: no fake controversy, no engagement bait without substance.`
       : `Instagram / short-form: optimize for *stop-scroll, save, and share*—curiosity gaps ("the mistake everyone makes…"), bold specifics (numbers, timeframes, before/after framing), relatable pain → payoff, micro-stories, "you're not alone" validation, and one-line shareability. Avoid sleepy listicles; each idea should feel like it could start a comment thread or DM share.`;
 
-  const system = `You suggest carousel *input topics* for a creator app: each topic becomes the brief the AI uses to generate a full multi-slide carousel (hook → body slides → CTA). Reply with ONLY a JSON object: {"topics":["...","..."]} containing exactly 10 distinct topic strings.
+  const system = `You suggest carousel *input topics* for a creator app: each topic becomes the brief the AI uses to generate a full multi-slide Instagram/TikTok carousel (hook → body slides → CTA). Reply with ONLY a JSON object: {"topics":["...","..."]} containing exactly 10 distinct topic strings.
 
-Primary goal — **viral potential, retention, engagement, shares** (not generic or boring):
-- Every topic should feel like something a creator would post because it *performs*: strong hook energy in the premise itself, clear payoff for the viewer, reason to save or send to a friend.
-- Prefer **specific, visceral, or surprising** angles over broad education ("5 marketing tips" → bad unless narrowed to a sharp hook, e.g. a single myth destroyed or one counterintuitive rule with stakes).
-- Include **emotional or identity hooks** where natural (relief, frustration, ambition, "I wish I knew this sooner") without being manipulative or misleading.
+Primary goal — **organic product marketing topics** (problem-first, high retention):
+- Every topic should feel like something a creator would post because it *performs*: stop-scroll premise, clear payoff, reason to save or send to a friend.
+- Prefer **specific, visceral, or surprising** angles over broad education.
+- Bias toward: reality checks, follow-up/finish mistakes, message/example angles, event or routine prep, relatable regret scenes, controlled ragebait about bad habits (not people), emotional barriers, simple ROI/effort angles.
+- When a product brief is provided: topics should orbit that product's audience problems and journey — still mostly educational/relatable, not "buy our app" headlines. Only 1–2 of the 10 may be more direct product demos; the rest earn attention first.
 - ${platformViral}
 
 Rules:
 - Each string: short (max ~12 words), written as a topic the creator would type — not a slide headline pack, not a hollow question with nothing to deliver.
-- Every topic must imply a clear *premise* the carousel can fulfill: teach, debunk, list concrete points, tell a tight story, or take a sharp angle — **and** imply why someone would finish all slides (tension, promise, or payoff).
+- Every topic must imply a clear *premise* the carousel can fulfill: teach, debunk, list concrete points, tell a tight story, or take a sharp angle — **and** imply why someone would finish all slides.
 - Language: match project language (${language}) unless clearly multi-lingual — default English if unsure.
-- Mix the 10 with **format diversity**: at least one how-to with a twist, one mistakes/myths, one checklist or framework, one story/case angle, one contrarian or hot-take with substance, one timely/trend hook when relevant — **and** at least two that are explicitly optimized for *share or save* (e.g. "send this to someone who…" energy in the *topic phrase* without using those exact words).
-- Respect the project's **content style** line in the user message: several of the 10 topics should clearly fit that style (not just one token example—spread across the batch).
+- Mix the 10 with **format diversity**: at least one how-to with a twist, one mistakes/myths, one checklist or framework, one story/case angle, one contrarian take with substance, one timely/trend hook when relevant — **and** at least two optimized for *share or save*.
+- Respect the project's **content style** line in the user message.
 - Do NOT repeat or closely paraphrase anything in the "already used" list.
-- No URLs, no markdown, no numbering inside strings — plain topic phrases only.`;
+- No URLs, no markdown, no numbering inside strings — plain topic phrases only.
+- Never invent product features, guarantees, or stats.`;
 
   const userPrompt = `Project name: ${project.name}
 Niche / audience: ${niche}
 Tone: ${tone}
 ${contentStyleLine}
 Carousel platform focus: ${carouselFor}
+${productBrief ? `Product / offer brief (use for audience problems + soft organic angles):\n${productBrief.slice(0, 1600)}\n` : ""}
 Project rules / constraints / goals (may be empty — when present, respect them but still push toward high-retention, high-engagement angles): ${rulesSnippet || "—"}
 
 Topics and titles already used in this project (do not reuse or trivially rephrase):

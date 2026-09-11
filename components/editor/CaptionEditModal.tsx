@@ -13,6 +13,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { updateCaption } from "@/app/actions/carousels/updateCaption";
+import { combineCaptionWithHashtags } from "@/components/editor/EditorCaptionSection";
 import { Loader2Icon } from "lucide-react";
 
 type CaptionEditModalProps = {
@@ -27,6 +28,34 @@ type CaptionEditModalProps = {
   carouselFor?: "instagram" | "linkedin";
 };
 
+/** Split trailing hashtag tokens from a combined caption field. */
+function splitCaptionAndHashtags(combined: string): { long: string; hashtags: string[] } {
+  const lines = combined.replace(/\r\n/g, "\n").trimEnd().split("\n");
+  if (lines.length === 0) return { long: "", hashtags: [] };
+
+  const isHashtagOnlyLine = (line: string) => {
+    const t = line.trim();
+    if (!t) return false;
+    const parts = t.split(/\s+/).filter(Boolean);
+    return parts.length > 0 && parts.every((p) => /^#?[\w\u00C0-\u024F]+$/i.test(p.replace(/^#/, "")) && p.replace(/^#/, "").length > 0);
+  };
+
+  let cut = lines.length;
+  while (cut > 0 && !lines[cut - 1]!.trim()) cut--;
+  while (cut > 0 && isHashtagOnlyLine(lines[cut - 1]!)) cut--;
+  // Drop blank line(s) between body and hashtags
+  while (cut > 0 && !lines[cut - 1]!.trim()) cut--;
+
+  const bodyLines = lines.slice(0, cut);
+  const tagLines = lines.slice(cut);
+  const hashtags = tagLines
+    .join(" ")
+    .split(/[\s,#]+/)
+    .map((h) => h.replace(/^#/, "").trim())
+    .filter(Boolean);
+  return { long: bodyLines.join("\n").trim(), hashtags };
+}
+
 export function CaptionEditModal({
   open,
   onOpenChange,
@@ -39,21 +68,23 @@ export function CaptionEditModal({
 }: CaptionEditModalProps) {
   const isLinkedIn = carouselFor === "linkedin";
   const [title, setTitle] = useState(captionVariants.title ?? "");
-  const [medium, setMedium] = useState(captionVariants.medium ?? "");
-  const [long, setLong] = useState(captionVariants.long ?? "");
-  const [hashtagsStr, setHashtagsStr] = useState(() => hashtags.join(" "));
+  const [caption, setCaption] = useState(() =>
+    combineCaptionWithHashtags(captionVariants.long ?? "", hashtags)
+  );
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
     setSaving(true);
-    const hashtagList = hashtagsStr
-      .split(/[\s,#]+/)
-      .map((h) => h.replace(/^#/, "").trim())
-      .filter(Boolean);
+    const { long, hashtags: hashtagList } = splitCaptionAndHashtags(caption);
     const result = await updateCaption(
       {
         carousel_id: carouselId,
-        caption_variants: { title: title || undefined, medium: medium || undefined, long: long || undefined },
+        caption_variants: {
+          title: title || undefined,
+          long: long || undefined,
+          // Clear medium so the simplified UI stays the source of truth.
+          medium: undefined,
+        },
         hashtags: hashtagList,
       },
       editorPath
@@ -69,9 +100,11 @@ export function CaptionEditModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg" showCloseButton>
         <DialogHeader>
-          <DialogTitle>Edit caption & hashtags</DialogTitle>
+          <DialogTitle>Edit caption</DialogTitle>
           <DialogDescription>
-            Title (SEO), medium caption (engagement), long caption, and hashtags. Hashtags as space- or comma-separated.
+            {isLinkedIn
+              ? "First line for the feed preview, then your caption. Put hashtags at the end of the caption (they copy with it)."
+              : "Title for SEO, then your caption. Put hashtags at the end of the caption so Copy grabs everything."}
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-2">
@@ -90,38 +123,21 @@ export function CaptionEditModal({
             />
           </div>
           <div>
-            <Label htmlFor="medium">Medium caption (engagement)</Label>
+            <Label htmlFor="caption">Caption</Label>
             <Textarea
-              id="medium"
-              value={medium}
-              onChange={(e) => setMedium(e.target.value)}
-              placeholder="Caption with more context, questions, or explanation"
-              className="mt-1 min-h-[80px]"
-            />
-          </div>
-          <div>
-            <Label htmlFor="long">{isLinkedIn ? "Longer variant (optional)" : "Long caption"}</Label>
-            <Textarea
-              id="long"
-              value={long}
-              onChange={(e) => setLong(e.target.value)}
+              id="caption"
+              value={caption}
+              onChange={(e) => setCaption(e.target.value)}
               placeholder={
                 isLinkedIn
-                  ? "Alternative fuller caption (takeaways, bullets)—use “Copy for LinkedIn” on the main page to combine title + body"
-                  : "Longer caption with full context"
+                  ? "Full caption…\n\n#leadership #saas #b2b"
+                  : "Your post caption…\n\n#tag1 #tag2 #tag3"
               }
-              className="mt-1 min-h-[120px]"
+              className="mt-1 min-h-[160px]"
             />
-          </div>
-          <div>
-            <Label htmlFor="hashtags">{isLinkedIn ? "Hashtags (3–5 recommended)" : "Hashtags"}</Label>
-            <Textarea
-              id="hashtags"
-              value={hashtagsStr}
-              onChange={(e) => setHashtagsStr(e.target.value)}
-              placeholder={isLinkedIn ? "e.g. leadership saas b2b (3–5 niche tags)" : "#tag1 #tag2 or tag1, tag2"}
-              className="mt-1 min-h-[60px]"
-            />
+            <p className="text-[11px] text-muted-foreground mt-1.5 leading-snug">
+              End with hashtags on their own line(s). Copy on the carousel page includes them automatically.
+            </p>
           </div>
         </div>
         <DialogFooter>

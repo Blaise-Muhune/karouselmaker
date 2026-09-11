@@ -18,6 +18,7 @@ const BOX_KEYS: (keyof ZoneBoxChromeInput)[] = [
   "boxBackgroundBorderColor",
   "boxBackgroundBorderOpacity",
   "boxBackgroundBorderRadius",
+  "boxBackgroundFit",
 ];
 
 function isHex(s: string): boolean {
@@ -53,6 +54,10 @@ export function extractChromeChipStyle(raw: Record<string, unknown> | null | und
     }
     if (k === "boxBackgroundFrameOnly" && typeof v === "boolean") {
       out.boxBackgroundFrameOnly = v;
+      continue;
+    }
+    if (k === "boxBackgroundFit" && (v === "box" || v === "text")) {
+      out.boxBackgroundFit = v;
       continue;
     }
     if (k === "boxBackgroundBorderWidth") {
@@ -98,6 +103,7 @@ const CHROME_CHIP_MERGE_KEYS: (keyof ChromeChipStyle)[] = [
   "boxBackgroundBorderColor",
   "boxBackgroundBorderOpacity",
   "boxBackgroundBorderRadius",
+  "boxBackgroundFit",
 ];
 
 /** Replace chrome chip fields on a zone/meta object; omit empty chip to leave layout-only keys. */

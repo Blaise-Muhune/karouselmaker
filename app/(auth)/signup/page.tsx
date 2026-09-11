@@ -48,7 +48,7 @@ export default function SignupPage() {
         <div className="space-y-2 text-center lg:text-left">
           <h1 className="text-2xl font-semibold">Sign up</h1>
           <p className="text-muted-foreground text-sm">
-            Create your Karouselmaker account.
+            Organic Instagram & TikTok carousels that market your product—without sounding like ads.
           </p>
         </div>
         <Form {...form}>

@@ -22,7 +22,7 @@ export default function TermsPage() {
               <Link href="/login">Sign in</Link>
             </Button>
             <Button size="sm" asChild>
-              <Link href="/signup">Get started</Link>
+              <Link href="/signup">Start marketing</Link>
             </Button>
           </nav>
         </div>
@@ -45,9 +45,9 @@ export default function TermsPage() {
         <section className="space-y-2">
           <h2 className="text-base sm:text-lg font-semibold text-foreground">2. Description of Service</h2>
           <p className="text-muted-foreground leading-relaxed">
-            Karouselmaker is a web application that helps creators generate swipe-style carousel posts for social media.
-            The Service uses AI to generate text content and provides templates for layout. Images may be sourced from
-            third-party providers including Unsplash and Brave Search.
+            Karouselmaker is a marketing tool for organic Instagram and TikTok carousels that promote a product
+            without sounding like ads. The Service uses AI to draft problem-first swipe content and provides templates
+            for layout. Images may be sourced from third-party providers including Unsplash and Brave Search.
           </p>
         </section>
 
@@ -57,7 +57,7 @@ export default function TermsPage() {
             You are responsible for all content you create, publish, or export using the Service. You must ensure that:
           </p>
           <ul className="list-disc pl-5 space-y-2 text-muted-foreground leading-relaxed">
-            <li>Your use of the Service complies with applicable laws and platform policies (e.g., Instagram, LinkedIn).</li>
+            <li>Your use of the Service complies with applicable laws and platform policies (e.g., Instagram, TikTok).</li>
             <li>You have the right to use any content you upload or incorporate into your carousels.</li>
             <li>
               <strong>Image attribution:</strong> When you use images from third-party sources (e.g., Unsplash, Brave Search)

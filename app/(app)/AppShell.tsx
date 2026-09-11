@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import { ContactUsModal } from "@/components/admin/ContactUsModal";
 import { usePathname } from "next/navigation";
 import { signOut } from "@/app/actions/auth";
@@ -23,9 +22,6 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { OAuthPopupListener } from "@/components/settings/OAuthPopupListener";
-import { ConnectedAccountsModal } from "@/components/settings/ConnectedAccountsModal";
-import { OPEN_CONNECTED_ACCOUNTS_EVENT } from "@/lib/constants/connectedAccounts";
 import { cn } from "@/lib/utils";
 import type { Project } from "@/lib/server/db/types";
 import { LogoutButtonWithOverlay } from "@/components/auth/LogoutButtonWithOverlay";
@@ -144,14 +140,6 @@ function NavContent({
         </NavLink>
       )}
       <NavLink
-        href="/templates"
-        isActive={pathname.startsWith("/templates")}
-        onClick={() => setSheetOpen?.(false)}
-        className="w-full justify-start md:w-auto md:inline-flex"
-      >
-        Templates
-      </NavLink>
-      <NavLink
         href="/assets"
         isActive={pathname.startsWith("/assets")}
         onClick={() => setSheetOpen?.(false)}
@@ -159,18 +147,6 @@ function NavContent({
       >
         Assets
       </NavLink>
-      {isAdmin && (
-        <button
-          type="button"
-          onClick={() => {
-            setSheetOpen?.(false);
-            window.dispatchEvent(new CustomEvent(OPEN_CONNECTED_ACCOUNTS_EVENT));
-          }}
-          className="rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors w-full justify-start md:w-auto md:inline-flex text-left text-muted-foreground hover:text-foreground"
-        >
-          Connected accounts
-        </button>
-      )}
           <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
@@ -217,13 +193,13 @@ function NavContent({
         <Button variant="default" size="sm" className="w-full justify-start md:w-auto" asChild>
           <Link href={`/p/${currentProject?.id ?? projects[0]!.id}/new`} onClick={() => setSheetOpen?.(false)}>
             <PlusCircleIcon className="mr-2 size-4" />
-            New carousel
+            New post
           </Link>
         </Button>
       ) : (
         <Button variant="outline" size="sm" className="w-full justify-start md:w-auto" disabled>
           <PlusCircleIcon className="mr-2 size-4" />
-          New carousel
+          New post
         </Button>
       )}
     </>
@@ -244,7 +220,6 @@ export function AppShell({
   isPro?: boolean;
 }) {
   const pathname = usePathname();
-  const searchParams = useSearchParams();
   const currentProjectId = getCurrentProjectId(pathname);
   const isAdmin = ADMIN_EMAILS.includes(userEmail);
 
@@ -253,22 +228,6 @@ export function AppShell({
     : undefined;
 
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [connectedAccountsOpen, setConnectedAccountsOpen] = useState(false);
-
-  useEffect(() => {
-    function onOpen() {
-      setConnectedAccountsOpen(true);
-    }
-    window.addEventListener(OPEN_CONNECTED_ACCOUNTS_EVENT, onOpen);
-    return () => window.removeEventListener(OPEN_CONNECTED_ACCOUNTS_EVENT, onOpen);
-  }, []);
-
-  useEffect(() => {
-    if (pathname === "/projects" && searchParams.get("openConnectedAccounts") === "1") {
-      setConnectedAccountsOpen(true);
-      window.history.replaceState(null, "", "/projects");
-    }
-  }, [pathname, searchParams]);
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -325,13 +284,6 @@ export function AppShell({
                 <DropdownMenuItem className="text-muted-foreground cursor-default" disabled>
                   {userEmail}
                 </DropdownMenuItem>
-                {isAdmin && (
-                  <DropdownMenuItem
-                    onClick={() => window.dispatchEvent(new CustomEvent(OPEN_CONNECTED_ACCOUNTS_EVENT))}
-                  >
-                    Connected accounts
-                  </DropdownMenuItem>
-                )}
                 {isPro && (
                   <DropdownMenuItem asChild>
                     <ManageSubscriptionButton />
@@ -348,11 +300,6 @@ export function AppShell({
         </div>
       </header>
       <main className="flex-1 pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">{children}</main>
-      <ConnectedAccountsModal
-        open={connectedAccountsOpen}
-        onOpenChange={setConnectedAccountsOpen}
-      />
-      <OAuthPopupListener />
       {!isSlideEditPage(pathname) && (
         <footer className="border-t border-border/60 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           <div className="flex flex-col items-center gap-2 px-4 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]">

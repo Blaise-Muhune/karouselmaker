@@ -20,10 +20,11 @@ export function MarketingPricingSection({ sectionId = "pricing", className }: Ma
         id="pricing-heading"
         className="text-center font-semibold text-foreground text-lg sm:text-xl mb-2"
       >
-        Free, Starter, Pro, Studio
+        Start free. Scale organic posting.
       </h2>
       <p className="text-center text-muted-foreground text-sm max-w-xl mx-auto mb-8">
-        Start free, then upgrade as you scale. From {STARTER_PRICE_DISPLAY}/mo for paid plans.
+        Same Instagram & TikTok marketing workflow on every plan—higher limits as you ship more carousels. From{" "}
+        {STARTER_PRICE_DISPLAY}/mo.
       </p>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {(() => {
@@ -35,7 +36,7 @@ export function MarketingPricingSection({ sectionId = "pricing", className }: Ma
                 $0
                 <span className="text-xs font-normal text-muted-foreground">/mo</span>
               </p>
-              <p className="text-xs text-muted-foreground mb-4">Try the product before upgrading.</p>
+              <p className="text-xs text-muted-foreground mb-4">Try organic carousel marketing before upgrading.</p>
               <ul className="space-y-2 text-xs text-muted-foreground flex-1 mb-5">
                 <li className="flex items-start gap-2">
                   <Check className="size-3.5 shrink-0 mt-0.5 text-primary" />
@@ -43,11 +44,11 @@ export function MarketingPricingSection({ sectionId = "pricing", className }: Ma
                 </li>
                 <li className="flex items-start gap-2">
                   <Check className="size-3.5 shrink-0 mt-0.5 text-primary" />
-                  {L.customTemplates} custom template · AI image generation off
+                  Stock & library images · light edit
                 </li>
                 <li className="flex items-start gap-2">
                   <Check className="size-3.5 shrink-0 mt-0.5 text-primary" />
-                  Full editor with basic limits
+                  Export for Instagram & TikTok
                 </li>
               </ul>
               <Button size="sm" className="w-full gap-1.5 mt-auto" variant="outline" asChild>
@@ -90,15 +91,15 @@ export function MarketingPricingSection({ sectionId = "pricing", className }: Ma
                 </li>
                 <li className="flex items-start gap-2">
                   <Check className="size-3.5 shrink-0 mt-0.5 text-primary" />
-                  {L.customTemplates} custom templates · {L.aiGenerateCarouselsPerMonth} AI-image carousels / mo
+                  Web image search · export ZIP + captions
                 </li>
                 <li className="flex items-start gap-2">
                   <Check className="size-3.5 shrink-0 mt-0.5 text-primary" />
-                  Full editor, export ZIP + captions, apply-to-all
+                  Niche + offer projects for organic IG & TikTok
                 </li>
               </ul>
               <Button size="sm" className="w-full gap-1.5 mt-auto" variant={tier.id === "pro" ? "default" : "outline"} asChild>
-                <Link href="/signup">Get started</Link>
+                <Link href="/signup">Start marketing</Link>
               </Button>
             </div>
           );

@@ -1,7 +1,6 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { queryOne } from "./pg";
 import type { Plan, Profile } from "./types";
 
 type ProfilePlanPayload = {
@@ -13,64 +12,70 @@ type ProfilePlanPayload = {
 };
 
 export async function getProfile(userId: string): Promise<Profile | null> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("user_id", userId)
-    .single();
+  return queryOne<Profile>(`select * from profiles where user_id = $1`, [userId]);
+}
 
-  if (error) {
-    if (error.code === "PGRST116") return null;
-    throw new Error(error.message);
+async function upsertProfileRow(
+  userId: string,
+  payload: ProfilePlanPayload
+): Promise<Profile> {
+  const existing = await getProfile(userId);
+  if (!existing) {
+    const row = await queryOne<Profile>(
+      `insert into profiles (
+         user_id, display_name, plan, how_found_us,
+         stripe_customer_id, stripe_subscription_id
+       ) values ($1, $2, coalesce($3, 'free'), $4, $5, $6)
+       returning *`,
+      [
+        userId,
+        payload.display_name ?? null,
+        payload.plan ?? null,
+        payload.how_found_us ?? null,
+        payload.stripe_customer_id ?? null,
+        payload.stripe_subscription_id ?? null,
+      ]
+    );
+    if (!row) throw new Error("Failed to create profile");
+    return row;
   }
-  return data as Profile;
+
+  const sets: string[] = ["updated_at = now()"];
+  const params: unknown[] = [userId];
+  const add = (col: string, value: unknown) => {
+    params.push(value);
+    sets.push(`${col} = $${params.length}`);
+  };
+  if (payload.display_name !== undefined) add("display_name", payload.display_name);
+  if (payload.plan !== undefined) add("plan", payload.plan);
+  if (payload.how_found_us !== undefined) add("how_found_us", payload.how_found_us);
+  if (payload.stripe_customer_id !== undefined)
+    add("stripe_customer_id", payload.stripe_customer_id);
+  if (payload.stripe_subscription_id !== undefined)
+    add("stripe_subscription_id", payload.stripe_subscription_id);
+
+  const row = await queryOne<Profile>(
+    `update profiles set ${sets.join(", ")} where user_id = $1 returning *`,
+    params
+  );
+  if (!row) throw new Error("Failed to update profile");
+  return row;
 }
 
 export async function upsertProfile(
   userId: string,
   payload: ProfilePlanPayload
 ): Promise<Profile> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("profiles")
-    .upsert(
-      {
-        user_id: userId,
-        updated_at: new Date().toISOString(),
-        ...payload,
-      },
-      { onConflict: "user_id" }
-    )
-    .select()
-    .single();
-
-  if (error) throw new Error(error.message);
-  return data as Profile;
+  return upsertProfileRow(userId, payload);
 }
 
 /**
- * Upsert profile using service role (bypasses RLS).
- * Use for webhooks/background jobs where there is no user session.
+ * Same as upsertProfile — Azure DB has no RLS; auth is enforced by callers.
+ * Kept for webhook/background jobs that previously used the service role.
  */
 export async function upsertProfileAsAdmin(
   userId: string,
   payload: ProfilePlanPayload
 ): Promise<Profile> {
-  const supabase = createAdminClient();
-  const { data, error } = await supabase
-    .from("profiles")
-    .upsert(
-      {
-        user_id: userId,
-        updated_at: new Date().toISOString(),
-        ...payload,
-      },
-      { onConflict: "user_id" }
-    )
-    .select()
-    .single();
-
-  if (error) throw new Error(error.message);
-  return data as Profile;
+  return upsertProfileRow(userId, payload);
 }

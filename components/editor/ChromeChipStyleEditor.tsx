@@ -105,6 +105,7 @@ export function ChromeChipStyleEditor({ value, onChange, disabled, fontModalTitl
                 delete next.boxBackgroundBorderColor;
                 delete next.boxBackgroundBorderOpacity;
                 delete next.boxBackgroundBorderRadius;
+                delete next.boxBackgroundFit;
                 emit(next);
               }}
               disabled={disabled}
@@ -149,6 +150,7 @@ export function ChromeChipStyleEditor({ value, onChange, disabled, fontModalTitl
                         delete next.boxBackgroundBorderColor;
                         delete next.boxBackgroundBorderOpacity;
                         delete next.boxBackgroundBorderRadius;
+                delete next.boxBackgroundFit;
                         emit(next);
                         return;
                       }

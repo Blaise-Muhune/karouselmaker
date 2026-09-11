@@ -251,7 +251,7 @@ export function TemplateBuilderForm({
       });
       setLoading(false);
       if (result.ok && "templateId" in result) {
-        router.push(`/templates/${result.templateId}/edit`);
+        router.push("/projects");
       } else if (!result.ok) {
         setError(result.error ?? "Failed to create template");
       }
@@ -578,7 +578,7 @@ export function TemplateBuilderForm({
       {!hideHeader && (
         <header className="flex items-start gap-2 shrink-0 px-2 py-2 border-b border-border/60 bg-card/50">
           <Button variant="ghost" size="icon-sm" className="-ml-1 shrink-0" asChild>
-            <Link href="/templates" aria-label="Back to templates">
+            <Link href="/projects" aria-label="Back to projects">
               <ArrowLeftIcon className="size-4" />
             </Link>
           </Button>
@@ -1023,6 +1023,7 @@ export function TemplateBuilderForm({
                                   boxBackgroundBorderColor: undefined,
                                   boxBackgroundBorderOpacity: undefined,
                                   boxBackgroundBorderRadius: undefined,
+                            boxBackgroundFit: undefined,
                                 });
                                 return;
                               }
@@ -1191,6 +1192,7 @@ export function TemplateBuilderForm({
                             boxBackgroundBorderColor: undefined,
                             boxBackgroundBorderOpacity: undefined,
                             boxBackgroundBorderRadius: undefined,
+                            boxBackgroundFit: undefined,
                           })
                         }
                       >
@@ -1240,6 +1242,7 @@ export function TemplateBuilderForm({
                                   boxBackgroundBorderColor: undefined,
                                   boxBackgroundBorderOpacity: undefined,
                                   boxBackgroundBorderRadius: undefined,
+                            boxBackgroundFit: undefined,
                                 });
                                 return;
                               }

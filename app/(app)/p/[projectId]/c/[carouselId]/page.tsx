@@ -5,7 +5,7 @@ import { getUser } from "@/lib/server/auth/getUser";
 /** Ensure router.refresh() always gets fresh data so generating→done transition is visible. */
 export const dynamic = "force-dynamic";
 import { getSubscription, getEffectivePlanLimits } from "@/lib/server/subscription";
-import { getCarousel, getProject, listSlides, listTemplatesForUser, listExportsByCarousel, countExportsThisMonth, getAsset, countCarouselsLifetime, getPlatformConnections } from "@/lib/server/db";
+import { getCarousel, getProject, listSlides, listTemplatesForUser, listFavoriteTemplateIds, listExportsByCarousel, countExportsThisMonth, getAsset, countCarouselsLifetime } from "@/lib/server/db";
 import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { resolveBrandKitLogo } from "@/lib/server/brandKit";
@@ -18,21 +18,14 @@ import { CarouselMenuDropdown } from "@/components/carousels/CarouselMenuDropdow
 import { ShuffleCarouselBackgroundsButton } from "@/components/carousels/ShuffleCarouselBackgroundsButton";
 import { EditorCaptionSection } from "@/components/editor/EditorCaptionSection";
 import { EditorExportSection } from "@/components/editor/EditorExportSection";
-import { PostToFacebookButton } from "@/components/platforms/PostToFacebookButton";
-import { PostToInstagramButton } from "@/components/platforms/PostToInstagramButton";
-import { ConnectInPopupLink } from "@/components/platforms/ConnectInPopupLink";
-import { PlatformIcon } from "@/components/platforms/PlatformIcon";
-import { ConnectedAccountsModalTrigger } from "@/components/settings/ConnectedAccountsModalTrigger";
 import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
 import type { BrandKit } from "@/lib/renderer/renderModel";
-import type { ExportFormat, ExportSize, PlatformName } from "@/lib/server/db/types";
+import type { ExportFormat, ExportSize } from "@/lib/server/db/types";
 import { FREE_FULL_ACCESS_GENERATIONS } from "@/lib/constants";
 import { slugifyForFilename } from "@/lib/utils";
 import { GenerationPartialBanner } from "@/components/carousels/GenerationPartialBanner";
 import { CarouselGeneratingPage } from "@/components/carousels/CarouselGeneratingTrigger";
-import { SimilarCarouselIdeas } from "@/components/carousels/SimilarCarouselIdeas";
-import { SaveUgcCharacterFromCarouselButton } from "@/components/carousels/SaveUgcCharacterFromCarouselButton";
-import { ArrowLeftIcon } from "lucide-react";
+import { ArrowLeftIcon, SparklesIcon } from "lucide-react";
 
 function normalizeStoragePathForBucket(path: string | undefined, bucket: string): string | undefined {
   const trimmed = path?.trim().replace(/^\/+/, "");
@@ -64,7 +57,7 @@ export default async function CarouselEditorPage({
   const resolvedSearchParams = await searchParams;
   const showGenerationPartial = resolvedSearchParams?.generation === "partial";
 
-  const [carousel, project, slides, templatesRaw, recentExports, subscription, exportCount, lifetimeCarouselCount, connections, limits] =
+  const [carousel, project, slides, templatesRaw, recentExports, subscription, exportCount, lifetimeCarouselCount, limits, favoriteIds] =
     await Promise.all([
       getCarousel(user.id, carouselId),
       getProject(user.id, projectId),
@@ -74,10 +67,9 @@ export default async function CarouselEditorPage({
       getSubscription(user.id, user.email),
       countExportsThisMonth(user.id),
       countCarouselsLifetime(user.id),
-      getPlatformConnections(user.id),
       getEffectivePlanLimits(user.id, user.email),
+      listFavoriteTemplateIds(user.id),
     ]);
-  const connectedPlatforms = new Set(connections.map((c) => c.platform));
   const userIsAdmin = isAdmin(user.email ?? null);
 
   const hasFullAccess = subscription.isPro || lifetimeCarouselCount < FREE_FULL_ACCESS_GENERATIONS;
@@ -93,13 +85,13 @@ export default async function CarouselEditorPage({
     return <CarouselGeneratingPage projectId={projectId} carouselId={carouselId} />;
   }
 
-  const templates: TemplateWithConfig[] = templatesRaw
-    .map((t) => {
-      const parsed = templateConfigSchema.safeParse(t.config);
-      if (!parsed.success) return null;
-      return { ...t, parsedConfig: parsed.data };
-    })
-    .filter((t): t is TemplateWithConfig => t != null);
+  const favoriteIdSet = new Set(favoriteIds);
+  const templates: TemplateWithConfig[] = [];
+  for (const t of templatesRaw) {
+    const parsed = templateConfigSchema.safeParse(t.config);
+    if (!parsed.success) continue;
+    templates.push({ ...t, parsedConfig: parsed.data, isFavorite: favoriteIdSet.has(t.id) });
+  }
 
   const brandKit: BrandKit = await resolveBrandKitLogo(project.brand_kit as Record<string, unknown> | null);
 
@@ -172,9 +164,6 @@ export default async function CarouselEditorPage({
   const useAiGenerateCarousel = genOpts.use_ai_generate === true;
   const aiBackgroundsPendingFlag = genOpts.ai_backgrounds_pending === true;
   const generationErrorRecovery = genOpts.generation_error_recovery === true;
-  const similarCarouselIdeasFromOpts = Array.isArray(genOpts.similar_carousel_ideas)
-    ? (genOpts.similar_carousel_ideas as string[])
-    : [];
   const hasCaptionContent = Boolean(
     captionVariants.title?.trim() ||
       captionVariants.medium?.trim() ||
@@ -184,8 +173,6 @@ export default async function CarouselEditorPage({
   );
   const captionHydrating = generationErrorRecovery && !hasCaptionContent;
   const carouselForGen = genOpts.carousel_for as "instagram" | "linkedin" | undefined;
-  const similarIdeasLoading =
-    generationErrorRecovery && similarCarouselIdeasFromOpts.length === 0 && carouselForGen !== "linkedin";
 
   const usedProjectFaceRefsOnRun = genOpts.ugc_used_project_avatar_refs === true;
   const hasGeneratedUgcBackdrops = slides.some((s) => {
@@ -252,25 +239,13 @@ export default async function CarouselEditorPage({
     <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">
       <div className="mx-auto max-w-4xl space-y-6">
         {showGenerationPartial && <GenerationPartialBanner />}
-        {showSaveUgcAlreadyUsingProjectLine ? (
-          <p className="text-sm text-muted-foreground rounded-lg border border-border/60 bg-muted/20 px-4 py-3 leading-snug">
-            This carousel used your project’s saved character face references—there’s nothing new to promote from
-            these slides.
-          </p>
-        ) : saveUgcCharacterCanApply ? (
-          <SaveUgcCharacterFromCarouselButton
-            projectId={projectId}
-            carouselId={carouselId}
-            hasExistingSavedBrief={projectUgcBrief.length > 0}
-          />
-        ) : null}
         {!subscription.isPro && (
           hasFullAccess ? (
             <p className="text-sm text-muted-foreground">
               <strong>{freeGenerationsLeft}</strong> of {FREE_FULL_ACCESS_GENERATIONS} free generations left. Subscribe for full limits.
             </p>
           ) : (
-            <UpgradeBanner message="You've used all 3 free generations. Choose a plan to edit carousels, export, and unlock AI backgrounds." />
+            <UpgradeBanner message="You've used all 3 free generations. Choose a plan to edit carousels, export, and unlock web images." />
           )
         )}
 
@@ -332,60 +307,11 @@ export default async function CarouselEditorPage({
             storage_path: ex.storage_path,
             created_at: ex.created_at,
           }))}
-          isAdmin={userIsAdmin}
-          postToPlatforms={userIsAdmin ? (project.post_to_platforms as Record<string, boolean> | undefined) : undefined}
-          connectedPlatforms={userIsAdmin ? Array.from(connectedPlatforms) : undefined}
           captionVariants={captionVariants}
           hashtags={hashtags}
           carouselTitle={carousel.title}
           projectName={project.name}
         />
-
-        {/* Post to (admin only) */}
-        {userIsAdmin && !isGenerating && (() => {
-          const pt = (project.post_to_platforms ?? {}) as Record<string, boolean>;
-          const enabled = (["facebook", "instagram"] as const).filter((k) => pt[k]);
-          if (enabled.length === 0) return null;
-          const labels: Record<string, string> = {
-            facebook: "Facebook",
-            instagram: "Instagram",
-          };
-          return (
-            <section>
-              <p className="text-muted-foreground mb-2 text-xs font-medium uppercase tracking-wider">
-                Post to
-              </p>
-              <div className="flex flex-wrap items-center gap-2">
-                {enabled.map((key) => {
-                  const connected = connectedPlatforms.has(key);
-                  if (key === "facebook" && connected) {
-                    return <PostToFacebookButton key={key} carouselId={carouselId} />;
-                  }
-                  if (key === "instagram" && connected) {
-                    return <PostToInstagramButton key={key} carouselId={carouselId} />;
-                  }
-                  const label = connected ? labels[key] : `${labels[key]} (Connect)`;
-                  const pillClass = "inline-flex items-center justify-center rounded-md border border-border bg-muted/50 px-2.5 py-1.5 text-foreground hover:bg-muted hover:border-primary/50 transition-colors";
-                  return (
-                    <ConnectInPopupLink
-                      key={key}
-                      href={connected ? "#" : `/api/oauth/${key}/connect`}
-                      className={pillClass}
-                      title={label}
-                      aria-label={label}
-                    >
-                      <PlatformIcon platform={key} />
-                    </ConnectInPopupLink>
-                  );
-                })}
-                <ConnectedAccountsModalTrigger />
-              </div>
-              <p className="text-muted-foreground mt-1.5 text-xs">
-                Post to Facebook and Post to Instagram publish your latest export (carousel images). Export above first, then use View on Facebook / View on Instagram after posting.
-              </p>
-            </section>
-          );
-        })()}
 
         {/* Frames */}
         <section className={isGenerating ? "pointer-events-none opacity-70" : ""} aria-disabled={isGenerating}>
@@ -406,16 +332,26 @@ export default async function CarouselEditorPage({
             disabled={isGenerating}
             downloadFilenameSlug={slugifyForFilename([project.name, carousel.title].filter(Boolean).join(" - ")) || undefined}
             enableBackgroundHydrationPoll={useAiBackgroundsCarousel || aiBackgroundsPendingFlag}
-            aiImageGenerationPending={useAiBackgroundsCarousel && useAiGenerateCarousel && aiBackgroundsPendingFlag}
+            aiImageGenerationPending={false}
           />
         </section>
 
-        <SimilarCarouselIdeas
-          projectId={projectId}
-          carouselId={carouselId}
-          ideas={similarCarouselIdeasFromOpts}
-          loading={similarIdeasLoading}
-        />
+        {!isGenerating && (
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-xl border border-border/80 bg-muted/20 px-4 py-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-foreground">Ready for the next organic post?</p>
+              <p className="text-muted-foreground text-xs leading-snug mt-0.5">
+                Generate another IG/TikTok carousel in this project—same niche and offer, new angle.
+              </p>
+            </div>
+            <Button asChild className="shrink-0 gap-1.5" disabled={isGenerating}>
+              <Link href={`/p/${projectId}/new?fromCarousel=${encodeURIComponent(carouselId)}`}>
+                <SparklesIcon className="size-4" aria-hidden />
+                Generate next post
+              </Link>
+            </Button>
+          </div>
+        )}
 
         {/* Caption */}
         <EditorCaptionSection

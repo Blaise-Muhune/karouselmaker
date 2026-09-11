@@ -35,7 +35,7 @@ export function DuplicateTemplateButton({
     });
     setLoading(false);
     if (result.ok && "templateId" in result) {
-      router.push(`/templates/${result.templateId}/edit`);
+      router.refresh();
     } else if (result.ok) {
       router.refresh();
     } else {

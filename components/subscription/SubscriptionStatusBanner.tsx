@@ -9,7 +9,7 @@ import { UpgradePlansDialog } from "@/components/subscription/UpgradePlansDialog
 const MESSAGES: Record<string, { message: string; variant: "success" | "info" | "muted"; showUpgrade?: boolean }> = {
   success: {
     message:
-      "You're subscribed. Your plan limits apply right away—open a project to create carousels, exports, and AI-generated backgrounds.",
+      "You're subscribed. Your plan limits apply right away—open a project to ship organic Instagram & TikTok carousels.",
     variant: "success",
   },
   cancelled: {

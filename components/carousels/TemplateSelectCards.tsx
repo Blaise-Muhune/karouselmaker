@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, type ComponentProps } from "react";
+import { useState, useEffect, useMemo, type ComponentProps, type MouseEvent } from "react";
 import { SlidePreview, type SlideBackgroundOverride } from "@/components/renderer/SlidePreview";
 import { DeleteTemplateButton } from "@/components/templates/DeleteTemplateButton";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
@@ -9,10 +9,11 @@ import {
   getTemplatePreviewImageUrls,
   getTemplateIntendedBackgroundImageSlotCount,
 } from "@/lib/renderer/templatePreviewImages";
-import { CheckIcon, LayoutTemplateIcon } from "lucide-react";
+import { CheckIcon, LayoutTemplateIcon, StarIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getSlidePreviewSpreadFromTemplateConfig, getTemplatePreviewExtraTextValues } from "@/lib/renderer/templateDefaultsForSlidePreview";
 import { getSampleSlideCopyForTemplatePreview } from "@/lib/templates/zoneCharBudget";
+import { toggleTemplateFavoriteAction } from "@/app/actions/templates/toggleTemplateFavorite";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -75,6 +76,8 @@ export type TemplateOption = {
   category?: string;
   /** When true, template is system-owned; admins can delete it from the modal. */
   isSystemTemplate?: boolean;
+  /** When true, current user has favorited this template. */
+  isFavorite?: boolean;
 };
 
 export type TemplateSelectCardsProps = {
@@ -107,6 +110,8 @@ export type TemplateSelectCardsProps = {
   initialVisibleCount?: number;
   /** When true, render a stronger, more visible load-more button. */
   emphasizeLoadMoreButton?: boolean;
+  /** Path to revalidate after starring (e.g. `/p/{projectId}/new`). */
+  favoriteRevalidatePath?: string;
 };
 
 export function TemplateSelectCards({
@@ -128,9 +133,49 @@ export function TemplateSelectCards({
   showMyTemplatesSection = true,
   initialVisibleCount,
   emphasizeLoadMoreButton = false,
+  favoriteRevalidatePath,
 }: TemplateSelectCardsProps) {
   const { w: PREVIEW_W, h: PREVIEW_H, scale: SCALE } = usePreviewSize();
   const brandKit = { primary_color: primaryColor };
+  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(
+    () => new Set(templates.filter((t) => t.isFavorite).map((t) => t.id))
+  );
+  const [favoriteBusyId, setFavoriteBusyId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setFavoriteIds(new Set(templates.filter((t) => t.isFavorite).map((t) => t.id)));
+  }, [templates]);
+
+  const toggleFavorite = async (templateId: string, e: MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (favoriteBusyId) return;
+    setFavoriteBusyId(templateId);
+    const prev = favoriteIds.has(templateId);
+    setFavoriteIds((cur) => {
+      const next = new Set(cur);
+      if (prev) next.delete(templateId);
+      else next.add(templateId);
+      return next;
+    });
+    const result = await toggleTemplateFavoriteAction(templateId, favoriteRevalidatePath);
+    if (!result.ok) {
+      setFavoriteIds((cur) => {
+        const next = new Set(cur);
+        if (prev) next.add(templateId);
+        else next.delete(templateId);
+        return next;
+      });
+    } else {
+      setFavoriteIds((cur) => {
+        const next = new Set(cur);
+        if (result.is_favorite) next.add(templateId);
+        else next.delete(templateId);
+        return next;
+      });
+    }
+    setFavoriteBusyId(null);
+  };
   const hasPreviewImages = previewImageUrls && previewImageUrls.length > 0;
   const getPreviewImage = (index: number) =>
     hasPreviewImages ? previewImageUrls![index % previewImageUrls!.length] : undefined;
@@ -194,15 +239,23 @@ export function TemplateSelectCards({
   const myTemplates = useMemo(() => templates.filter((t) => !t.isSystemTemplate), [templates]);
   const hasMyTemplates = showMyTemplatesSection && myTemplates.length > 0;
 
-  const myTemplatesFiltered = useMemo(
-    () => filterByLayout(myTemplates, layoutFilter),
-    [myTemplates, layoutFilter]
-  );
+  const myTemplatesFiltered = useMemo(() => {
+    const list = filterByLayout(myTemplates, layoutFilter);
+    return [...list].sort((a, b) => {
+      const af = favoriteIds.has(a.id) ? 0 : 1;
+      const bf = favoriteIds.has(b.id) ? 0 : 1;
+      return af - bf;
+    });
+  }, [myTemplates, layoutFilter, favoriteIds]);
 
-  const catalogFiltered = useMemo(
-    () => filterByLayout(templates, layoutFilter),
-    [templates, layoutFilter]
-  );
+  const catalogFiltered = useMemo(() => {
+    const list = filterByLayout(templates, layoutFilter);
+    return [...list].sort((a, b) => {
+      const af = favoriteIds.has(a.id) ? 0 : 1;
+      const bf = favoriteIds.has(b.id) ? 0 : 1;
+      return af - bf;
+    });
+  }, [templates, layoutFilter, favoriteIds]);
 
   const displayList = paginateInternally ? catalogFiltered.slice(0, visibleCount) : catalogFiltered;
   const hasMore = paginateInternally && catalogFiltered.length > visibleCount;
@@ -240,6 +293,7 @@ export function TemplateSelectCards({
     };
     const isSystem = t.isSystemTemplate === true;
     const showDelete = (isAdmin && isSystem) || (!isSystem && isPro);
+    const isFavorite = favoriteIds.has(t.id);
     const storedPreviewUrls = getTemplatePreviewImageUrls(t.parsedConfig);
     const slotCount = getTemplateIntendedBackgroundImageSlotCount(t.parsedConfig);
     const fallbackPreview = getPreviewImageOrFallback(idx + 1, true);
@@ -277,6 +331,21 @@ export function TemplateSelectCards({
             : "border-border/60 hover:border-muted-foreground/40 hover:bg-muted/30"
         )}
       >
+        <div className="absolute left-2 top-2 z-10 flex items-center gap-1">
+          <button
+            type="button"
+            className={cn(
+              "rounded-full p-1.5 shadow-sm border border-border/60 bg-background/95 hover:bg-background transition-colors",
+              isFavorite ? "text-amber-500" : "text-muted-foreground hover:text-foreground",
+              favoriteBusyId === t.id && "opacity-60 pointer-events-none"
+            )}
+            aria-label={isFavorite ? `Unfavorite ${t.name}` : `Favorite ${t.name}`}
+            title={isFavorite ? "Remove from favorites" : "Favorite — used as default when no template is chosen"}
+            onClick={(e) => void toggleFavorite(t.id, e)}
+          >
+            <StarIcon className={cn("size-3.5", isFavorite && "fill-current")} />
+          </button>
+        </div>
         {showDelete && (
           <div className="absolute right-2 top-2 z-10">
             <DeleteTemplateButton
@@ -326,6 +395,7 @@ export function TemplateSelectCards({
                 totalSlides={8}
                 backgroundImageUrl={previewBgUrl}
                 backgroundImageUrls={previewBgUrls}
+                respectZoneMaxLines
                 backgroundOverride={
                   value === t.id && selectedTemplateOverlayOverride
                     ? selectedTemplateOverlayOverride
@@ -428,6 +498,7 @@ export function TemplateSelectCards({
                   totalSlides={8}
                   backgroundImageUrl={defaultTemplateBgUrl}
                   backgroundImageUrls={defaultTemplateBgUrls}
+                  respectZoneMaxLines
                   backgroundOverride={
                     effectiveDefaultTemplateConfig.backgroundRules?.allowImage === false
                       ? getTemplatePreviewBackgroundOverride(effectiveDefaultTemplateConfig)

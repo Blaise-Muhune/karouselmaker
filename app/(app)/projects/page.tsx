@@ -62,7 +62,7 @@ export default async function ProjectsPage({
               {projects.length === 0 ? (
                 <>
                   <p className="text-base font-medium text-foreground">
-                    Create a project, add a topic, hit Generate. Your first 3 carousels are free with full access.
+                    Create a project for your niche and offer, then generate organic IG/TikTok carousels. Your first 3 are free with full access.
                   </p>
                   <Button asChild className="mt-4">
                     <Link href="/projects/new">
@@ -73,7 +73,7 @@ export default async function ProjectsPage({
                 </>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  Open a project below → <strong>New carousel</strong> → enter a topic and Generate. Your first one is free.
+                  Open a project → <strong>New post</strong> → pick a topic and Generate. Soft-sell your product without sounding like an ad. Your first one is free.
                 </p>
               )}
             </CardContent>

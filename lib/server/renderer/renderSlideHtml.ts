@@ -16,7 +16,7 @@ import {
   parseExtraTextZonesSuppressedIds,
 } from "@/lib/editor/extraTextZoneMeta";
 import { getRoundedPolygonClipPath } from "@/lib/renderer/shapeClipPath";
-import { zoneBoxChromeInlineCss, zoneBoxChromeInlineCssScaled } from "@/lib/renderer/zoneBoxChrome";
+import { zoneBoxChromeInlineCss, zoneBoxChromeInlineCssScaled, textFitLineBackdropInlineCss } from "@/lib/renderer/zoneBoxChrome";
 import { resolvePipLayoutsForImageCount } from "@/lib/renderer/resolvePipLayouts";
 import { normalizeFullImageRotation } from "@/lib/renderer/fullImageRotation";
 
@@ -599,6 +599,19 @@ export function renderSlideHtml(
           const transformCss = rotation !== 0 ? `transform:rotate(${rotation}deg) translateZ(0);transform-origin:50% 50%;` : "";
           const zoneFontSizeSpans = block.zone.id === "headline" ? headlineFontSizeSpans : block.zone.id === "body" ? bodyFontSizeSpans : undefined;
           const useFontSizeSpans = !!zoneFontSizeSpans?.length;
+          const textFitCss = textFitLineBackdropInlineCss(
+            block.zone as {
+              boxBackgroundColor?: string;
+              boxBackgroundOpacity?: number;
+              boxBackgroundFrameOnly?: boolean;
+              boxBackgroundBorderWidth?: number;
+              boxBackgroundBorderSides?: { top?: boolean; right?: boolean; bottom?: boolean; left?: boolean };
+              boxBackgroundBorderColor?: string;
+              boxBackgroundBorderOpacity?: number;
+              boxBackgroundBorderRadius?: number;
+              boxBackgroundFit?: "box" | "text";
+            }
+          );
           const linePlainStarts: number[] = [];
           if (useFontSizeSpans) {
             let acc = 0;
@@ -623,7 +636,10 @@ export function renderSlideHtml(
               }
               return lineToHtml(line, zoneHighlightStyle, zoneColor, zoneOutlineStrokePx, zoneBoldWeight);
             })
-            .map((lineHtml) => `<span style="display:block;width:100%;white-space:nowrap;">${lineHtml}</span>`)
+            .map((lineHtml) => {
+              const inner = textFitCss ? `<span style="${textFitCss}">${lineHtml}</span>` : lineHtml;
+              return `<span style="display:block;width:100%;white-space:nowrap;">${inner}</span>`;
+            })
             .join("");
           const justifyCss = zoneAlign === "justify" ? "text-align-last:justify;text-justify:inter-word;" : "";
           const boxChrome = zoneBoxChromeInlineCss(
@@ -636,6 +652,7 @@ export function renderSlideHtml(
               boxBackgroundBorderColor?: string;
               boxBackgroundBorderOpacity?: number;
               boxBackgroundBorderRadius?: number;
+              boxBackgroundFit?: "box" | "text";
             }
           );
           return `<div class="text-block" style="left:${block.zone.x}px;top:${block.zone.y}px;width:${block.zone.w}px;height:${block.zone.h}px;overflow:visible;font-size:${fontSize}px;font-weight:${block.zone.fontWeight};line-height:${lineHeight};text-transform:${textTransform};text-align:${zoneAlign};${justifyCss}color:${escapeHtml(zoneColor)};font-family:${fontStack};z-index:5;${transformCss}${boxChrome}">${linesHtml}</div>`;
@@ -1200,7 +1217,7 @@ export function renderSlideHtml(
     ? (() => {
         const chip = model.chrome.counterChipStyle ?? {};
         const cs = chromeScale;
-        const boxCss = zoneBoxChromeInlineCssScaled(chip, cs);
+        const boxCss = zoneBoxChromeInlineCssScaled(chip, cs, { ignoreFit: true });
         const fs = (model.chrome.counterFontSize ?? 20) * cs;
         const fw = chip.fontWeight != null && Number.isFinite(Number(chip.fontWeight)) ? Math.round(Number(chip.fontWeight)) : 500;
         const fam = getFontFamilyStack(chip.fontFamily);
@@ -1236,7 +1253,7 @@ export function renderSlideHtml(
         : wm.logoUrl
           ? `height:${(wm.fontSize ?? 20) * 2.4 * chromeScale}px;width:auto;object-fit:contain`
           : "";
-    const wmBox = zoneBoxChromeInlineCssScaled(wm, chromeScale);
+    const wmBox = zoneBoxChromeInlineCssScaled(wm, chromeScale, { ignoreFit: true });
     const wmFam = getFontFamilyStack(wm.fontFamily);
     const wmFw = wm.fontWeight != null && Number.isFinite(Number(wm.fontWeight)) ? Math.round(Number(wm.fontWeight)) : 500;
     const wmOutlinePx = (wm.outlineStroke ?? 0) * chromeScale;
@@ -1262,7 +1279,7 @@ export function renderSlideHtml(
     const mwMaxW = 1032 * chromeScale;
     const mwColor = model.chrome.madeWithColor ?? textColor;
     const mwChip = model.chrome.madeWithChipStyle ?? {};
-    const mwBoxCss = zoneBoxChromeInlineCssScaled(mwChip, chromeScale);
+    const mwBoxCss = zoneBoxChromeInlineCssScaled(mwChip, chromeScale, { ignoreFit: true });
     const mwFam = getFontFamilyStack(mwChip.fontFamily);
     const mwFw = mwChip.fontWeight != null && Number.isFinite(Number(mwChip.fontWeight)) ? Math.round(Number(mwChip.fontWeight)) : 500;
     const mwOutlinePx = (mwChip.outlineStroke ?? 0) * chromeScale;

@@ -28,20 +28,20 @@ export function PremiumCard({
           </div>
         </div>
         <p className="text-muted-foreground text-xs mb-4">
-          Same product on every tier—only monthly limits change (carousels, exports, AI-image runs, library size).
+          Same organic marketing workflow on every tier—only monthly limits change (carousels, exports, web images, library size).
         </p>
         <ul className="mb-6 space-y-2 text-xs text-muted-foreground">
           <li className="flex items-center gap-2">
             <Check className="size-3.5 shrink-0 text-primary" />
-            Up to {PLAN_LIMITS.studio.carouselsPerMonth} carousels/mo on Studio
+            Up to {PLAN_LIMITS.studio.carouselsPerMonth} organic carousels/mo on Studio
           </li>
           <li className="flex items-center gap-2">
             <Check className="size-3.5 shrink-0 text-primary" />
-            Up to {PLAN_LIMITS.studio.aiGenerateCarouselsPerMonth} AI-image carousels/mo on Studio
+            Export ZIP + captions for Instagram & TikTok
           </li>
           <li className="flex items-center gap-2">
             <Check className="size-3.5 shrink-0 text-primary" />
-            Templates, brand kit, full editor & export
+            Niche + offer projects, templates & light edit
           </li>
         </ul>
         {onAuthPage ? (
@@ -52,7 +52,7 @@ export function PremiumCard({
           <Button size="lg" className="w-full gap-2" asChild>
             <Link href="/signup">
               <Gem className="size-4" />
-              Get started
+              Start marketing
             </Link>
           </Button>
         )}

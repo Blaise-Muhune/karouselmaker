@@ -204,6 +204,7 @@ const chromeChipStyleFieldsSchema = z.object({
   boxBackgroundBorderColor: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
   boxBackgroundBorderOpacity: z.coerce.number().min(0).max(1).optional(),
   boxBackgroundBorderRadius: z.number().int().min(0).max(64).optional(),
+  boxBackgroundFit: z.enum(["box", "text"]).optional(),
 });
 
 export const textZoneOverrideSchema = z.object({
@@ -237,6 +238,8 @@ export const textZoneOverrideSchema = z.object({
   boxBackgroundBorderColor: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
   boxBackgroundBorderOpacity: z.coerce.number().min(0).max(1).optional(),
   boxBackgroundBorderRadius: z.number().int().min(0).max(64).optional(),
+  /** `box` = full zone panel. `text` = auto / TikTok-style hug per line. */
+  boxBackgroundFit: z.enum(["box", "text"]).optional(),
 }).optional();
 export type TextZoneOverride = z.output<typeof textZoneOverrideSchema>;
 
@@ -272,6 +275,7 @@ const extraTextZoneSchema = z.object({
   boxBackgroundBorderColor: z.string().regex(/^#([0-9A-Fa-f]{3}){1,2}$/).optional(),
   boxBackgroundBorderOpacity: z.coerce.number().min(0).max(1).optional(),
   boxBackgroundBorderRadius: z.number().int().min(0).max(64).optional(),
+  boxBackgroundFit: z.enum(["box", "text"]).optional(),
 });
 
 export const slideMetaSchema = z.object({

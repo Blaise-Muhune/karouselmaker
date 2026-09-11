@@ -11,7 +11,7 @@ type UpgradeBannerProps = {
 };
 
 export function UpgradeBanner({
-  message = "Upgrade to unlock more carousels, exports, AI-generated images, and editor features.",
+  message = "Upgrade to unlock more organic carousels, exports, and web image search.",
   variant = "banner",
 }: UpgradeBannerProps) {
   const [plansOpen, setPlansOpen] = useState(false);

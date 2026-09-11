@@ -1,7 +1,7 @@
 /**
  * Build a single post caption for LinkedIn document carousels: opening line (title) +
- * body (medium, or long if medium empty) + hashtags. The first ~140–210 characters
- * appear before "see more"—title should be the strongest hook line.
+ * body (long caption) + hashtags. The first ~140–210 characters appear before "see more"—
+ * title should be the strongest hook line.
  */
 export function buildLinkedInCarouselCaption(carousel: {
   caption_variants?: unknown;
@@ -16,9 +16,7 @@ export function buildLinkedInCarouselCaption(carousel: {
   };
   const hashtags = Array.isArray(carousel.hashtags) ? carousel.hashtags : [];
   const title = (variants.title ?? variants.short ?? "").trim();
-  const medium = (variants.medium ?? "").trim();
-  const long = (variants.long ?? variants.spicy ?? "").trim();
-  const bodyBlock = medium || long;
+  const bodyBlock = (variants.long ?? variants.spicy ?? variants.medium ?? "").trim();
   const hashtagLine =
     hashtags.length > 0
       ? hashtags.map((h) => (h.startsWith("#") ? h : `#${h}`)).join(" ")

@@ -1,54 +1,128 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { query, queryMany, queryOne } from "./pg";
 import type { Template, TemplateInsert } from "./types";
 
 export async function listTemplatesForUser(
   userId: string,
   options: { includeSystem?: boolean } = {}
 ): Promise<Template[]> {
-  const supabase = await createClient();
-  let q = supabase.from("templates").select("*").order("name", { ascending: true });
-
   if (options.includeSystem) {
-    q = q.or(`user_id.eq.${userId},user_id.is.null`);
-  } else {
-    q = q.eq("user_id", userId);
+    return queryMany<Template>(
+      `select * from templates
+       where user_id = $1 or user_id is null
+       order by name asc`,
+      [userId]
+    );
   }
+  return queryMany<Template>(
+    `select * from templates where user_id = $1 order by name asc`,
+    [userId]
+  );
+}
 
-  const { data, error } = await q;
-  if (error) throw new Error(error.message);
-  return (data ?? []) as Template[];
+/** Template ids this user has favorited (system or own). */
+export async function listFavoriteTemplateIds(userId: string): Promise<string[]> {
+  const rows = await queryMany<{ template_id: string }>(
+    `select template_id from user_template_favorites
+     where user_id = $1
+     order by created_at desc`,
+    [userId]
+  );
+  return rows.map((r) => r.template_id);
+}
+
+export async function isTemplateFavorite(userId: string, templateId: string): Promise<boolean> {
+  const row = await queryOne<{ template_id: string }>(
+    `select template_id from user_template_favorites
+     where user_id = $1 and template_id = $2
+     limit 1`,
+    [userId, templateId]
+  );
+  return !!row;
+}
+
+/** Toggle favorite. Returns the new favorited state. */
+export async function toggleTemplateFavorite(
+  userId: string,
+  templateId: string
+): Promise<{ ok: true; is_favorite: boolean } | { ok: false; error: string }> {
+  const tpl = await getTemplate(userId, templateId);
+  if (!tpl) return { ok: false, error: "Template not found" };
+
+  const existing = await isTemplateFavorite(userId, templateId);
+  if (existing) {
+    await query(
+      `delete from user_template_favorites where user_id = $1 and template_id = $2`,
+      [userId, templateId]
+    );
+    return { ok: true, is_favorite: false };
+  }
+  await query(
+    `insert into user_template_favorites (user_id, template_id)
+     values ($1, $2)
+     on conflict (user_id, template_id) do nothing`,
+    [userId, templateId]
+  );
+  return { ok: true, is_favorite: true };
+}
+
+/**
+ * Favorited templates the user can access, newest favorite first.
+ */
+export async function listFavoriteTemplatesForUser(userId: string): Promise<Template[]> {
+  return queryMany<Template>(
+    `select t.*
+     from user_template_favorites f
+     join templates t on t.id = f.template_id
+     where f.user_id = $1
+       and (t.user_id = $1 or t.user_id is null)
+     order by f.created_at desc`,
+    [userId]
+  );
+}
+
+function pickFavoriteDefault(
+  favorites: Template[],
+  options?: { requireAllowImage?: boolean }
+): { templateId: string; isFollowCta: boolean } | null {
+  if (favorites.length === 0) return null;
+  const allowImage = (t: Template) => {
+    const cfg = t.config as { backgroundRules?: { allowImage?: boolean } } | null;
+    return cfg?.backgroundRules?.allowImage !== false;
+  };
+  const pool = options?.requireAllowImage ? favorites.filter(allowImage) : favorites;
+  const chosen = (pool.length > 0 ? pool : favorites)[0];
+  if (!chosen) return null;
+  return {
+    templateId: chosen.id,
+    isFollowCta: chosen.user_id === null && chosen.name === "Follow CTA",
+  };
 }
 
 export async function getTemplate(
   userId: string,
   templateId: string
 ): Promise<Template | null> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("templates")
-    .select("*")
-    .eq("id", templateId)
-    .or(`user_id.eq.${userId},user_id.is.null`)
-    .single();
-
-  if (error) {
-    if (error.code === "PGRST116") return null;
-    throw new Error(error.message);
-  }
-  return data as Template;
+  return queryOne<Template>(
+    `select * from templates
+     where id = $1 and (user_id = $2 or user_id is null)`,
+    [templateId, userId]
+  );
 }
 
 /**
- * Default template for new carousels without images (text/solid/gradient): if the user has any custom
- * template, use the first (by name); otherwise use the system template "Follow CTA".
+ * Default template for new carousels without images:
+ * favorited template first, else first user template, else "Follow CTA", else any.
  */
 export async function getDefaultTemplateForNewCarousel(userId: string): Promise<{
   templateId: string;
   isFollowCta: boolean;
 } | null> {
+  const favorites = await listFavoriteTemplatesForUser(userId);
+  const fromFav = pickFavoriteDefault(favorites);
+  if (fromFav) return fromFav;
+
   const userTemplates = await listTemplatesForUser(userId, { includeSystem: false });
   if (userTemplates.length > 0) {
     const first = userTemplates[0];
@@ -63,14 +137,16 @@ export async function getDefaultTemplateForNewCarousel(userId: string): Promise<
 }
 
 /**
- * Default template for new carousels that have background images (PIP, full-bleed, etc.).
- * Prefers the first template (user or system) where backgroundRules.allowImage is not false.
- * Falls back to getDefaultTemplateForNewCarousel if none found.
+ * Default template for image carousels: prefers favorites that allow images, then allowImage templates.
  */
 export async function getDefaultTemplateForNewCarouselImage(userId: string): Promise<{
   templateId: string;
   isFollowCta: boolean;
 } | null> {
+  const favorites = await listFavoriteTemplatesForUser(userId);
+  const fromFav = pickFavoriteDefault(favorites, { requireAllowImage: true });
+  if (fromFav) return fromFav;
+
   const allTemplates = await listTemplatesForUser(userId, { includeSystem: true });
   const allowImage = (t: Template) => {
     const cfg = t.config as { backgroundRules?: { allowImage?: boolean } } | null;
@@ -90,17 +166,11 @@ export async function getDefaultTemplateForNewCarouselImage(userId: string): Pro
   return getDefaultTemplateForNewCarousel(userId);
 }
 
-/** Template ID to use when a slide has template_id null (e.g. export). Same order as above. */
 export async function getDefaultTemplateId(userId: string): Promise<string | null> {
   const def = await getDefaultTemplateForNewCarousel(userId);
   return def?.templateId ?? null;
 }
 
-/**
- * Default template for LinkedIn carousels: first template (user or system) with category 'linkedin'.
- * Used when carousel_for is 'linkedin' and no template is selected.
- */
-/** Preferred default LinkedIn template name when multiple exist. */
 const DEFAULT_LINKEDIN_TEMPLATE_NAME = "LinkedIn Tech";
 
 export async function getDefaultLinkedInTemplate(userId: string): Promise<{
@@ -115,37 +185,52 @@ export async function getDefaultLinkedInTemplate(userId: string): Promise<{
 }
 
 export async function countUserTemplates(userId: string): Promise<number> {
-  const supabase = await createClient();
-  const { count, error } = await supabase
-    .from("templates")
-    .select("*", { count: "exact", head: true })
-    .eq("user_id", userId);
-  if (error) return 0;
-  return count ?? 0;
+  const row = await queryOne<{ count: string }>(
+    `select count(*)::text as count from templates where user_id = $1`,
+    [userId]
+  );
+  return Number(row?.count ?? 0);
 }
 
 export async function createTemplate(
   userId: string,
   payload: TemplateInsert
 ): Promise<Template> {
-  const supabase = await createClient();
-  const row = { ...payload, user_id: userId };
-  const { data, error } = await supabase.from("templates").insert(row).select().single();
-
-  if (error) throw new Error(error.message);
-  return data as Template;
+  const row = await queryOne<Template>(
+    `insert into templates (user_id, name, category, aspect_ratio, config, is_locked)
+     values ($1, $2, $3, coalesce($4, '1:1'), $5::jsonb, coalesce($6, true))
+     returning *`,
+    [
+      userId,
+      payload.name,
+      payload.category,
+      payload.aspect_ratio ?? null,
+      JSON.stringify(payload.config),
+      payload.is_locked ?? null,
+    ]
+  );
+  if (!row) throw new Error("Failed to create template");
+  return row;
 }
 
-/** Create a system template (user_id = null), visible to all users. Admin only; use service role to bypass RLS. */
+/** Create a system template (user_id = null). Admin only. */
 export async function createSystemTemplate(
   payload: Omit<TemplateInsert, "user_id">
 ): Promise<Template> {
-  const supabase = createAdminClient();
-  const row = { ...payload, user_id: null };
-  const { data, error } = await supabase.from("templates").insert(row).select().single();
-
-  if (error) throw new Error(error.message);
-  return data as Template;
+  const row = await queryOne<Template>(
+    `insert into templates (user_id, name, category, aspect_ratio, config, is_locked)
+     values (null, $1, $2, coalesce($3, '1:1'), $4::jsonb, coalesce($5, true))
+     returning *`,
+    [
+      payload.name,
+      payload.category,
+      payload.aspect_ratio ?? null,
+      JSON.stringify(payload.config),
+      payload.is_locked ?? null,
+    ]
+  );
+  if (!row) throw new Error("Failed to create system template");
+  return row;
 }
 
 export async function updateTemplate(
@@ -153,52 +238,89 @@ export async function updateTemplate(
   templateId: string,
   payload: { name?: string; category?: string; aspect_ratio?: string; config?: unknown }
 ): Promise<{ ok: boolean; error?: string }> {
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from("templates")
-    .update({ ...payload, updated_at: new Date().toISOString() })
-    .eq("id", templateId)
-    .eq("user_id", userId);
+  try {
+    const sets: string[] = ["updated_at = now()"];
+    const params: unknown[] = [templateId, userId];
+    const add = (col: string, value: unknown, cast = "") => {
+      params.push(value);
+      sets.push(`${col} = $${params.length}${cast}`);
+    };
+    if (payload.name !== undefined) add("name", payload.name);
+    if (payload.category !== undefined) add("category", payload.category);
+    if (payload.aspect_ratio !== undefined) add("aspect_ratio", payload.aspect_ratio);
+    if (payload.config !== undefined)
+      add("config", JSON.stringify(payload.config), "::jsonb");
 
-  if (error) return { ok: false, error: error.message };
-  return { ok: true };
+    const res = await query(
+      `update templates set ${sets.join(", ")} where id = $1 and user_id = $2`,
+      params
+    );
+    if (res.rowCount === 0) return { ok: false, error: "Template not found" };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Update failed" };
+  }
 }
 
-/** Update any template by id (e.g. system template). Admin only; uses service role to bypass RLS. Can set user_id to null to promote a user template to system (available for all). */
 export async function updateTemplateAsAdmin(
   templateId: string,
-  payload: { name?: string; category?: string; aspect_ratio?: string; config?: unknown; user_id?: string | null }
+  payload: {
+    name?: string;
+    category?: string;
+    aspect_ratio?: string;
+    config?: unknown;
+    user_id?: string | null;
+  }
 ): Promise<{ ok: boolean; error?: string }> {
-  const supabase = createAdminClient();
-  const { error } = await supabase
-    .from("templates")
-    .update({ ...payload, updated_at: new Date().toISOString() })
-    .eq("id", templateId);
-  if (error) return { ok: false, error: error.message };
-  return { ok: true };
+  try {
+    const sets: string[] = ["updated_at = now()"];
+    const params: unknown[] = [templateId];
+    const add = (col: string, value: unknown, cast = "") => {
+      params.push(value);
+      sets.push(`${col} = $${params.length}${cast}`);
+    };
+    if (payload.name !== undefined) add("name", payload.name);
+    if (payload.category !== undefined) add("category", payload.category);
+    if (payload.aspect_ratio !== undefined) add("aspect_ratio", payload.aspect_ratio);
+    if (payload.config !== undefined)
+      add("config", JSON.stringify(payload.config), "::jsonb");
+    if (payload.user_id !== undefined) add("user_id", payload.user_id);
+
+    const res = await query(
+      `update templates set ${sets.join(", ")} where id = $1`,
+      params
+    );
+    if (res.rowCount === 0) return { ok: false, error: "Template not found" };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Update failed" };
+  }
 }
 
 export async function deleteTemplate(
   userId: string,
   templateId: string
 ): Promise<{ ok: boolean; error?: string }> {
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from("templates")
-    .delete()
-    .eq("id", templateId)
-    .eq("user_id", userId);
-
-  if (error) return { ok: false, error: error.message };
-  return { ok: true };
+  try {
+    const res = await query(`delete from templates where id = $1 and user_id = $2`, [
+      templateId,
+      userId,
+    ]);
+    if (res.rowCount === 0) return { ok: false, error: "Template not found" };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Delete failed" };
+  }
 }
 
-/** Delete any template by id (e.g. system template). Admin only; uses service role to bypass RLS. */
 export async function deleteTemplateAsAdmin(
   templateId: string
 ): Promise<{ ok: boolean; error?: string }> {
-  const supabase = createAdminClient();
-  const { error } = await supabase.from("templates").delete().eq("id", templateId);
-  if (error) return { ok: false, error: error.message };
-  return { ok: true };
+  try {
+    const res = await query(`delete from templates where id = $1`, [templateId]);
+    if (res.rowCount === 0) return { ok: false, error: "Template not found" };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Delete failed" };
+  }
 }

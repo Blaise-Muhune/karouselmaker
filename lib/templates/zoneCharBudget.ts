@@ -73,6 +73,66 @@ export function getTextZonesFromTemplateConfig(config: unknown): TextZoneLike[] 
   );
 }
 
+/**
+ * Text zones as the picker/AI should size copy for: merge `defaults.meta.*_zone_override`
+ * and `*_font_size` into headline/body, then clamp `maxLines` to what actually fits in the box height.
+ * Without this, sample copy / prompts can target a huge budget while the preview renders a much
+ * larger font from meta (overflow on template cards).
+ */
+export function getEffectiveTextZonesFromTemplateConfig(config: unknown): TextZoneLike[] {
+  const zones = getTextZonesFromTemplateConfig(config);
+  if (zones.length === 0 || !config || typeof config !== "object") return zones;
+
+  const defaults = (config as { defaults?: unknown }).defaults;
+  const metaRaw =
+    defaults && typeof defaults === "object" && !Array.isArray(defaults)
+      ? (defaults as { meta?: unknown }).meta
+      : undefined;
+  const meta =
+    metaRaw && typeof metaRaw === "object" && !Array.isArray(metaRaw)
+      ? (metaRaw as Record<string, unknown>)
+      : null;
+
+  const metaFontSize = (key: "headline_font_size" | "body_font_size"): number | undefined => {
+    if (!meta) return undefined;
+    const n = Number(meta[key]);
+    if (!Number.isFinite(n) || n < 8) return undefined;
+    return Math.min(280, Math.round(n));
+  };
+  const headlineFs = metaFontSize("headline_font_size");
+  const bodyFs = metaFontSize("body_font_size");
+
+  return zones.map((z) => {
+    let merged: TextZoneLike = { ...z };
+    if (meta && (z.id === "headline" || z.id === "body")) {
+      const key = z.id === "headline" ? "headline_zone_override" : "body_zone_override";
+      const raw = meta[key];
+      if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+        const o = raw as Record<string, unknown>;
+        merged = {
+          ...merged,
+          ...(Number.isFinite(Number(o.x)) ? { x: Math.round(Number(o.x)) } : {}),
+          ...(Number.isFinite(Number(o.y)) ? { y: Math.round(Number(o.y)) } : {}),
+          ...(Number.isFinite(Number(o.w)) ? { w: Math.round(Number(o.w)) } : {}),
+          ...(Number.isFinite(Number(o.h)) ? { h: Math.round(Number(o.h)) } : {}),
+          ...(Number.isFinite(Number(o.fontSize)) ? { fontSize: Math.round(Number(o.fontSize)) } : {}),
+          ...(Number.isFinite(Number(o.lineHeight)) && Number(o.lineHeight) > 0
+            ? { lineHeight: Number(o.lineHeight) }
+            : {}),
+          ...(Number.isFinite(Number(o.maxLines)) ? { maxLines: Math.round(Number(o.maxLines)) } : {}),
+        };
+      }
+      // Same as SlidePreview: flat meta font size overrides zone/override fontSize.
+      if (z.id === "headline" && headlineFs != null) merged = { ...merged, fontSize: headlineFs };
+      if (z.id === "body" && bodyFs != null) merged = { ...merged, fontSize: bodyFs };
+    }
+    return {
+      ...merged,
+      maxLines: clampMaxLinesToZoneGeometry(merged),
+    };
+  });
+}
+
 /** Matches template `textZoneSchema.maxLines` upper bound. */
 export const TEMPLATE_TEXT_ZONE_MAX_LINES = 30;
 
@@ -139,9 +199,11 @@ export type HeadlineBodyMaxChars = {
 
 /**
  * Same headline/body max math as carousel generation prompts — single source of truth.
+ * Uses effective zones (meta overrides + height-clamped maxLines) so sample copy and AI
+ * never target more lines than the saved container can hold.
  */
 export function getHeadlineBodyMaxCharsFromTemplateConfig(templateConfig: unknown): HeadlineBodyMaxChars {
-  const zones = getTextZonesFromTemplateConfig(templateConfig);
+  const zones = getEffectiveTextZonesFromTemplateConfig(templateConfig);
   if (zones.length === 0) {
     return {
       hasHeadline: true,
@@ -181,7 +243,7 @@ export function getHeadlineBodyMaxCharsFromTemplateConfig(templateConfig: unknow
         maxCharsForZone({
           w: Number(headlineZone.w) || DESIGN_WIDTH,
           fontSize: Number(headlineZone.fontSize) || 48,
-          maxLines: Number(headlineZone.maxLines) || 3,
+          maxLines: headlineVisualLines,
         })
       )
     : 0;
@@ -191,7 +253,7 @@ export function getHeadlineBodyMaxCharsFromTemplateConfig(templateConfig: unknow
         maxCharsForZone({
           w: Number(bodyZone.w) || DESIGN_WIDTH,
           fontSize: Number(bodyZone.fontSize) || 32,
-          maxLines: Number(bodyZone.maxLines) || 5,
+          maxLines: bodyVisualLines,
         })
       )
     : 0;
@@ -207,12 +269,13 @@ export function getHeadlineBodyMaxCharsFromTemplateConfig(templateConfig: unknow
 }
 
 export function maxCharsForExtraTextZone(zone: TextZoneLike): number {
+  const maxLines = clampMaxLinesToZoneGeometry(zone);
   return Math.min(
     ABSOLUTE_MAX_BODY_CHARS,
     maxCharsForZone({
       w: Number(zone.w) || DESIGN_WIDTH,
       fontSize: Number(zone.fontSize) || 28,
-      maxLines: Number(zone.maxLines) || 2,
+      maxLines,
     })
   );
 }
@@ -326,7 +389,7 @@ function sampleBodyForMax(bodyMaxChars: number, seed: number): string {
  * Extra zone sample strings scaled to each zone's char budget (template modal / thumbs).
  */
 export function getSampleExtraTextValuesForTemplatePreview(templateConfig: unknown): Record<string, string> {
-  const zones = getTextZonesFromTemplateConfig(templateConfig);
+  const zones = getEffectiveTextZonesFromTemplateConfig(templateConfig);
   const out: Record<string, string> = {};
   for (const z of zones) {
     if (!z?.id || z.id === "headline" || z.id === "body") continue;

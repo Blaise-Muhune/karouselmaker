@@ -1,8 +1,8 @@
-import { createClient } from "@/lib/supabase/server";
+import { query, queryMany, queryOne } from "./pg";
 import type { ExportRow } from "./types";
 
 /**
- * Storage path convention:
+ * Storage path convention (Supabase Storage bucket):
  * - user/{userId}/exports/{carouselId}/{exportId}/slides/01.png, 02.png, ...
  * - user/{userId}/exports/{carouselId}/{exportId}/carousel.zip
  */
@@ -10,21 +10,13 @@ export async function getExport(
   userId: string,
   exportId: string
 ): Promise<ExportRow | null> {
-  const supabase = await createClient();
-  const { data: row, error } = await supabase
-    .from("exports")
-    .select("*")
-    .eq("id", exportId)
-    .single();
-  if (error || !row) return null;
-  const { data: carousel } = await supabase
-    .from("carousels")
-    .select("id")
-    .eq("id", row.carousel_id)
-    .eq("user_id", userId)
-    .single();
-  if (!carousel) return null;
-  return row as ExportRow;
+  return queryOne<ExportRow>(
+    `select e.*
+     from exports e
+     join carousels c on c.id = e.carousel_id
+     where e.id = $1 and c.user_id = $2`,
+    [exportId, userId]
+  );
 }
 
 export function getExportStoragePaths(
@@ -36,11 +28,8 @@ export function getExportStoragePaths(
   zipPath: string;
   slidePath: (index: number) => string;
   overlayPath: (index: number) => string;
-  /** Path for materialized video background image (server-fetched external URL). */
   videoBgPath: (slideIndex: number, bgIndex: number, ext?: string) => string;
-  /** Path for video slide variant: full slide screenshot with one bg (same way as main). */
   videoSlidePath: (slideIndex: number, variantIndex: number) => string;
-  /** Prefix for listing video slide variants (e.g. user/.../exports/.../exportId/video-slides/). */
   videoSlidesPrefix: string;
 } {
   const prefix = `user/${userId}/exports/${carouselId}/${exportId}`;
@@ -59,7 +48,6 @@ export function getExportStoragePaths(
   };
 }
 
-/** Storage paths for video-only renders (no export row). Used so video generation does not depend on export. */
 export function getVideoRenderStoragePaths(
   userId: string,
   carouselId: string,
@@ -90,27 +78,20 @@ export async function createExport(
   carouselId: string,
   format: string = "png"
 ): Promise<ExportRow> {
-  const supabase = await createClient();
-  const { data: carousel } = await supabase
-    .from("carousels")
-    .select("id")
-    .eq("id", carouselId)
-    .eq("user_id", userId)
-    .single();
+  const carousel = await queryOne<{ id: string }>(
+    `select id from carousels where id = $1 and user_id = $2`,
+    [carouselId, userId]
+  );
   if (!carousel) throw new Error("Carousel not found");
 
-  const { data, error } = await supabase
-    .from("exports")
-    .insert({
-      carousel_id: carouselId,
-      format,
-      status: "pending",
-    })
-    .select()
-    .single();
-
-  if (error) throw new Error(error.message);
-  return data as ExportRow;
+  const row = await queryOne<ExportRow>(
+    `insert into exports (carousel_id, format, status)
+     values ($1, $2, 'pending')
+     returning *`,
+    [carouselId, format]
+  );
+  if (!row) throw new Error("Failed to create export");
+  return row;
 }
 
 export async function updateExport(
@@ -118,52 +99,43 @@ export async function updateExport(
   exportId: string,
   patch: { status: string; storage_path?: string | null }
 ): Promise<ExportRow> {
-  const supabase = await createClient();
-  const { data: row } = await supabase
-    .from("exports")
-    .select("carousel_id")
-    .eq("id", exportId)
-    .single();
+  const owned = await queryOne<{ id: string }>(
+    `select e.id
+     from exports e
+     join carousels c on c.id = e.carousel_id
+     where e.id = $1 and c.user_id = $2`,
+    [exportId, userId]
+  );
+  if (!owned) throw new Error("Export not found");
+
+  const row =
+    patch.storage_path !== undefined
+      ? await queryOne<ExportRow>(
+          `update exports set status = $2, storage_path = $3 where id = $1 returning *`,
+          [exportId, patch.status, patch.storage_path]
+        )
+      : await queryOne<ExportRow>(
+          `update exports set status = $2 where id = $1 returning *`,
+          [exportId, patch.status]
+        );
   if (!row) throw new Error("Export not found");
-
-  const { data: carousel } = await supabase
-    .from("carousels")
-    .select("id")
-    .eq("id", row.carousel_id)
-    .eq("user_id", userId)
-    .single();
-  if (!carousel) throw new Error("Export not found");
-
-  const { data, error } = await supabase
-    .from("exports")
-    .update(patch)
-    .eq("id", exportId)
-    .select()
-    .single();
-
-  if (error) throw new Error(error.message);
-  return data as ExportRow;
+  return row;
 }
 
 export async function countExportsThisMonth(userId: string): Promise<number> {
-  const supabase = await createClient();
   const startOfMonth = new Date();
   startOfMonth.setDate(1);
   startOfMonth.setHours(0, 0, 0, 0);
-  const { data: carousels } = await supabase
-    .from("carousels")
-    .select("id")
-    .eq("user_id", userId);
-  if (!carousels?.length) return 0;
-  const carouselIds = carousels.map((c) => c.id);
-  const { count, error } = await supabase
-    .from("exports")
-    .select("*", { count: "exact", head: true })
-    .in("carousel_id", carouselIds)
-    .eq("status", "ready")
-    .gte("created_at", startOfMonth.toISOString());
-  if (error) return 0;
-  return count ?? 0;
+  const row = await queryOne<{ count: string }>(
+    `select count(*)::text as count
+     from exports e
+     join carousels c on c.id = e.carousel_id
+     where c.user_id = $1
+       and e.status = 'ready'
+       and e.created_at >= $2`,
+    [userId, startOfMonth.toISOString()]
+  );
+  return Number(row?.count ?? 0);
 }
 
 export async function listExportsByCarousel(
@@ -171,22 +143,17 @@ export async function listExportsByCarousel(
   carouselId: string,
   limit: number = 10
 ): Promise<ExportRow[]> {
-  const supabase = await createClient();
-  const { data: carousel } = await supabase
-    .from("carousels")
-    .select("id")
-    .eq("id", carouselId)
-    .eq("user_id", userId)
-    .single();
+  const carousel = await queryOne<{ id: string }>(
+    `select id from carousels where id = $1 and user_id = $2`,
+    [carouselId, userId]
+  );
   if (!carousel) return [];
 
-  const { data, error } = await supabase
-    .from("exports")
-    .select("*")
-    .eq("carousel_id", carouselId)
-    .order("created_at", { ascending: false })
-    .limit(limit);
-
-  if (error) throw new Error(error.message);
-  return (data ?? []) as ExportRow[];
+  return queryMany<ExportRow>(
+    `select * from exports
+     where carousel_id = $1
+     order by created_at desc
+     limit $2`,
+    [carouselId, limit]
+  );
 }

@@ -169,6 +169,9 @@ function normalizeZoneOverride(
   }
   if (raw.boxBackgroundFrameOnly === true) out.boxBackgroundFrameOnly = true;
   if (raw.boxBackgroundFrameOnly === false) out.boxBackgroundFrameOnly = false;
+  if (raw.boxBackgroundFit === "text" || raw.boxBackgroundFit === "box") {
+    out.boxBackgroundFit = raw.boxBackgroundFit;
+  }
   const rawSides = raw.boxBackgroundBorderSides;
   if (rawSides != null && typeof rawSides === "object" && !Array.isArray(rawSides)) {
     const b = rawSides as Record<string, unknown>;

@@ -140,3 +140,59 @@ export async function consumeProjectTopicSuggestion(
   });
   return { ok: true, topics: nextTopics };
 }
+
+/**
+ * Ensure the project has a topic lineup. Seeds AI topics when empty (does not burn a daily refresh).
+ * Call on project create and when opening the new-post form.
+ */
+export async function ensureProjectTopicLineup(
+  projectId: string,
+  carouselFor?: "instagram" | "linkedin"
+): Promise<GetProjectTopicSuggestionsResult> {
+  const { user } = await getUser();
+  if (!user) return { ok: false, error: "You must be signed in." };
+  const project = await getProject(user.id, projectId);
+  if (!project) return { ok: false, error: "Project not found." };
+
+  const cache = parseTopicSuggestionsCache(project.topic_suggestions_cache);
+  const existing = cache.topics ?? [];
+  if (existing.length > 0) {
+    return {
+      ok: true,
+      topics: existing,
+      refreshesUsedToday: refreshesUsedToday(cache),
+      refreshesLimit: TOPIC_SUGGESTIONS_DAILY_REFRESH_LIMIT,
+      maxQueued: TOPIC_SUGGESTIONS_MAX_QUEUED,
+    };
+  }
+
+  const batch = await generateCarouselTopicBatch(projectId, { carousel_for: carouselFor });
+  if (!batch.ok) {
+    return {
+      ok: true,
+      topics: [],
+      refreshesUsedToday: refreshesUsedToday(cache),
+      refreshesLimit: TOPIC_SUGGESTIONS_DAILY_REFRESH_LIMIT,
+      maxQueued: TOPIC_SUGGESTIONS_MAX_QUEUED,
+    };
+  }
+
+  const merged = mergeTopicQueues([], batch.topics, TOPIC_SUGGESTIONS_MAX_QUEUED);
+  const next: TopicSuggestionsCacheV1 = {
+    topics: merged,
+    refresh_day: cache.refresh_day ?? utcDayKey(),
+    refresh_count: cache.refresh_count ?? 0,
+  };
+  await updateProject(user.id, projectId, {
+    topic_suggestions_cache: serializeTopicSuggestionsCache(next),
+  });
+
+  return {
+    ok: true,
+    topics: merged,
+    refreshesUsedToday: refreshesUsedToday(next),
+    refreshesLimit: TOPIC_SUGGESTIONS_DAILY_REFRESH_LIMIT,
+    maxQueued: TOPIC_SUGGESTIONS_MAX_QUEUED,
+  };
+}
+

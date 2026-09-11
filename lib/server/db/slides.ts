@@ -1,50 +1,67 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
+import { query, queryMany, queryOne } from "./pg";
 import type { Slide, SlideInsert, SlideUpdate } from "./types";
+
+async function assertCarouselOwned(userId: string, carouselId: string): Promise<boolean> {
+  const row = await queryOne<{ id: string }>(
+    `select id from carousels where id = $1 and user_id = $2`,
+    [carouselId, userId]
+  );
+  return !!row;
+}
 
 export async function replaceSlides(
   userId: string,
   carouselId: string,
   slides: SlideInsert[]
 ): Promise<Slide[]> {
-  const supabase = await createClient();
-  const carouselRes = await supabase
-    .from("carousels")
-    .select("id")
-    .eq("id", carouselId)
-    .eq("user_id", userId)
-    .single();
-
-  if (carouselRes.error || !carouselRes.data) {
-    if (carouselRes.error?.code === "PGRST116") throw new Error("Carousel not found");
-    throw new Error(carouselRes.error?.message ?? "Carousel not found");
+  if (!(await assertCarouselOwned(userId, carouselId))) {
+    throw new Error("Carousel not found");
   }
 
-  await supabase.from("slides").delete().eq("carousel_id", carouselId);
+  await query(`delete from slides where carousel_id = $1`, [carouselId]);
 
   if (slides.length === 0) {
-    await supabase
-      .from("carousels")
-      .update({ updated_at: new Date().toISOString() })
-      .eq("id", carouselId)
-      .eq("user_id", userId);
+    await query(
+      `update carousels set updated_at = now() where id = $1 and user_id = $2`,
+      [carouselId, userId]
+    );
     return [];
   }
 
-  const rows = slides.map((s) => ({ ...s, carousel_id: carouselId }));
-  const { data, error } = await supabase.from("slides").insert(rows).select();
+  const inserted: Slide[] = [];
+  for (const s of slides) {
+    const row = await queryOne<Slide>(
+      `insert into slides (
+         carousel_id, slide_index, slide_type, headline, body,
+         template_id, background, meta
+       ) values (
+         $1, $2, $3, $4, $5, $6,
+         coalesce($7::jsonb, '{}'::jsonb),
+         coalesce($8::jsonb, '{}'::jsonb)
+       )
+       returning *`,
+      [
+        carouselId,
+        s.slide_index,
+        s.slide_type,
+        s.headline,
+        s.body ?? null,
+        s.template_id ?? null,
+        JSON.stringify(s.background ?? {}),
+        JSON.stringify(s.meta ?? {}),
+      ]
+    );
+    if (row) inserted.push(row);
+  }
 
-  if (error) throw new Error(error.message);
+  await query(
+    `update carousels set updated_at = now() where id = $1 and user_id = $2`,
+    [carouselId, userId]
+  );
 
-  /** Keep project carousel list sorted by “recent” through long image pipelines (LLM done, assets still generating). */
-  await supabase
-    .from("carousels")
-    .update({ updated_at: new Date().toISOString() })
-    .eq("id", carouselId)
-    .eq("user_id", userId);
-
-  return (data ?? []) as Slide[];
+  return inserted;
 }
 
 export async function updateSlide(
@@ -52,199 +69,154 @@ export async function updateSlide(
   slideId: string,
   patch: SlideUpdate
 ): Promise<Slide> {
-  const supabase = await createClient();
-  const { data: slide } = await supabase
-    .from("slides")
-    .select("carousel_id")
-    .eq("id", slideId)
-    .single();
+  const owned = await queryOne<{ carousel_id: string }>(
+    `select s.carousel_id
+     from slides s
+     join carousels c on c.id = s.carousel_id
+     where s.id = $1 and c.user_id = $2`,
+    [slideId, userId]
+  );
+  if (!owned) throw new Error("Slide not found");
 
-  if (!slide) throw new Error("Slide not found");
+  const sets: string[] = ["updated_at = now()"];
+  const params: unknown[] = [slideId];
+  const add = (col: string, value: unknown, cast = "") => {
+    params.push(value);
+    sets.push(`${col} = $${params.length}${cast}`);
+  };
 
-  const { data: carousel } = await supabase
-    .from("carousels")
-    .select("id")
-    .eq("id", slide.carousel_id)
-    .eq("user_id", userId)
-    .single();
+  if (patch.slide_index !== undefined) add("slide_index", patch.slide_index);
+  if (patch.slide_type !== undefined) add("slide_type", patch.slide_type);
+  if (patch.headline !== undefined) add("headline", patch.headline);
+  if (patch.body !== undefined) add("body", patch.body);
+  if (patch.template_id !== undefined) add("template_id", patch.template_id);
+  if (patch.background !== undefined)
+    add("background", JSON.stringify(patch.background), "::jsonb");
+  if (patch.meta !== undefined) add("meta", JSON.stringify(patch.meta), "::jsonb");
 
-  if (!carousel) throw new Error("Slide not found");
+  const row = await queryOne<Slide>(
+    `update slides set ${sets.join(", ")} where id = $1 returning *`,
+    params
+  );
+  if (!row) throw new Error("Slide not found");
 
-  const { data, error } = await supabase
-    .from("slides")
-    .update({ ...patch, updated_at: new Date().toISOString() })
-    .eq("id", slideId)
-    .select()
-    .single();
+  await query(
+    `update carousels set updated_at = now() where id = $1 and user_id = $2`,
+    [owned.carousel_id, userId]
+  );
 
-  if (error) throw new Error(error.message);
-
-  /** Keep project dashboard “recent” order aligned with last edit, not only AI regenerate. */
-  await supabase
-    .from("carousels")
-    .update({ updated_at: new Date().toISOString() })
-    .eq("id", slide.carousel_id)
-    .eq("user_id", userId);
-
-  return data as Slide;
+  return row;
 }
 
 export async function getSlide(
   userId: string,
   slideId: string
 ): Promise<Slide | null> {
-  const supabase = await createClient();
-  const { data: slide } = await supabase
-    .from("slides")
-    .select("carousel_id")
-    .eq("id", slideId)
-    .single();
-  if (!slide) return null;
-  const { data: carousel } = await supabase
-    .from("carousels")
-    .select("id")
-    .eq("id", slide.carousel_id)
-    .eq("user_id", userId)
-    .single();
-  if (!carousel) return null;
-  const { data, error } = await supabase
-    .from("slides")
-    .select("*")
-    .eq("id", slideId)
-    .single();
-  if (error || !data) return null;
-  return data as Slide;
+  return queryOne<Slide>(
+    `select s.*
+     from slides s
+     join carousels c on c.id = s.carousel_id
+     where s.id = $1 and c.user_id = $2`,
+    [slideId, userId]
+  );
 }
 
 export async function listSlides(
   userId: string,
   carouselId: string
 ): Promise<Slide[]> {
-  const supabase = await createClient();
-  const carouselRes = await supabase
-    .from("carousels")
-    .select("id")
-    .eq("id", carouselId)
-    .eq("user_id", userId)
-    .single();
-
-  if (carouselRes.error || !carouselRes.data) {
-    if (carouselRes.error?.code === "PGRST116") return [];
-    throw new Error(carouselRes.error?.message ?? "Carousel not found");
+  if (!(await assertCarouselOwned(userId, carouselId))) {
+    return [];
   }
-
-  const { data, error } = await supabase
-    .from("slides")
-    .select("*")
-    .eq("carousel_id", carouselId)
-    .order("slide_index", { ascending: true });
-
-  if (error) throw new Error(error.message);
-  return (data ?? []) as Slide[];
+  return queryMany<Slide>(
+    `select * from slides where carousel_id = $1 order by slide_index asc`,
+    [carouselId]
+  );
 }
 
-/** Returns slide count per carousel. Only includes carousels the user owns (call with ids from listCarousels). */
+/** Returns slide count per carousel. Only includes carousels the user owns. */
 export async function getSlideCountsForCarousels(
   userId: string,
   carouselIds: string[]
 ): Promise<Record<string, number>> {
   if (carouselIds.length === 0) return {};
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("slides")
-    .select("carousel_id")
-    .in("carousel_id", carouselIds);
-
-  if (error) return {};
+  const rows = await queryMany<{ carousel_id: string; count: string }>(
+    `select s.carousel_id, count(*)::text as count
+     from slides s
+     join carousels c on c.id = s.carousel_id
+     where c.user_id = $1 and s.carousel_id = any($2::uuid[])
+     group by s.carousel_id`,
+    [userId, carouselIds]
+  );
   const countByCarousel: Record<string, number> = {};
   for (const id of carouselIds) countByCarousel[id] = 0;
-  for (const row of data ?? []) {
-    const cid = (row as { carousel_id: string }).carousel_id;
-    if (cid in countByCarousel) countByCarousel[cid] = (countByCarousel[cid] ?? 0) + 1;
+  for (const row of rows) {
+    countByCarousel[row.carousel_id] = Number(row.count);
   }
   return countByCarousel;
 }
 
-/** Returns first slide id per carousel (by slide_index). Used for list preview thumbnails. */
+/** Returns first slide id per carousel (by slide_index). */
 export async function getFirstSlideIdsForCarousels(
   userId: string,
   carouselIds: string[]
 ): Promise<Record<string, string>> {
   if (carouselIds.length === 0) return {};
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("slides")
-    .select("id, carousel_id")
-    .in("carousel_id", carouselIds)
-    .order("carousel_id", { ascending: true })
-    .order("slide_index", { ascending: true });
-
-  if (error) return {};
+  const rows = await queryMany<{ id: string; carousel_id: string }>(
+    `select distinct on (s.carousel_id) s.id, s.carousel_id
+     from slides s
+     join carousels c on c.id = s.carousel_id
+     where c.user_id = $1 and s.carousel_id = any($2::uuid[])
+     order by s.carousel_id, s.slide_index asc`,
+    [userId, carouselIds]
+  );
   const firstByCarousel: Record<string, string> = {};
-  for (const row of data ?? []) {
-    const cid = (row as { carousel_id: string }).carousel_id;
-    if (!(cid in firstByCarousel)) firstByCarousel[cid] = (row as { id: string }).id;
+  for (const row of rows) {
+    firstByCarousel[row.carousel_id] = row.id;
   }
   return firstByCarousel;
 }
 
 /** Delete one slide and re-index remaining slides (1-based, no gaps). */
 export async function deleteSlide(userId: string, slideId: string): Promise<void> {
-  const supabase = await createClient();
-  const { data: slide } = await supabase
-    .from("slides")
-    .select("id, carousel_id")
-    .eq("id", slideId)
-    .single();
-  if (!slide) throw new Error("Slide not found");
-  const { data: carousel } = await supabase
-    .from("carousels")
-    .select("id")
-    .eq("id", slide.carousel_id)
-    .eq("user_id", userId)
-    .single();
-  if (!carousel) throw new Error("Slide not found");
-  const { error: delError } = await supabase.from("slides").delete().eq("id", slideId);
-  if (delError) throw new Error(delError.message);
-  const remaining = await listSlides(userId, slide.carousel_id);
+  const owned = await queryOne<{ carousel_id: string }>(
+    `select s.carousel_id
+     from slides s
+     join carousels c on c.id = s.carousel_id
+     where s.id = $1 and c.user_id = $2`,
+    [slideId, userId]
+  );
+  if (!owned) throw new Error("Slide not found");
+
+  await query(`delete from slides where id = $1`, [slideId]);
+  const remaining = await listSlides(userId, owned.carousel_id);
   for (let i = 0; i < remaining.length; i++) {
-    await supabase
-      .from("slides")
-      .update({ slide_index: i + 1, updated_at: new Date().toISOString() })
-      .eq("id", remaining[i]!.id);
+    await query(
+      `update slides set slide_index = $1, updated_at = now() where id = $2`,
+      [i + 1, remaining[i]!.id]
+    );
   }
 }
 
-/** Append a new empty slide to the carousel. Optional defaultTemplateId (e.g. first template). */
+/** Append a new empty slide to the carousel. */
 export async function createSlide(
   userId: string,
   carouselId: string,
   defaultTemplateId?: string | null
 ): Promise<Slide> {
-  const supabase = await createClient();
-  const carouselRes = await supabase
-    .from("carousels")
-    .select("id")
-    .eq("id", carouselId)
-    .eq("user_id", userId)
-    .single();
-  if (carouselRes.error || !carouselRes.data) {
-    if (carouselRes.error?.code === "PGRST116") throw new Error("Carousel not found");
-    throw new Error(carouselRes.error?.message ?? "Carousel not found");
+  if (!(await assertCarouselOwned(userId, carouselId))) {
+    throw new Error("Carousel not found");
   }
   const existing = await listSlides(userId, carouselId);
   const nextIndex = existing.length + 1;
-  const insert: SlideInsert = {
-    carousel_id: carouselId,
-    slide_index: nextIndex,
-    slide_type: "generic",
-    headline: "",
-    body: null,
-    template_id: defaultTemplateId ?? null,
-    background: {},
-    meta: {},
-  };
-  const { data, error } = await supabase.from("slides").insert(insert).select().single();
-  if (error) throw new Error(error.message);
-  return data as Slide;
+  const row = await queryOne<Slide>(
+    `insert into slides (
+       carousel_id, slide_index, slide_type, headline, body,
+       template_id, background, meta
+     ) values ($1, $2, 'generic', '', null, $3, '{}'::jsonb, '{}'::jsonb)
+     returning *`,
+    [carouselId, nextIndex, defaultTemplateId ?? null]
+  );
+  if (!row) throw new Error("Failed to create slide");
+  return row;
 }

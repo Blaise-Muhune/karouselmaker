@@ -3,7 +3,7 @@
 import OpenAI from "openai";
 import { z } from "zod";
 import { getUser } from "@/lib/server/auth/getUser";
-import { createClient } from "@/lib/supabase/server";
+import { queryOne } from "@/lib/server/db/pg";
 import { buildHookRewritePrompt } from "@/lib/server/ai/prompts";
 import {
   contentFocusHookHint,
@@ -31,28 +31,28 @@ export async function rewriteHook(
   const { user } = await getUser();
   if (!user) return { ok: false, error: "Unauthorized" };
 
-  const supabase = await createClient();
-  const { data: slide } = await supabase
-    .from("slides")
-    .select("id, headline, carousel_id")
-    .eq("id", slideId)
-    .single();
+  const slide = await queryOne<{ id: string; headline: string; carousel_id: string }>(
+    `select id, headline, carousel_id from slides where id = $1`,
+    [slideId]
+  );
   if (!slide) return { ok: false, error: "Slide not found" };
 
-  const { data: carousel } = await supabase
-    .from("carousels")
-    .select("project_id")
-    .eq("id", slide.carousel_id)
-    .eq("user_id", user.id)
-    .single();
+  const carousel = await queryOne<{ project_id: string }>(
+    `select project_id from carousels where id = $1 and user_id = $2`,
+    [slide.carousel_id, user.id]
+  );
   if (!carousel) return { ok: false, error: "Slide not found" };
 
-  const { data: project } = await supabase
-    .from("projects")
-    .select("tone_preset, project_rules, content_focus, language")
-    .eq("id", carousel.project_id)
-    .eq("user_id", user.id)
-    .single();
+  const project = await queryOne<{
+    tone_preset: string;
+    project_rules: unknown;
+    content_focus: string | null;
+    language: string | null;
+  }>(
+    `select tone_preset, project_rules, content_focus, language
+     from projects where id = $1 and user_id = $2`,
+    [carousel.project_id, user.id]
+  );
   if (!project) return { ok: false, error: "Project not found" };
 
   const projectRulesJson = (project.project_rules as { rules?: string; do_rules?: string; dont_rules?: string }) ?? {};

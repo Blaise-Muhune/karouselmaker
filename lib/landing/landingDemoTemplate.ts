@@ -42,7 +42,7 @@ export const LANDING_DEMO_BRAND_KIT: BrandKit = {
   secondary_color: "#0f2918",
 };
 
-/** Sample copy — rendered with real template chrome (counter, swipe) like production slides. */
+/** Sample copy — organic product soft-sell arc (problem → insight → bridge). */
 export const LANDING_DEMO_SLIDES: readonly {
   headline: string;
   body: string | null;
@@ -50,33 +50,33 @@ export const LANDING_DEMO_SLIDES: readonly {
   slide_type: string;
 }[] = [
   {
-    headline: "5 habits of founders",
-    body: "Swipe for the list →",
-    slide_index: 0,
+    headline: "You posted. Then… silence.",
+    body: "Reach without a path to the offer",
+    slide_index: 1,
     slide_type: "hook",
   },
   {
-    headline: "Wake up at 5am",
-    body: "Consistency beats intensity",
-    slide_index: 1,
-    slide_type: "point",
-  },
-  {
-    headline: "Read 30 min daily",
-    body: "Compound learning wins",
+    headline: "Tips that never sell",
+    body: "Pretty content. Zero pipeline.",
     slide_index: 2,
     slide_type: "point",
   },
   {
-    headline: "Carousels get more reach",
-    body: "3× engagement vs single image",
+    headline: "Hard sells get skipped",
+    body: "Organic IG & TikTok hate ads",
     slide_index: 3,
+    slide_type: "point",
+  },
+  {
+    headline: "Lead with their problem",
+    body: "Earn the soft product bridge",
+    slide_index: 4,
     slide_type: "result",
   },
   {
-    headline: "Follow @you",
-    body: "For daily tips",
-    slide_index: 4,
+    headline: "Market through carousels",
+    body: "Niche-aware. Ready to post.",
+    slide_index: 5,
     slide_type: "cta",
   },
 ];

@@ -20,7 +20,21 @@ function formatCreditLine(a: UnsplashAttribution): string {
   return `Photo by ${a.photographerName} (https://unsplash.com/@${a.photographerUsername}?${UTM}) on Unsplash (https://unsplash.com/?${UTM})`;
 }
 
-/** Supports new (title, medium, long) and legacy (short, medium, spicy) for display. */
+function formatHashtagLine(tags: string[]): string {
+  if (tags.length === 0) return "";
+  return tags.map((h) => (h.startsWith("#") ? h : `#${h.replace(/^#/, "")}`)).join(" ");
+}
+
+/** Combine long caption + hashtags for display/copy (one clipboard paste). */
+export function combineCaptionWithHashtags(caption: string, tags: string[]): string {
+  const body = caption.trim();
+  const tagsLine = formatHashtagLine(tags);
+  if (!body) return tagsLine;
+  if (!tagsLine) return body;
+  return `${body}\n\n${tagsLine}`;
+}
+
+/** Supports new (title, medium, long) and legacy (short, spicy) for display. */
 export type CaptionVariantsDisplay = {
   title?: string;
   medium?: string;
@@ -54,10 +68,10 @@ export function EditorCaptionSection({
   captionHydrating = false,
 }: EditorCaptionSectionProps) {
   const [editOpen, setEditOpen] = useState(false);
-  const [copied, setCopied] = useState<"title" | "medium" | "long" | "hashtags" | "credits" | "linkedin" | null>(null);
+  const [copied, setCopied] = useState<"title" | "caption" | "credits" | "linkedin" | null>(null);
   const isLinkedIn = carouselFor === "linkedin";
 
-  const copyToClipboard = useCallback(async (text: string, key: "title" | "medium" | "long" | "hashtags" | "credits" | "linkedin") => {
+  const copyToClipboard = useCallback(async (text: string, key: "title" | "caption" | "credits" | "linkedin") => {
     if (!text.trim()) return;
     try {
       await navigator.clipboard.writeText(text);
@@ -69,16 +83,14 @@ export function EditorCaptionSection({
   }, []);
 
   const titleText = captionVariants.title ?? captionVariants.short ?? "";
-  const mediumText = captionVariants.medium ?? "";
-  const longText = captionVariants.long ?? captionVariants.spicy ?? "";
-  const hashtagText = hashtags.length > 0 ? hashtags.map((h) => `#${h.replace(/^#/, "")}`).join(" ") : "";
+  const longText = captionVariants.long ?? captionVariants.spicy ?? captionVariants.medium ?? "";
+  const captionWithHashtags = combineCaptionWithHashtags(longText, hashtags);
   const creditsText =
     unsplashAttributions.length > 0 ? unsplashAttributions.map(formatCreditLine).join("\n") : "";
 
   const linkedInCombined = buildLinkedInCarouselCaption({
     caption_variants: {
       title: titleText || undefined,
-      medium: mediumText || undefined,
       long: longText || undefined,
     },
     hashtags,
@@ -96,6 +108,11 @@ export function EditorCaptionSection({
           </Button>
         </div>
         <div className="mt-3 space-y-4">
+          {!isLinkedIn && (
+            <p className="text-muted-foreground text-sm rounded-md border border-border bg-muted/40 px-3 py-2">
+              Copy caption + hashtags when you post this carousel on Instagram or TikTok.
+            </p>
+          )}
           {isLinkedIn && (
             <p className="text-muted-foreground text-sm rounded-md border border-border bg-muted/40 px-3 py-2">
               <strong className="text-foreground">LinkedIn:</strong> Paste the document carousel first, then this caption. The{" "}
@@ -140,78 +157,37 @@ export function EditorCaptionSection({
               </Button>
             </div>
           )}
-          {mediumText && (
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0 flex-1">
-                <p className="text-muted-foreground text-xs">Medium caption (engagement)</p>
-                <p className="text-sm">{mediumText}</p>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-muted-foreground shrink-0 gap-1.5 h-8"
-                onClick={() => copyToClipboard(mediumText, "medium")}
-                title="Copy medium caption"
-                disabled={disabled}
-              >
-                {copied === "medium" ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
-                Copy
-              </Button>
-            </div>
-          )}
-          {longText && (
+          {captionWithHashtags && (
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0 flex-1">
                 <p className="text-muted-foreground text-xs">
-                  {isLinkedIn ? "Longer variant (optional)" : "Long caption"}
+                  {isLinkedIn ? "Caption (includes hashtags)" : "Caption"}
                 </p>
-                <p className="text-sm">{longText}</p>
+                <p className="text-sm whitespace-pre-wrap">{captionWithHashtags}</p>
               </div>
               <Button
                 variant="ghost"
                 size="sm"
                 className="text-muted-foreground shrink-0 gap-1.5 h-8"
-                onClick={() => copyToClipboard(longText, "long")}
-                title="Copy long caption"
+                onClick={() => copyToClipboard(captionWithHashtags, "caption")}
+                title="Copy caption and hashtags"
                 disabled={disabled}
               >
-                {copied === "long" ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
+                {copied === "caption" ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
                 Copy
               </Button>
             </div>
           )}
-          {!titleText && !mediumText && !longText && (
+          {!titleText && !captionWithHashtags && (
             captionHydrating ? (
               <div className="flex items-center gap-2 rounded-md border border-border/80 bg-muted/30 px-3 py-4 text-sm text-muted-foreground">
                 <span className="inline-block size-4 animate-pulse rounded-full bg-primary/40" aria-hidden />
                 Finishing captions… refresh if this stays empty.
               </div>
             ) : (
-              <p className="text-muted-foreground text-sm">No caption variants yet.</p>
+              <p className="text-muted-foreground text-sm">No caption yet.</p>
             )
           )}
-
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0 flex-1">
-              <p className="text-muted-foreground text-xs">{isLinkedIn ? "Hashtags (3–5 recommended)" : "Hashtags"}</p>
-              {hashtags.length > 0 ? (
-                <p className="text-sm wrap-break-word">{hashtagText}</p>
-              ) : (
-                <p className="text-muted-foreground text-sm">No hashtags yet.</p>
-              )}
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-muted-foreground shrink-0 gap-1.5 h-8"
-              onClick={() => copyToClipboard(hashtagText, "hashtags")}
-              disabled={disabled || !hashtagText}
-              title="Copy hashtags"
-            >
-              {copied === "hashtags" ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
-              Copy
-            </Button>
-          </div>
 
           {unsplashAttributions.length > 0 && (
             <div className="flex items-start justify-between gap-2">
@@ -265,7 +241,6 @@ export function EditorCaptionSection({
         carouselId={carouselId}
         captionVariants={{
           title: titleText || undefined,
-          medium: mediumText || undefined,
           long: longText || undefined,
         }}
         hashtags={hashtags}

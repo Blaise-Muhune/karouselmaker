@@ -35,7 +35,7 @@ import {
 } from "@/lib/server/export/fetchImageAsDataUrl";
 import type { BrandKit } from "@/lib/renderer/renderModel";
 import { slugifyForFilename } from "@/lib/utils";
-import { buildCarouselPdfFromPngPages } from "@/lib/server/export/buildCarouselPdf";
+
 import JSZip from "jszip";
 
 const BUCKET = "carousel-assets";
@@ -105,9 +105,8 @@ export async function POST(
 
   const carouselExportFormat = (carousel as { export_format?: string }).export_format ?? "png";
   const carouselExportSize = (carousel as { export_size?: string }).export_size ?? "1080x1350";
-  const exportMode = carouselExportFormat === "pdf" ? "pdf" : carouselExportFormat === "jpeg" ? "jpeg" : "png";
-  /** Raster type for screenshots. PDF exports render slides as PNG, embed in a single PDF download (no ZIP). */
-  const rasterFormat = exportMode === "pdf" ? "png" : exportMode;
+  const exportMode = carouselExportFormat === "jpeg" ? "jpeg" : "png";
+  const rasterFormat = exportMode;
   const dimensions =
     carouselExportSize === "1080x1350"
       ? { w: 1080, h: 1350 }
@@ -474,20 +473,13 @@ export async function POST(
       );
     }
     const titleBlock = (captionVariants?.title ?? captionVariants?.short)?.trim();
-    const mediumBlock = captionVariants?.medium?.trim();
-    const longBlock = (captionVariants?.long ?? captionVariants?.spicy)?.trim();
+    const longBlock = (captionVariants?.long ?? captionVariants?.spicy ?? captionVariants?.medium)?.trim();
+    const captionWithTags = [longBlock, hashtagLine].filter(Boolean).join(longBlock && hashtagLine ? "\n\n" : "");
     const captionSections: string[] = [];
     if (titleBlock) captionSections.push(`--- Title (SEO) ---\n${titleBlock}`);
-    if (mediumBlock) captionSections.push(`--- Medium caption (engagement) ---\n${mediumBlock}`);
-    if (longBlock) captionSections.push(`--- Long caption ---\n${longBlock}`);
-    if (hashtagLine) captionSections.push(hashtagLine);
+    if (captionWithTags) captionSections.push(`--- Caption ---\n${captionWithTags}`);
     captionSections.push(...creditsLines);
     const captionText = captionSections.filter(Boolean).join("\n\n");
-
-    let pdfBytes: Uint8Array | null = null;
-    if (exportMode === "pdf") {
-      pdfBytes = await buildCarouselPdfFromPngPages(slideBuffers, dimensions.w, dimensions.h);
-    }
 
     const assetSlug =
       slugifyForFilename([project.name, carousel.title].filter(Boolean).join(" - ")) || "carousel";
@@ -516,27 +508,6 @@ export async function POST(
       }
     }
     await updateExport(userId, exportId, { status: "ready", storage_path: paths.slidesDir });
-
-    if (exportMode === "pdf") {
-      if (!pdfBytes?.length) {
-        try {
-          await updateExport(userId, exportId, { status: "failed" });
-        } catch {
-          // ignore
-        }
-        return NextResponse.json({ error: "PDF export produced no pages." }, { status: 500 });
-      }
-      const pdfFilename = `${assetSlug}-linkedin-carousel.pdf`;
-      return new NextResponse(Buffer.from(pdfBytes), {
-        status: 200,
-        headers: {
-          "Content-Type": "application/pdf",
-          "Content-Disposition": `attachment; filename="${pdfFilename}"`,
-          "X-Suggested-Filename": pdfFilename,
-          "X-Export-Id": exportId,
-        },
-      });
-    }
 
     const zip = new JSZip();
     for (let i = 0; i < slideBuffers.length; i++) {

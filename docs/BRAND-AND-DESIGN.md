@@ -6,20 +6,20 @@ Use this document for promotional videos or marketing assets.
 
 ## Product Description
 
-**Karouselmaker** is an AI-powered carousel generator for content creators. Users create projects, paste a topic or URL, and the AI generates viral-style carousel slides. Templates handle layout; no design skills are needed.
+**Karouselmaker** is a marketing tool for organic Instagram & TikTok carousels that promote your product—without sounding like ads. Users create a project (niche + offer), pick a topic, and the AI drafts problem-first swipe slides. Templates handle layout; you tweak message and photos, then export.
 
-**Tagline:** *Grow faster with carousels* — Topic in, carousel out. No design skills needed—just your ideas.
+**Tagline:** *Organic Instagram & TikTok carousels that market your product—without sounding like ads.*
 
-**Value proposition:** Carousels drive 3–5× more engagement than single-image posts. Karouselmaker handles the design so creators can focus on ideas.
+**Value proposition:** Carousels grow accounts; Karouselmaker turns niche + offer into consistent organic posts that soft-sell—so reach connects to the business.
 
 ---
 
 ## User Flow (4 steps)
 
-1. **Create project** — Brand, niche, tone (e.g. "Fitness tips")
-2. **Enter topic** — Paste topic or URL (e.g. "5 habits of founders")
-3. **Slides drafted** — AI generates hook, points, CTA
-4. **Edit & export** — Tweak, reorder, export PNGs (1080×1080, 1080×1350, 1080×1920)
+1. **Create project** — Niche account + product/page to soft-sell
+2. **Pick topic** — Organic angle lined up for the project
+3. **Slides drafted** — Problem-first hook, value slides, soft product bridge
+4. **Edit & export** — Tweak copy/photo, export PNGs for Instagram & TikTok
 
 ---
 
@@ -83,30 +83,30 @@ Dark background gradient: `160deg, oklch(0.16 0.028 163) → oklch(0.14 0.02 163
 ## Key Screens / Sections
 
 1. **Landing**
-   - Hero: “Grow faster with carousels” (carousels in primary)
-   - CTA: “Get started free”, “Sign in”
-   - Hero carousel preview: scrollable mock carousel (hook, points, CTA)
-   - “How it works” 4-step cards
-   - “Features” — Projects & templates, Content drafted, Export ready
-   - Outcome: “Carousels drive 3–5× more engagement…”
-   - Final CTA: “Ready to ship your first carousel?”
+   - Hero: “Organic Instagram & TikTok carousels that market your product—without sounding like ads.”
+   - CTA: “Start marketing with carousels”, “Sign in”
+   - Hero carousel preview: organic problem → soft offer arc
+   - “How it works” — niche + offer → generate → post to IG & TikTok
+   - Features — organic product marketing, one project = one niche, swipe-ready export
+   - Final CTA: ship more organic posts
 
 2. **Carousel editor**
    - Slide grid (1080×1080 or 1080×1350 or 1080×1920)
-   - Export: PNG/ZIP + video preview (slideshow) + MP4 via FFmpeg.wasm
+   - Light edit for creators; export PNG/JPEG ZIP
 
 3. **Output**
-   - Instagram-style carousel slides
+   - Instagram & TikTok-style carousel slides
    - Export sizes: 1080×1080, 1080×1350, 1080×1920
 
 ---
 
 ## Marketing Angles for Promo Video
 
-- Creator-first, fast workflow
-- Topic/URL → AI slides in seconds
-- Locked templates, no design skills
-- Export PNGs + video preview
+- Marketing tool, not a design studio
+- Organic product soft-sell on IG & TikTok
+- Niche + offer → problem-first carousels
+- Templates locked; focus on message and photos
+- Export PNGs and post
 - Mobile-friendly (add to home screen)
 
 ---
@@ -116,4 +116,4 @@ Dark background gradient: `160deg, oklch(0.16 0.028 163) → oklch(0.14 0.02 163
 - Next.js App Router, TypeScript, Tailwind, shadcn/ui
 - Supabase (Auth, DB, Storage)
 - AI slide generation, Playwright for export
-- Image slideshow for video preview (all devices), FFmpeg.wasm for MP4 download
+- Stock / web / library images (not AI layout design)

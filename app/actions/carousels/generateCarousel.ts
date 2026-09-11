@@ -59,13 +59,16 @@ import { getContrastingTextColor } from "@/lib/editor/colorUtils";
 import { setSlideTemplate } from "@/app/actions/slides/setSlideTemplate";
 import { generateCarouselInputSchema } from "@/lib/validations/carousel";
 import {
+  CAROUSEL_SLIDES_MAX,
+  CAROUSEL_SLIDES_MIN,
   FREE_FULL_ACCESS_GENERATIONS,
   MAX_UGC_AVATAR_REFERENCE_ASSETS,
   UGC_CHARACTER_BRIEF_MAX_CHARS,
 } from "@/lib/constants";
-import { promoteCarouselGeneratedFacesToUgcAvatarAssets } from "@/lib/server/projects/promoteCarouselGeneratedFacesToUgcAvatarAssets";
 import { buildBodyRewriteVariants } from "@/lib/renderer/bodyRewriteVariants";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
+import { parseProjectRulesJson } from "@/lib/validations/project";
+import { formatPriorPostsForPrompt, loadPriorPostsForProject } from "@/lib/server/ai/priorPostsMemory";
 
 const MAX_RETRIES = 2;
 /** Max concurrent AI image generations to cut total time without hitting rate limits. */
@@ -483,20 +486,15 @@ export async function generateCarousel(formData: FormData): Promise<
   /** Web image search (Brave) — same tier as LLM web search: Pro or first N free generations. */
   const canUseWebImages = hasFullAccess;
 
-  const projectRulesJson = project.project_rules as {
-    rules?: string;
-    do_rules?: string;
-    dont_rules?: string;
-  } | undefined;
-  const projectRules =
-    (projectRulesJson?.rules?.trim() && projectRulesJson.rules) ||
-    (projectRulesJson?.do_rules || projectRulesJson?.dont_rules
-      ? [projectRulesJson?.do_rules && `Do: ${projectRulesJson.do_rules}`, projectRulesJson?.dont_rules && `Don't: ${projectRulesJson.dont_rules}`].filter(Boolean).join("\n\n")
-      : "");
+  const projectRulesParsed = parseProjectRulesJson(project.project_rules);
+  const projectRules = projectRulesParsed.rules;
   const contentFocusId = normalizeContentFocusId(project.content_focus);
   const projectRulesForImages = appendContentFocusToProjectRules(projectRules, contentFocusId);
-  /** Use only carousel-level value. If omitted (user left field empty), AI decides. Do NOT fall back to project default. */
-  const number_of_slides = data.number_of_slides ?? undefined;
+  /** Clamp to short Instagram carousels (3–7). Omit = AI decides within that range. */
+  const number_of_slides =
+    data.number_of_slides != null
+      ? Math.min(CAROUSEL_SLIDES_MAX, Math.max(CAROUSEL_SLIDES_MIN, data.number_of_slides))
+      : undefined;
 
   let carousel;
   if (data.carousel_id) {
@@ -531,26 +529,13 @@ export async function generateCarousel(formData: FormData): Promise<
   const brandKit = project.brand_kit as { watermark_text?: string; primary_color?: string; secondary_color?: string } | null;
   const creatorHandle = brandKit?.watermark_text?.trim() || undefined;
 
-  const carouselFor = (parsed.data.carousel_for === "linkedin" || parsed.data.carousel_for === "instagram")
-    ? parsed.data.carousel_for
-    : undefined;
+  let carouselFor: "instagram" | "linkedin" = "instagram";
   const useStockPhotosRaw = !!parsed.data.use_stock_photos;
-  const requestedAiGenerate = carouselFor !== "linkedin" && !!parsed.data.use_ai_generate;
+  /** AI image generation removed from product — always false. */
+  const requestedAiGenerate = false;
   const userIsAdmin = isAdmin(user.email ?? null);
   const fullProFeatures = await hasFullProFeatureAccess(user.id, user.email);
-  if (requestedAiGenerate && !userIsAdmin && !fullProFeatures) {
-    return { error: "AI-generated images are available on paid plans. Choose a plan to use this feature." };
-  }
-  if (requestedAiGenerate && !userIsAdmin && fullProFeatures) {
-    const aiGenerateCount = await countAiGenerateCarouselsThisMonth(user.id);
-    const aiCap = limits.aiGenerateCarouselsPerMonth;
-    if (aiCap > 0 && aiGenerateCount >= aiCap) {
-      return {
-        error: `You've used your ${aiCap} AI-generated image carousels this month. Limit resets next month.`,
-      };
-    }
-  }
-  let useAiGenerate = requestedAiGenerate && (fullProFeatures || userIsAdmin);
+  let useAiGenerate = false;
   const requestedUseAiBackgrounds = !!data.use_ai_backgrounds;
   const imagesRelatedToTopic = data.images_related_to_topic !== false;
   const previousGenOpts = (carousel.generation_options ?? {}) as {
@@ -569,8 +554,15 @@ export async function generateCarousel(formData: FormData): Promise<
     typeof previousGenOpts.product_service_input === "string"
       ? previousGenOpts.product_service_input.trim()
       : "";
+  const projectProductToPromote =
+    projectRulesParsed.product_brief?.trim() ||
+    projectRulesParsed.product_to_promote?.trim() ||
+    "";
   const productServiceInput =
-    submittedProductServiceInput || previousProductServiceInput || undefined;
+    submittedProductServiceInput ||
+    previousProductServiceInput ||
+    projectProductToPromote ||
+    undefined;
   if (
     data.carousel_id &&
     submittedProductRefIds.length === 0 &&
@@ -582,70 +574,17 @@ export async function generateCarousel(formData: FormData): Promise<
       `regen inherited previous product context refs=${previousProductRefIds.length} serviceInput=${previousProductServiceInput ? "yes" : "no"}`
     );
   }
-  /** UGC + Instagram/TikTok: stock and web images clash with creator-style backgrounds; require AI generate (or user turns AI images off). */
-  if (
-    contentFocusId === "ugc" &&
-    requestedUseAiBackgrounds &&
-    carouselFor !== "linkedin" &&
-    !useAiGenerate
-  ) {
-    const eligible = userIsAdmin || fullProFeatures;
-    if (!eligible) {
-      return {
-        error:
-          "This project uses creator (UGC) style. Stock and web images aren’t used for backgrounds—they read as polished stock, not a real phone feed. Turn off AI images and use your library, or use a plan (or your free trial runs) that includes AI-generated backgrounds.",
-      };
-    }
-    if (!userIsAdmin) {
-      const aiGenerateCount = await countAiGenerateCarouselsThisMonth(user.id);
-      const aiCap = limits.aiGenerateCarouselsPerMonth;
-      if (aiCap > 0 && aiGenerateCount >= aiCap) {
-        return {
-          error: `This project uses creator (UGC) style and needs AI-generated backgrounds. You’ve used your ${aiCap} AI image carousels this month. Turn off AI images to use your library, or try again next month.`,
-        };
-      }
-    }
-    useAiGenerate = true;
-  }
-  /** Product references should use image-to-image for pixel fidelity when AI backgrounds are on. */
-  if (
-    productRefIdsForRun.length > 0 &&
-    requestedUseAiBackgrounds &&
-    carouselFor !== "linkedin" &&
-    !useAiGenerate
-  ) {
-    const eligible = userIsAdmin || fullProFeatures;
-    if (!eligible) {
-      return {
-        error:
-          "Product references require AI image-to-image for accurate product rendering. Upgrade (or use available trial runs), or remove product references.",
-      };
-    }
-    if (!userIsAdmin) {
-      const aiGenerateCount = await countAiGenerateCarouselsThisMonth(user.id);
-      const aiCap = limits.aiGenerateCarouselsPerMonth;
-      if (aiCap > 0 && aiGenerateCount >= aiCap) {
-        return {
-          error: `Product references require AI image-to-image. You’ve used your ${aiCap} AI image carousels this month. Remove product references or try again next month.`,
-        };
-      }
-    }
-    useAiGenerate = true;
-  }
-  /** Free users without Web-image access who pick "Web images" are served stock instead (UI + API both clamp). LinkedIn never uses web image search. */
+  /** Free users without Web-image access who pick "Web images" are served stock instead. */
   const requestedBravePath = !useStockPhotosRaw && !useAiGenerate;
   let effectiveUseStockPhotos =
-    useStockPhotosRaw || (requestedBravePath && (!canUseWebImages || carouselFor === "linkedin"));
-  if (contentFocusId === "ugc" && requestedUseAiBackgrounds && carouselFor !== "linkedin" && useAiGenerate) {
-    effectiveUseStockPhotos = false;
-  }
+    useStockPhotosRaw || (requestedBravePath && !canUseWebImages);
   const userAskedWebSearch = !!data.use_web_search;
   const autoNewsWebSearch = hasFullAccess && looksLikeNewsOrTimeSensitive(data.input_value, data.input_type);
   const useWebSearch = hasFullAccess && (userAskedWebSearch || autoNewsWebSearch);
   const projectLanguage = (project as { language?: string }).language?.trim() || undefined;
 
-  /** Recurring character refs + brief: all content styles when this run uses AI images (not LinkedIn). */
-  const aiCharacterPipelineActive = useAiGenerate && carouselFor !== "linkedin";
+  /** Recurring character refs + brief: all content styles when this run uses AI images. */
+  const aiCharacterPipelineActive = useAiGenerate;
   const applySavedUgcCharacter =
     aiCharacterPipelineActive && parsed.data.use_saved_ugc_character !== false;
   const projectUgcAvatarIdsForCarousel = applySavedUgcCharacter
@@ -671,10 +610,7 @@ export async function generateCarousel(formData: FormData): Promise<
   }
 
   if (selectedTemplatesForPrompt.length === 0) {
-    const defaultForPrompt =
-      carouselFor === "linkedin"
-        ? await getDefaultLinkedInTemplate(user.id)
-        : await getDefaultTemplateForNewCarousel(user.id);
+    const defaultForPrompt = await getDefaultTemplateForNewCarousel(user.id);
     const defaultId = defaultForPrompt?.templateId ?? null;
     if (defaultId) {
       const fallbackTemplate = await getTemplate(user.id, defaultId);
@@ -686,6 +622,12 @@ export async function generateCarousel(formData: FormData): Promise<
     buildTemplateContextForPrompt(selectedTemplatesForPrompt[0]?.config as Json | null | undefined)?.promptSection?.trim() ??
     undefined;
 
+  const priorPosts = await loadPriorPostsForProject(user.id, data.project_id, {
+    limit: 20,
+    excludeCarouselId: carousel.id,
+  });
+  const prior_posts_block = formatPriorPostsForPrompt(priorPosts);
+
   const ctx = {
     tone_preset: project.tone_preset,
     rules: projectRules,
@@ -696,18 +638,19 @@ export async function generateCarousel(formData: FormData): Promise<
     input_value: data.input_value,
     use_ai_backgrounds: requestedUseAiBackgrounds,
     use_stock_photos: effectiveUseStockPhotos,
-    use_ai_generate: useAiGenerate,
+    use_ai_generate: false,
     use_web_search: useWebSearch,
     creator_handle: creatorHandle,
     project_niche: project.niche?.trim() || undefined,
     language: projectLanguage,
     notes: data.notes,
     images_related_to_topic: data.images_related_to_topic !== false,
-    viral_shorts_style: !!parsed.data.viral_shorts_style && userIsAdmin,
+    viral_shorts_style: false,
     carousel_for: carouselFor,
     template_context,
     product_reference_summary: productReferenceSummary,
     product_service_input: productServiceInput,
+    prior_posts_block,
   };
 
   LOG("AI", useWebSearch ? "calling LLM with web search" : "calling LLM (JSON mode)");
@@ -971,8 +914,8 @@ export async function generateCarousel(formData: FormData): Promise<
     (requestedUseAiBackgrounds && validated.slides.some(hasImageQueriesForDefault));
 
   const defaultTemplate =
-    carouselFor === "linkedin" && orderedRequestedTemplateIds.length === 0
-      ? await getDefaultLinkedInTemplate(user.id)
+    orderedRequestedTemplateIds.length === 0
+      ? await getDefaultTemplateForNewCarousel(user.id)
       : orderedRequestedTemplateIds.length === 0 && carouselWillHaveImages
         ? await getDefaultTemplateForNewCarouselImage(user.id)
         : await getDefaultTemplateForNewCarousel(user.id);
@@ -1009,7 +952,7 @@ export async function generateCarousel(formData: FormData): Promise<
     return t1 ?? null;
   };
   const totalSlideCount = validated.slides.length;
-  const isFollowCta = carouselFor !== "linkedin" && (defaultTemplate && "isFollowCta" in defaultTemplate ? defaultTemplate.isFollowCta : false);
+  const isFollowCta = defaultTemplate && "isFollowCta" in defaultTemplate ? !!defaultTemplate.isFollowCta : false;
 
   const slideRows = validated.slides.map((s, idx) => {
     const templateIdForSlide = chooseTemplateIdForSlideIndex(idx + 1, totalSlideCount);
@@ -1673,15 +1616,6 @@ export async function generateCarousel(formData: FormData): Promise<
               );
           dedupePush(usedThisRun, mergedAvatarIds, seen);
           dedupePush(mergeProjectUgcAvatarAssetIds(project), mergedAvatarIds, seen);
-          if (!hadUgcRefBuffersForRun) {
-            const promoted = await promoteCarouselGeneratedFacesToUgcAvatarAssets({
-              userId: user.id,
-              userEmail: user.email,
-              projectId: data.project_id,
-              carouselId: carousel.id,
-            });
-            if (promoted.ok) dedupePush(promoted.assetIds, mergedAvatarIds, seen);
-          }
           const before = mergeProjectUgcAvatarAssetIds(project);
           const sameOrderAndMembers =
             mergedAvatarIds.length === before.length &&

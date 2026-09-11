@@ -1,10 +1,5 @@
 import { z } from "zod";
-import {
-  PROJECT_RULES_MAX_CHARS,
-  UGC_CHARACTER_BRIEF_MAX_CHARS,
-  MAX_UGC_AVATAR_REFERENCE_ASSETS,
-} from "@/lib/constants";
-import { CONTENT_FOCUS_IDS, type ContentFocusId } from "@/lib/server/ai/projectContentFocus";
+import { PRODUCT_TO_PROMOTE_MAX_CHARS, PROJECT_RULES_MAX_CHARS } from "@/lib/constants";
 
 const tonePresetEnum = z.enum([
   "neutral",
@@ -16,10 +11,19 @@ const tonePresetEnum = z.enum([
 
 export const projectRulesSchema = z.object({
   rules: z.string().max(PROJECT_RULES_MAX_CHARS).optional().default(""),
+  /** What product/page/offer to soft-promote — URL and/or short description. */
+  product_to_promote: z.string().max(PRODUCT_TO_PROMOTE_MAX_CHARS).optional().default(""),
 });
 
+export type ParsedProjectRules = {
+  rules: string;
+  product_to_promote: string;
+  product_url: string | null;
+  product_brief: string;
+};
+
 export const slideStructureSchema = z.object({
-  number_of_slides: z.number().int().min(1).max(20).default(8),
+  number_of_slides: z.number().int().min(3).max(7).default(5),
 });
 
 const hexColor = z
@@ -37,88 +41,73 @@ export const brandKitSchema = z.object({
 
 const languageCode = z.string().min(1).max(10).default("en");
 
-export const postToPlatformsSchema = z.object({
-  facebook: z.boolean().optional().default(false),
-  tiktok: z.boolean().optional().default(false),
-  instagram: z.boolean().optional().default(false),
-  linkedin: z.boolean().optional().default(false),
-  youtube: z.boolean().optional().default(false),
-});
-
-const contentFocusEnum = z.enum(CONTENT_FOCUS_IDS as unknown as [ContentFocusId, ...ContentFocusId[]]);
-
 export const projectFormSchema = z.object({
   name: z.string().min(1, "Name is required").max(200),
   niche: z.string().max(200).optional().default(""),
-  /** UGC, product placement, etc. — steers carousel + topic AI prompts. */
-  content_focus: contentFocusEnum.default("general"),
-  /** UGC: recurring “creator” visual lock for AI images (optional; auto-filled after first run). */
-  ugc_character_brief: z.string().max(UGC_CHARACTER_BRIEF_MAX_CHARS).optional().default(""),
-  /** Recurring character: library face/body refs — same character, multiple angles (optional). */
-  ugc_character_avatar_asset_ids: z
-    .array(z.string().uuid())
-    .max(MAX_UGC_AVATAR_REFERENCE_ASSETS)
-    .optional()
-    .default([]),
   tone_preset: tonePresetEnum.default("neutral"),
   language: languageCode,
-  slide_structure: slideStructureSchema.default({ number_of_slides: 8 }),
-  project_rules: projectRulesSchema.default({ rules: "" }),
+  slide_structure: slideStructureSchema.default({ number_of_slides: 5 }),
+  project_rules: projectRulesSchema.default({ rules: "", product_to_promote: "" }),
   brand_kit: brandKitSchema.default({
     primary_color: "",
     secondary_color: "",
     watermark_text: "",
     logo_storage_path: "",
   }),
-  post_to_platforms: postToPlatformsSchema.default({
-    facebook: false,
-    tiktok: false,
-    instagram: false,
-    linkedin: false,
-    youtube: false,
-  }),
 });
 
 export type ProjectFormInput = z.output<typeof projectFormSchema>;
 
+/** Read product fields from project_rules JSON (and legacy do/dont rules for display). */
+export function parseProjectRulesJson(projectRules: unknown): ParsedProjectRules {
+  const json = projectRules as
+    | {
+        rules?: string;
+        product_to_promote?: string;
+        product_url?: string | null;
+        product_brief?: string;
+        do_rules?: string;
+        dont_rules?: string;
+      }
+    | undefined;
+  const rulesValue =
+    json?.rules?.trim() ||
+    (json?.do_rules || json?.dont_rules
+      ? [json?.do_rules && `Do: ${json.do_rules}`, json?.dont_rules && `Don't: ${json.dont_rules}`]
+          .filter(Boolean)
+          .join("\n\n")
+      : "");
+  return {
+    rules: rulesValue,
+    product_to_promote: typeof json?.product_to_promote === "string" ? json.product_to_promote : "",
+    product_url: typeof json?.product_url === "string" && json.product_url.trim() ? json.product_url.trim() : null,
+    product_brief: typeof json?.product_brief === "string" ? json.product_brief : "",
+  };
+}
+
 export function projectFormToDbPayload(
-  input: ProjectFormInput
+  input: ProjectFormInput,
+  productContext?: { product_url?: string | null; product_brief?: string }
 ): {
   name: string;
   niche: string | null;
-  content_focus: string;
-  ugc_character_brief: string | null;
-  ugc_character_avatar_asset_ids: string[] | null;
-  ugc_character_avatar_asset_id: string | null;
   tone_preset: string;
   language: string;
   project_rules: Record<string, unknown>;
   slide_structure: Record<string, unknown>;
   brand_kit: Record<string, unknown>;
   sources: Record<string, unknown>;
-  post_to_platforms: Record<string, boolean>;
 } {
-  const p = input.post_to_platforms ?? {};
-  const seen = new Set<string>();
-  const avatarIds: string[] = [];
-  for (const id of input.ugc_character_avatar_asset_ids ?? []) {
-    const t = id.trim();
-    if (!z.string().uuid().safeParse(t).success || seen.has(t)) continue;
-    seen.add(t);
-    avatarIds.push(t);
-    if (avatarIds.length >= MAX_UGC_AVATAR_REFERENCE_ASSETS) break;
-  }
   return {
     name: input.name.trim(),
     niche: input.niche?.trim() || null,
-    content_focus: input.content_focus ?? "general",
-    ugc_character_brief: input.ugc_character_brief?.trim() || null,
-    ugc_character_avatar_asset_ids: avatarIds.length > 0 ? avatarIds : null,
-    ugc_character_avatar_asset_id: avatarIds[0] ?? null,
     tone_preset: input.tone_preset,
     language: input.language ?? "en",
     project_rules: {
       rules: input.project_rules.rules ?? "",
+      product_to_promote: input.project_rules.product_to_promote ?? "",
+      product_url: productContext?.product_url ?? null,
+      product_brief: productContext?.product_brief ?? "",
     },
     slide_structure: {
       number_of_slides: input.slide_structure.number_of_slides,
@@ -130,12 +119,6 @@ export function projectFormToDbPayload(
       logo_storage_path: input.brand_kit.logo_storage_path ?? "",
     },
     sources: {},
-    post_to_platforms: {
-      facebook: !!p.facebook,
-      tiktok: !!p.tiktok,
-      instagram: !!p.instagram,
-      linkedin: !!p.linkedin,
-      youtube: !!p.youtube,
-    },
   };
 }
+

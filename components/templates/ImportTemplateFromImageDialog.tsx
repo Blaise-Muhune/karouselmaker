@@ -214,8 +214,7 @@ export function ImportTemplateFromImageDialog({
         setStep("done");
         handleOpenChange(false);
         if (!onSuccess) {
-          const q = refId ? `?refAsset=${encodeURIComponent(refId)}` : "";
-          router.push(`/templates/${result.templateId}/edit${q}`);
+          router.refresh();
         }
       } else {
         setError(result.error ?? "Failed to create template.");

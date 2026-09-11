@@ -1,6 +1,6 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
+import { query, queryMany, queryOne } from "./pg";
 import { listSlides } from "./slides";
 import type { Carousel } from "./types";
 
@@ -22,101 +22,73 @@ export async function createCarousel(
   inputValue: string,
   title: string
 ): Promise<Carousel> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("carousels")
-    .insert({
-      user_id: userId,
-      project_id: projectId,
-      title,
-      input_type: inputType,
-      input_value: inputValue,
-      status: "draft",
-      export_size: "1080x1350",
-    })
-    .select()
-    .single();
-
-  if (error) throw new Error(error.message);
-  return data as Carousel;
+  const row = await queryOne<Carousel>(
+    `insert into carousels (
+       user_id, project_id, title, input_type, input_value, status, export_size
+     ) values ($1, $2, $3, $4, $5, 'draft', '1080x1350')
+     returning *`,
+    [userId, projectId, title, inputType, inputValue]
+  );
+  if (!row) throw new Error("Failed to create carousel");
+  return row;
 }
 
 export async function getCarousel(
   userId: string,
   carouselId: string
 ): Promise<Carousel | null> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("carousels")
-    .select("*")
-    .eq("id", carouselId)
-    .eq("user_id", userId)
-    .single();
-
-  if (error) {
-    if (error.code === "PGRST116") return null;
-    throw new Error(error.message);
-  }
-  return data as Carousel;
+  return queryOne<Carousel>(
+    `select * from carousels where id = $1 and user_id = $2`,
+    [carouselId, userId]
+  );
 }
 
 export async function countCarouselsThisMonth(userId: string): Promise<number> {
-  const supabase = await createClient();
   const startOfMonth = new Date();
   startOfMonth.setDate(1);
   startOfMonth.setHours(0, 0, 0, 0);
-  const { count, error } = await supabase
-    .from("carousels")
-    .select("*", { count: "exact", head: true })
-    .eq("user_id", userId)
-    .gte("created_at", startOfMonth.toISOString());
-
-  if (error) return 0;
-  return count ?? 0;
+  const row = await queryOne<{ count: string }>(
+    `select count(*)::text as count from carousels
+     where user_id = $1 and created_at >= $2`,
+    [userId, startOfMonth.toISOString()]
+  );
+  return Number(row?.count ?? 0);
 }
 
 /** Total carousels ever created by the user (for free-tier "3 full access" trial). */
 export async function countCarouselsLifetime(userId: string): Promise<number> {
-  const supabase = await createClient();
-  const { count, error } = await supabase
-    .from("carousels")
-    .select("*", { count: "exact", head: true })
-    .eq("user_id", userId);
-
-  if (error) return 0;
-  return count ?? 0;
+  const row = await queryOne<{ count: string }>(
+    `select count(*)::text as count from carousels where user_id = $1`,
+    [userId]
+  );
+  return Number(row?.count ?? 0);
 }
 
-/** Count carousels generated with AI images (use_ai_generate) by this user in the current month. Enforced per plan via `PLAN_LIMITS.*.aiGenerateCarouselsPerMonth`. */
+/** Count carousels generated with AI images (use_ai_generate) by this user in the current month. */
 export async function countAiGenerateCarouselsThisMonth(userId: string): Promise<number> {
-  const supabase = await createClient();
   const startOfMonth = new Date();
   startOfMonth.setDate(1);
   startOfMonth.setHours(0, 0, 0, 0);
-  const { count, error } = await supabase
-    .from("carousels")
-    .select("*", { count: "exact", head: true })
-    .eq("user_id", userId)
-    .gte("created_at", startOfMonth.toISOString())
-    .contains("generation_options", { use_ai_generate: true });
-
-  if (error) return 0;
-  return count ?? 0;
+  const row = await queryOne<{ count: string }>(
+    `select count(*)::text as count from carousels
+     where user_id = $1
+       and created_at >= $2
+       and generation_options @> '{"use_ai_generate": true}'::jsonb`,
+    [userId, startOfMonth.toISOString()]
+  );
+  return Number(row?.count ?? 0);
 }
 
 export async function countCarousels(
   userId: string,
   projectId: string
 ): Promise<number> {
-  const supabase = await createClient();
-  const { count, error } = await supabase
-    .from("carousels")
-    .select("*", { count: "exact", head: true })
-    .eq("user_id", userId)
-    .eq("project_id", projectId);
-
-  if (error) return 0;
-  return count ?? 0;
+  const row = await queryOne<{ count: string }>(
+    `select count(*)::text as count from carousels
+     where user_id = $1 and project_id = $2`,
+    [userId, projectId]
+  );
+  return Number(row?.count ?? 0);
 }
 
 export async function listCarousels(
@@ -124,28 +96,26 @@ export async function listCarousels(
   projectId: string,
   options?: { limit?: number; offset?: number }
 ): Promise<Carousel[]> {
-  const supabase = await createClient();
-  let query = supabase
-    .from("carousels")
-    .select("*")
-    .eq("user_id", userId)
-    .eq("project_id", projectId)
-    /** Most recently touched first (regenerate, settings, title) so list matches “recent” expectations. */
-    .order("updated_at", { ascending: false })
-    .order("created_at", { ascending: false });
-
   if (options?.limit != null) {
     const offset = options.offset ?? 0;
-    query = query.range(offset, offset + options.limit - 1);
+    return queryMany<Carousel>(
+      `select * from carousels
+       where user_id = $1 and project_id = $2
+       order by updated_at desc, created_at desc
+       limit $3 offset $4`,
+      [userId, projectId, options.limit, offset]
+    );
   }
-
-  const { data, error } = await query;
-  if (error) throw new Error(error.message);
-  return (data ?? []) as Carousel[];
+  return queryMany<Carousel>(
+    `select * from carousels
+     where user_id = $1 and project_id = $2
+     order by updated_at desc, created_at desc`,
+    [userId, projectId]
+  );
 }
 
 /**
- * Deep copy: new carousel row + cloned slides (new IDs). Strips in-flight generation flags from stored options.
+ * Deep copy: new carousel row + cloned slides (new IDs). Strips in-flight generation flags.
  * Does not copy exports.
  */
 export async function cloneCarousel(
@@ -166,91 +136,88 @@ export async function cloneCarousel(
   delete goRaw.generation_error_recovery;
 
   const status =
-    source.status === "generating" ? "draft" : source.status === "generated" ? "generated" : source.status;
+    source.status === "generating"
+      ? "draft"
+      : source.status === "generated"
+        ? "generated"
+        : source.status;
 
-  const supabase = await createClient();
-  /** Base row only: older DBs may not have `include_first_slide` / `include_last_slide` (migration 020). */
-  const insertRow = {
-    user_id: userId,
-    project_id: projectId,
-    title: duplicateCarouselTitle(source.title),
-    input_type: source.input_type,
-    input_value: source.input_value,
-    status,
-    caption_variants: source.caption_variants ?? {},
-    hashtags: source.hashtags ?? [],
-    export_format: source.export_format ?? "png",
-    export_size: source.export_size ?? "1080x1350",
-    is_favorite: false,
-    generation_options: goRaw,
-  };
-
-  const { data: newCarousel, error: cErr } = await supabase
-    .from("carousels")
-    .insert(insertRow)
-    .select()
-    .single();
-
-  if (cErr || !newCarousel) {
-    throw new Error(cErr?.message ?? "Failed to duplicate carousel");
-  }
-
-  const newId = (newCarousel as Carousel).id;
-
-  const copyIncludeFirst = source.include_first_slide ?? true;
-  const copyIncludeLast = source.include_last_slide ?? true;
-  /** Skip when defaults match: avoids UPDATE on DBs missing migration 020 (PostgREST schema cache error). */
-  if (copyIncludeFirst !== true || copyIncludeLast !== true) {
-    const { error: scopeErr } = await supabase
-      .from("carousels")
-      .update({
-        include_first_slide: copyIncludeFirst,
-        include_last_slide: copyIncludeLast,
-      })
-      .eq("id", newId)
-      .eq("user_id", userId);
-    if (scopeErr && /include_first_slide|include_last_slide|schema cache/i.test(scopeErr.message)) {
-      // Database without these columns; duplicate row is still valid (apply-scope not persisted).
-    } else if (scopeErr) {
-      await supabase.from("carousels").delete().eq("id", newId).eq("user_id", userId);
-      throw new Error(scopeErr.message);
-    }
-  }
+  const newCarousel = await queryOne<Carousel>(
+    `insert into carousels (
+       user_id, project_id, title, input_type, input_value, status,
+       caption_variants, hashtags, export_format, export_size, is_favorite,
+       include_first_slide, include_last_slide, generation_options
+     ) values (
+       $1, $2, $3, $4, $5, $6,
+       coalesce($7::jsonb, '{}'::jsonb), coalesce($8, '{}'::text[]),
+       coalesce($9, 'png'), coalesce($10, '1080x1350'), false,
+       coalesce($11, true), coalesce($12, true), coalesce($13::jsonb, '{}'::jsonb)
+     )
+     returning *`,
+    [
+      userId,
+      projectId,
+      duplicateCarouselTitle(source.title),
+      source.input_type,
+      source.input_value,
+      status,
+      JSON.stringify(source.caption_variants ?? {}),
+      source.hashtags ?? [],
+      source.export_format ?? "png",
+      source.export_size ?? "1080x1350",
+      source.include_first_slide ?? true,
+      source.include_last_slide ?? true,
+      JSON.stringify(goRaw),
+    ]
+  );
+  if (!newCarousel) throw new Error("Failed to duplicate carousel");
 
   if (slides.length > 0) {
-    const rows = slides.map((s) => ({
-      carousel_id: newId,
-      slide_index: s.slide_index,
-      slide_type: s.slide_type,
-      headline: s.headline,
-      body: s.body,
-      template_id: s.template_id,
-      background: s.background,
-      meta: s.meta,
-    }));
-    const { error: sErr } = await supabase.from("slides").insert(rows);
-    if (sErr) {
-      await supabase.from("carousels").delete().eq("id", newId).eq("user_id", userId);
-      throw new Error(sErr.message);
+    try {
+      for (const s of slides) {
+        await query(
+          `insert into slides (
+             carousel_id, slide_index, slide_type, headline, body,
+             template_id, background, meta
+           ) values ($1, $2, $3, $4, $5, $6, coalesce($7::jsonb, '{}'::jsonb), coalesce($8::jsonb, '{}'::jsonb))`,
+          [
+            newCarousel.id,
+            s.slide_index,
+            s.slide_type,
+            s.headline,
+            s.body,
+            s.template_id,
+            JSON.stringify(s.background ?? {}),
+            JSON.stringify(s.meta ?? {}),
+          ]
+        );
+      }
+    } catch (e) {
+      await query(`delete from carousels where id = $1 and user_id = $2`, [
+        newCarousel.id,
+        userId,
+      ]);
+      throw e instanceof Error ? e : new Error("Failed to duplicate slides");
     }
   }
 
-  return newCarousel as Carousel;
+  return newCarousel;
 }
 
 export async function deleteCarousel(
   userId: string,
   carouselId: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from("carousels")
-    .delete()
-    .eq("id", carouselId)
-    .eq("user_id", userId);
-
-  if (error) return { ok: false, error: error.message };
-  return { ok: true };
+  try {
+    const res = await query(`delete from carousels where id = $1 and user_id = $2`, [
+      carouselId,
+      userId,
+    ]);
+    if (res.rowCount === 0) return { ok: false, error: "Carousel not found" };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Delete failed" };
+  }
 }
 
 export async function updateCarousel(
@@ -268,23 +235,37 @@ export async function updateCarousel(
     is_favorite?: boolean;
     include_first_slide?: boolean;
     include_last_slide?: boolean;
-    /** Stored options; when status is "generating" may also include generation_started, number_of_slides, notes, template_id, etc. */
     generation_options?: Record<string, unknown>;
   }
 ): Promise<Carousel> {
-  const supabase = await createClient();
-  const updates: Record<string, unknown> = {
-    ...patch,
-    updated_at: new Date().toISOString(),
+  const sets: string[] = ["updated_at = now()"];
+  const params: unknown[] = [carouselId, userId];
+  const add = (col: string, value: unknown, cast = "") => {
+    params.push(value);
+    sets.push(`${col} = $${params.length}${cast}`);
   };
-  const { data, error } = await supabase
-    .from("carousels")
-    .update(updates)
-    .eq("id", carouselId)
-    .eq("user_id", userId)
-    .select()
-    .single();
 
-  if (error) throw new Error(error.message);
-  return data as Carousel;
+  if (patch.title !== undefined) add("title", patch.title);
+  if (patch.input_type !== undefined) add("input_type", patch.input_type);
+  if (patch.input_value !== undefined) add("input_value", patch.input_value);
+  if (patch.status !== undefined) add("status", patch.status);
+  if (patch.caption_variants !== undefined)
+    add("caption_variants", JSON.stringify(patch.caption_variants), "::jsonb");
+  if (patch.hashtags !== undefined) add("hashtags", patch.hashtags);
+  if (patch.export_format !== undefined) add("export_format", patch.export_format);
+  if (patch.export_size !== undefined) add("export_size", patch.export_size);
+  if (patch.is_favorite !== undefined) add("is_favorite", patch.is_favorite);
+  if (patch.include_first_slide !== undefined)
+    add("include_first_slide", patch.include_first_slide);
+  if (patch.include_last_slide !== undefined)
+    add("include_last_slide", patch.include_last_slide);
+  if (patch.generation_options !== undefined)
+    add("generation_options", JSON.stringify(patch.generation_options), "::jsonb");
+
+  const row = await queryOne<Carousel>(
+    `update carousels set ${sets.join(", ")} where id = $1 and user_id = $2 returning *`,
+    params
+  );
+  if (!row) throw new Error("Carousel not found");
+  return row;
 }

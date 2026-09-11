@@ -3,6 +3,7 @@ import type { ChromeChipStyle } from "@/lib/renderer/chromeChipStyle";
 import { chromeChipStyleHasAny, extractChromeChipStyle } from "@/lib/renderer/chromeChipStyle";
 import type { TemplateConfig, TextZone } from "@/lib/server/renderer/templateSchema";
 import { fitTextToZone } from "./fitText";
+import { clampMaxLinesToZoneGeometry } from "@/lib/templates/zoneCharBudget";
 import { injectHighlightMarkers, stripHighlightMarkers, clampHighlightSpansToText, type HighlightSpan } from "@/lib/editor/inlineFormat";
 import { formatHandleAttribution } from "./attributionText";
 
@@ -207,6 +208,9 @@ export function normalizeZoneOverrideSingle(
   }
   if (raw.boxBackgroundFrameOnly === true) out.boxBackgroundFrameOnly = true;
   if (raw.boxBackgroundFrameOnly === false) out.boxBackgroundFrameOnly = false;
+  if (raw.boxBackgroundFit === "text" || raw.boxBackgroundFit === "box") {
+    out.boxBackgroundFit = raw.boxBackgroundFit;
+  }
   const rawSides = raw.boxBackgroundBorderSides;
   if (rawSides != null && typeof rawSides === "object" && !Array.isArray(rawSides)) {
     const b = rawSides as Record<string, unknown>;
@@ -294,6 +298,11 @@ export type ChromeOverrides = {
  */
 export type BuildSlideRenderModelOptions = {
   zoneOverridesForWrap?: TextZoneOverrides | null;
+  /**
+   * When true, wrap using the zone's geometry-clamped maxLines (template picker thumbs).
+   * Default false: high cap so the editor can show overflow past the box.
+   */
+  respectZoneMaxLines?: boolean;
 };
 
 export function buildSlideRenderModel(
@@ -344,8 +353,13 @@ export function buildSlideRenderModel(
       textScale != null && textScale !== 1
         ? { ...mergedZoneForWrap, fontSize: Math.round(mergedZoneForWrap.fontSize * textScale) }
         : mergedZoneForWrap;
-    /** Same high cap everywhere (editor, carousel, export) so line breaks and overflow match. */
-    const lines = fitTextToZone(text, zoneForWrap, { maxLinesOverride: 200 });
+    /** Editor: high cap so overflow past the box is visible. Template thumbs: clamp to zone capacity. */
+    const lines = options?.respectZoneMaxLines
+      ? fitTextToZone(text, {
+          ...zoneForWrap,
+          maxLines: clampMaxLinesToZoneGeometry(zoneForWrap),
+        })
+      : fitTextToZone(text, zoneForWrap, { maxLinesOverride: 200 });
     textBlocks.push({ zone: mergedZone, lines });
   }
 
@@ -418,7 +432,11 @@ export function buildSlideRenderModel(
     },
     textBlocks,
     chrome: {
-      showSwipe: chromeOverrides?.showSwipe ?? templateConfig.chrome.showSwipe,
+      // Last slide: never show swipe (nothing to swipe to). Preview + export share this rule.
+      showSwipe:
+        totalSlides > 0 && slideIndex >= totalSlides
+          ? false
+          : (chromeOverrides?.showSwipe ?? templateConfig.chrome.showSwipe),
       swipeType: chromeOverrides?.swipeType ?? templateConfig.chrome.swipeType ?? "text",
       swipeIconUrl: templateConfig.chrome.swipeIconUrl,
       swipeText: chromeOverrides?.swipeText ?? templateConfig.chrome.swipeText,

@@ -42,7 +42,7 @@ function LoginForm() {
         <div className="space-y-2 text-center lg:text-left">
           <h1 className="text-2xl font-semibold">Log in</h1>
           <p className="text-muted-foreground text-sm">
-            Sign in to your Karouselmaker account.
+            Sign in to ship organic Instagram & TikTok carousels.
           </p>
         </div>
         <Form {...form}>

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getUser } from "@/lib/server/auth/getUser";
 import { requirePro } from "@/lib/server/subscription";
-import { createClient } from "@/lib/supabase/server";
+import { query, queryOne } from "@/lib/server/db/pg";
 
 export type ReorderSlidesResult = { ok: true } | { ok: false; error: string };
 
@@ -18,24 +18,24 @@ export async function reorderSlides(
   const proCheck = await requirePro(user.id, user.email);
   if (!proCheck.allowed) return { ok: false, error: proCheck.error ?? "Upgrade to Pro" };
 
-  const supabase = await createClient();
-  const { data: carousel } = await supabase
-    .from("carousels")
-    .select("id")
-    .eq("id", carouselId)
-    .eq("user_id", user.id)
-    .single();
+  const carousel = await queryOne<{ id: string }>(
+    `select id from carousels where id = $1 and user_id = $2`,
+    [carouselId, user.id]
+  );
   if (!carousel) return { ok: false, error: "Carousel not found" };
 
   if (orderedSlideIds.length === 0) return { ok: true };
 
-  for (let i = 0; i < orderedSlideIds.length; i++) {
-    const { error } = await supabase
-      .from("slides")
-      .update({ slide_index: i + 1, updated_at: new Date().toISOString() })
-      .eq("id", orderedSlideIds[i])
-      .eq("carousel_id", carouselId);
-    if (error) return { ok: false, error: error.message };
+  try {
+    for (let i = 0; i < orderedSlideIds.length; i++) {
+      await query(
+        `update slides set slide_index = $1, updated_at = now()
+         where id = $2 and carousel_id = $3`,
+        [i + 1, orderedSlideIds[i], carouselId]
+      );
+    }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Reorder failed" };
   }
 
   if (revalidatePathname) revalidatePath(revalidatePathname);

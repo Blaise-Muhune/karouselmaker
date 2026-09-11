@@ -5,13 +5,10 @@ import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { createProject } from "@/app/actions/projects/createProject";
-import { BackgroundImagesPickerModal } from "@/components/carousels/BackgroundImagesPickerModal";
-import { MAX_UGC_AVATAR_REFERENCE_ASSETS } from "@/lib/constants";
-import { UgcProjectCharacterSection } from "@/components/projects/UgcProjectCharacterSection";
+import { PRODUCT_TO_PROMOTE_MAX_CHARS, PROJECT_RULES_MAX_CHARS } from "@/lib/constants";
 import { Button } from "@/components/ui/button";
 import { ColorPicker } from "@/components/ui/color-picker";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Form,
@@ -28,13 +25,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  projectFormSchema,
-  type ProjectFormInput,
-} from "@/lib/validations/project";
-import { CONTENT_FOCUS_OPTIONS } from "@/lib/server/ai/projectContentFocus";
+import { projectFormSchema, type ProjectFormInput } from "@/lib/validations/project";
 import { cn } from "@/lib/utils";
-import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, Loader2Icon, Settings2Icon } from "lucide-react";
+import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, Settings2Icon } from "lucide-react";
 
 const TONE_OPTIONS = [
   { value: "neutral", label: "Neutral" },
@@ -60,40 +53,24 @@ const LANGUAGE_OPTIONS = [
   { value: "ko", label: "Korean" },
 ] as const;
 
-export function NewProjectForm({
-  isAdmin = false,
-  maxUgcAvatarReferenceAssets = MAX_UGC_AVATAR_REFERENCE_ASSETS,
-}: {
-  isAdmin?: boolean;
-  maxUgcAvatarReferenceAssets?: number;
-}) {
+export function NewProjectForm() {
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [ugcAvatarPickerOpen, setUgcAvatarPickerOpen] = useState(false);
 
   const form = useForm<ProjectFormInput>({
     resolver: zodResolver(projectFormSchema) as Resolver<ProjectFormInput>,
     defaultValues: {
       name: "",
       niche: "",
-      content_focus: "general",
-      ugc_character_brief: "",
-      ugc_character_avatar_asset_ids: [],
       tone_preset: "neutral",
       language: "en",
-      slide_structure: { number_of_slides: 8 },
-      project_rules: { rules: "" },
+      slide_structure: { number_of_slides: 5 },
+      project_rules: { rules: "", product_to_promote: "" },
       brand_kit: {
         primary_color: "",
         secondary_color: "",
         watermark_text: "",
-      },
-      post_to_platforms: {
-        facebook: false,
-        tiktok: false,
-        instagram: false,
-        linkedin: false,
-        youtube: false,
+        logo_storage_path: "",
       },
     },
   });
@@ -104,24 +81,14 @@ export function NewProjectForm({
     const fd = new FormData();
     fd.set("name", data.name);
     fd.set("niche", data.niche ?? "");
-    fd.set("content_focus", data.content_focus ?? "general");
-    fd.set("ugc_character_brief", data.ugc_character_brief ?? "");
-    fd.set("ugc_character_avatar_asset_ids", JSON.stringify(data.ugc_character_avatar_asset_ids ?? []));
     fd.set("tone_preset", data.tone_preset);
     fd.set("language", data.language ?? "en");
-    fd.set("number_of_slides", "8");
+    fd.set("number_of_slides", "5");
     fd.set("rules", data.project_rules.rules ?? "");
+    fd.set("product_to_promote", data.project_rules.product_to_promote ?? "");
     fd.set("primary_color", data.brand_kit.primary_color ?? "");
     fd.set("secondary_color", data.brand_kit.secondary_color ?? "");
     fd.set("watermark_text", data.brand_kit.watermark_text ?? "");
-    if (isAdmin) {
-      const pt = data.post_to_platforms ?? {};
-      if (pt.facebook) fd.set("post_facebook", "true");
-      if (pt.tiktok) fd.set("post_tiktok", "true");
-      if (pt.instagram) fd.set("post_instagram", "true");
-      if (pt.linkedin) fd.set("post_linkedin", "true");
-      if (pt.youtube) fd.set("post_youtube", "true");
-    }
     if (logoFile && logoFile instanceof File && logoFile.size > 0) {
       fd.set("logo", logoFile);
     }
@@ -143,11 +110,10 @@ export function NewProjectForm({
         return;
       }
       console.error(err);
-      const msg =
-        err instanceof Error && (err.message.includes("fetch") || err.message.includes("network"))
-          ? "Network error while creating the project. Try again."
-          : "Failed to create project. Try again.";
-      form.setError("root", { type: "server", message: msg });
+      form.setError("root", {
+        type: "server",
+        message: "Failed to create project. Try again.",
+      });
     }
   }
 
@@ -164,7 +130,7 @@ export function NewProjectForm({
           <div>
             <h1 className="text-xl font-semibold tracking-tight">New project</h1>
             <p className="text-muted-foreground text-sm mt-0.5">
-              Your project is where your carousels live—one place per niche or brand. Set content style and recurring character below; open Advanced for language, tone, rules, and brand kit.
+              One project = one niche account. Set the offer you soft-sell in organic Instagram & TikTok carousels.
             </p>
           </div>
         </div>
@@ -178,7 +144,7 @@ export function NewProjectForm({
                 <FormItem>
                   <FormLabel>Name</FormLabel>
                   <FormControl>
-                    <Input placeholder="My Carousel Project" {...field} />
+                    <Input placeholder="My brand account" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -189,54 +155,42 @@ export function NewProjectForm({
               name="niche"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Niche (optional)</FormLabel>
+                  <FormLabel>Niche</FormLabel>
                   <FormControl>
-                    <Input placeholder="e.g. Marketing, Fitness" {...field} />
+                    <Input placeholder="e.g. Fitness coaching, SaaS productivity" {...field} />
                   </FormControl>
+                  <p className="text-muted-foreground text-xs">What this Instagram/TikTok account posts about.</p>
                   <FormMessage />
                 </FormItem>
               )}
             />
-
-            <div className="space-y-6">
-              <FormField
-                control={form.control}
-                name="content_focus"
-                render={({ field }) => (
+            <FormField
+              control={form.control}
+              name="project_rules.product_to_promote"
+              render={({ field }) => {
+                const len = (field.value ?? "").length;
+                return (
                   <FormItem>
-                    <FormLabel>Content style</FormLabel>
-                    <p className="text-muted-foreground text-xs mb-2">Tunes copy + topic ideas for the whole deck.</p>
-                    <div className="flex flex-col gap-2">
-                      {CONTENT_FOCUS_OPTIONS.map((opt) => {
-                        const selected = field.value === opt.id;
-                        return (
-                          <button
-                            key={opt.id}
-                            type="button"
-                            onClick={() => field.onChange(opt.id)}
-                            className={cn(
-                              "rounded-lg border px-3 py-2.5 text-left text-sm transition-colors",
-                              selected
-                                ? "border-primary bg-primary/5 ring-1 ring-primary"
-                                : "border-border/60 bg-background hover:bg-muted/40"
-                            )}
-                          >
-                            <span className="font-medium">{opt.label}</span>
-                            <span className="text-muted-foreground mt-0.5 block text-xs leading-snug">{opt.description}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
+                    <FormLabel>Product or page to promote</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        placeholder="Paste your product/SaaS URL, or type what you sell — e.g. https://yourapp.com or “Notion-style planner for freelancers”"
+                        className="min-h-20"
+                        maxLength={PRODUCT_TO_PROMOTE_MAX_CHARS}
+                        {...field}
+                      />
+                    </FormControl>
+                    <p className="text-muted-foreground text-xs">
+                      Link or short description. Carousels stay problem-first and soft-sell this offer—never hard ads. If you paste a URL, we read the page and build a product brief.
+                    </p>
+                    <p className={cn("text-xs tabular-nums text-muted-foreground", len >= PRODUCT_TO_PROMOTE_MAX_CHARS && "text-destructive")}>
+                      {len}/{PRODUCT_TO_PROMOTE_MAX_CHARS}
+                    </p>
                     <FormMessage />
                   </FormItem>
-                )}
-              />
-              <UgcProjectCharacterSection
-                control={form.control}
-                maxAvatarAssets={maxUgcAvatarReferenceAssets}
-                onOpenAvatarPicker={() => setUgcAvatarPickerOpen(true)}
-              />
-            </div>
+                );
+              }}
+            />
 
             <div className="space-y-3">
               <Button
@@ -252,193 +206,143 @@ export function NewProjectForm({
               </Button>
               {showAdvanced && (
                 <div className="space-y-6 rounded-lg border border-border/60 bg-muted/20 p-4">
-            <FormField
-              control={form.control}
-              name="language"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Language</FormLabel>
-                  <Select
-                    onValueChange={field.onChange}
-                    defaultValue={field.value}
-                    value={field.value}
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select language" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {LANGUAGE_OPTIONS.map((o) => (
-                        <SelectItem key={o.value} value={o.value}>
-                          {o.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-muted-foreground text-xs">All carousels in this project will be generated in this language.</p>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="tone_preset"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Tone</FormLabel>
-                  <Select
-                    onValueChange={field.onChange}
-                    defaultValue={field.value}
-                    value={field.value}
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select tone" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {TONE_OPTIONS.map((o) => (
-                        <SelectItem key={o.value} value={o.value}>
-                          {o.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <div className="space-y-2">
-              <Label>Rules or context (optional)</Label>
-              <p className="text-muted-foreground text-xs">
-                How you want carousel text written, how AI-generated images should look, tone, banned words, etc. Applied to all carousels in this project.
-              </p>
-              <FormField
-                control={form.control}
-                name="project_rules.rules"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormControl>
-                      <Textarea
-                        placeholder="e.g. Use short sentences. No jargon. For images: natural lighting, no text in images..."
-                        className="min-h-24"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-            {isAdmin && (
-              <div className="space-y-2">
-                <Label>Post to (optional)</Label>
-                <p className="text-muted-foreground text-xs">
-                  Choose platforms you plan to post this project&apos;s content to. Shown on each carousel for quick access. YouTube is video-only; others support video and carousel.
-                </p>
-                <div className="flex flex-wrap gap-4 pt-1">
-                  {[
-                    { key: "facebook" as const, label: "Facebook" },
-                    { key: "tiktok" as const, label: "TikTok" },
-                    { key: "instagram" as const, label: "Instagram" },
-                    { key: "linkedin" as const, label: "LinkedIn" },
-                    { key: "youtube" as const, label: "YouTube (video only)" },
-                  ].map(({ key, label }) => (
-                    <label key={key} className="flex items-center gap-2 cursor-pointer">
+                  <FormField
+                    control={form.control}
+                    name="language"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Language</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select language" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {LANGUAGE_OPTIONS.map((o) => (
+                              <SelectItem key={o.value} value={o.value}>
+                                {o.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="tone_preset"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Tone</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select tone" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {TONE_OPTIONS.map((o) => (
+                              <SelectItem key={o.value} value={o.value}>
+                                {o.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="project_rules.rules"
+                    render={({ field }) => {
+                      const len = (field.value ?? "").length;
+                      return (
+                        <FormItem>
+                          <FormLabel>Rules or voice (optional)</FormLabel>
+                          <FormControl>
+                            <Textarea
+                              placeholder="e.g. Short sentences. Problem-first tips OK; soft product mention only on the last slide."
+                              className="min-h-24"
+                              maxLength={PROJECT_RULES_MAX_CHARS}
+                              {...field}
+                            />
+                          </FormControl>
+                          <p className="text-xs tabular-nums text-muted-foreground">
+                            {len}/{PROJECT_RULES_MAX_CHARS}
+                          </p>
+                          <FormMessage />
+                        </FormItem>
+                      );
+                    }}
+                  />
+                  <div className="space-y-2">
+                    <FormLabel>Brand kit (optional)</FormLabel>
+                    <div className="grid gap-4 sm:grid-cols-2">
                       <FormField
                         control={form.control}
-                        name={`post_to_platforms.${key}`}
+                        name="brand_kit.primary_color"
                         render={({ field }) => (
-                          <input
-                            type="checkbox"
-                            checked={!!field.value}
-                            onChange={(e) => field.onChange(e.target.checked)}
-                            className="rounded border-input"
-                          />
+                          <FormItem>
+                            <FormLabel className="text-muted-foreground text-xs">Primary color</FormLabel>
+                            <FormControl>
+                              <ColorPicker
+                                value={field.value ?? ""}
+                                onChange={field.onChange}
+                                placeholder="#000000"
+                                onExtractFromLogo={(primary, secondary) => {
+                                  form.setValue("brand_kit.primary_color", primary);
+                                  form.setValue("brand_kit.secondary_color", secondary);
+                                }}
+                                onLogoUpload={async (file) => {
+                                  setLogoFile(file);
+                                  return null;
+                                }}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
                         )}
                       />
-                      <span className="text-sm">{label}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            )}
-            <div className="space-y-2">
-              <Label>Brand kit (optional)</Label>
-              <p className="text-muted-foreground text-xs">
-                Set your core colors, or use the image button once to pull both colors from your logo.
-              </p>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <FormField
-                  control={form.control}
-                  name="brand_kit.primary_color"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-muted-foreground text-xs">Primary color</FormLabel>
-                      <FormControl>
-                        <ColorPicker
-                          value={field.value ?? ""}
-                          onChange={field.onChange}
-                          placeholder="#000000"
-                          onExtractFromLogo={(primary, secondary) => {
-                            form.setValue("brand_kit.primary_color", primary);
-                            form.setValue("brand_kit.secondary_color", secondary);
-                          }}
-                          onLogoUpload={async (file) => {
-                            setLogoFile(file);
-                            return null;
-                          }}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="brand_kit.secondary_color"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-muted-foreground text-xs">Secondary color</FormLabel>
-                      <FormControl>
-                        <ColorPicker
-                          value={field.value ?? ""}
-                          onChange={field.onChange}
-                          placeholder="#666666"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="brand_kit.watermark_text"
-                  render={({ field }) => (
-                    <FormItem className="sm:col-span-2">
-                      <FormLabel className="text-muted-foreground text-xs">Watermark text</FormLabel>
-                      <FormControl>
-                        <Input placeholder="@handle" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-            </div>
+                      <FormField
+                        control={form.control}
+                        name="brand_kit.secondary_color"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-muted-foreground text-xs">Secondary color</FormLabel>
+                            <FormControl>
+                              <ColorPicker value={field.value ?? ""} onChange={field.onChange} placeholder="#666666" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="brand_kit.watermark_text"
+                        render={({ field }) => (
+                          <FormItem className="sm:col-span-2">
+                            <FormLabel className="text-muted-foreground text-xs">Handle / watermark</FormLabel>
+                            <FormControl>
+                              <Input placeholder="@handle" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
+
             {form.formState.errors.root && (
               <p className="text-destructive text-sm">{form.formState.errors.root.message}</p>
             )}
             <div className="flex gap-4">
-              <Button
-                type="submit"
-                disabled={form.formState.isSubmitting}
-                loading={form.formState.isSubmitting}
-              >
+              <Button type="submit" disabled={form.formState.isSubmitting} loading={form.formState.isSubmitting}>
                 {form.formState.isSubmitting ? "Creating…" : "Create project"}
               </Button>
               <Button type="button" variant="outline" asChild>
@@ -447,21 +351,6 @@ export function NewProjectForm({
             </div>
           </form>
         </Form>
-        <BackgroundImagesPickerModal
-          open={ugcAvatarPickerOpen}
-          onOpenChange={setUgcAvatarPickerOpen}
-          selectedIds={form.watch("ugc_character_avatar_asset_ids") ?? []}
-          onConfirm={(ids) =>
-            form.setValue(
-              "ugc_character_avatar_asset_ids",
-              ids.slice(0, maxUgcAvatarReferenceAssets)
-            )
-          }
-          maxSelection={maxUgcAvatarReferenceAssets}
-          allowEmptyConfirm
-          dialogTitle="Face & body references"
-          dialogDescription={`Same character only — up to ${maxUgcAvatarReferenceAssets} library photos (angles, distances, expressions). Used for AI-generated backgrounds when “Same character from project” is on (Instagram / TikTok).`}
-        />
       </div>
     </div>
   );

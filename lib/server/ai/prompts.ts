@@ -1,3 +1,5 @@
+import { buildOrganicProductCarouselStrategyBlock } from "@/lib/server/ai/organicProductCarouselStrategy";
+
 /** ISO 639-1 code to display name for prompt instructions. */
 const LANGUAGE_NAMES: Record<string, string> = {
   en: "English",
@@ -19,7 +21,7 @@ type PromptContext = {
   tone_preset: string;
   /** Project rules/context: how to write carousel text, how to generate images, etc. */
   rules: string;
-  /** If set, generate exactly this many slides (user choice). If undefined, use minimum slides needed; max is always 12. */
+  /** If set, generate exactly this many slides (user choice). If undefined, prefer 5–7; max is always 7. */
   number_of_slides: number | undefined;
   input_type: "topic" | "url" | "text";
   input_value: string;
@@ -58,6 +60,8 @@ type PromptContext = {
   product_reference_summary?: string;
   /** Optional user-typed product/service name or link for CTA and copy intent. */
   product_service_input?: string;
+  /** Recent posts from this project — avoid repeating angles. */
+  prior_posts_block?: string;
 };
 
 export function buildCarouselPrompts(ctx: PromptContext): {
@@ -69,22 +73,29 @@ export function buildCarouselPrompts(ctx: PromptContext): {
   );
   const imagesRelatedToTopic = ctx.images_related_to_topic !== false;
 
-  const system = `You are a carousel script writer. You output Pubity-style slide scripts: short, bold, readable in under 2 seconds per slide.
-Output STRICT JSON only. No markdown, no code fences, no explanation.
+  const organicStrategyBlock = buildOrganicProductCarouselStrategyBlock({
+    productBrief: ctx.product_service_input,
+    projectNiche: ctx.project_niche,
+    tonePreset: ctx.tone_preset,
+  });
+
+  const system = `You are a carousel script writer for Instagram/TikTok photo-mode carousels: short, bold slides readable in under 2 seconds each.
+${hasProductContext || ctx.carousel_for === "instagram" ? `${organicStrategyBlock}\n\n` : ""}Output STRICT JSON only. No markdown, no code fences, no explanation.
 
 RULE PRIORITY (when instructions conflict, apply in this order—higher wins):
 1) User "OVERRIDE" notes in the user message (if any)
-2) **Product / service lock** (when this prompt’s CRITICAL block includes PRODUCT STORY ARC and/or the user message has an ATTACHED PRODUCT section): the deck is **not** a generic topic carousel—copy and image_queries must weave the offering through multiple slides, but **sell the desire/outcome first** (relief, confidence, status, calm, belonging, “future self”), not a brochure of features. Last slide should **close on the feeling or outcome**, then invite a **soft next step** (bio, DM, try when you’re ready)—not a cold “buy now” headline. This beats generic Instagram “follow/subscribe headline only” and beats Viral Shorts “last slide follow/subscribe only” when they would erase the offering—combine **outcome-led headline** with optional follow in body or second line.
-3) Viral Shorts style section (only when Viral Shorts is enabled)—except product lock above for last-slide headline when product/service is provided
-4) Platform section: LinkedIn vs Instagram (only the block that matches carousel_for)—except product lock above for last-slide headline when product/service is provided
-5) Project rules / context (below in this prompt, when present)
-6) All other rules below
+2) **ORGANIC PRODUCT CAROUSEL STRATEGY** (when present above) — problem-first, soft product bridge, slides-only
+3) **Product / service lock** (when this prompt’s CRITICAL block includes PRODUCT STORY ARC and/or the user message has an ATTACHED PRODUCT section): the deck is **not** a generic topic carousel—copy and image_queries must weave the offering through multiple slides, but **sell the desire/outcome first** (relief, confidence, status, calm, belonging, “future self”), not a brochure of features. Last slide should **close on the feeling or outcome**, then invite a **soft next step** (bio, DM, try when you’re ready)—not a cold “buy now” headline. This beats generic Instagram “follow/subscribe headline only” and beats Viral Shorts “last slide follow/subscribe only” when they would erase the offering—combine **outcome-led headline** with optional follow in body or second line.
+4) Viral Shorts style section (only when Viral Shorts is enabled)—except product lock above for last-slide headline when product/service is provided
+5) Platform section: LinkedIn vs Instagram (only the block that matches carousel_for)—except product lock above for last-slide headline when product/service is provided
+6) Project rules / context (below in this prompt, when present)
+7) All other rules below
 When use_ai_backgrounds is on (stock, web search, or AI generate): image_queries and visual intent must respect the same order—per-carousel OVERRIDE notes beat project rules and default “topic-related image” rules for mood, style, art direction, or whether images must relate to the topic; project rules beat generic defaults.
 
 CRITICAL (every response must satisfy—these are non-negotiable):
 - Output STRICT JSON only, matching the schema at the end of this prompt—no markdown fences, no commentary.
 - Be accurate: do not invent facts, stats, names, or quotes; use web search when available for verifiable claims.
-- slide_index 1 = hook; top-level "title" must equal slide 1 headline (except when Viral Shorts style explicitly overrides). Maximum 12 slides.
+- slide_index 1 = hook; top-level "title" must equal slide 1 headline (except when Viral Shorts style explicitly overrides). Maximum 7 slides.
 - No URLs, links, or domain citations in headline or body.
 - Include top-level similar_ideas: exactly 5–6 strings (follow-up carousel topics)—see SIMILAR IDEAS rule below.
 ${ctx.product_reference_summary?.trim()
@@ -290,12 +301,10 @@ LinkedIn shape reminder: when carousel_for is linkedin, last slide headline = co
 
   const slideCountInstruction =
     ctx.number_of_slides != null
-      ? `Generate a carousel with exactly ${ctx.number_of_slides} slides (max 12).`
-      : ctx.carousel_for === "linkedin"
-        ? `Generate a carousel with 8–10 slides (max 12) for LinkedIn document carousels unless the topic is too narrow—then use the minimum needed, never fewer than justified. Structure: hook → pain/problem → value slides (steps, framework, insights, mistakes) → takeaway/summary → CTA. ALWAYS start with a hook (slide 1). Only use a ranked list (hook, then least to best) when the input clearly asks for one.`
-        : `Generate a carousel with the minimum number of slides needed to deliver the content well. Maximum 12 slides. Prefer 5–8 slides for most topics; use more only when the topic clearly requires it (e.g. "top 10", many steps). ALWAYS start with a hook slide (slide 1). Only use a ranked list (hook, then least to best) when the input clearly asks for one. Otherwise expand in the best format—explanation, breakdown, steps, story, or key points—without forcing "top N" or extra slides.`;
+      ? `Generate a carousel with exactly ${ctx.number_of_slides} slides (max 7).`
+      : `Generate a short Instagram carousel with 5–7 slides (max 7). Prefer 5–6 for focused tips; use 7 only when the topic needs it. ALWAYS start with a hook slide (slide 1). Middle slides: niche tips, educational points, or related value. Last slide: soft CTA toward the product/page to promote (when provided) and/or follow handle—not a hard sell every slide.`;
   const ignoreInputSlideCount =
-    " CRITICAL: The number of slides is set only by the product (the instruction above). Ignore any request in the user's input/topic for a specific number of slides (e.g. \"15 slides\", \"20 slides\", \"make 10\"). If the input mentions a number of slides above 12, ignore it. Use only the slide count from the instruction above; maximum is always 12.";
+    " CRITICAL: The number of slides is set only by the product (the instruction above). Ignore any request in the user's input/topic for a specific number of slides above 7. Use only the slide count from the instruction above; maximum is always 7.";
 
   const creatorHandleNote = ctx.creator_handle?.trim()
     ? `\nCreator handle for CTA slide (use exactly in last slide headline; make the CTA innovative and conversion-focused): ${ctx.creator_handle.trim()}`
@@ -331,8 +340,8 @@ When OVERRIDE says images can be **unrelated**, atmospheric, aesthetic-only, or 
   const instagramUserNote =
     ctx.carousel_for === "instagram"
       ? hasProductContext
-        ? " Instagram: 7–10 slides ideal; stop-the-scroll hook; when a product/service is in play, last slide = **desire/outcome headline** + soft product invite in body (see PRODUCT STORY ARC), not follow-only."
-        : " Instagram: 7–10 slides ideal; stop-the-scroll hook; last slide = follow/subscribe per system."
+        ? " Instagram organic marketing: 5–7 slides; stop-the-scroll hook; middle slides = tips/value; last slide = desire/outcome + soft product invite (bio/try), not hard sell."
+        : " Instagram organic marketing: 5–7 slides; stop-the-scroll hook; middle slides = tips/value; last slide = soft follow CTA."
       : "";
 
   const ugcProductCtaUserNote =
@@ -375,7 +384,7 @@ Input value:
 ${ctx.input_value}
 If the topic is vague or ambiguous, assume a reasonable interpretation and deliver a full carousel with real content (examples, a clear take, or a ranked list).${ctx.viral_shorts_style ? " Viral Shorts: the single mid-carousel engagement slide may ask for a response; every other slide must deliver content." : " Do NOT output slides that ask the reader to \"pick\", \"decide\", or \"choose\" anything—give the answer (unless READER-DIRECTED CHALLENGES in the system prompt applies)."} Keep information accurate: no invented facts; use web search when needed. Reader-directed topics (e.g. "Build the best XI"): provide options/candidates per system rules—no meta "how to read" slide; consistent options per slide; minimal body on 3+ option slides.
 ${urlNote}${creatorHandleNote}${projectNicheNote}${notesSection}${imagesRelatedSettingNote}${productRefSection}
-
+${ctx.prior_posts_block?.trim() ? `\n${ctx.prior_posts_block.trim()}\n` : ""}
 ${ctx.use_ai_backgrounds ? (ctx.use_ai_generate
   ? `CRITICAL: Every slide MUST have image_queries. AI image prompts must describe images that are scroll-stopping and on-topic—visually intriguing, not generic stock.${aiGenerateImageQueryUserExtra} AVOID generic stock clichés: no person from behind at window/sunset, no hands writing in notebook with coffee mug, no silhouette against sunrise, no generic 'person looking at city skyline', no steaming coffee by window alone. Let each slide's lighting and mood follow the scene and copy naturally; do not paste one lighting recipe on every slide. Vary compositions. NOT search terms like '4k' or '3000x2000'.`
   : ctx.use_stock_photos

@@ -336,6 +336,9 @@ function sanitizeTextZoneBackdropChrome(zr: Record<string, unknown>) {
     if (!Number.isFinite(n)) delete zr.boxBackgroundBorderRadius;
     else zr.boxBackgroundBorderRadius = Math.min(64, Math.max(0, Math.round(n)));
   }
+  if (zr.boxBackgroundFit !== undefined && zr.boxBackgroundFit !== "box" && zr.boxBackgroundFit !== "text") {
+    delete zr.boxBackgroundFit;
+  }
 }
 
 const OVERLAY_SHAPE_NUMERIC_KEYS = new Set([

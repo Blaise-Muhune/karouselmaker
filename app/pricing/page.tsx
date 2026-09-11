@@ -12,11 +12,11 @@ import { FREE_FULL_ACCESS_GENERATIONS } from "@/lib/constants";
 export const metadata: Metadata = {
   title: "Pricing",
   description:
-    "Karouselmaker plans: Free, Starter, Pro, and Studio. AI carousels, exports, custom templates, and higher limits as you grow. Monthly pricing in USD.",
+    "Karouselmaker plans for organic Instagram & TikTok carousel marketing. Free, Starter, Pro, and Studio—same workflow, higher limits as you post more. Monthly pricing in USD.",
   openGraph: {
     title: "Pricing | Karouselmaker",
     description:
-      "Free, Starter, Pro, and Studio — same features, higher limits. AI carousels, exports, and templates for creators.",
+      "Free, Starter, Pro, and Studio — organic IG & TikTok carousel marketing. Same workflow, higher posting limits.",
   },
 };
 
@@ -35,14 +35,14 @@ export default async function PricingPage() {
           limits follow the free tier until you subscribe.
         </p>
         <div className="rounded-xl sm:rounded-2xl border border-border/50 bg-muted/5 p-6 sm:p-8 text-center max-w-xl w-full transition-colors hover:border-primary/30">
-          <h3 className="font-semibold text-foreground text-base sm:text-lg mb-1">Ready to start?</h3>
+          <h3 className="font-semibold text-foreground text-base sm:text-lg mb-1">Ready to market with carousels?</h3>
           <p className="text-muted-foreground text-xs sm:text-sm mb-4 sm:mb-5 max-w-md mx-auto">
-            Create a free account, generate your first carousel, and upgrade when you need higher limits.
+            Create a free account, ship your first organic Instagram or TikTok carousel, and upgrade when you need more volume.
           </p>
           <Button size="lg" className="w-full sm:w-auto gap-2" asChild>
             <Link href="/signup">
               <ArrowRight className="size-4 sm:size-5" />
-              Get started free
+              Start marketing free
             </Link>
           </Button>
         </div>

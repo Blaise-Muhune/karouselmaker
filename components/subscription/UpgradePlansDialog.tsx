@@ -56,7 +56,7 @@ export function UpgradePlansDialog({ open: controlledOpen, onOpenChange, trigger
         <DialogHeader>
           <DialogTitle>Choose a plan</DialogTitle>
           <DialogDescription>
-            Free is available by default. Starter, Pro, and Studio unlock higher limits. Cancel anytime in billing.
+            Same organic Instagram & TikTok marketing workflow on every plan—higher carousel and export limits as you post more. Cancel anytime in billing.
           </DialogDescription>
         </DialogHeader>
         <div className="rounded-lg border border-border/60 bg-muted/10 px-3 py-2 text-xs text-muted-foreground">

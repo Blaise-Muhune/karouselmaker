@@ -34,6 +34,10 @@ yarn-error.log*
 .env*
 !.env.example
 
+# Azure local secrets (never commit)
+.azure-pg-secret.local.json
+.azure-*.local.json
+
 # vercel
 .vercel
 

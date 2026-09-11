@@ -3,7 +3,7 @@ export { buildLinkedInCarouselCaption } from "@/lib/caption/linkedinPostCaption"
 /**
  * Build a single caption/message string from carousel caption_variants and hashtags
  * for use when posting to Facebook, Instagram, etc.
- * Prefers title (SEO), then medium (engagement), then long. Legacy: short/spicy. Appends hashtags.
+ * Prefers long caption, then medium, then title. Legacy: spicy/short. Appends hashtags.
  */
 export function getCaptionAndHashtagsForPost(carousel: {
   caption_variants?: unknown;
@@ -18,11 +18,11 @@ export function getCaptionAndHashtagsForPost(carousel: {
   };
   const hashtags = Array.isArray(carousel.hashtags) ? carousel.hashtags : [];
   const captionBody = (
-    variants.title ??
-    variants.medium ??
     variants.long ??
-    variants.short ??
     variants.spicy ??
+    variants.medium ??
+    variants.title ??
+    variants.short ??
     ""
   ).trim();
   const hashtagLine =

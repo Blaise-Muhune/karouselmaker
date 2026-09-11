@@ -22,24 +22,24 @@ const siteUrl =
     : "https://karouselmaker.com";
 
 const metaDescription =
-  "Karouselmaker is an AI carousel maker for Instagram and LinkedIn. Create swipe carousels from a topic or URL: AI generates slides, you pick templates and export. Supports Instagram carousel templates, LinkedIn carousel posts, and import template from image.";
+  "Karouselmaker is a marketing tool for organic Instagram and TikTok carousels—problem-first swipe content that soft-sells your product. Niche + offer in, export-ready carousels out.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: "Karouselmaker — AI Carousel Maker for Instagram & LinkedIn",
+    default: "Karouselmaker — Organic Instagram & TikTok carousel marketing",
     template: "%s | Karouselmaker",
   },
   description: metaDescription,
   keywords: [
-    "AI carousel maker",
+    "organic Instagram marketing",
+    "TikTok carousel marketing",
     "Instagram carousel maker",
-    "LinkedIn carousel",
-    "instagram carousel template",
-    "linkedin post generator",
-    "carousel post maker",
-    "swipe carousel",
-    "carousel template",
+    "product marketing carousel",
+    "organic social media content",
+    "swipe carousel posts",
+    "Instagram TikTok carousels",
+    "niche product marketing",
   ],
   icons: {
     icon: "/logo.png",
@@ -50,12 +50,12 @@ export const metadata: Metadata = {
     locale: "en_US",
     url: siteUrl,
     siteName: "Karouselmaker",
-    title: "Karouselmaker — AI Carousel Maker for Instagram & LinkedIn",
+    title: "Karouselmaker — Organic Instagram & TikTok carousel marketing",
     description: metaDescription,
   },
   twitter: {
     card: "summary_large_image",
-    title: "Karouselmaker — AI Carousel Maker for Instagram & LinkedIn",
+    title: "Karouselmaker — Organic Instagram & TikTok carousel marketing",
     description: metaDescription,
   },
   appleWebApp: {
@@ -84,14 +84,14 @@ function StructuredDataScript() {
         name: "Karouselmaker",
         description: metaDescription,
         url: siteUrl,
-        applicationCategory: "MultimediaApplication",
+        applicationCategory: "BusinessApplication",
         offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
         featureList: [
-          "AI carousel generation from topic or URL",
-          "Instagram carousel templates",
-          "LinkedIn carousel posts",
-          "Import template from image",
-          "Export as images or video",
+          "Organic Instagram and TikTok carousel marketing",
+          "Problem-first product soft-sell content",
+          "Project niche and offer context",
+          "Swipe-ready slide generation",
+          "Export PNG/JPEG ZIP and captions",
         ],
       },
     ],

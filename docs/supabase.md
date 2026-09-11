@@ -1,37 +1,27 @@
 # Supabase setup
 
-Required env, schema, RLS, and storage for the carousel creator app.
+Supabase provides **Auth** and **Storage**. App tables live on **Azure PostgreSQL** — see [Azure Postgres](azure-postgres.md).
 
 ## Required environment variables
 
 | Variable | Description | Where used |
 |----------|-------------|------------|
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL | Browser + server |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Anonymous (public) key; RLS applies | Browser + server |
-| `SUPABASE_SERVICE_ROLE_KEY` | Service role key; bypasses RLS | Server-only (admin/background jobs) |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Anonymous (public) key | Browser + server |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service role key (Auth admin / Storage) | Server-only |
+| `DATABASE_URL` | Azure Postgres connection string | Server DB helpers |
 
-Copy `.env.example` to `.env.local` and set values from the Supabase dashboard. Never expose the service role key to the client.
+Copy `.env.example` to `.env.local` and set values. Never expose the service role key or `DATABASE_URL` to the client.
 
 ## Tables overview
 
-| Table | Purpose |
-|------|---------|
-| **profiles** | One row per auth user; display name, etc. |
-| **projects** | User projects: niche, tone, voice rules, slide structure, brand kit. |
-| **templates** | Layout templates (user or system). Category, aspect ratio, config, locked flag. |
-| **carousels** | One carousel run per project: title, input type/value, status (draft \| generated \| exported). |
-| **slides** | Slides in a carousel: index, type, headline, body, template, background, meta. |
-| **exports** | Export jobs: format (png \| zip), status (pending \| ready \| failed), storage path. |
+App tables (`profiles`, `projects`, `templates`, `carousels`, `slides`, `exports`, `assets`, …) are on Azure. Schema: `azure/schema/001_init.sql`. Server helpers in `lib/server/db/*` use `pg` and always scope by the authenticated `user.id`.
 
-Relations: `profiles.user_id` → auth.users. `projects.user_id` → auth.users. `templates.user_id` → auth.users (nullable for system). `carousels` → projects + user. `slides` → carousels + optional template. `exports` → carousels.
+## Authorization
 
-## RLS principles
-
-- **RLS is enabled** on every app table. No row is visible or writable unless a policy allows it.
-- **User-owned tables** (profiles, projects, carousels): policies allow SELECT/INSERT/UPDATE/DELETE only when `user_id = auth.uid()`.
-- **Templates**: SELECT allowed for own rows or `user_id IS NULL` (system templates). INSERT/UPDATE/DELETE only when `user_id = auth.uid()`.
-- **Child tables** (slides, exports): access only if the parent carousel belongs to the current user. Implemented with `EXISTS (SELECT 1 FROM carousels c WHERE c.id = slides.carousel_id AND c.user_id = auth.uid())`.
-- **Defense in depth**: server-side DB helpers always scope by `userId` (from the authenticated session) and rely on RLS as the primary enforcement.
+- **Supabase Auth** issues the session.
+- **Server layer** enforces ownership (`user_id = getUser().id` or joins through owned carousels).
+- Azure has no RLS; do not access the database from the client.
 
 ## Storage bucket: carousel-assets
 

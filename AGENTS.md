@@ -1,17 +1,22 @@
 # Carousel Creator Agent Instructions
 
-This app generates viral-style carousel slides using AI and locked templates.
+Karouselmaker is a **marketing tool** for organic Instagram & TikTok carousels that promote a product—without sounding like ads.
 
 Main flow:
-User → Project → Input topic/link → AI generates slides → templates render → export.
+User → Project (niche + product context) → Topic → AI generates 3–7 problem-first slides → system templates render → PNG/JPEG ZIP export.
+
+Image sources: stock photos, Brave web search, library upload / Google Drive.
 
 Priorities:
 1. Speed
 2. Simplicity
-3. Creator workflow
+3. Creator marketing workflow
 4. Export quality
+5. Preview/export parity
 
 Avoid:
+- Design-studio / Canva-clone framing
 - Complex editors
-- Over-automation
+- Video / TTS / social posting
+- AI image generation
 - AI designing layouts

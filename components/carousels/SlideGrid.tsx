@@ -71,7 +71,10 @@ function getPreviewDimensions(exportSize: string): { w: number; h: number; conte
   return { w: containerW, h: containerH, contentW: 1080, contentH: dims.h, scale, translateX, translateY };
 }
 
-export type TemplateWithConfig = Template & { parsedConfig: TemplateConfig };
+export type TemplateWithConfig = Template & {
+  parsedConfig: TemplateConfig;
+  isFavorite?: boolean;
+};
 
 type SlideGridProps = {
   slides: Slide[];
@@ -594,7 +597,9 @@ export function SlideGrid({
     parsedConfig: t.parsedConfig,
     category: t.category ?? undefined,
     isSystemTemplate: t.user_id == null,
+    isFavorite: t.isFavorite === true,
   }));
+  const favoriteRevalidatePath = `/p/${projectId}/c/${carouselId}`;
 
   useEffect(() => {
     const missing = slidesOrder.filter(
@@ -1346,6 +1351,7 @@ export function SlideGrid({
                   previewImageUrls={previewImageUrlsForBulk}
                   isAdmin={isAdmin}
                   isPro={isPro}
+                  favoriteRevalidatePath={favoriteRevalidatePath}
                   onTemplateDeleted={() => {
                     router.refresh();
                   }}
@@ -1417,6 +1423,7 @@ export function SlideGrid({
                   previewImageUrls={previewImageUrlsForModal}
                   isAdmin={isAdmin}
                   isPro={isPro}
+                  favoriteRevalidatePath={favoriteRevalidatePath}
                   onTemplateDeleted={() => {
                     setTemplateModalSlideId(null);
                     router.refresh();

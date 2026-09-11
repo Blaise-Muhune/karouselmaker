@@ -17,47 +17,44 @@ export const PAID_TIER_CARDS: {
     id: "starter",
     name: "Starter",
     priceDisplay: STARTER_PRICE_DISPLAY,
-    blurb: "Solo creators getting consistent on carousels.",
+    blurb: "Solo marketers getting consistent on IG & TikTok.",
     highlights: [
       "25 carousels / month",
       "40 exports / month",
       "40 library images",
-      "10 AI-image carousels / month",
-      "4 custom templates",
+      "Web image search",
     ],
   },
   {
     id: "pro",
     name: "Pro",
     priceDisplay: PRO_PRICE_DISPLAY,
-    blurb: "Most popular — weekly posting + heavier AI use.",
+    blurb: "Most popular — weekly organic posting + heavier use.",
     highlights: [
       "50 carousels / month",
       "100 exports / month",
       "100 library images",
-      "25 AI-image carousels / month",
-      "10 custom templates",
+      "Web image search",
     ],
   },
   {
     id: "studio",
     name: "Studio",
     priceDisplay: STUDIO_PRICE_DISPLAY,
-    blurb: "High volume and max AI-image allowance (solo).",
+    blurb: "High-volume organic product marketing (solo).",
     highlights: [
       "100 carousels / month",
       "200 exports / month",
       "200 library images",
-      "50 AI-image carousels / month",
-      "20 custom templates",
+      "Web image search",
     ],
   },
 ];
 
 /**
- * Free users get this many carousels (lifetime count) with the same product access as Pro:
- * AI backgrounds, web search, AI image generate (within monthly cap), templates, export, editor, and paid-tier quotas.
- * Admin-only features stay admin-only. After this count, plan reverts to free limits and feature gates.
+ * Free users get this many carousels (lifetime count) with Pro-like feature access:
+ * web image search, templates, export, editor, and paid-tier quotas.
+ * After this count, plan reverts to free limits and feature gates.
  */
 export const FREE_FULL_ACCESS_GENERATIONS = 3;
 
@@ -75,10 +72,16 @@ export const CAROUSEL_INPUT_MAX_CHARS = 20000;
 export const SLIDE_AI_REGEN_INSTRUCTION_MAX_CHARS = 500;
 /** Max chars for project rules textarea (must match `projectFormSchema`). */
 export const PROJECT_RULES_MAX_CHARS = 8000;
-/** UGC project: saved recurring character / visual lock for AI images (must match `projectFormSchema`). */
+/** Max chars for product/page to promote (stored in project_rules JSON). */
+export const PRODUCT_TO_PROMOTE_MAX_CHARS = 2000;
+/** @deprecated Kept for plan limit shape; AI image gen removed from product. */
 export const UGC_CHARACTER_BRIEF_MAX_CHARS = 1200;
-/** UGC face/body library refs merged in one vision call (angles of same person) — schema ceiling. */
+/** @deprecated Kept for plan limit shape; UGC removed from product. */
 export const MAX_UGC_AVATAR_REFERENCE_ASSETS = 5;
+/** Short Instagram carousels: min/max slides per post. */
+export const CAROUSEL_SLIDES_MIN = 3;
+export const CAROUSEL_SLIDES_MAX = 7;
+export const CAROUSEL_SLIDES_DEFAULT = 5;
 
 /** Tester accounts: high limits for internal QA. */
 export const TESTER_EMAILS: string[] = ["muyumba@andrews.edu", "prudencemange@gmail.com"];

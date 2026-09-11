@@ -522,7 +522,10 @@ const SECTION_INFO: Record<string, { title: string; body: string }> = {
   },
 };
 
-export type TemplateWithConfig = Template & { parsedConfig: TemplateConfig };
+export type TemplateWithConfig = Template & {
+  parsedConfig: TemplateConfig;
+  isFavorite?: boolean;
+};
 
 const EXPORT_SIZE_LABELS: Record<ExportSize, string> = {
   "1080x1080": "1:1",
@@ -742,6 +745,8 @@ export function SlideEditForm({
   isAdmin = false,
   allowRegenerateAiBackground = false,
 }: SlideEditFormProps) {
+  /** Full template-maker controls. Creators get a minimal text + background editor. */
+  const showAdvancedEditor = isAdmin;
   const router = useRouter();
   const pathname = usePathname();
   const downloadSlug =
@@ -1045,6 +1050,7 @@ export function SlideEditForm({
     boxBackgroundBorderColor?: string;
     boxBackgroundBorderOpacity?: number;
     boxBackgroundBorderRadius?: number;
+    boxBackgroundFit?: "box" | "text";
   };
   const normalizeExtraTextZone = useCallback((raw: unknown): ExtraTextZone | null => {
     if (!raw || typeof raw !== "object") return null;
@@ -1108,6 +1114,9 @@ export function SlideEditForm({
         : {}),
       ...(Number.isFinite(Number(z.boxBackgroundBorderRadius))
         ? { boxBackgroundBorderRadius: Math.max(0, Math.min(64, Math.round(Number(z.boxBackgroundBorderRadius)))) }
+        : {}),
+      ...(z.boxBackgroundFit === "text" || z.boxBackgroundFit === "box"
+        ? { boxBackgroundFit: z.boxBackgroundFit as "box" | "text" }
         : {}),
     };
   }, []);
@@ -1223,6 +1232,7 @@ export function SlideEditForm({
     boxBackgroundBorderColor?: string;
     boxBackgroundBorderOpacity?: number;
     boxBackgroundBorderRadius?: number;
+    boxBackgroundFit?: "box" | "text";
   };
   /** Max lines that fit in zone height (fontSize * lineHeight per line). Clamped to template schema max. */
   const computeMaxLinesForZone = useCallback((h: number, fontSize: number, lineHeight: number) => {
@@ -1481,7 +1491,9 @@ export function SlideEditForm({
   const [exportingFull, setExportingFull] = useState(false);
   const [exportFullError, setExportFullError] = useState<string | null>(null);
   const [mobileBannerDismissed, setMobileBannerDismissed] = useState(false);
-  const [editorTab, setEditorTab] = useState<"text" | "layout" | "background" | "more">(initialEditorTab ?? "layout");
+  const [editorTab, setEditorTab] = useState<"text" | "layout" | "background" | "more">(
+    initialEditorTab === "background" ? "background" : "text"
+  );
   const [previewExpanded, setPreviewExpanded] = useState(false);
   /** Measured size of the expanded preview container (so we size preview to fit and keep carousel aspect ratio). */
   const [expandedPreviewArea, setExpandedPreviewArea] = useState<{ w: number; h: number } | null>(null);
@@ -2194,7 +2206,7 @@ export function SlideEditForm({
         };
   const canvasHForChrome = exportSize === "1080x1920" ? 1920 : exportSize === "1080x1350" ? 1350 : 1080;
   const editChromeCounterProp =
-    showCounter && templateConfig
+    showAdvancedEditor && showCounter && templateConfig
       ? {
           top: counterZoneOverride?.top ?? 24,
           right: counterZoneOverride?.right ?? 24,
@@ -2205,7 +2217,7 @@ export function SlideEditForm({
         }
       : undefined;
   const editChromeWatermarkProp =
-    showWatermark && templateConfig && (brandKit.watermark_text || brandKit.logo_url)
+    showAdvancedEditor && showWatermark && templateConfig && (brandKit.watermark_text || brandKit.logo_url)
       ? {
           logoX: watermarkZoneOverride?.logoX ?? templateConfig?.chrome?.watermark?.logoX ?? 24,
           logoY: watermarkZoneOverride?.logoY ?? templateConfig?.chrome?.watermark?.logoY ?? 24,
@@ -2226,7 +2238,7 @@ export function SlideEditForm({
         : canvasHForChrome / 2);
   const effectiveSwipeX = swipeX ?? SWIPE_POSITION_PRESETS[swipePosition]?.x ?? 540;
   const editChromeSwipeProp =
-    showSwipe && templateConfig
+    showAdvancedEditor && showSwipe && templateConfig
       ? {
           swipeX: effectiveSwipeX,
           swipeY: effectiveSwipeY,
@@ -2240,7 +2252,7 @@ export function SlideEditForm({
   const effectiveMadeWithX = madeWithZoneOverride?.x ?? 540;
   const effectiveMadeWithY = madeWithZoneOverride?.y ?? canvasHForChrome - 64;
   const editChromeMadeWithProp =
-    showMadeWith && templateConfig
+    showAdvancedEditor && showMadeWith && templateConfig
       ? {
           madeWithX: effectiveMadeWithX,
           madeWithY: effectiveMadeWithY,
@@ -2264,6 +2276,7 @@ export function SlideEditForm({
       parsedConfig: override?.parsedConfig ?? t.parsedConfig,
       category: t.category,
       isSystemTemplate: t.user_id == null,
+      isFavorite: t.isFavorite === true,
     };
   });
   const templateOptionsForModal = [
@@ -2273,9 +2286,11 @@ export function SlideEditForm({
       parsedConfig: t.parsedConfig,
       category: "generic" as const,
       isSystemTemplate: t.isSystemTemplate ?? false,
+      isFavorite: false,
     })),
     ...baseModalOptions.filter((t) => !recentlyCreatedTemplates.some((r) => r.id === t.id)),
   ];
+  const favoriteRevalidatePath = editorPath;
   const firstTemplate = templates[0];
   useEffect(() => {
     setOverrideTemplateConfig(null);
@@ -2360,6 +2375,9 @@ export function SlideEditForm({
       ...(baseZone?.boxBackgroundBorderColor ? { boxBackgroundBorderColor: baseZone.boxBackgroundBorderColor } : {}),
       ...(baseZone?.boxBackgroundBorderOpacity != null ? { boxBackgroundBorderOpacity: baseZone.boxBackgroundBorderOpacity } : {}),
       ...(baseZone?.boxBackgroundBorderRadius != null ? { boxBackgroundBorderRadius: baseZone.boxBackgroundBorderRadius } : {}),
+      ...(baseZone?.boxBackgroundFit === "text" || baseZone?.boxBackgroundFit === "box"
+        ? { boxBackgroundFit: baseZone.boxBackgroundFit }
+        : {}),
     };
     setCustomExtraTextZones((prev) => [...prev, next]);
     setExtraTextValues((prev) => ({ ...prev, [nowId]: "" }));
@@ -2954,7 +2972,9 @@ export function SlideEditForm({
       ...(hasImageForSave
             ? (() => {
                 const isPip = imageDisplayPayload?.mode === "pip";
-                const tintOpacity = isPip ? 0 : (typeof background.overlay?.tintOpacity === "number" ? background.overlay.tintOpacity : (templateConfig?.defaults?.meta as { overlay_tint_opacity?: number } | undefined)?.overlay_tint_opacity ?? 0);
+                const tintOpacity = !showAdvancedEditor || isPip
+                  ? 0
+                  : (typeof background.overlay?.tintOpacity === "number" ? background.overlay.tintOpacity : (templateConfig?.defaults?.meta as { overlay_tint_opacity?: number } | undefined)?.overlay_tint_opacity ?? 0);
                 return {
                   overlay_tint_opacity: Math.min(1, Math.max(0, tintOpacity)),
                   overlay_tint_color: background.overlay?.tintColor != null && /^#([0-9A-Fa-f]{3}){1,2}$/.test(background.overlay.tintColor) ? background.overlay.tintColor : effectiveColorForSave,
@@ -4639,8 +4659,8 @@ export function SlideEditForm({
     const templateMetaTint = templateConfig?.defaults?.meta && typeof templateConfig.defaults.meta === "object" ? (templateConfig.defaults.meta as { overlay_tint_opacity?: number; image_overlay_blend_enabled?: boolean }) : undefined;
     const templateTintFallback = templateMetaTint?.image_overlay_blend_enabled === false ? 0 : (templateMetaTint?.overlay_tint_opacity ?? 0);
     const effectiveTint =
-      isPip
-        ? (ov?.tintOpacity ?? (typeof (slide.meta as { overlay_tint_opacity?: number })?.overlay_tint_opacity === "number" ? (slide.meta as { overlay_tint_opacity?: number }).overlay_tint_opacity : 0) ?? 0)
+      !showAdvancedEditor || isPip
+        ? (!showAdvancedEditor ? 0 : (ov?.tintOpacity ?? (typeof (slide.meta as { overlay_tint_opacity?: number })?.overlay_tint_opacity === "number" ? (slide.meta as { overlay_tint_opacity?: number }).overlay_tint_opacity : 0) ?? 0))
         : (ov?.tintOpacity ?? templateTintFallback);
     const tintColor = ov?.tintColor ?? (templateConfig?.defaults?.background as { color?: string } | undefined)?.color ?? "#0a0a0a";
     return {
@@ -4666,7 +4686,9 @@ export function SlideEditForm({
           const isPip = effectiveImageDisplay?.mode === "pip";
           const templateMetaTintPreview = templateConfig?.defaults?.meta && typeof templateConfig.defaults.meta === "object" ? (templateConfig.defaults.meta as { overlay_tint_opacity?: number; image_overlay_blend_enabled?: boolean }) : undefined;
           const templateTintFallbackPreview = templateMetaTintPreview?.image_overlay_blend_enabled === false ? 0 : (templateMetaTintPreview?.overlay_tint_opacity ?? 0);
-          const effectiveTint: number = isPip
+          const effectiveTint: number = !showAdvancedEditor
+            ? 0
+            : isPip
             ? (background.overlay?.tintOpacity ?? (typeof (slide.meta as { overlay_tint_opacity?: number })?.overlay_tint_opacity === "number" ? (slide.meta as { overlay_tint_opacity?: number }).overlay_tint_opacity : 0) ?? 0)
             : (background.overlay?.tintOpacity ?? templateTintFallbackPreview);
           return effectiveTint > 0
@@ -4690,18 +4712,20 @@ export function SlideEditForm({
       };
 
   const overlaySection = (
-    <div className={`rounded-lg border transition-colors ${expandedColorOverlay ? "border-border/50" : "border-border/50"} bg-muted/5 overflow-hidden`}>
+    <div className={`rounded-lg border transition-colors ${expandedColorOverlay || !showAdvancedEditor ? "border-border/50" : "border-border/50"} bg-muted/5 overflow-hidden`}>
       <button
         type="button"
         className="w-full flex items-center gap-2 p-3 text-left hover:bg-muted/30 focus:outline-none focus:ring-0"
         onClick={() => setExpandedColorOverlay((v) => !v)}
-        aria-expanded={expandedColorOverlay}
+        aria-expanded={expandedColorOverlay || !showAdvancedEditor}
         aria-controls="color-overlay-section"
       >
-        <ChevronDownIcon className={`size-4 shrink-0 text-muted-foreground transition-transform ${expandedColorOverlay ? "" : "-rotate-90"}`} />
+        <ChevronDownIcon className={`size-4 shrink-0 text-muted-foreground transition-transform ${expandedColorOverlay || !showAdvancedEditor ? "" : "-rotate-90"}`} />
         <PaletteIcon className="size-4 text-muted-foreground" />
-        <span className="text-xs font-semibold text-foreground">Color & overlay</span>
-        {totalSlides > 1 && (
+        <span className="text-xs font-semibold text-foreground">
+          {showAdvancedEditor ? "Color & overlay" : isImageMode ? "Overflow color" : "Background color"}
+        </span>
+        {showAdvancedEditor && totalSlides > 1 && (
           <span className="ml-auto" onClick={(e) => e.stopPropagation()}>
             <Button
               type="button"
@@ -4718,8 +4742,14 @@ export function SlideEditForm({
           </span>
         )}
       </button>
-      <div id="color-overlay-section" className={expandedColorOverlay ? "p-3 pt-0 space-y-3" : "hidden"}>
-      <p className="text-muted-foreground text-[11px]">Background color (and gradient color when overlay is on). Uses template color until you change it.</p>
+      <div id="color-overlay-section" className={expandedColorOverlay || !showAdvancedEditor ? "p-3 pt-0 space-y-3" : "hidden"}>
+      <p className="text-muted-foreground text-[11px]">
+        {showAdvancedEditor
+          ? "Background color (and gradient color when overlay is on). Uses template color until you change it."
+          : isImageMode
+            ? "Fills empty space when Overflow is on (image fits inside the slide)."
+            : "Solid background behind the slide."}
+      </p>
       <div className="flex flex-wrap items-center gap-4">
         <div className="flex items-center gap-2">
           <span className="text-muted-foreground text-xs font-medium">Color</span>
@@ -4739,6 +4769,7 @@ export function SlideEditForm({
             className="h-10 w-12 cursor-pointer rounded-lg border border-input/80 bg-background"
           />
         </div>
+        {showAdvancedEditor && (
         <label className="flex cursor-pointer items-center gap-2 text-sm">
           <input
             type="checkbox"
@@ -4755,8 +4786,9 @@ export function SlideEditForm({
           />
           <span className="text-xs font-medium">{isImageMode ? "Overlay on image" : "Gradient fill"}</span>
         </label>
+        )}
       </div>
-      {(isImageMode ? overlayEnabled : (background.gradientOn ?? true)) && (
+      {showAdvancedEditor && (isImageMode ? overlayEnabled : (background.gradientOn ?? true)) && (
         <div className="flex flex-wrap items-end gap-4">
         <div className="space-y-1.5">
           <span className="text-muted-foreground text-xs font-medium">Gradient position</span>
@@ -4880,7 +4912,7 @@ export function SlideEditForm({
 
   const isPipImageStyle = effectiveImageDisplay?.mode === "pip";
   const isBlendOn = (background.overlay?.tintOpacity ?? 0) > 0;
-  const templateTintSection = isImageMode && (
+  const templateTintSection = showAdvancedEditor && isImageMode && (
     <div className={`flex flex-col gap-2 rounded-lg border border-border/50 bg-muted/5 p-3 ${isPipImageStyle ? "opacity-70" : ""}`}>
       <div className="flex items-center gap-3">
         <span className="text-xs font-medium text-foreground shrink-0">Image overlay blend</span>
@@ -4945,15 +4977,15 @@ export function SlideEditForm({
 
   const handleSlideShapeSelectIndexChange = useCallback((idx: number | null) => {
     setSlideShapesSelectedIndex(idx);
-    if (idx != null) {
+    if (idx != null && showAdvancedEditor) {
       setEditorTab("layout");
       setScrollToChromeSection("shapes");
     }
-  }, []);
+  }, [showAdvancedEditor]);
 
   const slideOverlayShapesEditable = useMemo(
     () =>
-      isPro && templateConfig
+      showAdvancedEditor && isPro && templateConfig
         ? {
             shapes: resolvedOverlayShapesForPreview,
             onShapesChange: handleOverlayShapesEditorChange,
@@ -4963,6 +4995,7 @@ export function SlideEditForm({
           }
         : null,
     [
+      showAdvancedEditor,
       isPro,
       templateConfig,
       resolvedOverlayShapesForPreview,
@@ -5406,6 +5439,7 @@ export function SlideEditForm({
                 editChromeSwipe={editChromeSwipeProp}
                 editChromeMadeWith={editChromeMadeWithProp}
                 onChromeFocus={(chrome) => {
+                  if (!showAdvancedEditor) return;
                   setLayoutChromeHighlight(chrome);
                   if (chrome) {
                     setSlideShapesSelectedIndex(null);
@@ -5468,17 +5502,19 @@ export function SlideEditForm({
             Apply to all
           </Button>
         )}
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-8 text-xs"
-          onClick={openTemplateSaveChoiceDialog}
-          disabled={!templateConfig}
-        >
-          <Bookmark className="size-3.5" />
-          Save as template
-        </Button>
+        {showAdvancedEditor && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs"
+            onClick={openTemplateSaveChoiceDialog}
+            disabled={!templateConfig}
+          >
+            <Bookmark className="size-3.5" />
+            Save as template
+          </Button>
+        )}
       </div>
       {saveError && (
         <p className="text-destructive text-sm px-3 pb-2" role="alert">
@@ -5788,6 +5824,7 @@ export function SlideEditForm({
               value={templateId === firstTemplate?.id ? null : templateId}
               isAdmin={isAdmin}
               isPro={isPro}
+              favoriteRevalidatePath={favoriteRevalidatePath}
               onTemplateDeleted={() => {
                 setTemplateModalOpen(false);
                 router.refresh();
@@ -6397,6 +6434,7 @@ export function SlideEditForm({
                         editChromeSwipe={editChromeSwipeProp}
                         editChromeMadeWith={editChromeMadeWithProp}
                         onChromeFocus={(chrome) => {
+                          if (!showAdvancedEditor) return;
                           setLayoutChromeHighlight(chrome);
                           if (chrome) {
                             setSlideShapesSelectedIndex(null);
@@ -6431,13 +6469,13 @@ export function SlideEditForm({
       <section ref={editorSectionRef} className="relative z-0 shrink-0 border-t-0 border-border order-2 lg:border-t-0 lg:border-r lg:w-[500px] lg:min-w-[470px] lg:max-w-[560px] lg:bg-card lg:flex lg:flex-col lg:order-1 lg:h-full lg:overflow-y-auto">
         <div className="w-full lg:h-full flex flex-col lg:items-stretch">
           <div
-            className={`shrink-0 ${isMobile ? "flex border-b border-border bg-muted/20" : "sticky top-0 z-10 grid grid-cols-4 border-b border-border bg-card/95 backdrop-blur p-2 gap-1.5"}`}
+            className={`shrink-0 ${isMobile ? "flex border-b border-border bg-muted/20" : "sticky top-0 z-10 grid grid-cols-2 border-b border-border bg-card/95 backdrop-blur p-2 gap-1.5"}`}
             role="tablist"
             aria-label="Editor sections"
           >
-            {(["layout", "text", "background", "more"] as const).map((tab) => {
-            const Icon = tab === "text" ? Type : tab === "layout" ? LayoutTemplateIcon : tab === "background" ? PaletteIcon : MoreHorizontal;
-            const label = tab === "text" ? "Text" : tab === "layout" ? "Layout" : tab === "background" ? "Background" : "More";
+            {(["text", "background"] as const).map((tab) => {
+            const Icon = tab === "text" ? Type : PaletteIcon;
+            const label = tab === "text" ? "Text" : "Background";
             const tabId = `editor-tab-${tab}`;
             const panelId = `editor-panel-${tab}`;
             return (
@@ -6450,7 +6488,6 @@ export function SlideEditForm({
                 aria-controls={panelId}
                 onClick={() => {
                   setEditorTab(tab);
-                  if (tab === "layout") setChromeLayoutOpen(true);
                   if (tab === "text" && !expandedTextSection) setExpandedTextSection("headline");
                   setTimeout(() => {
                     const panel = document.getElementById(`editor-panel-${tab}`);
@@ -6483,7 +6520,7 @@ export function SlideEditForm({
             aria-labelledby={`editor-tab-${editorTab}`}
             className={`overflow-y-auto overflow-x-hidden shrink-0 p-4 md:p-5 bg-card min-h-0 md:flex-1 ${isMobile ? "max-h-[min(52dvh,520px)]" : "max-h-none md:h-auto"}`}
           >
-          {editorTab === "layout" && (
+          {editorTab === "layout" && showAdvancedEditor && (
           <section className={`space-y-5 ${!isPro ? "pointer-events-none opacity-60" : ""}`} aria-label="Layout">
             <div className="rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -6985,8 +7022,17 @@ export function SlideEditForm({
           {editorTab === "text" && (
           <section className="space-y-3" aria-label="Text">
             <p className="text-xs text-muted-foreground leading-relaxed px-0.5">
+              {showAdvancedEditor ? (
+                <>
               <span className="font-medium text-foreground">Headline & body</span> — open a block to edit. Order: <span className="whitespace-nowrap">text field</span>, then <span className="whitespace-nowrap">text style</span> (size, color, font), <span className="whitespace-nowrap">on the slide</span> (layout, highlights, outline), then <span className="whitespace-nowrap">backdrop</span>.
+                </>
+              ) : (
+                <>
+                  <span className="font-medium text-foreground">Headline & body</span> — edit the text and its color. Layout and fonts come from the template.
+                </>
+              )}
             </p>
+            {showAdvancedEditor && (
             <div className="rounded-lg border border-border/50 bg-muted/5 p-3 space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-xs font-medium text-foreground">Extra text areas</p>
@@ -7511,6 +7557,7 @@ export function SlideEditForm({
                                     boxBackgroundBorderColor: undefined,
                                     boxBackgroundBorderOpacity: undefined,
                                     boxBackgroundBorderRadius: undefined,
+                                    boxBackgroundFit: undefined,
                                   });
                                 }}
                               >
@@ -7559,6 +7606,7 @@ export function SlideEditForm({
                                           boxBackgroundBorderColor: undefined,
                                           boxBackgroundBorderOpacity: undefined,
                                           boxBackgroundBorderRadius: undefined,
+                                    boxBackgroundFit: undefined,
                                         });
                                         return;
                                       }
@@ -7604,6 +7652,7 @@ export function SlideEditForm({
                 </div>
               )}
             </div>
+            )}
             <div className="relative min-h-0 space-y-3">
             {/* Headline: collapsible */}
             <div className={`rounded-lg border transition-colors ${activeEditZone === "headline" ? "border-primary/60 ring-1 ring-primary/30" : "border-border/50"} bg-muted/5 overflow-hidden`}>
@@ -7660,26 +7709,29 @@ export function SlideEditForm({
                 >
                   Aa
                 </Button>
-                {isPro && (
+                {showAdvancedEditor && isPro && (
                   <Button type="button" variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={handleCycleHook} disabled={cyclingHook || ensuringVariants || (isHook && headlineVariants.length === 0)} title={isHook ? "Cycle to next headline variant" : "Generate headline variants (hook slide)"}>
                     {cyclingHook ? <Loader2Icon className="size-3.5 animate-spin" /> : <SparklesIcon className="size-3.5" />}
                     Rewrite headline
                   </Button>
                 )}
-                {totalSlides > 1 && (
+                {showAdvancedEditor && totalSlides > 1 && (
                   <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={handleApplyHeadlineToAll} disabled={applyingHeadlineZone} title="Apply headline size, position, layout, and text color to all frames">
                     {applyingHeadlineZone ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
                     Apply to all
                   </Button>
                 )}
+                {showAdvancedEditor && (
                 <button type="button" onClick={() => setInfoSection("content")} className="rounded p-1.5 text-muted-foreground hover:bg-muted" aria-label="Content help" title="Help">
                   <InfoIcon className="size-3.5" />
                 </button>
+                )}
               </div>
                 <div className="rounded-lg border border-border/50 bg-muted/20 p-3 space-y-4">
                   <div className="space-y-3">
-                    <p className="text-xs font-medium text-foreground">Text style</p>
+                    <p className="text-xs font-medium text-foreground">{showAdvancedEditor ? "Text style" : "Text color"}</p>
                     <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:gap-x-4 sm:gap-y-3">
+                {showAdvancedEditor && (
                 <div className="min-w-0 w-full space-y-1.5 sm:w-auto sm:max-w-[11rem]">
                         <Label className="text-[11px] text-muted-foreground font-normal">Size</Label>
                   <StepperWithLongPress
@@ -7692,6 +7744,7 @@ export function SlideEditForm({
                     className="w-full"
                   />
                       </div>
+                )}
                       <div className="min-w-0 w-full space-y-1.5 sm:w-auto sm:min-w-[5.5rem]">
                         <Label className="text-[11px] text-muted-foreground font-normal">Text color</Label>
                         <div className="flex h-8 items-center rounded-md border border-input/80 bg-background px-1.5">
@@ -7705,6 +7758,7 @@ export function SlideEditForm({
                   </div>
                       </div>
                     </div>
+                    {showAdvancedEditor && (
                     <div className="space-y-1.5">
                       <Label className="text-[11px] text-muted-foreground font-normal">Font</Label>
                   <Button
@@ -7725,8 +7779,10 @@ export function SlideEditForm({
                     </span>
                   </Button>
                     </div>
+                    )}
                   </div>
 
+                  {showAdvancedEditor && (
                   <FontPickerModal
                     open={headlineFontModalOpen}
                     onOpenChange={setHeadlineFontModalOpen}
@@ -7734,7 +7790,10 @@ export function SlideEditForm({
                     onSelect={(v) => setHeadlineZoneOverride((o) => ({ ...headlineZoneFromTemplate, ...o, fontFamily: v || undefined }))}
                     title="Headline font"
                   />
+                  )}
                 </div>
+              {showAdvancedEditor && (
+              <>
               <div className="border-t border-border/40 pt-3 space-y-4">
                 {totalSlides > 1 && (
                   <div className="flex justify-end">
@@ -8078,6 +8137,7 @@ export function SlideEditForm({
                               delete next.boxBackgroundBorderColor;
                               delete next.boxBackgroundBorderOpacity;
                               delete next.boxBackgroundBorderRadius;
+                              delete next.boxBackgroundFit;
                               return Object.keys(next).length > 0 ? next : undefined;
                             });
                           }}
@@ -8134,6 +8194,7 @@ export function SlideEditForm({
                                     delete next.boxBackgroundBorderColor;
                                     delete next.boxBackgroundBorderOpacity;
                                     delete next.boxBackgroundBorderRadius;
+                              delete next.boxBackgroundFit;
                                     return Object.keys(next).length > 0 ? next : undefined;
                                   }
                                   return {
@@ -8177,7 +8238,8 @@ export function SlideEditForm({
                       />
                     )}
                   </div>
-              </div>
+              </>
+              )}
               {editorTab === "text" && (
               <div className="border-t border-border/40 pt-3 mt-3 hidden">
                   <div className="space-y-2">
@@ -8279,6 +8341,7 @@ export function SlideEditForm({
                   </div>
               </div>
               )}
+              </div>
             </div>
 
             {/* Body: collapsible */}
@@ -8336,13 +8399,13 @@ export function SlideEditForm({
                 >
                   Aa
                 </Button>
-                {isPro && templateId && (
+                {showAdvancedEditor && isPro && templateId && (
                   <Button type="button" variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={handleCycleShorten} disabled={cyclingShorten || !bodyZoneForRewrite || !(body ?? "").trim()} title="Cycle body: main → short → long (independent of headline)">
                     {cyclingShorten ? <Loader2Icon className="size-3.5 animate-spin" /> : <AlignJustify className="size-3.5" />}
                     Rewrite body
                   </Button>
                 )}
-                {totalSlides > 1 && (
+                {showAdvancedEditor && totalSlides > 1 && (
                   <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={handleApplyBodyToAll} disabled={applyingBodyZone} title="Apply body size, position, layout, and text color to all frames">
                     {applyingBodyZone ? <Loader2Icon className="size-3.5 animate-spin" /> : <CopyIcon className="size-3.5" />}
                     Apply to all
@@ -8351,8 +8414,9 @@ export function SlideEditForm({
               </div>
                 <div className="rounded-lg border border-border/50 bg-muted/20 p-3 space-y-4">
                   <div className="space-y-3">
-                    <p className="text-xs font-medium text-foreground">Text style</p>
+                    <p className="text-xs font-medium text-foreground">{showAdvancedEditor ? "Text style" : "Text color"}</p>
                     <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:gap-x-4 sm:gap-y-3">
+                {showAdvancedEditor && (
                 <div className="min-w-0 w-full space-y-1.5 sm:w-auto sm:max-w-[11rem]">
                         <Label className="text-[11px] text-muted-foreground font-normal">Size</Label>
                   <StepperWithLongPress
@@ -8365,6 +8429,7 @@ export function SlideEditForm({
                     className="w-full"
                   />
                       </div>
+                )}
                       <div className="min-w-0 w-full space-y-1.5 sm:w-auto sm:min-w-[5.5rem]">
                         <Label className="text-[11px] text-muted-foreground font-normal">Text color</Label>
                         <div className="flex h-8 items-center rounded-md border border-input/80 bg-background px-1.5">
@@ -8378,6 +8443,7 @@ export function SlideEditForm({
                   </div>
                       </div>
                     </div>
+                    {showAdvancedEditor && (
                     <div className="space-y-1.5">
                       <Label className="text-[11px] text-muted-foreground font-normal">Font</Label>
                   <Button
@@ -8398,8 +8464,10 @@ export function SlideEditForm({
                     </span>
                   </Button>
                     </div>
+                    )}
                   </div>
 
+                  {showAdvancedEditor && (
                   <FontPickerModal
                     open={bodyFontModalOpen}
                     onOpenChange={setBodyFontModalOpen}
@@ -8407,7 +8475,10 @@ export function SlideEditForm({
                     onSelect={(v) => setBodyZoneOverride((o) => ({ ...bodyZoneFromTemplate, ...o, fontFamily: v || undefined }))}
                     title="Body font"
                   />
+                  )}
                 </div>
+              {showAdvancedEditor && (
+              <>
               <div className="border-t border-border/40 pt-3 space-y-4">
                 {totalSlides > 1 && (
                   <div className="flex justify-end">
@@ -8750,6 +8821,7 @@ export function SlideEditForm({
                               delete next.boxBackgroundBorderColor;
                               delete next.boxBackgroundBorderOpacity;
                               delete next.boxBackgroundBorderRadius;
+                              delete next.boxBackgroundFit;
                               return Object.keys(next).length > 0 ? next : undefined;
                             });
                           }}
@@ -8806,6 +8878,7 @@ export function SlideEditForm({
                                     delete next.boxBackgroundBorderColor;
                                     delete next.boxBackgroundBorderOpacity;
                                     delete next.boxBackgroundBorderRadius;
+                              delete next.boxBackgroundFit;
                                     return Object.keys(next).length > 0 ? next : undefined;
                                   }
                                   return {
@@ -8847,7 +8920,8 @@ export function SlideEditForm({
                       />
                     )}
                   </div>
-              </div>
+              </>
+              )}
               {editorTab === "text" && (
               <div className="border-t border-border/40 pt-3 mt-3 hidden">
                   <div className="space-y-2">
@@ -8945,6 +9019,7 @@ export function SlideEditForm({
               </div>
               )}
               </div>
+            </div>
             </div>
           </section>
           )}
@@ -9355,6 +9430,82 @@ export function SlideEditForm({
                 )}
               </div>
               {validImageCount >= 1 && (
+                !showAdvancedEditor ? (
+                <div className="rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3">
+                  <div>
+                    <p className="text-muted-foreground text-[11px] font-medium">Display</p>
+                    <p className="text-[10px] text-muted-foreground leading-snug mt-0.5">
+                      Rotate the photo or turn Overflow on so it fits inside the slide (empty space uses Overflow color below).
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-muted-foreground text-xs shrink-0">Rotate</span>
+                    <div className="flex gap-1">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-9 gap-1"
+                        title="Rotate 90° counterclockwise"
+                        onClick={() =>
+                          setImageDisplay((d) => {
+                            const cur = normalizeFullImageRotation(d.fullImageRotation ?? 0);
+                            const next = (((cur - 90) % 360) + 360) % 360 as FullImageRotation;
+                            return { ...d, mode: "full", fullImageRotation: next, pips: undefined, pipShadow: undefined, pipIndex: undefined };
+                          })
+                        }
+                      >
+                        <RotateCcw className="size-4" />
+                        <span className="text-xs">Left</span>
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-9 gap-1"
+                        title="Rotate 90° clockwise"
+                        onClick={() =>
+                          setImageDisplay((d) => {
+                            const cur = normalizeFullImageRotation(d.fullImageRotation ?? 0);
+                            const next = (((cur + 90) % 360) + 360) % 360 as FullImageRotation;
+                            return { ...d, mode: "full", fullImageRotation: next, pips: undefined, pipShadow: undefined, pipIndex: undefined };
+                          })
+                        }
+                      >
+                        <RotateCw className="size-4" />
+                        <span className="text-xs">Right</span>
+                      </Button>
+                    </div>
+                    <span className="text-muted-foreground text-xs tabular-nums">
+                      {normalizeFullImageRotation(imageDisplay.fullImageRotation ?? 0)}°
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="text-muted-foreground text-xs shrink-0">Overflow</span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setImageDisplay((d) => ({
+                          ...d,
+                          mode: "full",
+                          fit: (d.fit ?? "cover") === "contain" ? "cover" : "contain",
+                          pips: undefined,
+                          pipShadow: undefined,
+                          pipIndex: undefined,
+                        }))
+                      }
+                      className="rounded-md border border-input bg-background px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted"
+                    >
+                      {(imageDisplay.fit ?? "cover") === "contain" ? "On" : "Off"}
+                    </button>
+                    <span className="text-[10px] text-muted-foreground">
+                      {(imageDisplay.fit ?? "cover") === "contain"
+                        ? "Image fits inside; color fills the rest"
+                        : "Image fills the slide (may crop)"}
+                    </span>
+                  </div>
+                </div>
+                ) : (
                 <div className={`rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3 ${!isPro ? "pointer-events-none opacity-60" : ""}`}>
                   <div className="space-y-2">
                     <div>
@@ -10074,6 +10225,7 @@ export function SlideEditForm({
                   </div>
                 </div>
                 </div>
+                )
               )}
               </>
             )}
@@ -10204,6 +10356,7 @@ export function SlideEditForm({
                 <p className="text-destructive text-[11px]" role="alert">{exportFullError}</p>
               )}
             </div>
+            {showAdvancedEditor && (
             <div className="rounded-lg border border-border/50 bg-muted/5 p-3 space-y-3">
               <h3 className="text-xs font-semibold text-foreground">Template</h3>
               <p className="text-muted-foreground text-[11px] leading-snug">Save as new template or update the current one for everyone using it.</p>
@@ -10236,6 +10389,7 @@ export function SlideEditForm({
                 )}
               </div>
             </div>
+            )}
           </section>
           )}
           <AssetPickerModal open={pickerOpen} onOpenChange={setPickerOpen} onPick={handlePickImage} projectId={projectId} />

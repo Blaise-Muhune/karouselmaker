@@ -5,7 +5,7 @@ import { ColorPicker } from "@/components/ui/color-picker";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { StepperWithLongPress } from "@/components/ui/stepper-with-long-press";
-import { normalizeTextBackdropBorderSides } from "@/lib/renderer/zoneBoxChrome";
+import { normalizeBoxBackgroundFit, normalizeTextBackdropBorderSides } from "@/lib/renderer/zoneBoxChrome";
 import type { TextZone } from "@/lib/server/renderer/templateSchema";
 
 const HEX = /^#([0-9A-Fa-f]{3}){1,2}$/;
@@ -19,14 +19,46 @@ export function TextBackdropChromeFields({
 }) {
   const sides = normalizeTextBackdropBorderSides(zone?.boxBackgroundBorderSides);
   const frameOnly = zone?.boxBackgroundFrameOnly === true;
+  const fit = normalizeBoxBackgroundFit(zone?.boxBackgroundFit);
   const borderW = zone?.boxBackgroundBorderWidth ?? (frameOnly ? 2 : 0);
   const customOutlineHex = zone?.boxBackgroundBorderColor?.trim() ?? "";
   const hasCustomOutline = HEX.test(customOutlineHex);
   const outlineOpacity = zone?.boxBackgroundBorderOpacity ?? 1;
-  const cornerRadius = zone?.boxBackgroundBorderRadius ?? 8;
+  const cornerRadius = zone?.boxBackgroundBorderRadius ?? (fit === "text" ? 12 : 8);
 
   return (
     <div className="space-y-3 border-t border-border/30 pt-3">
+      <div>
+        <p className="text-[11px] text-muted-foreground mb-1.5">Fit</p>
+        <div className="flex rounded-md border border-border/60 overflow-hidden w-full sm:w-fit">
+          <Button
+            type="button"
+            variant={fit === "box" ? "secondary" : "ghost"}
+            size="sm"
+            className="h-8 flex-1 sm:flex-initial rounded-none px-3 text-xs"
+            onClick={() => onMerge({ boxBackgroundFit: "box" })}
+          >
+            Box
+          </Button>
+          <Button
+            type="button"
+            variant={fit === "text" ? "secondary" : "ghost"}
+            size="sm"
+            className="h-8 flex-1 sm:flex-initial rounded-none px-3 text-xs"
+            onClick={() =>
+              onMerge({
+                boxBackgroundFit: "text",
+                boxBackgroundBorderRadius: zone?.boxBackgroundBorderRadius ?? 12,
+              })
+            }
+          >
+            Auto
+          </Button>
+        </div>
+        <p className="text-[10px] text-muted-foreground mt-1 leading-snug">
+          Box fills the whole text zone. Auto hugs each line as its own caption pill.
+        </p>
+      </div>
       <div>
         <p className="text-[11px] text-muted-foreground mb-1.5">Interior</p>
         <div className="flex rounded-md border border-border/60 overflow-hidden w-full sm:w-fit">
@@ -69,7 +101,9 @@ export function TextBackdropChromeFields({
           label="backdrop corner radius"
           className="w-full min-w-0 sm:max-w-[200px]"
         />
-        <p className="text-[10px] text-muted-foreground leading-snug">Rounded corners for the panel and outline (default 8px).</p>
+        <p className="text-[10px] text-muted-foreground leading-snug">
+          Rounded corners for the panel and outline.
+        </p>
       </div>
       <div className="space-y-1">
         <Label className="text-[11px] text-muted-foreground font-normal">Outline width</Label>
@@ -147,31 +181,33 @@ export function TextBackdropChromeFields({
           </span>
         </div>
       )}
-      <div className="space-y-1">
-        <Label className="text-[11px] text-muted-foreground font-normal">Outline sides</Label>
-        <p className="text-[10px] text-muted-foreground leading-snug">Toggle edges; default is all on.</p>
-        <div className="flex flex-wrap gap-1.5">
-          {(["top", "right", "bottom", "left"] as const).map((edge) => (
-            <Button
-              key={edge}
-              type="button"
-              variant={sides[edge] ? "secondary" : "outline"}
-              size="sm"
-              className="h-7 min-w-[3.25rem] text-[10px] capitalize px-2"
-              onClick={() =>
-                onMerge({
-                  boxBackgroundBorderSides: {
-                    ...zone?.boxBackgroundBorderSides,
-                    [edge]: !sides[edge],
-                  },
-                })
-              }
-            >
-              {edge}
-            </Button>
-          ))}
+      {fit === "box" && (
+        <div className="space-y-1">
+          <Label className="text-[11px] text-muted-foreground font-normal">Outline sides</Label>
+          <p className="text-[10px] text-muted-foreground leading-snug">Toggle edges; default is all on.</p>
+          <div className="flex flex-wrap gap-1.5">
+            {(["top", "right", "bottom", "left"] as const).map((edge) => (
+              <Button
+                key={edge}
+                type="button"
+                variant={sides[edge] ? "secondary" : "outline"}
+                size="sm"
+                className="h-7 min-w-[3.25rem] text-[10px] capitalize px-2"
+                onClick={() =>
+                  onMerge({
+                    boxBackgroundBorderSides: {
+                      ...zone?.boxBackgroundBorderSides,
+                      [edge]: !sides[edge],
+                    },
+                  })
+                }
+              >
+                {edge}
+              </Button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

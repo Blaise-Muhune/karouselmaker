@@ -1,31 +1,29 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Karouselmaker
 
-## Getting Started
+Marketing tool for organic Instagram & TikTok carousels that promote your product—without sounding like ads. Generate short swipe posts (3–7 slides) one at a time, tuned to a project’s niche and offer — with stock photos, Brave web images, or your own uploads / Google Drive.
 
-This project uses **pnpm**. Install dependencies and run the development server:
+## Flow
+
+**Project** (niche + product to promote) → **Generate one organic post** → **Light edit** → **Export PNG/JPEG ZIP** → post on IG/TikTok.
+
+Generation remembers recent posts in the project so angles don’t repeat.
+
+## Stack
+
+- Next.js App Router, TypeScript, Tailwind, shadcn/ui
+- Supabase (Auth + DB + Storage)
+- Stripe billing
+- pnpm
+
+## Develop
 
 ```bash
 pnpm install
 pnpm dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+See `docs/` for generation, export, templates, and env setup.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Agent priorities
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+See [AGENTS.md](AGENTS.md).

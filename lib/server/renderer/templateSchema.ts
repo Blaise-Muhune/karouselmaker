@@ -60,6 +60,8 @@ const textZoneSchema = z.object({
   boxBackgroundBorderOpacity: z.coerce.number().min(0).max(1).optional(),
   /** Corner radius px for backdrop fill + outline (default 8). */
   boxBackgroundBorderRadius: z.number().int().min(0).max(64).optional(),
+  /** `box` = full zone panel (default). `text` = TikTok-style auto backdrop hugging each line. */
+  boxBackgroundFit: z.enum(["box", "text"]).optional(),
 });
 
 const gradientOverlaySchema = z.object({

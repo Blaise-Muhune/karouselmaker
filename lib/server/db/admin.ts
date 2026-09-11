@@ -2,6 +2,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { queryMany, queryOne } from "./pg";
 import type { Plan } from "./types";
 
 function profilePlanLabel(raw: string | null | undefined): Plan | null {
@@ -41,12 +42,17 @@ export type AdminUserRow = {
   exportCount: number;
 };
 
-/** List users with name and email for admin. Uses Auth + profiles; capped at 500. */
+/** List users with name and email for admin. Uses Auth + Azure profiles; capped at 500. */
 export async function getAdminUsers(): Promise<AdminUserRow[]> {
   const supabase = createAdminClient();
   const perPage = 1000;
   const maxUsers = 500;
-  const rows: { id: string; email: string | null; user_metadata: Record<string, unknown>; created_at: string | null }[] = [];
+  const rows: {
+    id: string;
+    email: string | null;
+    user_metadata: Record<string, unknown>;
+    created_at: string | null;
+  }[] = [];
   let page = 1;
   try {
     while (rows.length < maxUsers) {
@@ -69,37 +75,54 @@ export async function getAdminUsers(): Promise<AdminUserRow[]> {
   }
 
   const userIds = rows.map((r) => r.id);
-  const [profilesRes, carouselsRes, projectsRes, exportsRes] = await Promise.all([
-    supabase.from("profiles").select("user_id, display_name, plan, how_found_us").in("user_id", userIds),
-    supabase.from("carousels").select("user_id").in("user_id", userIds),
-    supabase.from("projects").select("user_id").in("user_id", userIds),
-    supabase.from("exports").select("user_id").in("user_id", userIds),
+  if (userIds.length === 0) return [];
+
+  const [profiles, carousels, projects, exportCounts] = await Promise.all([
+    queryMany<{
+      user_id: string;
+      display_name: string | null;
+      plan: string | null;
+      how_found_us: string | null;
+    }>(
+      `select user_id, display_name, plan, how_found_us
+       from profiles where user_id = any($1::uuid[])`,
+      [userIds]
+    ),
+    queryMany<{ user_id: string }>(
+      `select user_id from carousels where user_id = any($1::uuid[])`,
+      [userIds]
+    ),
+    queryMany<{ user_id: string }>(
+      `select user_id from projects where user_id = any($1::uuid[])`,
+      [userIds]
+    ),
+    queryMany<{ user_id: string }>(
+      `select c.user_id
+       from exports e
+       join carousels c on c.id = e.carousel_id
+       where c.user_id = any($1::uuid[])`,
+      [userIds]
+    ),
   ]);
 
-  const profiles = profilesRes.data ?? [];
-  const profileByUserId = new Map(
-    profiles.map((p) => [
-      (p as { user_id: string; display_name: string | null; plan: string | null }).user_id,
-      p as { display_name: string | null; plan: string | null; how_found_us: string | null },
-    ])
-  );
+  const profileByUserId = new Map(profiles.map((p) => [p.user_id, p]));
 
-  const countByUser = (rows: { user_id: string }[]): Map<string, number> => {
+  const countByUser = (list: { user_id: string }[]): Map<string, number> => {
     const m = new Map<string, number>();
-    for (const r of rows) {
+    for (const r of list) {
       m.set(r.user_id, (m.get(r.user_id) ?? 0) + 1);
     }
     return m;
   };
-  const carouselByUser = countByUser((carouselsRes.data ?? []) as { user_id: string }[]);
-  const projectByUser = countByUser((projectsRes.data ?? []) as { user_id: string }[]);
-  const exportByUser = countByUser((exportsRes.data ?? []) as { user_id: string }[]);
+  const carouselByUser = countByUser(carousels);
+  const projectByUser = countByUser(projects);
+  const exportByUser = countByUser(exportCounts);
 
   return rows.map((u) => {
     const profile = profileByUserId.get(u.id);
     const meta = u.user_metadata ?? {};
     const name =
-      (profile?.display_name?.trim()) ||
+      profile?.display_name?.trim() ||
       (typeof meta.full_name === "string" && meta.full_name.trim()) ||
       (typeof meta.name === "string" && meta.name.trim()) ||
       "—";
@@ -128,26 +151,45 @@ export type AdminUserDetailCarousel = {
 };
 
 export type AdminUserDetails = {
-  user: { id: string; email: string | null; name: string; plan: Plan | null; createdAt: string | null };
+  user: {
+    id: string;
+    email: string | null;
+    name: string;
+    plan: Plan | null;
+    createdAt: string | null;
+  };
   projects: { id: string; name: string }[];
   carousels: AdminUserDetailCarousel[];
 };
 
-/** Fetch one user's profile and their projects + carousels (with project name) for admin. */
 export async function getAdminUserDetails(userId: string): Promise<AdminUserDetails | null> {
   const supabase = createAdminClient();
-  const [authRes, profileRes, projectsRes, carouselsRes] = await Promise.all([
+  const [authRes, profile, projects, carouselsRaw] = await Promise.all([
     supabase.auth.admin.getUserById(userId),
-    supabase.from("profiles").select("user_id, display_name, plan").eq("user_id", userId).maybeSingle(),
-    supabase.from("projects").select("id, name").eq("user_id", userId).order("name"),
-    supabase.from("carousels").select("id, title, input_value, project_id, created_at, status").eq("user_id", userId).order("created_at", { ascending: false }),
+    queryOne<{ user_id: string; display_name: string | null; plan: string | null }>(
+      `select user_id, display_name, plan from profiles where user_id = $1`,
+      [userId]
+    ),
+    queryMany<{ id: string; name: string }>(
+      `select id, name from projects where user_id = $1 order by name`,
+      [userId]
+    ),
+    queryMany<{
+      id: string;
+      title: string;
+      input_value: string | null;
+      project_id: string;
+      created_at: string;
+      status: string;
+    }>(
+      `select id, title, input_value, project_id, created_at, status
+       from carousels where user_id = $1 order by created_at desc`,
+      [userId]
+    ),
   ]);
 
   const userData = authRes.data?.user;
   if (authRes.error && authRes.error.message?.toLowerCase().includes("not found")) return null;
-  const profile = profileRes.data as { user_id: string; display_name: string | null; plan: string | null } | null;
-  const projects = (projectsRes.data ?? []) as { id: string; name: string }[];
-  const carouselsRaw = (carouselsRes.data ?? []) as { id: string; title: string; input_value: string | null; project_id: string; created_at: string; status: string }[];
 
   const projectById = new Map(projects.map((p) => [p.id, p.name]));
   const carousels: AdminUserDetailCarousel[] = carouselsRaw.map((c) => ({
@@ -162,7 +204,7 @@ export async function getAdminUserDetails(userId: string): Promise<AdminUserDeta
 
   const meta = (userData?.user_metadata ?? {}) as Record<string, unknown>;
   const name =
-    (profile?.display_name?.trim()) ||
+    profile?.display_name?.trim() ||
     (typeof meta.full_name === "string" && meta.full_name.trim()) ||
     (typeof meta.name === "string" && meta.name.trim()) ||
     "—";
@@ -212,7 +254,7 @@ function bucketByDay(rows: { created_at: string }[], dateLabels: string[]) {
   const buckets: Record<string, number> = {};
   dateLabels.forEach((d) => (buckets[d] = 0));
   rows.forEach((r) => {
-    const d = r.created_at.slice(0, 10);
+    const d = String(r.created_at).slice(0, 10);
     if (buckets[d] !== undefined) buckets[d]++;
   });
   return dateLabels.map((date) => ({ date, count: buckets[date] ?? 0 }));
@@ -232,49 +274,74 @@ export async function getAdminStats(): Promise<AdminStats | null> {
   const dateLabels30 = dateRange(30);
 
   const [
-    authUsersResult,
-    { count: totalProjects },
-    { count: totalCarousels },
-    { count: totalSlides },
-    { count: totalExports },
-    { count: proUsers },
-    profiles7Res,
-    carousels7Res,
-    exports7Res,
-    profiles30Res,
-    carousels30Res,
-    exports30Res,
+    totalUsers,
+    totalProjects,
+    totalCarousels,
+    totalSlides,
+    totalExports,
+    proUsers,
+    profiles7,
+    carousels7,
+    exports7,
+    profiles30,
+    carousels30,
+    exports30,
   ] = await Promise.all([
     countAuthUsers(supabase),
-    supabase.from("projects").select("*", { count: "exact", head: true }),
-    supabase.from("carousels").select("*", { count: "exact", head: true }),
-    supabase.from("slides").select("*", { count: "exact", head: true }),
-    supabase.from("exports").select("*", { count: "exact", head: true }),
-    supabase.from("profiles").select("*", { count: "exact", head: true }).eq("plan", "pro"),
-    supabase.from("profiles").select("created_at").gte("created_at", sevenDaysAgo.toISOString()),
-    supabase.from("carousels").select("created_at").gte("created_at", sevenDaysAgo.toISOString()),
-    supabase.from("exports").select("created_at").gte("created_at", sevenDaysAgo.toISOString()).eq("status", "ready"),
-    supabase.from("profiles").select("created_at").gte("created_at", thirtyDaysAgo.toISOString()),
-    supabase.from("carousels").select("created_at").gte("created_at", thirtyDaysAgo.toISOString()),
-    supabase.from("exports").select("created_at").gte("created_at", thirtyDaysAgo.toISOString()).eq("status", "ready"),
+    queryOne<{ count: string }>(`select count(*)::text as count from projects`).then(
+      (r) => Number(r?.count ?? 0)
+    ),
+    queryOne<{ count: string }>(`select count(*)::text as count from carousels`).then(
+      (r) => Number(r?.count ?? 0)
+    ),
+    queryOne<{ count: string }>(`select count(*)::text as count from slides`).then(
+      (r) => Number(r?.count ?? 0)
+    ),
+    queryOne<{ count: string }>(`select count(*)::text as count from exports`).then(
+      (r) => Number(r?.count ?? 0)
+    ),
+    queryOne<{ count: string }>(
+      `select count(*)::text as count from profiles where plan = 'pro'`
+    ).then((r) => Number(r?.count ?? 0)),
+    queryMany<{ created_at: string }>(
+      `select created_at from profiles where created_at >= $1`,
+      [sevenDaysAgo.toISOString()]
+    ),
+    queryMany<{ created_at: string }>(
+      `select created_at from carousels where created_at >= $1`,
+      [sevenDaysAgo.toISOString()]
+    ),
+    queryMany<{ created_at: string }>(
+      `select created_at from exports where created_at >= $1 and status = 'ready'`,
+      [sevenDaysAgo.toISOString()]
+    ),
+    queryMany<{ created_at: string }>(
+      `select created_at from profiles where created_at >= $1`,
+      [thirtyDaysAgo.toISOString()]
+    ),
+    queryMany<{ created_at: string }>(
+      `select created_at from carousels where created_at >= $1`,
+      [thirtyDaysAgo.toISOString()]
+    ),
+    queryMany<{ created_at: string }>(
+      `select created_at from exports where created_at >= $1 and status = 'ready'`,
+      [thirtyDaysAgo.toISOString()]
+    ),
   ]);
-
-  const totalUsers = authUsersResult ?? 0;
-  const freeUsers = totalUsers - (proUsers ?? 0);
 
   return {
     totalUsers: totalUsers ?? 0,
-    totalProjects: totalProjects ?? 0,
-    totalCarousels: totalCarousels ?? 0,
-    totalSlides: totalSlides ?? 0,
-    totalExports: totalExports ?? 0,
-    proUsers: proUsers ?? 0,
-    freeUsers,
-    carouselsLast7Days: bucketByDay(carousels7Res.data ?? [], dateLabels7),
-    exportsLast7Days: bucketByDay(exports7Res.data ?? [], dateLabels7),
-    newUsersLast7Days: bucketByDay(profiles7Res.data ?? [], dateLabels7),
-    carouselsLast30Days: bucketByDay(carousels30Res.data ?? [], dateLabels30),
-    exportsLast30Days: bucketByDay(exports30Res.data ?? [], dateLabels30),
-    newUsersLast30Days: bucketByDay(profiles30Res.data ?? [], dateLabels30),
+    totalProjects,
+    totalCarousels,
+    totalSlides,
+    totalExports,
+    proUsers,
+    freeUsers: (totalUsers ?? 0) - proUsers,
+    carouselsLast7Days: bucketByDay(carousels7, dateLabels7),
+    exportsLast7Days: bucketByDay(exports7, dateLabels7),
+    newUsersLast7Days: bucketByDay(profiles7, dateLabels7),
+    carouselsLast30Days: bucketByDay(carousels30, dateLabels30),
+    exportsLast30Days: bucketByDay(exports30, dateLabels30),
+    newUsersLast30Days: bucketByDay(profiles30, dateLabels30),
   };
 }
