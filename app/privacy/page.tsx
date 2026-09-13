@@ -6,6 +6,7 @@ import { ContactUsModal } from "@/components/admin/ContactUsModal";
 export const metadata = {
   title: "Privacy Policy",
   description: "Privacy Policy for Karouselmaker.",
+  alternates: { canonical: "/privacy" },
 };
 
 export default function PrivacyPage() {

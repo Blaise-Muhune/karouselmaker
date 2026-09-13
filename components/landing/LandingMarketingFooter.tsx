@@ -12,6 +12,12 @@ export function LandingMarketingFooter() {
           <Link href="/pricing" className="transition-colors hover:text-foreground">
             Pricing
           </Link>
+          <Link href="/instagram-carousel-maker" className="transition-colors hover:text-foreground">
+            Instagram carousels
+          </Link>
+          <Link href="/tiktok-carousel-maker" className="transition-colors hover:text-foreground">
+            TikTok carousels
+          </Link>
           <Link href="/terms" className="transition-colors hover:text-foreground">
             Terms
           </Link>

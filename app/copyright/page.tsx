@@ -6,6 +6,7 @@ import { ContactUsModal } from "@/components/admin/ContactUsModal";
 export const metadata = {
   title: "Copyright / DMCA",
   description: "Copyright and DMCA policy for Karouselmaker.",
+  alternates: { canonical: "/copyright" },
 };
 
 export default function CopyrightPage() {

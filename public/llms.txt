@@ -1,28 +1,36 @@
 # Karouselmaker
 
-> Karouselmaker is an AI-powered carousel maker for Instagram and LinkedIn. Users enter a topic or URL; the app generates swipe carousel slides with AI, then they choose templates and export as images or video. It supports Instagram carousel templates, LinkedIn carousel posts, and importing a template from an image.
+> Karouselmaker is a marketing tool for creating organic Instagram and TikTok carousel posts that promote a product without opening like an advertisement.
 
-## Services
+## What it does
 
-- [App](https://karouselmaker.com): AI carousel generator — create carousels from a topic or link
-- [Templates](https://karouselmaker.com/templates): Browse and edit templates for Instagram and LinkedIn carousels
-- [Projects](https://karouselmaker.com/projects): Create projects, generate slides, and export
+Karouselmaker helps founders, marketers, and small businesses turn a niche and offer into swipe-ready carousel posts. A user can paste a public product website or describe an offer manually. The app creates an editable product context, suggests a sequence of organic content topics, and generates one carousel at a time.
 
-## What We Do Not Do
+Each carousel is designed around a problem-first arc: a strong hook, useful information, a clear payoff, and a fitting call to action. The system balances educational niche content with product marketing so a new account can build trust before increasing promotion.
 
-Karouselmaker does not provide:
-- General graphic design or branding services
-- Social media management or posting on behalf of users
-- Stock photo or asset marketplaces
-- Legal or copyright advice
+## Supported formats
+
+- Instagram carousel posts
+- TikTok Photo Mode / carousel posts
+- Export-ready slides and a complete caption
+
+## Product boundaries
+
+- Karouselmaker is not a general graphic design editor or Canva replacement.
+- It does not publish posts directly to Instagram or TikTok.
+- It does not guarantee reach, sales, followers, or conversions.
+- Users review generated copy, images, and claims before publishing.
+
+## Public pages
+
+- [Home](https://karouselmaker.com/): Product overview and pricing
+- [Instagram Carousel Maker](https://karouselmaker.com/instagram-carousel-maker): How Karouselmaker supports organic Instagram carousel marketing
+- [TikTok Carousel Maker](https://karouselmaker.com/tiktok-carousel-maker): How Karouselmaker supports TikTok Photo Mode carousels
+- [Pricing](https://karouselmaker.com/pricing): Free, Creator, Growth, and post-pack options
+- [Privacy Policy](https://karouselmaker.com/privacy)
+- [Terms of Service](https://karouselmaker.com/terms)
 
 ## Contact
 
-- General: support@karouselmaker.com
-- Copyright / DMCA: copyright@karouselmaker.com
-
-## Key Information
-
-- [Privacy Policy](https://karouselmaker.com/privacy): Data protection and privacy
-- [Terms of Service](https://karouselmaker.com/terms): Website and service terms
-- [Copyright](https://karouselmaker.com/copyright): DMCA and copyright policy
+- Support: support@karouselmaker.com
+- Copyright: copyright@karouselmaker.com

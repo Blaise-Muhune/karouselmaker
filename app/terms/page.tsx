@@ -6,6 +6,7 @@ import { ContactUsModal } from "@/components/admin/ContactUsModal";
 export const metadata = {
   title: "Terms of Service",
   description: "Terms of Service for Karouselmaker.",
+  alternates: { canonical: "/terms" },
 };
 
 export default function TermsPage() {

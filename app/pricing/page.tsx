@@ -33,6 +33,7 @@ export const metadata: Metadata = {
     description:
       "Three free posts, then Creator or Growth for organic IG & TikTok carousel marketing.",
   },
+  alternates: { canonical: "/pricing" },
 };
 
 export default async function PricingPage() {

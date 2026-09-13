@@ -3,6 +3,11 @@ import { listProjects } from "@/lib/server/db";
 import { getProfile } from "@/lib/server/db/profiles";
 import { getSubscription } from "@/lib/server/subscription";
 import { AppShell } from "./AppShell";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+};
 
 export default async function AppLayout({
   children,

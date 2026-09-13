@@ -3,6 +3,7 @@ import { ViewTransitions } from "next-view-transitions";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { GoogleFontsLink } from "@/components/GoogleFontsLink";
+import { SITE_DESCRIPTION, SITE_NAME, SITE_URL } from "@/lib/site";
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -15,22 +16,13 @@ export const viewport: Viewport = {
   ],
 };
 
-/** Base URL for canonical and structured data; use env in production. */
-const siteUrl =
-  typeof process.env.NEXT_PUBLIC_APP_URL === "string" && process.env.NEXT_PUBLIC_APP_URL
-    ? process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, "")
-    : "https://karouselmaker.com";
-
-const metaDescription =
-  "Karouselmaker is a marketing tool for organic Instagram and TikTok carousels—problem-first swipe content that soft-sells your product. Niche + offer in, export-ready carousels out.";
-
 export const metadata: Metadata = {
-  metadataBase: new URL(siteUrl),
+  metadataBase: new URL(SITE_URL),
   title: {
-    default: "Karouselmaker — Organic Instagram & TikTok carousel marketing",
+    default: "Organic Instagram & TikTok Carousel Maker",
     template: "%s | Karouselmaker",
   },
-  description: metaDescription,
+  description: SITE_DESCRIPTION,
   keywords: [
     "organic Instagram marketing",
     "TikTok carousel marketing",
@@ -49,14 +41,14 @@ export const metadata: Metadata = {
     type: "website",
     locale: "en_US",
     url: siteUrl,
-    siteName: "Karouselmaker",
-    title: "Karouselmaker — Organic Instagram & TikTok carousel marketing",
-    description: metaDescription,
+    siteName: SITE_NAME,
+    title: "Organic Instagram & TikTok Carousel Maker | Karouselmaker",
+    description: SITE_DESCRIPTION,
   },
   twitter: {
     card: "summary_large_image",
-    title: "Karouselmaker — Organic Instagram & TikTok carousel marketing",
-    description: metaDescription,
+    title: "Organic Instagram & TikTok Carousel Maker | Karouselmaker",
+    description: SITE_DESCRIPTION,
   },
   appleWebApp: {
     capable: true,
@@ -64,7 +56,7 @@ export const metadata: Metadata = {
     statusBarStyle: "default",
   },
   alternates: {
-    canonical: siteUrl,
+    canonical: "/",
   },
 };
 
@@ -75,16 +67,26 @@ function StructuredDataScript() {
     "@graph": [
       {
         "@type": "Organization",
-        name: "Karouselmaker",
-        url: siteUrl,
-        description: metaDescription,
+        "@id": `${SITE_URL}/#organization`,
+        name: SITE_NAME,
+        url: SITE_URL,
+        description: SITE_DESCRIPTION,
       },
       {
-        "@type": "WebApplication",
-        name: "Karouselmaker",
-        description: metaDescription,
-        url: siteUrl,
+        "@type": "WebSite",
+        "@id": `${SITE_URL}/#website`,
+        name: SITE_NAME,
+        url: SITE_URL,
+        description: SITE_DESCRIPTION,
+      },
+      {
+        "@type": "SoftwareApplication",
+        "@id": `${SITE_URL}/#software`,
+        name: SITE_NAME,
+        description: SITE_DESCRIPTION,
+        url: SITE_URL,
         applicationCategory: "BusinessApplication",
+        operatingSystem: "Web",
         offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
         featureList: [
           "Organic Instagram and TikTok carousel marketing",
