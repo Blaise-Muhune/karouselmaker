@@ -7,6 +7,7 @@ import {
   runHardCarouselCopyChecks,
   topicLikelyFulfillsOpenLoop,
 } from "@/lib/server/ai/carouselQualityControl";
+import { suggestedMarketingTopicCount } from "@/lib/organicMarketingProgress";
 
 function slide(
   index: number,
@@ -124,5 +125,11 @@ describe("open loop + progress helpers", () => {
     expect(a.progress).toBe(3);
     expect(a.bumped).toBe(true);
     expect(a.marketingCarouselsCompleted).toBe(2);
+  });
+
+  it("keeps the three account stages on distinct organic marketing cadences", () => {
+    expect(suggestedMarketingTopicCount(0, 10)).toBe(1);
+    expect(suggestedMarketingTopicCount(4, 10)).toBe(3);
+    expect(suggestedMarketingTopicCount(8, 10)).toBe(7);
   });
 });

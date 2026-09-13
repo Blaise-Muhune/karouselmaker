@@ -57,9 +57,9 @@ const LANGUAGE_OPTIONS = [
 ] as const;
 
 const ACCOUNT_STAGES = [
-  { value: 0, title: "Starting fresh", description: "Mostly useful niche posts" },
-  { value: 4, title: "Building trust", description: "Helpful posts with occasional promotion" },
-  { value: 8, title: "Already promoting", description: "Audience is used to product mentions" },
+  { value: 0, title: "Starting fresh", description: "Mostly useful niche posts, up to 1 soft-sell topic in 10" },
+  { value: 4, title: "Building trust", description: "Helpful posts with about 3 product-bridge topics in 10" },
+  { value: 8, title: "Already promoting", description: "A familiar offer can appear in about 7 topics in 10" },
 ] as const;
 
 export function ProjectEditForm({

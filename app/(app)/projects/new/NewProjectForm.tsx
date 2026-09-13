@@ -25,9 +25,9 @@ const LANGUAGE_OPTIONS = [
 ] as const;
 
 const ACCOUNT_STAGES = [
-  { value: 0, title: "Starting fresh", description: "Little or no content yet. Start with useful niche posts." },
-  { value: 4, title: "Building trust", description: "You already share helpful content, with occasional promotion." },
-  { value: 8, title: "Already promoting", description: "Your audience is used to product mentions and offers." },
+  { value: 0, title: "Starting fresh", description: "Mostly useful niche posts, with up to 1 soft-sell topic in 10." },
+  { value: 4, title: "Building trust", description: "Helpful posts with about 3 product-bridge topics in 10." },
+  { value: 8, title: "Already promoting", description: "A familiar offer can appear in about 7 topics in 10." },
 ] as const;
 
 const SETUP_STEPS = ["Account", "Offer", "Review"] as const;

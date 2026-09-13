@@ -40,7 +40,7 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     locale: "en_US",
-    url: siteUrl,
+    url: SITE_URL,
     siteName: SITE_NAME,
     title: "Organic Instagram & TikTok Carousel Maker | Karouselmaker",
     description: SITE_DESCRIPTION,
