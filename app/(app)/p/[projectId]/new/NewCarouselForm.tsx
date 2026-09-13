@@ -8,7 +8,10 @@ import {
   refreshProjectTopicSuggestions,
   consumeProjectTopicSuggestion,
   ensureProjectTopicLineup,
+  markTopicSuggestionMarketing,
 } from "@/app/actions/carousels/projectTopicSuggestions";
+import type { TopicSuggestionItem } from "@/lib/server/topicSuggestions/topicSuggestionsCache";
+import { normalizeTopicKey } from "@/lib/server/topicSuggestions/normalizeTopicKey";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -110,6 +113,7 @@ export function NewCarouselForm({
     if (initialUseStockPhotos) return "stock";
     if (initialBackgroundAssetIds && initialBackgroundAssetIds.length > 0) return "library";
     if (initialUseAiBackgrounds === false && !initialUseStockPhotos) return "library";
+    // Prefer web images when entitled; otherwise stock — silent default.
     return "brave";
   });
   const [backgroundAssetIds, setBackgroundAssetIds] = useState<string[]>(initialBackgroundAssetIds ?? []);
@@ -119,6 +123,12 @@ export function NewCarouselForm({
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [backgroundPickerOpen, setBackgroundPickerOpen] = useState(false);
   const [driveBusy, setDriveBusy] = useState(false);
+  const [showCustomize, setShowCustomize] = useState(
+    !!(initialBackgroundAssetIds && initialBackgroundAssetIds.length > 0) ||
+      !!(initialSelectedTemplateId && initialSelectedTemplateId !== defaultTemplateId) ||
+      !!initialNotes ||
+      initialNumberOfSlides != null
+  );
   const [showMore, setShowMore] = useState(false);
   const [saveAsNewCarousel, setSaveAsNewCarousel] = useState(false);
   const [isPending, setIsPending] = useState(false);
@@ -128,8 +138,10 @@ export function NewCarouselForm({
   const [topicSuggestOpen, setTopicSuggestOpen] = useState(false);
   const [topicSuggestLoading, setTopicSuggestLoading] = useState(false);
   const [topicSuggestRefreshing, setTopicSuggestRefreshing] = useState(false);
-  const [topicSuggestList, setTopicSuggestList] = useState<string[]>([]);
+  const [topicSuggestList, setTopicSuggestList] = useState<TopicSuggestionItem[]>([]);
   const [topicSuggestError, setTopicSuggestError] = useState<string | null>(null);
+  /** Local opt-in for custom topics (or before cache updates). Once true, stays true. */
+  const [includeMarketingLocked, setIncludeMarketingLocked] = useState(false);
   const [topicQueueLoading, setTopicQueueLoading] = useState(
     !regenerateCarouselId && !(initialInputValue && initialInputValue.trim())
   );
@@ -138,9 +150,6 @@ export function NewCarouselForm({
   );
   const userEditedTopicRef = useRef(userEditedTopic);
   userEditedTopicRef.current = userEditedTopic;
-  const [showCustomTopic, setShowCustomTopic] = useState(
-    !!(initialInputValue && initialInputValue.trim()) || !!regenerateCarouselId
-  );
 
   const canUseBrave = hasFullAccess || isPro;
   const instagramTemplates = templateOptions.filter((t) => (t.category ?? "").toLowerCase() !== "linkedin");
@@ -178,7 +187,8 @@ export function NewCarouselForm({
       setTopicSuggestList(result.topics);
       setTopicSuggestError(null);
       if (!userEditedTopicRef.current && result.topics[0]) {
-        setTopic(result.topics[0]);
+        setTopic(result.topics[0].topic);
+        setIncludeMarketingLocked(!!result.topics[0].is_marketing);
       }
     })();
     return () => {
@@ -205,22 +215,39 @@ export function NewCarouselForm({
     setTopicSuggestRefreshing(false);
     if ("topics" in result) {
       setTopicSuggestList(result.topics);
-      if (!userEditedTopic && result.topics[0]) setTopic(result.topics[0]);
+      if (!userEditedTopic && result.topics[0]) {
+        setTopic(result.topics[0].topic);
+        setIncludeMarketingLocked(!!result.topics[0].is_marketing);
+      }
     } else setTopicSuggestError(result.error);
   }
 
-  async function handlePickTopic(t: string) {
-    setTopic(t);
+  async function handlePickTopic(item: TopicSuggestionItem) {
+    setTopic(item.topic);
+    setIncludeMarketingLocked(!!item.is_marketing);
     setUserEditedTopic(false);
-    setShowCustomTopic(false);
     setTopicSuggestOpen(false);
   }
 
-  function handleSelectQueuedTopic(t: string) {
-    setTopic(t);
+  function handleSelectQueuedTopic(item: TopicSuggestionItem) {
+    setTopic(item.topic);
+    setIncludeMarketingLocked(!!item.is_marketing);
     setUserEditedTopic(false);
-    setShowCustomTopic(false);
   }
+
+  async function handleEnableMarketing() {
+    if (includeMarketing) return;
+    setIncludeMarketingLocked(true);
+    const trimmed = topic.trim();
+    if (!trimmed) return;
+    const result = await markTopicSuggestionMarketing(projectId, trimmed);
+    if ("topics" in result) setTopicSuggestList(result.topics);
+  }
+
+  const matchedTopicItem = topicSuggestList.find(
+    (t) => normalizeTopicKey(t.topic) === normalizeTopicKey(topic)
+  );
+  const includeMarketing = includeMarketingLocked || !!matchedTopicItem?.is_marketing;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -272,6 +299,7 @@ export function NewCarouselForm({
       formData.set("images_related_to_topic", "true");
       if (notes.trim()) formData.set("notes", notes.trim());
       if (selectedTemplateId) formData.set("template_id", selectedTemplateId);
+      formData.set("include_marketing", includeMarketing ? "true" : "false");
 
       const result = await startCarouselGeneration(formData);
       if ("error" in result && !("carouselId" in result)) {
@@ -358,14 +386,14 @@ export function NewCarouselForm({
 
         <Card className="gap-4 rounded-2xl border-border/70 bg-card/95 py-4 shadow-sm">
           <CardHeader className="pb-0 px-5">
-            <CardTitle className="text-sm font-semibold">Next post topic</CardTitle>
+            <CardTitle className="text-sm font-semibold">Topic</CardTitle>
             <CardDescription>
-              Organic angles lined up for this niche and offer. Generate uses the next one; edit or write your own anytime.
+              We prefilled the next idea for this niche. Edit it, or browse more — then generate.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 px-5 pt-0">
             {topicQueueLoading ? (
-              <p className="text-muted-foreground text-sm">Preparing your topic lineup…</p>
+              <p className="text-muted-foreground text-sm">Preparing your next topic…</p>
             ) : (
               <>
                 <div className="flex gap-2">
@@ -373,7 +401,7 @@ export function NewCarouselForm({
                     value={topic}
                     onChange={(e) => {
                       setUserEditedTopic(true);
-                      setShowCustomTopic(true);
+                      setIncludeMarketingLocked(false);
                       setTopic(e.target.value.slice(0, CAROUSEL_INPUT_MAX_CHARS));
                     }}
                     placeholder="Your next carousel topic"
@@ -384,34 +412,29 @@ export function NewCarouselForm({
                     variant="outline"
                     size="icon"
                     onClick={() => void handleOpenTopicSuggestions()}
-                    title="Browse all topic ideas"
+                    title="Browse topic ideas"
                   >
                     <LightbulbIcon className="size-4" />
                   </Button>
                 </div>
-                {!showCustomTopic && topicSuggestList.length > 0 && topic === topicSuggestList[0] ? (
-                  <p className="text-muted-foreground text-[11px]">1 of {topicSuggestList.length} in your lineup</p>
-                ) : null}
-                {topicSuggestList.length > 1 ? (
-                  <div className="space-y-1.5">
-                    <p className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">Up next</p>
-                    <ul className="space-y-1">
-                      {topicSuggestList
-                        .filter((t) => t !== topic)
-                        .slice(0, 4)
-                        .map((t) => (
-                          <li key={t}>
-                            <button
-                              type="button"
-                              className="w-full rounded-md border border-border/60 px-3 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted/40 hover:text-foreground"
-                              onClick={() => handleSelectQueuedTopic(t)}
-                            >
-                              {t}
-                            </button>
-                          </li>
-                        ))}
-                    </ul>
-                  </div>
+                {topic.trim() ? (
+                  <label
+                    className={cn(
+                      "flex items-center gap-2 text-xs",
+                      includeMarketing ? "text-muted-foreground" : "text-foreground cursor-pointer"
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      className="size-3.5 rounded border-input accent-primary"
+                      checked={includeMarketing}
+                      disabled={includeMarketing}
+                      onChange={() => void handleEnableMarketing()}
+                    />
+                    {includeMarketing
+                      ? "Mentions your product (locked for this topic)"
+                      : "Mention product on this post"}
+                  </label>
                 ) : null}
                 <div className="flex flex-wrap gap-2">
                   <Button
@@ -420,14 +443,14 @@ export function NewCarouselForm({
                     size="sm"
                     className="h-8 px-2 text-xs"
                     onClick={() => {
-                      setShowCustomTopic(true);
                       setUserEditedTopic(true);
+                      setIncludeMarketingLocked(false);
                       setTopic("");
                     }}
                   >
                     Write your own
                   </Button>
-                  {topicSuggestList[0] && topic !== topicSuggestList[0] ? (
+                  {topicSuggestList[0] && topic !== topicSuggestList[0].topic ? (
                     <Button
                       type="button"
                       variant="ghost"
@@ -435,7 +458,7 @@ export function NewCarouselForm({
                       className="h-8 px-2 text-xs"
                       onClick={() => handleSelectQueuedTopic(topicSuggestList[0]!)}
                     >
-                      Use next in lineup
+                      Use next idea
                     </Button>
                   ) : null}
                 </div>
@@ -445,161 +468,187 @@ export function NewCarouselForm({
           </CardContent>
         </Card>
 
-        <Card className="gap-4 rounded-2xl border-border/70 bg-card/95 py-4 shadow-sm">
-          <CardHeader className="pb-0 px-5">
-            <CardTitle className="text-sm font-semibold">Images</CardTitle>
-            <CardDescription>Stock, web search, or your own uploads / Drive—for swipe posts that don’t look like ads.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 px-5 pt-0">
-            <div className="flex flex-col gap-2">
-              {(
-                [
-                  { id: "stock" as const, label: "Stock photos", desc: "Unsplash / Pexels / Pixabay", icon: ImageIcon },
-                  {
-                    id: "brave" as const,
-                    label: "Web images",
-                    desc: canUseBrave ? WEB_IMAGES_SOURCE_DESCRIPTION : "Upgrade for web image search",
-                    icon: GlobeIcon,
-                    disabled: !canUseBrave,
-                  },
-                  { id: "library" as const, label: "My images", desc: "Library upload or Google Drive", icon: ImageIcon },
-                ] as const
-              ).map((opt) => (
-                <button
-                  key={opt.id}
-                  type="button"
-                  disabled={"disabled" in opt && opt.disabled}
-                  onClick={() => setImageSource(opt.id)}
-                  className={cn(
-                    "rounded-lg border px-3 py-2.5 text-left text-sm transition-colors",
-                    imageSource === opt.id
-                      ? "border-primary bg-primary/5 ring-1 ring-primary"
-                      : "border-border/60 hover:bg-muted/40",
-                    "disabled" in opt && opt.disabled && "opacity-50 cursor-not-allowed"
-                  )}
-                >
-                  <span className="font-medium flex items-center gap-2">
-                    <opt.icon className="size-3.5" />
-                    {opt.label}
-                  </span>
-                  <span className="text-muted-foreground mt-0.5 block text-xs">{opt.desc}</span>
-                </button>
-              ))}
-            </div>
-            {imageSource === "library" && (
-              <div className="flex flex-wrap gap-2 pt-1">
-                <Button type="button" variant="outline" size="sm" onClick={() => setBackgroundPickerOpen(true)}>
-                  Library ({backgroundAssetIds.length})
-                </Button>
-                <GoogleDriveMultiFilePicker
-                  disabled={driveBusy}
-                  onError={(msg) => setError(msg)}
-                  onFilesPicked={async (fileIds, accessToken) => {
-                    setDriveBusy(true);
-                    try {
-                      const result = await importFilesFromGoogleDrive(fileIds, accessToken, projectId);
-                      if (result.ok) {
-                        setBackgroundAssetIds((prev) => [
-                          ...new Set([...prev, ...result.assets.map((a) => a.id)]),
-                        ]);
-                      } else setError(result.error);
-                    } finally {
-                      setDriveBusy(false);
-                    }
-                  }}
-                >
-                  Drive files
-                </GoogleDriveMultiFilePicker>
-                <GoogleDriveFolderPicker
-                  disabled={driveBusy}
-                  onError={(msg) => setError(msg)}
-                  onFolderPicked={async (folderId, accessToken) => {
-                    setDriveBusy(true);
-                    try {
-                      const result = await importFromGoogleDrive(folderId, accessToken, projectId);
-                      if (result.ok) {
-                        setBackgroundAssetIds((prev) => [
-                          ...new Set([...prev, ...result.assets.map((a) => a.id)]),
-                        ]);
-                      } else setError(result.error);
-                    } finally {
-                      setDriveBusy(false);
-                    }
-                  }}
-                >
-                  Drive folder
-                </GoogleDriveFolderPicker>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="gap-4 rounded-2xl border-border/70 bg-card/95 py-4 shadow-sm">
-          <CardHeader className="pb-0 px-5">
-            <CardTitle className="text-sm font-semibold">Template</CardTitle>
-          </CardHeader>
-          <CardContent className="px-5 pt-0">
-            <Button type="button" variant="outline" className="w-full justify-start gap-2" onClick={() => setTemplateModalOpen(true)}>
-              <LayoutTemplateIcon className="size-4" />
-              {selectedTemplate?.name ?? "Choose template"}
-            </Button>
-          </CardContent>
-        </Card>
-
         <div className="space-y-3">
-          <Button type="button" variant="ghost" size="sm" className="-ml-1 text-muted-foreground" onClick={() => setShowMore((v) => !v)}>
-            {showMore ? <ChevronUpIcon className="mr-1.5 size-4" /> : <ChevronDownIcon className="mr-1.5 size-4" />}
-            {showMore ? "Fewer options" : "Advanced"}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="-ml-1 text-muted-foreground"
+            onClick={() => setShowCustomize((v) => !v)}
+          >
+            {showCustomize ? <ChevronUpIcon className="mr-1.5 size-4" /> : <ChevronDownIcon className="mr-1.5 size-4" />}
+            {showCustomize ? "Hide look options" : "Change look"}
           </Button>
-          {showMore && (
-            <Card className="gap-4 rounded-2xl border-border/70 py-4 shadow-sm">
-              <CardContent className="space-y-4 px-5">
-                <div className="space-y-2">
-                  <Label>Number of slides ({CAROUSEL_SLIDES_MIN}–{CAROUSEL_SLIDES_MAX}, blank = AI decides)</Label>
-                  <div className="flex h-10 w-full max-w-xs items-center rounded-lg border border-input bg-background">
+          {showCustomize && (
+            <div className="space-y-4 rounded-2xl border border-border/70 bg-card/95 p-4 shadow-sm">
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Images</p>
+                <p className="text-muted-foreground text-xs">
+                  Default: {canUseBrave ? "web images" : "stock photos"}. Switch only if you want something else.
+                </p>
+                <div className="flex flex-col gap-2">
+                  {(
+                    [
+                      { id: "stock" as const, label: "Stock photos", desc: "Unsplash / Pexels / Pixabay", icon: ImageIcon },
+                      {
+                        id: "brave" as const,
+                        label: "Web images",
+                        desc: canUseBrave ? WEB_IMAGES_SOURCE_DESCRIPTION : "Upgrade for web image search",
+                        icon: GlobeIcon,
+                        disabled: !canUseBrave,
+                      },
+                      { id: "library" as const, label: "My images", desc: "Library upload or Google Drive", icon: ImageIcon },
+                    ] as const
+                  ).map((opt) => (
                     <button
+                      key={opt.id}
                       type="button"
-                      className="flex h-full w-10 items-center justify-center border-r"
-                      onClick={() => {
-                        if (numberOfSlides === "") return;
-                        const n = parseInt(numberOfSlides, 10);
-                        if (n <= CAROUSEL_SLIDES_MIN) setNumberOfSlides("");
-                        else setNumberOfSlides(String(n - 1));
-                      }}
+                      disabled={"disabled" in opt && opt.disabled}
+                      onClick={() => setImageSource(opt.id)}
+                      className={cn(
+                        "rounded-lg border px-3 py-2.5 text-left text-sm transition-colors",
+                        imageSource === opt.id
+                          ? "border-primary bg-primary/5 ring-1 ring-primary"
+                          : "border-border/60 hover:bg-muted/40",
+                        "disabled" in opt && opt.disabled && "opacity-50 cursor-not-allowed"
+                      )}
                     >
-                      <ChevronDownIcon className="size-4" />
+                      <span className="font-medium flex items-center gap-2">
+                        <opt.icon className="size-3.5" />
+                        {opt.label}
+                      </span>
+                      <span className="text-muted-foreground mt-0.5 block text-xs">{opt.desc}</span>
                     </button>
-                    <span className="flex-1 text-center text-sm">{numberOfSlides || "AI"}</span>
-                    <button
-                      type="button"
-                      className="flex h-full w-10 items-center justify-center border-l"
-                      onClick={() => {
-                        if (numberOfSlides === "") setNumberOfSlides(String(CAROUSEL_SLIDES_MIN));
-                        else {
-                          const n = parseInt(numberOfSlides, 10);
-                          if (n < CAROUSEL_SLIDES_MAX) setNumberOfSlides(String(n + 1));
+                  ))}
+                </div>
+                {imageSource === "library" && (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <Button type="button" variant="outline" size="sm" onClick={() => setBackgroundPickerOpen(true)}>
+                      Library ({backgroundAssetIds.length})
+                    </Button>
+                    <GoogleDriveMultiFilePicker
+                      disabled={driveBusy}
+                      onError={(msg) => setError(msg)}
+                      onFilesPicked={async (fileIds, accessToken) => {
+                        setDriveBusy(true);
+                        try {
+                          const result = await importFilesFromGoogleDrive(fileIds, accessToken, projectId);
+                          if (result.ok) {
+                            setBackgroundAssetIds((prev) => [
+                              ...new Set([...prev, ...result.assets.map((a) => a.id)]),
+                            ]);
+                          } else setError(result.error);
+                        } finally {
+                          setDriveBusy(false);
                         }
                       }}
                     >
-                      <ChevronUpIcon className="size-4" />
-                    </button>
+                      Drive files
+                    </GoogleDriveMultiFilePicker>
+                    <GoogleDriveFolderPicker
+                      disabled={driveBusy}
+                      onError={(msg) => setError(msg)}
+                      onFolderPicked={async (folderId, accessToken) => {
+                        setDriveBusy(true);
+                        try {
+                          const result = await importFromGoogleDrive(folderId, accessToken, projectId);
+                          if (result.ok) {
+                            setBackgroundAssetIds((prev) => [
+                              ...new Set([...prev, ...result.assets.map((a) => a.id)]),
+                            ]);
+                          } else setError(result.error);
+                        } finally {
+                          setDriveBusy(false);
+                        }
+                      }}
+                    >
+                      Drive folder
+                    </GoogleDriveFolderPicker>
                   </div>
-                </div>
-                <div className="space-y-2">
-                  <Label>Notes (optional)</Label>
-                  <Textarea
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value.slice(0, CAROUSEL_NOTES_MAX_CHARS))}
-                    className="min-h-20"
-                    placeholder="e.g. Keep it beginner-friendly; soft product mention only on last slide"
-                  />
-                </div>
-              </CardContent>
-            </Card>
+                )}
+              </div>
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Template</p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full justify-start gap-2"
+                  onClick={() => setTemplateModalOpen(true)}
+                >
+                  <LayoutTemplateIcon className="size-4" />
+                  {selectedTemplate?.name ?? "Choose template"}
+                </Button>
+              </div>
+              <div className="space-y-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="-ml-1 text-muted-foreground"
+                  onClick={() => setShowMore((v) => !v)}
+                >
+                  {showMore ? <ChevronUpIcon className="mr-1.5 size-4" /> : <ChevronDownIcon className="mr-1.5 size-4" />}
+                  {showMore ? "Fewer options" : "More options"}
+                </Button>
+                {showMore && (
+                  <div className="space-y-4 rounded-lg border border-border/60 bg-muted/20 p-3">
+                    <div className="space-y-2">
+                      <Label>
+                        Number of slides ({CAROUSEL_SLIDES_MIN}–{CAROUSEL_SLIDES_MAX}, blank = AI decides)
+                      </Label>
+                      <div className="flex h-10 w-full max-w-xs items-center rounded-lg border border-input bg-background">
+                        <button
+                          type="button"
+                          className="flex h-full w-10 items-center justify-center border-r"
+                          onClick={() => {
+                            if (numberOfSlides === "") return;
+                            const n = parseInt(numberOfSlides, 10);
+                            if (n <= CAROUSEL_SLIDES_MIN) setNumberOfSlides("");
+                            else setNumberOfSlides(String(n - 1));
+                          }}
+                        >
+                          <ChevronDownIcon className="size-4" />
+                        </button>
+                        <span className="flex-1 text-center text-sm">{numberOfSlides || "AI"}</span>
+                        <button
+                          type="button"
+                          className="flex h-full w-10 items-center justify-center border-l"
+                          onClick={() => {
+                            if (numberOfSlides === "") setNumberOfSlides(String(CAROUSEL_SLIDES_MIN));
+                            else {
+                              const n = parseInt(numberOfSlides, 10);
+                              if (n < CAROUSEL_SLIDES_MAX) setNumberOfSlides(String(n + 1));
+                            }
+                          }}
+                        >
+                          <ChevronUpIcon className="size-4" />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Notes (optional)</Label>
+                      <Textarea
+                        value={notes}
+                        onChange={(e) => setNotes(e.target.value.slice(0, CAROUSEL_NOTES_MAX_CHARS))}
+                        className="min-h-20"
+                        placeholder="e.g. Keep it beginner-friendly"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
           )}
         </div>
 
-        <Button type="submit" className="w-full" disabled={isPending} loading={isPending}>
+        {!showCustomize && (
+          <p className="text-muted-foreground text-xs">
+            Using {imageSource === "stock" ? "stock photos" : imageSource === "brave" ? "web images" : "your images"}
+            {selectedTemplate?.name ? ` · ${selectedTemplate.name}` : ""}. Open Change look to switch.
+          </p>
+        )}
+
+        <Button type="submit" className="w-full" size="lg" disabled={isPending || topicQueueLoading} loading={isPending}>
           {regenerateCarouselId ? "Regenerate post" : "Generate post"}
         </Button>
       </form>
@@ -607,9 +656,9 @@ export function NewCarouselForm({
       <Dialog open={topicSuggestOpen} onOpenChange={setTopicSuggestOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Topic lineup</DialogTitle>
+            <DialogTitle>Topic ideas</DialogTitle>
             <DialogDescription>
-              Ideas for this niche and offer, in order. Generate removes the one you use. Refresh for a new batch.
+              Pick an angle. Check “Mention product” on the form if you want a soft sell on that post.
             </DialogDescription>
           </DialogHeader>
           {topicSuggestLoading ? (
@@ -619,12 +668,22 @@ export function NewCarouselForm({
               {topicSuggestError && <p className="text-destructive text-sm">{topicSuggestError}</p>}
               {topicSuggestList.map((t) => (
                 <button
-                  key={t}
+                  key={t.topic}
                   type="button"
-                  className="w-full rounded-md border px-3 py-2 text-left text-sm hover:bg-muted/50"
+                  className="flex w-full items-center justify-between gap-2 rounded-md border px-3 py-2 text-left text-sm hover:bg-muted/50"
                   onClick={() => void handlePickTopic(t)}
                 >
-                  {t}
+                  <span className="min-w-0 truncate">{t.topic}</span>
+                  <span
+                    className={cn(
+                      "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium",
+                      t.is_marketing
+                        ? "bg-primary/15 text-primary"
+                        : "bg-muted text-muted-foreground"
+                    )}
+                  >
+                    {t.is_marketing ? "Product" : "Tip"}
+                  </span>
                 </button>
               ))}
               <Button type="button" variant="outline" size="sm" disabled={topicSuggestRefreshing} onClick={() => void handleRefreshTopicSuggestions()}>

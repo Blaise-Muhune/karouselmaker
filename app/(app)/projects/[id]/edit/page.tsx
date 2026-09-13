@@ -38,6 +38,7 @@ export default async function EditProjectPage({
     project_rules: {
       rules: rulesParsed.rules,
       product_to_promote: rulesParsed.product_to_promote,
+      organic_marketing_progress: rulesParsed.organic_marketing_progress,
     },
     brand_kit: {
       primary_color: brandKit?.primary_color ?? "",

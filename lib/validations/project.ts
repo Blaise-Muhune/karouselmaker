@@ -1,5 +1,10 @@
 import { z } from "zod";
 import { PRODUCT_TO_PROMOTE_MAX_CHARS, PROJECT_RULES_MAX_CHARS } from "@/lib/constants";
+import {
+  clampOrganicMarketingProgress,
+  ORGANIC_MARKETING_PROGRESS_MAX,
+  ORGANIC_MARKETING_PROGRESS_MIN,
+} from "@/lib/organicMarketingProgress";
 
 const tonePresetEnum = z.enum([
   "neutral",
@@ -13,6 +18,17 @@ export const projectRulesSchema = z.object({
   rules: z.string().max(PROJECT_RULES_MAX_CHARS).optional().default(""),
   /** What product/page/offer to soft-promote — URL and/or short description. */
   product_to_promote: z.string().max(PRODUCT_TO_PROMOTE_MAX_CHARS).optional().default(""),
+  /**
+   * 0–10: how much organic marketing this account has already done.
+   * Low = progressive value-first posts; high = more marketing carousels OK.
+   */
+  organic_marketing_progress: z
+    .number()
+    .int()
+    .min(ORGANIC_MARKETING_PROGRESS_MIN)
+    .max(ORGANIC_MARKETING_PROGRESS_MAX)
+    .optional()
+    .default(0),
 });
 
 export type ParsedProjectRules = {
@@ -20,6 +36,11 @@ export type ParsedProjectRules = {
   product_to_promote: string;
   product_url: string | null;
   product_brief: string;
+  organic_marketing_progress: number;
+  /** Promised next topic from a prior CTA / similar_ideas[0]. */
+  pending_open_loop: string | null;
+  /** Count of completed marketing-mode carousel generations (for auto progress). */
+  marketing_carousels_completed: number;
 };
 
 export const slideStructureSchema = z.object({
@@ -47,7 +68,11 @@ export const projectFormSchema = z.object({
   tone_preset: tonePresetEnum.default("neutral"),
   language: languageCode,
   slide_structure: slideStructureSchema.default({ number_of_slides: 5 }),
-  project_rules: projectRulesSchema.default({ rules: "", product_to_promote: "" }),
+  project_rules: projectRulesSchema.default({
+    rules: "",
+    product_to_promote: "",
+    organic_marketing_progress: 0,
+  }),
   brand_kit: brandKitSchema.default({
     primary_color: "",
     secondary_color: "",
@@ -66,6 +91,9 @@ export function parseProjectRulesJson(projectRules: unknown): ParsedProjectRules
         product_to_promote?: string;
         product_url?: string | null;
         product_brief?: string;
+        organic_marketing_progress?: unknown;
+        pending_open_loop?: unknown;
+        marketing_carousels_completed?: unknown;
         do_rules?: string;
         dont_rules?: string;
       }
@@ -77,17 +105,37 @@ export function parseProjectRulesJson(projectRules: unknown): ParsedProjectRules
           .filter(Boolean)
           .join("\n\n")
       : "");
+  const pending =
+    typeof json?.pending_open_loop === "string" && json.pending_open_loop.trim()
+      ? json.pending_open_loop.trim().slice(0, 200)
+      : null;
+  const marketingCompletedRaw = json?.marketing_carousels_completed;
+  const marketingCompleted =
+    typeof marketingCompletedRaw === "number" && Number.isFinite(marketingCompletedRaw)
+      ? Math.max(0, Math.floor(marketingCompletedRaw))
+      : typeof marketingCompletedRaw === "string" && Number.isFinite(Number(marketingCompletedRaw))
+        ? Math.max(0, Math.floor(Number(marketingCompletedRaw)))
+        : 0;
   return {
     rules: rulesValue,
     product_to_promote: typeof json?.product_to_promote === "string" ? json.product_to_promote : "",
     product_url: typeof json?.product_url === "string" && json.product_url.trim() ? json.product_url.trim() : null,
     product_brief: typeof json?.product_brief === "string" ? json.product_brief : "",
+    organic_marketing_progress: clampOrganicMarketingProgress(json?.organic_marketing_progress),
+    pending_open_loop: pending,
+    marketing_carousels_completed: marketingCompleted,
   };
 }
 
 export function projectFormToDbPayload(
   input: ProjectFormInput,
-  productContext?: { product_url?: string | null; product_brief?: string }
+  productContext?: {
+    product_url?: string | null;
+    product_brief?: string;
+    /** Preserve QC memory fields not edited in the form. */
+    pending_open_loop?: string | null;
+    marketing_carousels_completed?: number;
+  }
 ): {
   name: string;
   niche: string | null;
@@ -108,6 +156,15 @@ export function projectFormToDbPayload(
       product_to_promote: input.project_rules.product_to_promote ?? "",
       product_url: productContext?.product_url ?? null,
       product_brief: productContext?.product_brief ?? "",
+      organic_marketing_progress: clampOrganicMarketingProgress(
+        input.project_rules.organic_marketing_progress
+      ),
+      ...(productContext?.pending_open_loop
+        ? { pending_open_loop: productContext.pending_open_loop }
+        : {}),
+      ...(typeof productContext?.marketing_carousels_completed === "number"
+        ? { marketing_carousels_completed: productContext.marketing_carousels_completed }
+        : {}),
     },
     slide_structure: {
       number_of_slides: input.slide_structure.number_of_slides,

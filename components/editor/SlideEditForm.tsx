@@ -1519,7 +1519,8 @@ export function SlideEditForm({
   const [activeEditZone, setActiveEditZone] = useState<string | null>(null);
   const [expandedExtraTextZoneId, setExpandedExtraTextZoneId] = useState<string | null>(null);
   /** Which text section is expanded in the Text tab (click to expand and show green container in preview). */
-  const [expandedTextSection, setExpandedTextSection] = useState<"headline" | "body" | null>(null);
+  const [expandedTextSection, setExpandedTextSection] = useState<"headline" | "body" | null>("headline");
+  const [showCreatorTextStyle, setShowCreatorTextStyle] = useState(false);
   /** "Edit more" (style, highlight, layout) open per section. */
   const headerRef = useRef<HTMLElement>(null);
   const mainScrollRef = useRef<HTMLDivElement>(null);
@@ -7028,7 +7029,7 @@ export function SlideEditForm({
                 </>
               ) : (
                 <>
-                  <span className="font-medium text-foreground">Headline & body</span> — edit the text and its color. Layout and fonts come from the template.
+                  <span className="font-medium text-foreground">Edit the words</span> — tweak headline and body. Open Style only if you need color.
                 </>
               )}
             </p>
@@ -7726,7 +7727,19 @@ export function SlideEditForm({
                   <InfoIcon className="size-3.5" />
                 </button>
                 )}
+                {!showAdvancedEditor && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 text-xs text-muted-foreground"
+                    onClick={() => setShowCreatorTextStyle((v) => !v)}
+                  >
+                    {showCreatorTextStyle ? "Hide style" : "Style"}
+                  </Button>
+                )}
               </div>
+                {(showAdvancedEditor || showCreatorTextStyle) && (
                 <div className="rounded-lg border border-border/50 bg-muted/20 p-3 space-y-4">
                   <div className="space-y-3">
                     <p className="text-xs font-medium text-foreground">{showAdvancedEditor ? "Text style" : "Text color"}</p>
@@ -7792,6 +7805,7 @@ export function SlideEditForm({
                   />
                   )}
                 </div>
+                )}
               {showAdvancedEditor && (
               <>
               <div className="border-t border-border/40 pt-3 space-y-4">
@@ -8411,7 +8425,19 @@ export function SlideEditForm({
                     Apply to all
                   </Button>
                 )}
+                {!showAdvancedEditor && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 text-xs text-muted-foreground"
+                    onClick={() => setShowCreatorTextStyle((v) => !v)}
+                  >
+                    {showCreatorTextStyle ? "Hide style" : "Style"}
+                  </Button>
+                )}
               </div>
+                {(showAdvancedEditor || showCreatorTextStyle) && (
                 <div className="rounded-lg border border-border/50 bg-muted/20 p-3 space-y-4">
                   <div className="space-y-3">
                     <p className="text-xs font-medium text-foreground">{showAdvancedEditor ? "Text style" : "Text color"}</p>
@@ -8477,6 +8503,7 @@ export function SlideEditForm({
                   />
                   )}
                 </div>
+                )}
               {showAdvancedEditor && (
               <>
               <div className="border-t border-border/40 pt-3 space-y-4">

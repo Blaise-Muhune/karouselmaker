@@ -8,6 +8,10 @@ import Link from "next/link";
 import { updateProject } from "@/app/actions/projects/updateProject";
 import { uploadProjectLogo } from "@/app/actions/projects/uploadProjectLogo";
 import { PRODUCT_TO_PROMOTE_MAX_CHARS, PROJECT_RULES_MAX_CHARS } from "@/lib/constants";
+import {
+  ORGANIC_MARKETING_PROGRESS_MAX,
+  organicMarketingProgressLabel,
+} from "@/lib/organicMarketingProgress";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ColorPicker } from "@/components/ui/color-picker";
@@ -86,6 +90,10 @@ export function ProjectEditForm({
     fd.set("number_of_slides", "5");
     fd.set("rules", data.project_rules.rules ?? "");
     fd.set("product_to_promote", data.project_rules.product_to_promote ?? "");
+    fd.set(
+      "organic_marketing_progress",
+      String(data.project_rules.organic_marketing_progress ?? 0)
+    );
     fd.set("primary_color", data.brand_kit.primary_color ?? "");
     fd.set("secondary_color", data.brand_kit.secondary_color ?? "");
     fd.set("watermark_text", data.brand_kit.watermark_text ?? "");
@@ -192,6 +200,36 @@ export function ProjectEditForm({
           </Button>
           {showAdvanced && (
             <div className="space-y-6 rounded-lg border border-border/60 bg-muted/20 p-4">
+              <FormField
+                control={form.control}
+                name="project_rules.organic_marketing_progress"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>How often posts mention your product</FormLabel>
+                    <FormControl>
+                      <div className="space-y-2">
+                        <input
+                          type="range"
+                          min={0}
+                          max={ORGANIC_MARKETING_PROGRESS_MAX}
+                          step={1}
+                          className="w-full accent-primary"
+                          value={field.value ?? 0}
+                          onChange={(e) => field.onChange(Number(e.target.value))}
+                        />
+                        <p className="text-sm text-foreground">
+                          {field.value ?? 0}/{ORGANIC_MARKETING_PROGRESS_MAX} —{" "}
+                          {organicMarketingProgressLabel(field.value ?? 0)}
+                        </p>
+                        <p className="text-muted-foreground text-xs">
+                          Auto-raises as you generate marketing posts. Override only if you want a faster/slower cadence.
+                        </p>
+                      </div>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
               <FormField
                 control={form.control}
                 name="language"

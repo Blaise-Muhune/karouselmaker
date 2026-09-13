@@ -6,6 +6,10 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { createProject } from "@/app/actions/projects/createProject";
 import { PRODUCT_TO_PROMOTE_MAX_CHARS, PROJECT_RULES_MAX_CHARS } from "@/lib/constants";
+import {
+  ORGANIC_MARKETING_PROGRESS_MAX,
+  organicMarketingProgressLabel,
+} from "@/lib/organicMarketingProgress";
 import { Button } from "@/components/ui/button";
 import { ColorPicker } from "@/components/ui/color-picker";
 import { Input } from "@/components/ui/input";
@@ -65,7 +69,7 @@ export function NewProjectForm() {
       tone_preset: "neutral",
       language: "en",
       slide_structure: { number_of_slides: 5 },
-      project_rules: { rules: "", product_to_promote: "" },
+      project_rules: { rules: "", product_to_promote: "", organic_marketing_progress: 0 },
       brand_kit: {
         primary_color: "",
         secondary_color: "",
@@ -86,6 +90,10 @@ export function NewProjectForm() {
     fd.set("number_of_slides", "5");
     fd.set("rules", data.project_rules.rules ?? "");
     fd.set("product_to_promote", data.project_rules.product_to_promote ?? "");
+    fd.set(
+      "organic_marketing_progress",
+      String(data.project_rules.organic_marketing_progress ?? 0)
+    );
     fd.set("primary_color", data.brand_kit.primary_color ?? "");
     fd.set("secondary_color", data.brand_kit.secondary_color ?? "");
     fd.set("watermark_text", data.brand_kit.watermark_text ?? "");
@@ -130,7 +138,7 @@ export function NewProjectForm() {
           <div>
             <h1 className="text-xl font-semibold tracking-tight">New project</h1>
             <p className="text-muted-foreground text-sm mt-0.5">
-              One project = one niche account. Set the offer you soft-sell in organic Instagram & TikTok carousels.
+              Name the account, niche, and what you sell — then generate organic Instagram & TikTok carousels.
             </p>
           </div>
         </div>
@@ -181,7 +189,7 @@ export function NewProjectForm() {
                       />
                     </FormControl>
                     <p className="text-muted-foreground text-xs">
-                      Link or short description. Carousels stay problem-first and soft-sell this offer—never hard ads. If you paste a URL, we read the page and build a product brief.
+                      Link or short description. Posts stay problem-first and can soft-mention this offer. A URL builds a product brief automatically.
                     </p>
                     <p className={cn("text-xs tabular-nums text-muted-foreground", len >= PRODUCT_TO_PROMOTE_MAX_CHARS && "text-destructive")}>
                       {len}/{PRODUCT_TO_PROMOTE_MAX_CHARS}
@@ -206,6 +214,36 @@ export function NewProjectForm() {
               </Button>
               {showAdvanced && (
                 <div className="space-y-6 rounded-lg border border-border/60 bg-muted/20 p-4">
+                  <FormField
+                    control={form.control}
+                    name="project_rules.organic_marketing_progress"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>How often posts mention your product</FormLabel>
+                        <FormControl>
+                          <div className="space-y-2">
+                            <input
+                              type="range"
+                              min={0}
+                              max={ORGANIC_MARKETING_PROGRESS_MAX}
+                              step={1}
+                              className="w-full accent-primary"
+                              value={field.value ?? 0}
+                              onChange={(e) => field.onChange(Number(e.target.value))}
+                            />
+                            <p className="text-sm text-foreground">
+                              {field.value ?? 0}/{ORGANIC_MARKETING_PROGRESS_MAX} —{" "}
+                              {organicMarketingProgressLabel(field.value ?? 0)}
+                            </p>
+                            <p className="text-muted-foreground text-xs">
+                              Starts low automatically. We also raise this as you generate marketing posts — only change if you want to override.
+                            </p>
+                          </div>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                   <FormField
                     control={form.control}
                     name="language"

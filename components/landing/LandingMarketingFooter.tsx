@@ -3,20 +3,22 @@ import { ContactUsModal } from "@/components/admin/ContactUsModal";
 
 export function LandingMarketingFooter() {
   return (
-    <footer className="border-t border-border/50 py-6 mt-12 sm:mt-16">
-      <div className="mx-auto max-w-5xl px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-4 text-xs sm:text-sm text-muted-foreground">
-        <span>Karouselmaker</span>
-        <div className="flex flex-wrap items-center justify-center gap-4">
-          <Link href="/pricing" className="hover:text-foreground transition-colors">
+    <footer className="border-t border-border/40 py-8">
+      <div className="mx-auto flex max-w-6xl flex-col items-start justify-between gap-4 px-4 sm:flex-row sm:items-center sm:px-6">
+        <span className="font-[family-name:var(--font-landing-display)] text-base tracking-tight text-foreground">
+          Karouselmaker
+        </span>
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted-foreground">
+          <Link href="/pricing" className="transition-colors hover:text-foreground">
             Pricing
           </Link>
-          <Link href="/terms" className="hover:text-foreground transition-colors">
+          <Link href="/terms" className="transition-colors hover:text-foreground">
             Terms
           </Link>
-          <Link href="/privacy" className="hover:text-foreground transition-colors">
+          <Link href="/privacy" className="transition-colors hover:text-foreground">
             Privacy
           </Link>
-          <Link href="/copyright" className="hover:text-foreground transition-colors">
+          <Link href="/copyright" className="transition-colors hover:text-foreground">
             Copyright
           </Link>
           <ContactUsModal userEmail="" />

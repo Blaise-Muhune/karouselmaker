@@ -46,4 +46,9 @@ export const generateCarouselInputSchema = z.object({
   viral_shorts_style: checkboxBoolSchema,
   carousel_for: z.enum(["instagram", "linkedin"]).optional(),
   product_service_input: z.string().trim().max(600).optional(),
+  /**
+   * When true, this run is a marketing carousel (soft product bridge allowed).
+   * When false/omitted, progressive value/education only — no product pitch.
+   */
+  include_marketing: checkboxBoolSchema,
 });

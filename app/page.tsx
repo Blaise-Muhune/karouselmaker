@@ -1,110 +1,60 @@
 import { Link } from "next-view-transitions";
 import { redirect } from "next/navigation";
-import { Fraunces, Plus_Jakarta_Sans } from "next/font/google";
+import { Instrument_Serif, Manrope } from "next/font/google";
 import { getOptionalUser } from "@/lib/server/auth/getUser";
 import { Button } from "@/components/ui/button";
-import {
-  ArrowRight,
-  Check,
-  FolderKanban,
-  Megaphone,
-  Sparkles,
-  Target,
-  TrendingUp,
-  X,
-} from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { HeroCarouselPreview } from "@/components/landing/HeroCarouselPreview";
-import { LandingDemoCarousel } from "@/components/landing/LandingDemoCarousel";
 import { LandingMarketingHeader } from "@/components/landing/LandingMarketingHeader";
 import { LandingMarketingFooter } from "@/components/landing/LandingMarketingFooter";
 import { MarketingPricingSection } from "@/components/landing/MarketingPricingSection";
 import { FREE_FULL_ACCESS_GENERATIONS, STARTER_PRICE_DISPLAY } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
-const display = Fraunces({
+const display = Instrument_Serif({
   subsets: ["latin"],
+  weight: "400",
   variable: "--font-landing-display",
   display: "swap",
 });
 
-const sans = Plus_Jakarta_Sans({
+const sans = Manrope({
   subsets: ["latin"],
   variable: "--font-landing-sans",
   display: "swap",
 });
 
-const PAINS = [
-  {
-    title: "You post, then… silence",
-    body: "Random tips and pretty slides get likes—but nobody connects them to your offer. Reach without a path to the product.",
-  },
-  {
-    title: "Hard sells get scrolled past",
-    body: "Opening with features and CTAs feels like an ad. Organic Instagram and TikTok reward problem-first stories people actually swipe.",
-  },
-  {
-    title: "Inconsistent content kills momentum",
-    body: "When every carousel is a one-off idea, angles repeat, niches blur, and you stop posting—the exact moment growth stalls.",
-  },
-] as const;
-
-const OUTCOMES = [
-  {
-    icon: Target,
-    title: "Organic product marketing",
-    body: "Each carousel leads with the audience’s pain or desire, then soft-bridges to what you sell—built for first-time viewers, not existing fans.",
-  },
-  {
-    icon: FolderKanban,
-    title: "One project = one niche account",
-    body: "Lock niche, product, and tone once. Topic ideas and new posts stay on-brand and avoid repeating what you already shipped.",
-  },
-  {
-    icon: Megaphone,
-    title: "Swipe-ready for Instagram & TikTok",
-    body: "Hook → value slides → CTA, sized for feed and Stories. Export a ZIP and captions—post on the platforms where carousels win.",
-  },
-  {
-    icon: TrendingUp,
-    title: "Ship more, test more",
-    body: "Generate, tweak the message and photo, export. Volume is how you find the hooks that actually convert in your niche.",
-  },
-] as const;
-
 const STEPS = [
   {
-    num: "01",
-    title: "Define the offer",
-    body: "Project = niche + product + tone. That’s the marketing brief for every carousel.",
+    title: "Lock the brief",
+    body: "One project holds niche, offer, and tone—the marketing context for every post.",
   },
   {
-    num: "02",
-    title: "Generate organic content",
-    body: "Pick a topic. AI drafts a problem-first swipe arc that soft-sells your product when it’s earned.",
+    title: "Generate the arc",
+    body: "Problem-first slides that earn the swipe, then soft-bridge to what you sell.",
   },
   {
-    num: "03",
-    title: "Post to IG & TikTok",
-    body: "Quick edits, export PNG/JPEG + captions, publish. Then generate the next one.",
+    title: "Export and post",
+    body: "Tweak copy or photo if needed. Download a ZIP + captions for Instagram or TikTok.",
   },
 ] as const;
 
 const FAQS = [
   {
-    q: "Is this a design tool like Canva?",
-    a: "No. Karouselmaker is a marketing tool: it turns your niche and product into organic Instagram and TikTok carousels. Templates keep slides looking good so you focus on the message—not dragging design boxes.",
+    q: "Is this a design tool?",
+    a: "No. It’s a marketing system for organic Instagram and TikTok carousels. Templates handle layout so you stay on message—not dragging boxes.",
   },
   {
-    q: "What does “organic” mean here?",
-    a: "Content that earns the swipe first—relatable problems, practical value, myths—then bridges to your product without opening like an ad. Built for discovery, not just followers who already know you.",
+    q: "What does organic mean here?",
+    a: "Content that earns attention first—problems, myths, practical value—then bridges to your product without opening like an ad.",
   },
   {
     q: "Instagram and TikTok?",
-    a: "Yes. Carousels (and photo-mode swipe posts) are the format. Export the sizes and captions you need, then post on either platform.",
+    a: "Yes. Export the sizes and captions you need, then post on either platform.",
   },
   {
-    q: "What's free?",
-    a: `Create an account and try full-access limits on your first ${FREE_FULL_ACCESS_GENERATIONS} carousels. Paid plans start at ${STARTER_PRICE_DISPLAY}/mo when you need more volume.`,
+    q: "What’s free?",
+    a: `Full-access limits on your first ${FREE_FULL_ACCESS_GENERATIONS} carousels. Paid plans start at ${STARTER_PRICE_DISPLAY}/mo when you need more volume.`,
   },
 ] as const;
 
@@ -117,224 +67,154 @@ export default async function Home() {
       className={cn(
         display.variable,
         sans.variable,
-        "min-h-screen flex flex-col font-[family-name:var(--font-landing-sans)] antialiased"
+        "min-h-screen flex flex-col bg-background font-[family-name:var(--font-landing-sans)] text-foreground antialiased"
       )}
     >
       <LandingMarketingHeader />
 
-      <section className="relative overflow-hidden">
+      {/* Hero: one composition — brand, line, CTA, full-bleed product */}
+      <section className="relative">
         <div
-          className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_50%_-10%,oklch(0.55_0.17_163_/_0.18),transparent_55%),linear-gradient(180deg,oklch(0.97_0.02_163)_0%,transparent_42%)] dark:bg-[radial-gradient(ellipse_80%_60%_at_50%_-10%,oklch(0.72_0.17_163_/_0.22),transparent_55%),linear-gradient(180deg,oklch(0.18_0.03_163)_0%,transparent_50%)]"
-          aria-hidden
-        />
-        <div
-          className="pointer-events-none absolute inset-0 opacity-[0.35] dark:opacity-[0.2] [background-image:linear-gradient(oklch(0.55_0.17_163_/_0.08)_1px,transparent_1px),linear-gradient(90deg,oklch(0.55_0.17_163_/_0.08)_1px,transparent_1px)] [background-size:48px_48px] [mask-image:radial-gradient(ellipse_at_center,black_20%,transparent_70%)]"
+          className="pointer-events-none absolute inset-x-0 top-0 h-[min(72vh,640px)] bg-[radial-gradient(ellipse_90%_70%_at_50%_-20%,oklch(0.55_0.14_163_/_0.12),transparent_60%)] dark:bg-[radial-gradient(ellipse_90%_70%_at_50%_-20%,oklch(0.55_0.14_163_/_0.2),transparent_55%)]"
           aria-hidden
         />
 
-        <div className="relative mx-auto max-w-5xl px-4 pt-10 pb-8 sm:px-6 sm:pt-14 sm:pb-10 md:pt-16">
-          <p className="font-[family-name:var(--font-landing-display)] text-4xl font-semibold tracking-tight text-foreground sm:text-5xl md:text-6xl animate-in fade-in duration-500">
+        <div className="relative mx-auto max-w-6xl px-4 pt-14 sm:px-6 sm:pt-20 md:pt-24">
+          <h1 className="font-[family-name:var(--font-landing-display)] text-[clamp(2.75rem,8vw,5.5rem)] leading-[0.95] tracking-tight text-foreground animate-in fade-in duration-500 motion-reduce:animate-none">
             Karouselmaker
-          </p>
-          <h1 className="mt-4 max-w-3xl font-[family-name:var(--font-landing-display)] text-2xl font-medium leading-[1.15] tracking-tight text-foreground sm:text-3xl md:text-4xl animate-in fade-in slide-in-from-bottom-2 duration-700">
-            Organic Instagram & TikTok carousels that market your product—without sounding like ads.
           </h1>
-          <p className="mt-4 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg animate-in fade-in duration-700 delay-100">
-            A marketing system for swipe content: niche + offer in, problem-first carousels out. Soft-sell your
-            product while people discover you on IG and TikTok.
+          <p className="mt-6 max-w-[22ch] font-[family-name:var(--font-landing-display)] text-[clamp(1.5rem,3.5vw,2.25rem)] leading-[1.2] tracking-tight text-foreground/90 animate-in fade-in slide-in-from-bottom-2 duration-700 motion-reduce:animate-none sm:max-w-xl">
+            Organic Instagram & TikTok carousels that market your product—without sounding like ads.
           </p>
-          <div className="mt-7 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center animate-in fade-in duration-700 delay-150">
-            <Button
-              size="lg"
-              className="gap-2 transition-transform hover:scale-[1.02] active:scale-[0.98]"
-              asChild
-            >
+          <p className="mt-5 max-w-md text-[15px] leading-relaxed text-muted-foreground sm:text-base animate-in fade-in duration-700 delay-100 motion-reduce:animate-none">
+            Niche + offer in. Problem-first swipe content out. Soft-sell while people discover you.
+          </p>
+          <div className="mt-8 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center animate-in fade-in duration-700 delay-150 motion-reduce:animate-none">
+            <Button size="lg" className="h-11 gap-2 px-6 text-[15px]" asChild>
               <Link href="/signup">
-                Start marketing with carousels
-                <ArrowRight className="size-4 sm:size-5" />
+                Start free
+                <ArrowRight className="size-4" />
               </Link>
             </Button>
-            <Button
-              variant="outline"
-              size="lg"
-              className="transition-transform hover:scale-[1.02] active:scale-[0.98]"
-              asChild
-            >
+            <Button variant="ghost" size="lg" className="h-11 px-4 text-[15px] text-muted-foreground" asChild>
               <Link href="/login">Sign in</Link>
             </Button>
           </div>
-          <p className="mt-3 text-xs text-muted-foreground animate-in fade-in duration-700 delay-200">
-            Free to start · No credit card · Full access on your first {FREE_FULL_ACCESS_GENERATIONS} carousels
+          <p className="mt-4 text-xs text-muted-foreground animate-in fade-in duration-700 delay-200 motion-reduce:animate-none">
+            No card required · Full access on your first {FREE_FULL_ACCESS_GENERATIONS} carousels
           </p>
         </div>
 
-        <div className="relative w-full border-y border-border/40 bg-muted/20 py-8 sm:py-10">
-          <div className="mx-auto flex max-w-5xl flex-col items-center px-4 sm:px-6">
-            <p className="mb-5 text-center text-sm text-muted-foreground">
-              Example organic arc — swipe like your audience will
+        <div className="relative mt-12 sm:mt-16">
+          <div className="border-y border-[oklch(0.28_0.04_163)] bg-[oklch(0.16_0.03_163)] py-8 sm:py-10 dark:border-border/30">
+            <p className="mb-6 px-4 text-center text-[11px] font-medium uppercase tracking-[0.14em] text-white/45 sm:px-6">
+              Example organic arc
             </p>
             <HeroCarouselPreview />
           </div>
         </div>
       </section>
 
-      <section className="scroll-reveal [content-visibility:auto] mx-auto w-full max-w-5xl px-4 py-16 sm:px-6 sm:py-20">
-        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">The marketing problem</p>
-        <h2 className="mt-2 max-w-2xl font-[family-name:var(--font-landing-display)] text-2xl font-medium tracking-tight text-foreground sm:text-3xl">
-          Carousels grow accounts. Random content doesn’t grow the business.
-        </h2>
-        <p className="mt-3 max-w-2xl text-muted-foreground leading-relaxed">
-          If you have a product or page to promote, Instagram and TikTok carousels are one of the highest-leverage
-          formats—if every post teaches, relates, and eventually points to the offer. Most creators either go silent
-          or post generic tips that never mention what they sell.
-        </p>
-        <ul className="mt-10 space-y-0 divide-y divide-border/60 border-y border-border/60">
-          {PAINS.map((pain) => (
-            <li key={pain.title} className="flex gap-4 py-5 sm:gap-5">
-              <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-destructive/10 text-destructive">
-                <X className="size-4" aria-hidden />
-              </span>
-              <div>
-                <h3 className="font-semibold text-foreground">{pain.title}</h3>
-                <p className="mt-1 text-sm leading-relaxed text-muted-foreground sm:text-base">{pain.body}</p>
-              </div>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <section className="relative scroll-reveal [content-visibility:auto] border-y border-border/40 bg-muted/25 py-16 sm:py-20">
-        <div
-          className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_80%_0%,oklch(0.55_0.17_163_/_0.1),transparent_50%)]"
-          aria-hidden
-        />
-        <div className="relative mx-auto max-w-5xl px-4 sm:px-6">
-          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">How it works</p>
-          <h2 className="mt-2 max-w-2xl font-[family-name:var(--font-landing-display)] text-2xl font-medium tracking-tight text-foreground sm:text-3xl">
-            From offer to organic carousel in minutes
-          </h2>
-          <ol className="mt-10 grid gap-8 sm:grid-cols-3 sm:gap-6">
-            {STEPS.map((step) => (
-              <li key={step.num} className="min-w-0">
-                <p className="font-[family-name:var(--font-landing-display)] text-3xl font-medium text-primary/80">
-                  {step.num}
-                </p>
-                <h3 className="mt-2 font-semibold text-foreground">{step.title}</h3>
-                <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{step.body}</p>
-              </li>
-            ))}
-          </ol>
-          <div className="mt-12 overflow-hidden rounded-2xl border border-border/50 bg-background/60 p-4 sm:p-6">
-            <p className="mb-4 text-center text-xs text-muted-foreground">
-              Same slide format you’ll export for Instagram & TikTok
-            </p>
-            <LandingDemoCarousel variant="strip" />
+      {/* Problem — editorial, no icon list */}
+      <section className="scroll-reveal [content-visibility:auto] mx-auto w-full max-w-6xl px-4 py-20 sm:px-6 sm:py-28 motion-reduce:animate-none">
+        <div className="grid gap-10 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] lg:gap-16 lg:items-end">
+          <div>
+            <h2 className="font-[family-name:var(--font-landing-display)] text-3xl leading-[1.15] tracking-tight text-foreground sm:text-4xl md:text-[2.75rem]">
+              Carousels grow accounts. Random tips don’t grow the business.
+            </h2>
           </div>
+          <p className="text-[15px] leading-[1.7] text-muted-foreground sm:text-base">
+            If you have something to sell, Instagram and TikTok carousels are high-leverage—when every post teaches,
+            relates, and eventually points to the offer. Most people either go quiet, or ship pretty slides that never
+            mention what they sell. Hard opens get scrolled past. Inconsistent posting kills momentum.
+          </p>
         </div>
       </section>
 
-      <section className="scroll-reveal [content-visibility:auto] mx-auto w-full max-w-5xl px-4 py-16 sm:px-6 sm:py-20">
-        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">What you get</p>
-        <h2 className="mt-2 max-w-2xl font-[family-name:var(--font-landing-display)] text-2xl font-medium tracking-tight text-foreground sm:text-3xl">
-          Built to market through content—not to be a design studio
-        </h2>
-        <ul className="mt-10 grid gap-x-8 gap-y-10 sm:grid-cols-2">
-          {OUTCOMES.map((item) => (
-            <li key={item.title} className="flex gap-4">
-              <span className="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                <item.icon className="size-5" aria-hidden />
-              </span>
-              <div>
-                <h3 className="font-semibold text-foreground">{item.title}</h3>
-                <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground sm:text-[0.9375rem]">{item.body}</p>
-              </div>
-            </li>
-          ))}
-        </ul>
+      {/* How it works — three beats, no numbered SaaS cards */}
+      <section className="scroll-reveal [content-visibility:auto] border-y border-border/50 bg-muted/30 py-20 sm:py-28 motion-reduce:animate-none">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6">
+          <h2 className="max-w-lg font-[family-name:var(--font-landing-display)] text-3xl tracking-tight text-foreground sm:text-4xl">
+            From brief to feed in minutes
+          </h2>
+          <ol className="mt-14 grid gap-10 sm:grid-cols-3 sm:gap-12">
+            {STEPS.map((step, i) => (
+              <li key={step.title} className="min-w-0">
+                <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-primary">
+                  Step {i + 1}
+                </p>
+                <h3 className="mt-3 font-[family-name:var(--font-landing-display)] text-xl tracking-tight text-foreground sm:text-2xl">
+                  {step.title}
+                </h3>
+                <p className="mt-2 text-sm leading-relaxed text-muted-foreground sm:text-[15px]">{step.body}</p>
+              </li>
+            ))}
+          </ol>
+        </div>
       </section>
 
-      <section className="scroll-reveal [content-visibility:auto] border-y border-border/40 bg-muted/20 py-16 sm:py-20">
-        <div className="mx-auto max-w-5xl px-4 sm:px-6">
-          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Why Karouselmaker</p>
-          <h2 className="mt-2 max-w-2xl font-[family-name:var(--font-landing-display)] text-2xl font-medium tracking-tight text-foreground sm:text-3xl">
-            Marketing workflow for organic swipe posts
+      {/* Positioning — one clear claim */}
+      <section className="scroll-reveal [content-visibility:auto] mx-auto w-full max-w-6xl px-4 py-20 sm:px-6 sm:py-28 motion-reduce:animate-none">
+        <div className="max-w-2xl">
+          <h2 className="font-[family-name:var(--font-landing-display)] text-3xl tracking-tight text-foreground sm:text-4xl">
+            Built to market through content—not to be another design studio
           </h2>
-          <div className="mt-10 grid gap-6 md:grid-cols-2">
-            <div className="space-y-3">
-              <p className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                What most people do
-              </p>
-              <ul className="space-y-2.5 text-sm text-muted-foreground">
-                {[
-                  "Treat carousels as a design chore",
-                  "Post tips with zero product context",
-                  "Open with hard sells that get skipped",
-                  "Go quiet when content takes too long",
-                ].map((line) => (
-                  <li key={line} className="flex gap-2">
-                    <X className="mt-0.5 size-4 shrink-0 text-muted-foreground/70" aria-hidden />
-                    {line}
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className="space-y-3 rounded-2xl border border-primary/25 bg-primary/5 p-5 sm:p-6">
-              <p className="flex items-center gap-2 text-sm font-medium text-primary">
-                <Sparkles className="size-4" aria-hidden />
-                With Karouselmaker
-              </p>
-              <ul className="space-y-2.5 text-sm text-foreground">
-                {[
-                  "Organic strategy baked into every generation",
-                  "Niche + product remembered across posts",
-                  "Problem-first slides, soft product bridge",
-                  "Export and post to Instagram & TikTok today",
-                ].map((line) => (
-                  <li key={line} className="flex gap-2">
-                    <Check className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
-                    {line}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
+          <ul className="mt-10 space-y-6 border-t border-border/60 pt-8">
+            {[
+              {
+                title: "Organic product marketing",
+                body: "Lead with the audience’s pain or desire, then soft-bridge to what you sell—for first-time viewers, not only existing fans.",
+              },
+              {
+                title: "One project = one niche account",
+                body: "Niche, product, and tone stay locked. New posts stay on-brand and avoid repeating what you already shipped.",
+              },
+              {
+                title: "Swipe-ready for IG & TikTok",
+                body: "Hook → value → soft CTA, sized for feed. Export ZIP and captions—post where carousels win.",
+              },
+            ].map((item) => (
+              <li key={item.title} className="grid gap-1 sm:grid-cols-[minmax(0,11rem)_1fr] sm:gap-8">
+                <p className="font-medium text-foreground">{item.title}</p>
+                <p className="text-sm leading-relaxed text-muted-foreground sm:text-[15px]">{item.body}</p>
+              </li>
+            ))}
+          </ul>
         </div>
       </section>
 
       <MarketingPricingSection />
 
-      <section className="scroll-reveal [content-visibility:auto] mx-auto w-full max-w-3xl px-4 py-16 sm:px-6 sm:py-20">
-        <p className="text-center text-xs font-medium uppercase tracking-wider text-muted-foreground">FAQ</p>
-        <h2 className="mt-2 text-center font-[family-name:var(--font-landing-display)] text-2xl font-medium tracking-tight text-foreground sm:text-3xl">
-          Straight answers
-        </h2>
-        <dl className="mt-10 space-y-6">
-          {FAQS.map((item) => (
-            <div key={item.q} className="border-b border-border/50 pb-6 last:border-0">
-              <dt className="font-semibold text-foreground">{item.q}</dt>
-              <dd className="mt-2 text-sm leading-relaxed text-muted-foreground sm:text-base">{item.a}</dd>
-            </div>
-          ))}
-        </dl>
+      <section className="scroll-reveal [content-visibility:auto] mx-auto w-full max-w-6xl px-4 py-20 sm:px-6 sm:py-28 motion-reduce:animate-none">
+        <div className="grid gap-12 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] lg:gap-20">
+          <h2 className="font-[family-name:var(--font-landing-display)] text-3xl tracking-tight text-foreground sm:text-4xl">
+            Questions
+          </h2>
+          <dl className="space-y-0 divide-y divide-border/60 border-y border-border/60">
+            {FAQS.map((item) => (
+              <div key={item.q} className="py-6">
+                <dt className="text-[15px] font-medium text-foreground sm:text-base">{item.q}</dt>
+                <dd className="mt-2 text-sm leading-relaxed text-muted-foreground sm:text-[15px]">{item.a}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
       </section>
 
-      <section className="scroll-reveal [content-visibility:auto] relative overflow-hidden border-t border-border/40">
-        <div
-          className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_100%,oklch(0.55_0.17_163_/_0.16),transparent_55%)]"
-          aria-hidden
-        />
-        <div className="relative mx-auto max-w-xl px-4 py-16 text-center sm:px-6 sm:py-20">
-          <h2 className="font-[family-name:var(--font-landing-display)] text-2xl font-medium tracking-tight text-foreground sm:text-3xl">
-            Turn your niche into organic carousels that sell the result.
-          </h2>
-          <p className="mt-3 text-sm text-muted-foreground sm:text-base">
-            Set up a project, generate one Instagram/TikTok carousel, export, and post. Upgrade when you need more
-            volume.
-          </p>
-          <Button size="lg" className="mt-7 gap-2" asChild>
+      <section className="scroll-reveal [content-visibility:auto] border-t border-border/50 motion-reduce:animate-none">
+        <div className="mx-auto flex max-w-6xl flex-col items-start gap-6 px-4 py-20 sm:flex-row sm:items-end sm:justify-between sm:px-6 sm:py-24">
+          <div className="max-w-lg">
+            <h2 className="font-[family-name:var(--font-landing-display)] text-3xl tracking-tight text-foreground sm:text-4xl">
+              Ship the next organic carousel today
+            </h2>
+            <p className="mt-3 text-sm leading-relaxed text-muted-foreground sm:text-[15px]">
+              Set the niche and offer. Generate. Export. Post on Instagram or TikTok.
+            </p>
+          </div>
+          <Button size="lg" className="h-11 shrink-0 gap-2 px-6" asChild>
             <Link href="/signup">
               Start free
-              <ArrowRight className="size-4 sm:size-5" />
+              <ArrowRight className="size-4" />
             </Link>
           </Button>
         </div>

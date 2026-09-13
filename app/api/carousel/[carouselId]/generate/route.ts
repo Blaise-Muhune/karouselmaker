@@ -89,6 +89,10 @@ export async function POST(
   if (opts.viral_shorts_style) formData.set("viral_shorts_style", "true");
   if (opts.carousel_for === "linkedin" || opts.carousel_for === "instagram")
     formData.set("carousel_for", opts.carousel_for);
+  if (opts.include_marketing === true) formData.set("include_marketing", "true");
+  else formData.set("include_marketing", "false");
+  if (opts.product_service_input && typeof opts.product_service_input === "string")
+    formData.set("product_service_input", opts.product_service_input);
 
   LOG("calling generateCarousel (LLM + slides + images)");
   const result = await generateCarousel(formData);

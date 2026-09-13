@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { updateExportSettings } from "@/app/actions/carousels/updateExportFormat";
-import type { ExportFormat, ExportSize } from "@/lib/server/db/types";
+import type { ExportSize } from "@/lib/server/db/types";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { DownloadIcon, Loader2Icon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, ChevronUpIcon, CopyIcon, DownloadIcon, Loader2Icon } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -19,6 +19,7 @@ import { WaitingGamesDialog } from "@/components/waiting/WaitingGamesDialog";
 import { PLAN_LIMITS } from "@/lib/constants";
 import { slugifyForFilename } from "@/lib/utils";
 import { triggerBlobDownload } from "@/lib/client/blobDownload";
+import { combineCaptionWithHashtags } from "@/components/editor/EditorCaptionSection";
 
 export type ExportRowDisplay = {
   id: string;
@@ -34,8 +35,8 @@ const EXPORT_FORMAT_LABELS: Record<"png" | "jpeg", string> = {
 
 const EXPORT_SIZE_LABELS: Record<ExportSize, string> = {
   "1080x1080": "1:1",
-  "1080x1350": "4:5",
-  "1080x1920": "9:16",
+  "1080x1350": "4:5 (feed)",
+  "1080x1920": "9:16 (story)",
 };
 
 type EditorExportSectionProps = {
@@ -65,16 +66,14 @@ export function EditorExportSection({
   exportFormat = "png",
   exportSize = "1080x1350",
   recentExports: _recentExports,
-  captionVariants: _captionVariants = {},
-  hashtags: _hashtags = [],
+  captionVariants = {},
+  hashtags = [],
   disabled = false,
   carouselTitle,
   projectName,
   exportSettingsPath,
 }: EditorExportSectionProps) {
   void _recentExports;
-  void _captionVariants;
-  void _hashtags;
   const downloadSlug =
     slugifyForFilename([projectName, carouselTitle].filter(Boolean).join(" - ")) || "carousel";
   const limit =
@@ -83,16 +82,23 @@ export function EditorExportSection({
   const router = useRouter();
   const initialFormat: "png" | "jpeg" = exportFormat === "jpeg" ? "jpeg" : "png";
   const [localExportFormat, setLocalExportFormat] = useState<"png" | "jpeg">(initialFormat);
-  const [localExportSize, setLocalExportSize] = useState<ExportSize>(exportSize);
+  const [localExportSize, setLocalExportSize] = useState<ExportSize>(exportSize || "1080x1350");
   const [updatingExportSettings, setUpdatingExportSettings] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [showMore, setShowMore] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const captionText = combineCaptionWithHashtags(
+    (captionVariants.long || captionVariants.medium || captionVariants.short || "").trim(),
+    hashtags
+  );
 
   useEffect(() => {
     setLocalExportFormat(exportFormat === "jpeg" ? "jpeg" : "png");
   }, [exportFormat]);
   useEffect(() => {
-    setLocalExportSize(exportSize);
+    setLocalExportSize(exportSize || "1080x1350");
   }, [exportSize]);
 
   async function persistSettings(nextFormat: "png" | "jpeg", nextSize: ExportSize) {
@@ -121,8 +127,7 @@ export function EditorExportSection({
         throw new Error(text || `Export failed (${res.status})`);
       }
       const blob = await res.blob();
-      const ext = localExportFormat === "jpeg" ? "zip" : "zip";
-      const filename = `${downloadSlug}.${ext}`;
+      const filename = `${downloadSlug}.zip`;
       await triggerBlobDownload(blob, filename);
       router.refresh();
     } catch (e) {
@@ -132,70 +137,114 @@ export function EditorExportSection({
     }
   }
 
+  const copyCaption = useCallback(async () => {
+    if (!captionText.trim() || disabled) return;
+    try {
+      await navigator.clipboard.writeText(captionText);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* ignore */
+    }
+  }, [captionText, disabled]);
+
   return (
-    <section className="space-y-3">
-      <p className="text-muted-foreground text-xs font-medium uppercase tracking-wider">Export for IG & TikTok</p>
+    <section className="space-y-3 rounded-2xl border border-border/70 bg-card/80 p-4 shadow-sm">
+      <div>
+        <p className="text-sm font-semibold text-foreground">Finish & post</p>
+        <p className="text-muted-foreground text-xs mt-0.5">
+          Download a ZIP for Instagram or TikTok
+          {localExportSize === "1080x1350" ? " (4:5 feed)" : ""}.
+        </p>
+      </div>
       {!canExport && (
         <UpgradeBanner message={`You've used ${exportsUsedThisMonth}/${limit} exports this month. Upgrade for more.`} />
       )}
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">Format</Label>
-          <Select
-            value={localExportFormat}
-            disabled={disabled || updatingExportSettings}
-            onValueChange={(v) => {
-              const next = v === "jpeg" ? "jpeg" : "png";
-              setLocalExportFormat(next);
-              void persistSettings(next, localExportSize);
-            }}
-          >
-            <SelectTrigger className="w-[120px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {(Object.keys(EXPORT_FORMAT_LABELS) as Array<"png" | "jpeg">).map((k) => (
-                <SelectItem key={k} value={k}>
-                  {EXPORT_FORMAT_LABELS[k]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">Size</Label>
-          <Select
-            value={localExportSize}
-            disabled={disabled || updatingExportSettings}
-            onValueChange={(v) => {
-              const next = v as ExportSize;
-              setLocalExportSize(next);
-              void persistSettings(localExportFormat, next);
-            }}
-          >
-            <SelectTrigger className="w-[120px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {(Object.keys(EXPORT_SIZE_LABELS) as ExportSize[]).map((k) => (
-                <SelectItem key={k} value={k}>
-                  {EXPORT_SIZE_LABELS[k]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <Button type="button" disabled={!canExport || disabled || exporting} onClick={() => void handleDownload()}>
-          {exporting ? <Loader2Icon className="mr-2 size-4 animate-spin" /> : <DownloadIcon className="mr-2 size-4" />}
-          Download ZIP
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          size="lg"
+          className="gap-2"
+          disabled={!canExport || disabled || exporting}
+          onClick={() => void handleDownload()}
+        >
+          {exporting ? <Loader2Icon className="size-4 animate-spin" /> : <DownloadIcon className="size-4" />}
+          Download for Instagram & TikTok
         </Button>
+        {captionText ? (
+          <Button type="button" variant="outline" size="lg" className="gap-2" disabled={disabled} onClick={() => void copyCaption()}>
+            {copied ? <CheckIcon className="size-4" /> : <CopyIcon className="size-4" />}
+            {copied ? "Copied" : "Copy caption"}
+          </Button>
+        ) : null}
         {exporting && (
           <WaitingGamesDialog loadingMessage="Building your ZIP…" triggerClassName="bg-background/80" />
         )}
       </div>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="-ml-1 text-muted-foreground"
+        onClick={() => setShowMore((v) => !v)}
+      >
+        {showMore ? <ChevronUpIcon className="mr-1.5 size-4" /> : <ChevronDownIcon className="mr-1.5 size-4" />}
+        {showMore ? "Hide format options" : "Format & size"}
+      </Button>
+      {showMore && (
+        <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border/60 bg-muted/20 p-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Format</Label>
+            <Select
+              value={localExportFormat}
+              disabled={disabled || updatingExportSettings}
+              onValueChange={(v) => {
+                const next = v === "jpeg" ? "jpeg" : "png";
+                setLocalExportFormat(next);
+                void persistSettings(next, localExportSize);
+              }}
+            >
+              <SelectTrigger className="w-[120px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(Object.keys(EXPORT_FORMAT_LABELS) as Array<"png" | "jpeg">).map((k) => (
+                  <SelectItem key={k} value={k}>
+                    {EXPORT_FORMAT_LABELS[k]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Size</Label>
+            <Select
+              value={localExportSize}
+              disabled={disabled || updatingExportSettings}
+              onValueChange={(v) => {
+                const next = v as ExportSize;
+                setLocalExportSize(next);
+                void persistSettings(localExportFormat, next);
+              }}
+            >
+              <SelectTrigger className="w-[150px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(Object.keys(EXPORT_SIZE_LABELS) as ExportSize[]).map((k) => (
+                  <SelectItem key={k} value={k}>
+                    {EXPORT_SIZE_LABELS[k]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      )}
       {exportError && <p className="text-destructive text-sm">{exportError}</p>}
       <p className="text-muted-foreground text-xs">
-        {exportsUsedThisMonth}/{limit} exports this month
+        {exportsUsedThisMonth}/{limit} exports this month · default {EXPORT_FORMAT_LABELS[localExportFormat]}{" "}
+        {EXPORT_SIZE_LABELS[localExportSize]}
       </p>
     </section>
   );

@@ -27,6 +27,7 @@ export async function updateProject(projectId: string, formData: FormData) {
     number_of_slides: Number(formData.get("number_of_slides")) || 5,
     rules: (formData.get("rules") as string) ?? "",
     product_to_promote: (formData.get("product_to_promote") as string) ?? "",
+    organic_marketing_progress: Number(formData.get("organic_marketing_progress") ?? 0),
     primary_color: (formData.get("primary_color") as string) ?? "",
     secondary_color: (formData.get("secondary_color") as string) ?? "",
     watermark_text: (formData.get("watermark_text") as string) ?? "",
@@ -39,7 +40,11 @@ export async function updateProject(projectId: string, formData: FormData) {
     tone_preset: raw.tone_preset,
     language: raw.language,
     slide_structure: { number_of_slides: raw.number_of_slides },
-    project_rules: { rules: raw.rules, product_to_promote: raw.product_to_promote },
+    project_rules: {
+      rules: raw.rules,
+      product_to_promote: raw.product_to_promote,
+      organic_marketing_progress: raw.organic_marketing_progress,
+    },
     brand_kit: {
       primary_color: raw.primary_color,
       secondary_color: raw.secondary_color,
@@ -57,6 +62,8 @@ export async function updateProject(projectId: string, formData: FormData) {
   const payload = projectFormToDbPayload(parsed.data, {
     product_url: product.product_url,
     product_brief: product.product_brief,
+    pending_open_loop: previous.pending_open_loop,
+    marketing_carousels_completed: previous.marketing_carousels_completed,
   });
 
   await dbUpdateProject(user.id, projectId, payload as ProjectUpdate);

@@ -14,7 +14,7 @@ const IDLE_MS = 2500;
 
 /** Transform scale = cardWidth / 1080 for square cards */
 const SCALE = {
-  hero: "scale-[0.1388888889] sm:scale-[0.1944444444] md:scale-[0.2407407407]",
+  hero: "scale-[0.1666666667] sm:scale-[0.2222222222] md:scale-[0.2777777778]",
   strip: "scale-[0.1296296296] sm:scale-[0.1481481481] md:scale-[0.1666666667]",
 } as const;
 
@@ -26,8 +26,13 @@ type LandingDemoCarouselProps = {
 };
 
 const CARD_FRAME = {
-  hero: "w-[150px] sm:w-[210px] md:w-[260px]",
+  hero: "w-[180px] sm:w-[240px] md:w-[300px]",
   strip: "w-[140px] sm:w-[160px] md:w-[180px]",
+} as const;
+
+const CARD_SHELL = {
+  hero: "rounded-xl border border-white/10 bg-black/20 shadow-[0_20px_50px_-30px_rgba(0,0,0,0.8)]",
+  strip: "rounded-lg sm:rounded-xl border border-border/50 bg-muted/30 ring-1 ring-border/30",
 } as const;
 
 /**
@@ -80,6 +85,7 @@ export function LandingDemoCarousel({ variant, className, scrollRef: externalScr
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const scroll = () => {
       if (userInteractingRef.current) return;
       const max = el.scrollWidth - el.clientWidth;
@@ -116,6 +122,7 @@ export function LandingDemoCarousel({ variant, className, scrollRef: externalScr
 
   const total = LANDING_DEMO_SLIDES.length;
   const frame = CARD_FRAME[variant];
+  const shell = CARD_SHELL[variant];
   const scaleCls = SCALE[variant];
 
   return (
@@ -129,7 +136,7 @@ export function LandingDemoCarousel({ variant, className, scrollRef: externalScr
       {LANDING_DEMO_SLIDES.map((slide) => (
         <div
           key={slide.slide_index}
-          className={`shrink-0 ${frame} aspect-square rounded-lg sm:rounded-xl border border-border/50 overflow-hidden snap-start bg-muted/30 pointer-events-none ring-1 ring-border/30`}
+          className={`shrink-0 ${frame} ${shell} aspect-square overflow-hidden snap-start pointer-events-none`}
           aria-hidden
         >
           <div className={`origin-top-left ${scaleCls}`} style={{ width: DESIGN, height: DESIGN }}>

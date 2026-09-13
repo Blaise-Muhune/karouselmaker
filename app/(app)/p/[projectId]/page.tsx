@@ -1,13 +1,23 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getUser } from "@/lib/server/auth/getUser";
-import { getProject, listCarousels, countCarousels, getSlideCountsForCarousels, getFirstSlideIdsForCarousels } from "@/lib/server/db";
-import { getSubscription, hasFullProFeatureAccess } from "@/lib/server/subscription";
+import {
+  getProject,
+  listCarousels,
+  countCarousels,
+  countCarouselsThisMonth,
+  getSlideCountsForCarousels,
+  getFirstSlideIdsForCarousels,
+  getDefaultTemplateForNewCarousel,
+} from "@/lib/server/db";
+import { getSubscription, getEffectivePlanLimits, hasFullProFeatureAccess } from "@/lib/server/subscription";
+import { ensureProjectTopicLineup } from "@/app/actions/carousels/projectTopicSuggestions";
 import { Button } from "@/components/ui/button";
 import { GoProBar } from "@/components/subscription/GoProBar";
 import { PaginationNav } from "@/components/ui/pagination-nav";
-import { PencilIcon, PlusCircleIcon } from "lucide-react";
+import { PencilIcon } from "lucide-react";
 import { CarouselListCard } from "@/components/carousels/CarouselListCard";
+import { GenerateNextPostButton } from "@/components/projects/GenerateNextPostButton";
 
 const CAROUSELS_PAGE_SIZE = 10;
 
@@ -27,12 +37,17 @@ export default async function ProjectDashboardPage({
 
   const page = Math.max(1, parseInt(pageParam ?? "1", 10) || 1);
   const offset = (page - 1) * CAROUSELS_PAGE_SIZE;
-  const [carousels, total, subscription, fullAccess] = await Promise.all([
-    listCarousels(user.id, projectId, { limit: CAROUSELS_PAGE_SIZE, offset }),
-    countCarousels(user.id, projectId),
-    getSubscription(user.id, user.email),
-    hasFullProFeatureAccess(user.id, user.email),
-  ]);
+  const [carousels, total, subscription, fullAccess, limits, monthlyCount, defaultTemplate, lineup] =
+    await Promise.all([
+      listCarousels(user.id, projectId, { limit: CAROUSELS_PAGE_SIZE, offset }),
+      countCarousels(user.id, projectId),
+      getSubscription(user.id, user.email),
+      hasFullProFeatureAccess(user.id, user.email),
+      getEffectivePlanLimits(user.id, user.email),
+      countCarouselsThisMonth(user.id),
+      getDefaultTemplateForNewCarousel(user.id),
+      ensureProjectTopicLineup(projectId, "instagram").catch(() => ({ topics: [] as { topic: string; is_marketing?: boolean }[] })),
+    ]);
   const totalPages = Math.max(1, Math.ceil(total / CAROUSELS_PAGE_SIZE));
   const [slideCounts, firstSlideIds] =
     carousels.length > 0
@@ -42,17 +57,18 @@ export default async function ProjectDashboardPage({
         ])
       : [{}, {}];
 
+  const topics =
+    "topics" in lineup && Array.isArray(lineup.topics) ? lineup.topics : [];
+  const nextTopicItem = topics[0] ?? null;
+
   return (
     <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">
       <div className="mx-auto max-w-xl space-y-4">
         {!subscription.isPro && !fullAccess && <GoProBar />}
-        {/* Header */}
-        <header className="mb-10">
+        <header className="mb-8">
           <h1 className="text-xl font-semibold tracking-tight">{project.name}</h1>
           <p className="mt-1 text-muted-foreground text-sm">
             {project.niche || "General"}
-            <span className="mx-1.5 opacity-50">·</span>
-            {project.tone_preset}
           </p>
           <Button variant="ghost" size="sm" className="mt-2 -mb-2 text-muted-foreground" asChild>
             <Link href={`/projects/${project.id}/edit`}>
@@ -62,23 +78,23 @@ export default async function ProjectDashboardPage({
           </Button>
         </header>
 
-        {/* Main CTA */}
-        <div className="mb-6">
-          <Button size="lg" className="gap-2" asChild>
-            <Link href={`/p/${projectId}/new`}>
-              <PlusCircleIcon className="size-4" />
-              New post
-            </Link>
-          </Button>
-        </div>
+        <GenerateNextPostButton
+          projectId={projectId}
+          nextTopic={nextTopicItem?.topic ?? null}
+          includeMarketing={!!nextTopicItem?.is_marketing}
+          hasFullAccess={fullAccess}
+          isPro={subscription.isPro}
+          carouselCount={monthlyCount}
+          carouselLimit={limits.carouselsPerMonth}
+          defaultTemplateId={defaultTemplate?.templateId ?? null}
+        />
 
         {carousels.length === 0 && (
-          <p className="text-muted-foreground text-sm mb-6 rounded-lg border border-border/50 bg-muted/20 px-4 py-3">
-            Click <strong>New post</strong>, pick a topic, then Generate. We&apos;ll draft problem-first slides that soft-sell your offer—ready for Instagram or TikTok.
+          <p className="text-muted-foreground text-sm rounded-lg border border-border/50 bg-muted/20 px-4 py-3">
+            Hit <strong>Generate next</strong> for your first organic carousel — or Customize to change the topic.
           </p>
         )}
 
-        {/* Carousels */}
         <section>
           <p className="text-muted-foreground mb-3 text-xs font-medium uppercase tracking-wider">
             Posts
@@ -99,15 +115,7 @@ export default async function ProjectDashboardPage({
             </ul>
           ) : (
             <div className="rounded-2xl border border-dashed border-border/60 bg-muted/20 py-12 text-center">
-              <p className="text-muted-foreground text-sm">
-                No posts yet
-              </p>
-              <p className="text-muted-foreground/80 mt-1 text-xs">
-                Generate an organic carousel for this niche and product.
-              </p>
-              <p className="text-muted-foreground/80 mt-1 text-xs">
-                Create your first post above.
-              </p>
+              <p className="text-muted-foreground text-sm">No posts yet</p>
             </div>
           )}
           {totalPages > 1 && (

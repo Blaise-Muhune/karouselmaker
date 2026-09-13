@@ -1,6 +1,5 @@
 import { Link } from "next-view-transitions";
 import { Button } from "@/components/ui/button";
-import { Check, Gem } from "lucide-react";
 import { PAID_TIER_CARDS, PLAN_LIMITS, STARTER_PRICE_DISPLAY } from "@/lib/constants";
 
 type MarketingPricingSectionProps = {
@@ -13,45 +12,43 @@ export function MarketingPricingSection({ sectionId = "pricing", className }: Ma
   return (
     <div
       id={sectionId}
-      className={className ?? "scroll-reveal [content-visibility:auto] mx-auto mt-14 sm:mt-16 md:mt-20 max-w-5xl w-full px-4"}
+      className={
+        className ??
+        "scroll-reveal [content-visibility:auto] mx-auto mt-20 w-full max-w-6xl px-4 sm:mt-28 sm:px-6 motion-reduce:animate-none"
+      }
     >
-      <p className="text-muted-foreground text-center mb-3 text-xs font-medium uppercase tracking-wider">Plans</p>
-      <h2
-        id="pricing-heading"
-        className="text-center font-semibold text-foreground text-lg sm:text-xl mb-2"
-      >
-        Start free. Scale organic posting.
-      </h2>
-      <p className="text-center text-muted-foreground text-sm max-w-xl mx-auto mb-8">
-        Same Instagram & TikTok marketing workflow on every plan—higher limits as you ship more carousels. From{" "}
-        {STARTER_PRICE_DISPLAY}/mo.
-      </p>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="max-w-xl">
+        <h2
+          id="pricing-heading"
+          className="font-[family-name:var(--font-landing-display)] text-3xl font-normal tracking-tight text-foreground sm:text-4xl"
+        >
+          Pricing that scales with posting volume
+        </h2>
+        <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">
+          Same organic Instagram & TikTok workflow on every plan. Higher limits from{" "}
+          {STARTER_PRICE_DISPLAY}/mo.
+        </p>
+      </div>
+
+      <div className="mt-12 grid gap-px overflow-hidden rounded-xl border border-border/70 bg-border/70 sm:grid-cols-2 lg:grid-cols-4">
         {(() => {
           const L = PLAN_LIMITS.free;
           return (
-            <div className="rounded-xl border border-border/60 bg-background p-5 sm:p-6 flex flex-col transition-colors">
-              <h3 className="font-semibold text-foreground">Free</h3>
-              <p className="text-xl font-bold text-foreground">
+            <div className="flex flex-col bg-background p-6 sm:p-7">
+              <p className="text-sm font-medium text-foreground">Free</p>
+              <p className="mt-3 font-[family-name:var(--font-landing-display)] text-3xl tracking-tight text-foreground">
                 $0
-                <span className="text-xs font-normal text-muted-foreground">/mo</span>
+                <span className="ml-1 text-sm font-sans text-muted-foreground">/mo</span>
               </p>
-              <p className="text-xs text-muted-foreground mb-4">Try organic carousel marketing before upgrading.</p>
-              <ul className="space-y-2 text-xs text-muted-foreground flex-1 mb-5">
-                <li className="flex items-start gap-2">
-                  <Check className="size-3.5 shrink-0 mt-0.5 text-primary" />
-                  {L.carouselsPerMonth} carousels · {L.exportsPerMonth} exports · {L.assets} library images
+              <p className="mt-2 text-sm text-muted-foreground">Try the full marketing flow.</p>
+              <ul className="mt-6 flex-1 space-y-2.5 text-sm text-muted-foreground">
+                <li>
+                  {L.carouselsPerMonth} carousels · {L.exportsPerMonth} exports
                 </li>
-                <li className="flex items-start gap-2">
-                  <Check className="size-3.5 shrink-0 mt-0.5 text-primary" />
-                  Stock & library images · light edit
-                </li>
-                <li className="flex items-start gap-2">
-                  <Check className="size-3.5 shrink-0 mt-0.5 text-primary" />
-                  Export for Instagram & TikTok
-                </li>
+                <li>Stock & library images</li>
+                <li>Export for IG & TikTok</li>
               </ul>
-              <Button size="sm" className="w-full gap-1.5 mt-auto" variant="outline" asChild>
+              <Button size="sm" className="mt-8 w-full" variant="outline" asChild>
                 <Link href="/signup">Start free</Link>
               </Button>
             </div>
@@ -59,47 +56,59 @@ export function MarketingPricingSection({ sectionId = "pricing", className }: Ma
         })()}
         {PAID_TIER_CARDS.map((tier) => {
           const L = PLAN_LIMITS[tier.id];
+          const featured = tier.id === "pro";
           return (
             <div
               key={tier.id}
-              className={`rounded-xl border p-5 sm:p-6 flex flex-col transition-colors ${
-                tier.id === "pro" ? "border-primary/40 bg-primary/5" : "border-border/60 bg-muted/5"
+              className={`flex flex-col p-6 sm:p-7 ${
+                featured ? "bg-primary text-primary-foreground" : "bg-background"
               }`}
             >
-              {tier.id === "pro" && (
-                <span className="mb-2 w-fit rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-medium text-primary">
-                  Popular
-                </span>
-              )}
-              <div className="flex items-center gap-2 mb-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                  <Gem className="size-4" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-foreground">{tier.name}</h3>
-                  <p className="text-xl font-bold text-foreground">
-                    {tier.priceDisplay}
-                    <span className="text-xs font-normal text-muted-foreground">/mo</span>
-                  </p>
-                </div>
+              <div className="flex items-baseline justify-between gap-2">
+                <p className={`text-sm font-medium ${featured ? "text-primary-foreground" : "text-foreground"}`}>
+                  {tier.name}
+                </p>
+                {featured ? (
+                  <span className="text-[11px] font-medium uppercase tracking-wide text-primary-foreground/80">
+                    Popular
+                  </span>
+                ) : null}
               </div>
-              <p className="text-xs text-muted-foreground mb-4">{tier.blurb}</p>
-              <ul className="space-y-2 text-xs text-muted-foreground flex-1 mb-5">
-                <li className="flex items-start gap-2">
-                  <Check className="size-3.5 shrink-0 mt-0.5 text-primary" />
-                  {L.carouselsPerMonth} carousels · {L.exportsPerMonth} exports · {L.assets} library images
+              <p
+                className={`mt-3 font-[family-name:var(--font-landing-display)] text-3xl tracking-tight ${
+                  featured ? "text-primary-foreground" : "text-foreground"
+                }`}
+              >
+                {tier.priceDisplay}
+                <span
+                  className={`ml-1 text-sm font-sans ${
+                    featured ? "text-primary-foreground/75" : "text-muted-foreground"
+                  }`}
+                >
+                  /mo
+                </span>
+              </p>
+              <p className={`mt-2 text-sm ${featured ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
+                {tier.blurb}
+              </p>
+              <ul
+                className={`mt-6 flex-1 space-y-2.5 text-sm ${
+                  featured ? "text-primary-foreground/85" : "text-muted-foreground"
+                }`}
+              >
+                <li>
+                  {L.carouselsPerMonth} carousels · {L.exportsPerMonth} exports
                 </li>
-                <li className="flex items-start gap-2">
-                  <Check className="size-3.5 shrink-0 mt-0.5 text-primary" />
-                  Web image search · export ZIP + captions
-                </li>
-                <li className="flex items-start gap-2">
-                  <Check className="size-3.5 shrink-0 mt-0.5 text-primary" />
-                  Niche + offer projects for organic IG & TikTok
-                </li>
+                <li>Web image search · ZIP + captions</li>
+                <li>Niche + offer projects</li>
               </ul>
-              <Button size="sm" className="w-full gap-1.5 mt-auto" variant={tier.id === "pro" ? "default" : "outline"} asChild>
-                <Link href="/signup">Start marketing</Link>
+              <Button
+                size="sm"
+                className="mt-8 w-full"
+                variant={featured ? "secondary" : "outline"}
+                asChild
+              >
+                <Link href="/signup">{featured ? "Choose Pro" : "Get started"}</Link>
               </Button>
             </div>
           );

@@ -69,6 +69,22 @@ import { buildBodyRewriteVariants } from "@/lib/renderer/bodyRewriteVariants";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { parseProjectRulesJson } from "@/lib/validations/project";
 import { formatPriorPostsForPrompt, loadPriorPostsForProject } from "@/lib/server/ai/priorPostsMemory";
+import {
+  advanceOrganicMarketingProgress,
+  applyTemplateLengthFit,
+  buildQcJudgePrompts,
+  buildQcRewritePrompts,
+  extractOpenLoopPromise,
+  formatOpenLoopForPrompt,
+  parseQcJudgeResponse,
+  runHardCarouselCopyChecks,
+  summarizeQcForLog,
+  topicLikelyFulfillsOpenLoop,
+  type HardQcIssue,
+  type QcJudgeResult,
+  type TemplateCharLimits,
+} from "@/lib/server/ai/carouselQualityControl";
+import { getHeadlineBodyMaxCharsFromTemplateConfig } from "@/lib/templates/zoneCharBudget";
 
 const MAX_RETRIES = 2;
 /** Max concurrent AI image generations to cut total time without hitting rate limits. */
@@ -400,6 +416,7 @@ export async function generateCarousel(formData: FormData): Promise<
       }
     })(),
     product_service_input: ((formData.get("product_service_input") as string | null) ?? "").trim() || undefined,
+    include_marketing: formData.get("include_marketing") ?? undefined,
     use_ai_backgrounds: formData.get("use_ai_backgrounds") ?? undefined,
     use_stock_photos: formData.get("use_stock_photos") ?? undefined,
     use_ai_generate: formData.get("use_ai_generate") ?? undefined,
@@ -541,7 +558,11 @@ export async function generateCarousel(formData: FormData): Promise<
   const previousGenOpts = (carousel.generation_options ?? {}) as {
     product_reference_asset_ids?: unknown;
     product_service_input?: unknown;
+    include_marketing?: unknown;
   };
+  const includeMarketing =
+    parsed.data.include_marketing === true ||
+    previousGenOpts.include_marketing === true;
   const previousProductRefIds = Array.isArray(previousGenOpts.product_reference_asset_ids)
     ? previousGenOpts.product_reference_asset_ids
         .filter((id): id is string => typeof id === "string" && id.trim().length > 0)
@@ -627,6 +648,20 @@ export async function generateCarousel(formData: FormData): Promise<
     excludeCarouselId: carousel.id,
   });
   const prior_posts_block = formatPriorPostsForPrompt(priorPosts);
+  const pendingOpenLoop = projectRulesParsed.pending_open_loop;
+  const open_loop_block = formatOpenLoopForPrompt(pendingOpenLoop);
+
+  const templateCharLimits: TemplateCharLimits | null = (() => {
+    const cfg = selectedTemplatesForPrompt[0]?.config;
+    if (!cfg) return null;
+    const m = getHeadlineBodyMaxCharsFromTemplateConfig(cfg);
+    return {
+      headlineMaxChars: m.headlineMaxChars,
+      bodyMaxChars: m.bodyMaxChars,
+      hasHeadline: m.hasHeadline,
+      hasBody: m.hasBody,
+    };
+  })();
 
   const ctx = {
     tone_preset: project.tone_preset,
@@ -651,6 +686,9 @@ export async function generateCarousel(formData: FormData): Promise<
     product_reference_summary: productReferenceSummary,
     product_service_input: productServiceInput,
     prior_posts_block,
+    open_loop_block,
+    include_marketing: includeMarketing,
+    organic_marketing_progress: projectRulesParsed.organic_marketing_progress,
   };
 
   LOG("AI", useWebSearch ? "calling LLM with web search" : "calling LLM (JSON mode)");
@@ -756,12 +794,119 @@ export async function generateCarousel(formData: FormData): Promise<
     return (productReferenceSummary ?? "").trim().slice(0, 56) || normalizedProductLabel;
   })();
 
-  if (productOrServiceKnown && validated.slides.length > 0) {
-    const needles = buildProductMentionNeedles(
-      productServiceInput,
-      productReferenceSummary,
-      normalizedProductLabel
-    );
+  // --- Slide quality control: template fit → hard checks → LLM judge → one rewrite ---
+  const qcProductNeedles = buildProductMentionNeedles(
+    productServiceInput,
+    productReferenceSummary,
+    normalizedProductLabel
+  );
+  let qcHardIssues: HardQcIssue[] = [];
+  let qcJudge: QcJudgeResult | null = null;
+  let qcRewritten = false;
+
+  {
+    const fitted = applyTemplateLengthFit(validated, templateCharLimits);
+    validated = fitted.carousel;
+    qcHardIssues = [
+      ...fitted.issues,
+      ...runHardCarouselCopyChecks(validated, {
+        includeMarketing,
+        productNeedles: qcProductNeedles,
+      }),
+    ];
+
+    const judgePrompts = buildQcJudgePrompts({
+      carousel: validated,
+      hardIssues: qcHardIssues,
+      includeMarketing,
+      niche: project.niche?.trim() || undefined,
+      topic: data.input_value,
+    });
+    try {
+      const judgeCompletion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: judgePrompts.system },
+          { role: "user", content: judgePrompts.user },
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.2,
+      });
+      const judgeRaw = judgeCompletion.choices[0]?.message?.content ?? "";
+      const ju = judgeCompletion.usage;
+      tokenUsageSteps.push({
+        step: "QC judge",
+        inputTokens: ju?.prompt_tokens ?? 0,
+        outputTokens: ju?.completion_tokens ?? 0,
+      });
+      qcJudge = parseQcJudgeResponse(judgeRaw);
+    } catch (e) {
+      LOG("QC", `judge failed: ${e instanceof Error ? e.message : String(e)}`);
+      qcJudge = {
+        pass: qcHardIssues.length === 0,
+        total: qcHardIssues.length === 0 ? 8 : 5,
+        fails: qcHardIssues.map((i) => i.message).slice(0, 8),
+        rewrite_brief: "Fix hard copy issues; strengthen hook and CTA.",
+      };
+    }
+
+    const needsRewrite = !qcJudge.pass || qcHardIssues.length > 0;
+    if (needsRewrite) {
+      LOG(
+        "QC",
+        `rewrite needed — ${summarizeQcForLog({ hardIssues: qcHardIssues, judge: qcJudge, rewritten: false })}`
+      );
+      const rewritePrompts = buildQcRewritePrompts({
+        carousel: validated,
+        hardIssues: qcHardIssues,
+        judge: qcJudge,
+        includeMarketing,
+        templateLimits: templateCharLimits,
+        openLoop: pendingOpenLoop,
+      });
+      try {
+        const rewriteCompletion = await openai.chat.completions.create({
+          model: "gpt-5-mini",
+          messages: [
+            { role: "system", content: rewritePrompts.system },
+            { role: "user", content: rewritePrompts.user },
+          ],
+          response_format: { type: "json_object" },
+        });
+        const rewriteRaw = rewriteCompletion.choices[0]?.message?.content ?? "";
+        const ru = rewriteCompletion.usage;
+        tokenUsageSteps.push({
+          step: "QC rewrite",
+          inputTokens: ru?.prompt_tokens ?? 0,
+          outputTokens: ru?.completion_tokens ?? 0,
+        });
+        const rewriteParsed = parseAndValidate(rewriteRaw);
+        if (!("error" in rewriteParsed)) {
+          validated = postProcessAiGeneratedImageQueries(rewriteParsed, useAiGenerate);
+          const refit = applyTemplateLengthFit(validated, templateCharLimits);
+          validated = refit.carousel;
+          qcHardIssues = [
+            ...refit.issues,
+            ...runHardCarouselCopyChecks(validated, {
+              includeMarketing,
+              productNeedles: qcProductNeedles,
+            }),
+          ];
+          qcRewritten = true;
+          LOG("QC", `rewrite applied — remaining hard=${qcHardIssues.length}`);
+        } else {
+          LOG("QC", `rewrite invalid JSON: ${rewriteParsed.error}`);
+        }
+      } catch (e) {
+        LOG("QC", `rewrite failed: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    } else {
+      LOG("QC", summarizeQcForLog({ hardIssues: qcHardIssues, judge: qcJudge, rewritten: false }));
+    }
+  }
+
+  if (productOrServiceKnown && includeMarketing && validated.slides.length > 0) {
+    const needles = qcProductNeedles;
     const shortProductLabel = shortProductCloseLabel;
 
     const countProductMentions = (slides: CarouselOutput["slides"]) =>
@@ -771,22 +916,28 @@ export async function generateCarousel(formData: FormData): Promise<
       }, 0);
 
     let mentionCount = countProductMentions(validated.slides);
-    const minMentions = Math.max(2, Math.ceil(validated.slides.length * 0.4));
-    LOG("product", `text mention coverage before patch: ${mentionCount}/${validated.slides.length} (min ${minMentions})`);
+    const progress = projectRulesParsed.organic_marketing_progress ?? 0;
+    const minMentions =
+      progress <= 3
+        ? 1
+        : progress <= 6
+          ? Math.max(1, Math.ceil(validated.slides.length * 0.25))
+          : Math.max(1, Math.ceil(validated.slides.length * 0.35));
+    LOG("product", `text mention coverage before patch: ${mentionCount}/${validated.slides.length} (min ${minMentions}, progress=${progress})`);
     if (mentionCount < minMentions) {
       const sorted = [...validated.slides].sort((a, b) => a.slide_index - b.slide_index);
       const patchByIndex = new Map<number, CarouselOutput["slides"][number]>();
-      for (const s of sorted) {
+      // Prefer patching later slides (never slide 1) to keep hooks clean.
+      for (const s of [...sorted].reverse()) {
         if (mentionCount >= minMentions) break;
+        if (s.slide_index === 1) continue;
         const h = (s.headline ?? "").trim();
         const b = (s.body ?? "").trim();
         if (slideMentionsAnyNeedle(`${h} ${b}`, needles)) continue;
         const prefix =
-          s.slide_index === 1
-            ? `The outcome I wanted (what I reach for: ${shortProductLabel}). `
-            : s.slide_index === sorted[sorted.length - 1]?.slide_index
-              ? `When that moment hits, ${shortProductLabel} is what I grab. `
-              : `${shortProductLabel} fits this beat. `;
+          s.slide_index === sorted[sorted.length - 1]?.slide_index
+            ? `When that moment hits, ${shortProductLabel} is what I grab. `
+            : `${shortProductLabel} fits this beat. `;
         const newBody = (b ? `${prefix}${b}` : `${prefix}`.trim()).slice(0, 280);
         patchByIndex.set(s.slide_index, { ...s, body: newBody });
         mentionCount += 1;
@@ -819,7 +970,12 @@ export async function generateCarousel(formData: FormData): Promise<
     const finalSlideLooksLikeClosingCta =
       lastSlide.slide_type === "cta" ||
       /\b(follow|subscribe|save|share|dm|bio|link\s+in|try|book|demo|shop|order)\b/i.test(`${headline} ${bodyLower}`);
-    if (productOrServiceKnown && (!hasProductTryCta || !finalSlideLooksLikeClosingCta || lastSlide.slide_type !== "cta")) {
+    if (
+      productOrServiceKnown &&
+      includeMarketing &&
+      (projectRulesParsed.organic_marketing_progress ?? 0) >= 4 &&
+      (!hasProductTryCta || !finalSlideLooksLikeClosingCta || lastSlide.slide_type !== "cta")
+    ) {
       const newHeadline =
         shortProductCloseLabel && shortProductCloseLabel !== "this product"
           ? "When you want that same ease"
@@ -902,9 +1058,17 @@ export async function generateCarousel(formData: FormData): Promise<
       product_reference_asset_ids: productRefIdsForRun,
     }),
     ...(productServiceInput && { product_service_input: productServiceInput }),
+    include_marketing: includeMarketing,
     ...(validated.similar_ideas?.length && {
       similar_carousel_ideas: validated.similar_ideas,
     }),
+    quality_control: {
+      rewritten: qcRewritten,
+      judge_score: qcJudge?.total ?? null,
+      judge_pass: qcJudge?.pass ?? null,
+      hard_issue_codes: qcHardIssues.map((i) => i.code).slice(0, 20),
+      remaining_hard_issues: qcHardIssues.length,
+    },
   };
 
   const hasImageQueriesForDefault = (s: { image_queries?: string[]; unsplash_queries?: string[]; image_query?: string; unsplash_query?: string }) =>
@@ -1944,6 +2108,50 @@ export async function generateCarousel(formData: FormData): Promise<
   LOG("backgrounds", `done in ${elapsedMs(backgroundsStart) / 1000}s`);
   LOG("done", `carousel ${carousel.id} ready (total ${elapsedMs(totalStart) / 1000}s)`);
   logTokenSummary(tokenUsageSteps, imageCostTrack);
+
+  // Persist open-loop memory + auto-advance marketing maturity after a successful run.
+  try {
+    const existingRules =
+      project.project_rules && typeof project.project_rules === "object"
+        ? { ...(project.project_rules as Record<string, unknown>) }
+        : {};
+    const progressUpdate = advanceOrganicMarketingProgress({
+      currentProgress: projectRulesParsed.organic_marketing_progress,
+      marketingCarouselsCompleted: projectRulesParsed.marketing_carousels_completed,
+      includeMarketing,
+    });
+    const fulfilled = topicLikelyFulfillsOpenLoop(data.input_value, pendingOpenLoop);
+    const nextOpenLoop = extractOpenLoopPromise(validated);
+    const nextRules: Record<string, unknown> = {
+      ...existingRules,
+      organic_marketing_progress: progressUpdate.progress,
+      marketing_carousels_completed: progressUpdate.marketingCarouselsCompleted,
+    };
+    if (fulfilled) {
+      if (nextOpenLoop) nextRules.pending_open_loop = nextOpenLoop;
+      else delete nextRules.pending_open_loop;
+    } else if (nextOpenLoop) {
+      nextRules.pending_open_loop = nextOpenLoop;
+    } else if (pendingOpenLoop) {
+      nextRules.pending_open_loop = pendingOpenLoop;
+    }
+    await updateProject(user.id, data.project_id, {
+      project_rules: nextRules as Json,
+    });
+    if (progressUpdate.bumped) {
+      LOG(
+        "QC",
+        `organic marketing progress bumped to ${progressUpdate.progress}/10 after ${progressUpdate.marketingCarouselsCompleted} marketing gens`
+      );
+    }
+    if (nextOpenLoop) LOG("QC", `pending open loop stored: ${nextOpenLoop.slice(0, 80)}`);
+  } catch (e) {
+    console.warn(
+      "[carousel-gen] could not update project QC memory:",
+      e instanceof Error ? e.message : e
+    );
+  }
+
   return { carouselId: carousel.id };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -2064,6 +2272,7 @@ export async function startCarouselGeneration(formData: FormData): Promise<
       }
     })(),
     product_service_input: ((formData.get("product_service_input") as string | null) ?? "").trim() || undefined,
+    include_marketing: formData.get("include_marketing") ?? undefined,
     use_ai_backgrounds: formData.get("use_ai_backgrounds") ?? undefined,
     use_stock_photos: formData.get("use_stock_photos") ?? undefined,
     use_ai_generate: formData.get("use_ai_generate") ?? undefined,
@@ -2222,6 +2431,7 @@ export async function startCarouselGeneration(formData: FormData): Promise<
     ugc_character_reference_asset_ids: data.ugc_character_reference_asset_ids ?? [],
     product_reference_asset_ids: data.product_reference_asset_ids ?? [],
     product_service_input: data.product_service_input,
+    include_marketing: !!parsed.data.include_marketing,
     ...(parsed.data.carousel_for && { carousel_for: parsed.data.carousel_for }),
   };
 

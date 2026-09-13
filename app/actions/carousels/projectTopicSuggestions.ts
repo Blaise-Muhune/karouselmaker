@@ -10,6 +10,8 @@ import {
   refreshesUsedToday,
   serializeTopicSuggestionsCache,
   utcDayKey,
+  mergeTopicItemQueues,
+  type TopicSuggestionItem,
   type TopicSuggestionsCacheV1,
 } from "@/lib/server/topicSuggestions/topicSuggestionsCache";
 import { normalizeTopicKey } from "@/lib/server/topicSuggestions/normalizeTopicKey";
@@ -17,7 +19,7 @@ import { normalizeTopicKey } from "@/lib/server/topicSuggestions/normalizeTopicK
 export type GetProjectTopicSuggestionsResult =
   | {
       ok: true;
-      topics: string[];
+      topics: TopicSuggestionItem[];
       refreshesUsedToday: number;
       refreshesLimit: number;
       maxQueued: number;
@@ -27,27 +29,19 @@ export type GetProjectTopicSuggestionsResult =
 export type RefreshProjectTopicSuggestionsResult =
   | {
       ok: true;
-      topics: string[];
+      topics: TopicSuggestionItem[];
       refreshesUsedToday: number;
       refreshesLimit: number;
     }
   | { ok: false; error: string };
 
-export type ConsumeProjectTopicSuggestionResult = { ok: true; topics: string[] } | { ok: false; error: string };
+export type ConsumeProjectTopicSuggestionResult =
+  | { ok: true; topics: TopicSuggestionItem[] }
+  | { ok: false; error: string };
 
-function mergeTopicQueues(existing: string[], incoming: string[], max: number): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const t of [...existing, ...incoming]) {
-    const k = normalizeTopicKey(t);
-    if (!k || k.length < 4) continue;
-    if (seen.has(k)) continue;
-    seen.add(k);
-    out.push(t.trim());
-    if (out.length >= max) break;
-  }
-  return out;
-}
+export type MarkTopicSuggestionMarketingResult =
+  | { ok: true; topics: TopicSuggestionItem[] }
+  | { ok: false; error: string };
 
 export async function getProjectTopicSuggestions(projectId: string): Promise<GetProjectTopicSuggestionsResult> {
   const { user } = await getUser();
@@ -81,12 +75,15 @@ export async function refreshProjectTopicSuggestions(
     used = 0;
   }
   if (used >= TOPIC_SUGGESTIONS_DAILY_REFRESH_LIMIT) {
-    return { ok: false, error: `You’ve used all ${TOPIC_SUGGESTIONS_DAILY_REFRESH_LIMIT} topic refreshes for today. Try again tomorrow.` };
+    return {
+      ok: false,
+      error: `You've used all ${TOPIC_SUGGESTIONS_DAILY_REFRESH_LIMIT} topic refreshes for today. Try again tomorrow.`,
+    };
   }
 
   const extraBlocked = new Set<string>();
   for (const t of cache.topics ?? []) {
-    extraBlocked.add(normalizeTopicKey(t));
+    extraBlocked.add(normalizeTopicKey(t.topic));
   }
 
   const batch = await generateCarouselTopicBatch(projectId, {
@@ -95,7 +92,7 @@ export async function refreshProjectTopicSuggestions(
   });
   if (!batch.ok) return { ok: false, error: batch.error };
 
-  const merged = mergeTopicQueues(cache.topics ?? [], batch.topics, TOPIC_SUGGESTIONS_MAX_QUEUED);
+  const merged = mergeTopicItemQueues(cache.topics ?? [], batch.topics, TOPIC_SUGGESTIONS_MAX_QUEUED);
   const next: TopicSuggestionsCacheV1 = {
     topics: merged,
     refresh_day: today,
@@ -126,7 +123,7 @@ export async function consumeProjectTopicSuggestion(
   const cache = parseTopicSuggestionsCache(project.topic_suggestions_cache);
   const topics = cache.topics ?? [];
   const want = normalizeTopicKey(topic);
-  const nextTopics = topics.filter((t) => normalizeTopicKey(t) !== want);
+  const nextTopics = topics.filter((t) => normalizeTopicKey(t.topic) !== want);
   if (nextTopics.length === topics.length) {
     return { ok: true, topics: nextTopics };
   }
@@ -142,8 +139,37 @@ export async function consumeProjectTopicSuggestion(
 }
 
 /**
+ * Turn marketing on for a lined-up topic. Cannot turn off (progressive lock).
+ */
+export async function markTopicSuggestionMarketing(
+  projectId: string,
+  topic: string
+): Promise<MarkTopicSuggestionMarketingResult> {
+  const { user } = await getUser();
+  if (!user) return { ok: false, error: "You must be signed in." };
+  const project = await getProject(user.id, projectId);
+  if (!project) return { ok: false, error: "Project not found." };
+
+  const cache = parseTopicSuggestionsCache(project.topic_suggestions_cache);
+  const want = normalizeTopicKey(topic);
+  let changed = false;
+  const topics = (cache.topics ?? []).map((t) => {
+    if (normalizeTopicKey(t.topic) !== want) return t;
+    if (t.is_marketing) return t;
+    changed = true;
+    return { ...t, is_marketing: true };
+  });
+  if (!changed) return { ok: true, topics };
+
+  const next: TopicSuggestionsCacheV1 = { ...cache, topics };
+  await updateProject(user.id, projectId, {
+    topic_suggestions_cache: serializeTopicSuggestionsCache(next),
+  });
+  return { ok: true, topics };
+}
+
+/**
  * Ensure the project has a topic lineup. Seeds AI topics when empty (does not burn a daily refresh).
- * Call on project create and when opening the new-post form.
  */
 export async function ensureProjectTopicLineup(
   projectId: string,
@@ -177,7 +203,7 @@ export async function ensureProjectTopicLineup(
     };
   }
 
-  const merged = mergeTopicQueues([], batch.topics, TOPIC_SUGGESTIONS_MAX_QUEUED);
+  const merged = mergeTopicItemQueues([], batch.topics, TOPIC_SUGGESTIONS_MAX_QUEUED);
   const next: TopicSuggestionsCacheV1 = {
     topics: merged,
     refresh_day: cache.refresh_day ?? utcDayKey(),
@@ -195,4 +221,3 @@ export async function ensureProjectTopicLineup(
     maxQueued: TOPIC_SUGGESTIONS_MAX_QUEUED,
   };
 }
-

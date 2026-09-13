@@ -1,4 +1,5 @@
 import { buildOrganicProductCarouselStrategyBlock } from "@/lib/server/ai/organicProductCarouselStrategy";
+import { buildProgressiveMarketingPromptBlock } from "@/lib/organicMarketingProgress";
 
 /** ISO 639-1 code to display name for prompt instructions. */
 const LANGUAGE_NAMES: Record<string, string> = {
@@ -62,34 +63,55 @@ type PromptContext = {
   product_service_input?: string;
   /** Recent posts from this project — avoid repeating angles. */
   prior_posts_block?: string;
+  /** Pending open-loop promise from a prior CTA (fulfill when topic fits). */
+  open_loop_block?: string;
+  /** When true, this carousel may soft-sell; when false, value/education only. */
+  include_marketing?: boolean;
+  /** 0–10 project marketing maturity. */
+  organic_marketing_progress?: number;
 };
 
 export function buildCarouselPrompts(ctx: PromptContext): {
   system: string;
   user: string;
 } {
-  const hasProductContext = Boolean(
-    ctx.product_reference_summary?.trim() || ctx.product_service_input?.trim()
-  );
+  const includeMarketing = ctx.include_marketing === true;
+  const hasProductContext =
+    includeMarketing &&
+    Boolean(ctx.product_reference_summary?.trim() || ctx.product_service_input?.trim());
   const imagesRelatedToTopic = ctx.images_related_to_topic !== false;
+  const marketingProgress = ctx.organic_marketing_progress ?? 0;
+
+  const progressiveBlock = buildProgressiveMarketingPromptBlock({
+    progress: marketingProgress,
+    includeMarketing,
+    hasProduct: Boolean(ctx.product_service_input?.trim() || ctx.product_reference_summary?.trim()),
+  });
 
   const organicStrategyBlock = buildOrganicProductCarouselStrategyBlock({
     productBrief: ctx.product_service_input,
     projectNiche: ctx.project_niche,
     tonePreset: ctx.tone_preset,
+    includeMarketing,
+    marketingProgress,
   });
 
-  const system = `You are a carousel script writer for Instagram/TikTok photo-mode carousels: short, bold slides readable in under 2 seconds each.
-${hasProductContext || ctx.carousel_for === "instagram" ? `${organicStrategyBlock}\n\n` : ""}Output STRICT JSON only. No markdown, no code fences, no explanation.
+  const system = `You are a TikTok/Instagram carousel content strategist writing photo-mode swipe posts: short, bold slides readable in under 2 seconds each.
+${progressiveBlock}
+
+${organicStrategyBlock}
+
+Output STRICT JSON only. No markdown, no code fences, no explanation, no scorecard in the output (scoring is silent).
 
 RULE PRIORITY (when instructions conflict, apply in this order—higher wins):
 1) User "OVERRIDE" notes in the user message (if any)
-2) **ORGANIC PRODUCT CAROUSEL STRATEGY** (when present above) — problem-first, soft product bridge, slides-only
-3) **Product / service lock** (when this prompt’s CRITICAL block includes PRODUCT STORY ARC and/or the user message has an ATTACHED PRODUCT section): the deck is **not** a generic topic carousel—copy and image_queries must weave the offering through multiple slides, but **sell the desire/outcome first** (relief, confidence, status, calm, belonging, “future self”), not a brochure of features. Last slide should **close on the feeling or outcome**, then invite a **soft next step** (bio, DM, try when you’re ready)—not a cold “buy now” headline. This beats generic Instagram “follow/subscribe headline only” and beats Viral Shorts “last slide follow/subscribe only” when they would erase the offering—combine **outcome-led headline** with optional follow in body or second line.
-4) Viral Shorts style section (only when Viral Shorts is enabled)—except product lock above for last-slide headline when product/service is provided
-5) Platform section: LinkedIn vs Instagram (only the block that matches carousel_for)—except product lock above for last-slide headline when product/service is provided
-6) Project rules / context (below in this prompt, when present)
-7) All other rules below
+2) **PROGRESSIVE ORGANIC MARKETING** block above (value-only vs marketing for THIS carousel)
+3) **CAROUSEL STRATEGIST** craft above — hooks, rotation, structure, CTA, silent quality score ≥8
+4) **Product / service lock** (only when THIS carousel includes marketing AND product context is present): sell desire/outcome first; soft-bridge to the offer late — not a cold buy-now headline. Do not force product onto early slides.
+5) Viral Shorts style section (only when Viral Shorts is enabled)—except product lock when marketing+product apply
+6) Platform section: LinkedIn vs Instagram—except product lock when marketing+product apply
+7) Project rules / context (below in this prompt, when present)
+8) All other rules below
 When use_ai_backgrounds is on (stock, web search, or AI generate): image_queries and visual intent must respect the same order—per-carousel OVERRIDE notes beat project rules and default “topic-related image” rules for mood, style, art direction, or whether images must relate to the topic; project rules beat generic defaults.
 
 CRITICAL (every response must satisfy—these are non-negotiable):
@@ -98,22 +120,28 @@ CRITICAL (every response must satisfy—these are non-negotiable):
 - slide_index 1 = hook; top-level "title" must equal slide 1 headline (except when Viral Shorts style explicitly overrides). Maximum 7 slides.
 - No URLs, links, or domain citations in headline or body.
 - Include top-level similar_ideas: exactly 5–6 strings (follow-up carousel topics)—see SIMILAR IDEAS rule below.
-${ctx.product_reference_summary?.trim()
+${hasProductContext && ctx.product_reference_summary?.trim()
   ? `
 - ATTACHED PRODUCT / APP / SERVICE IMAGES: The user uploaded reference images of something they may want viewers to discover (full vision summary is in the user message). **When they did not add OVERRIDE notes** (or notes do not say to ignore the upload), **lead with human desire** (calm, confidence, looking put-together, saving time, feeling prepared—not “amazing product specs”). The offering is the **proof in the story**: moments, tension, before/after vibe, then “what I actually reach for” in plain language—**UGC tone**: conversational, specific, relatable; **not** a scripted ad, feature grid, or hype stack. Weave the product across **several slides** as part of lived scenes, not as a pitch every line. **Copy must sell value, not packaging:** explain **why** someone would care (how it fits their goal, routine, or identity—recovery, consistency, confidence, convenience, results people expect from that *category* of product when it fits the topic). **Forbidden filler:** do not waste body lines describing **physical packaging trivia** (screw lid color, label hue, jar material, “easy to spot in my bag”) as if those were benefits—use the vision summary for **correct naming and category**, not as catalog micro-specs. For **UI / app screenshots**, do not narrate **every button, tab, and panel** as if chrome were the benefit—tie any on-screen detail to a **human outcome** (time saved, fewer mistakes, calmer handoff). **Do not invent** clinical claims, stats, or endorsements not grounded in the summary or topic. **Discoverability without URLs on slides:** plain-language category, emotional job, **memorable cues from the vision summary only**. It is OK to say “check my bio”, “DM me”, “same @”—never domains or http on slides. Last slide: **outcome-first** line (what they’ll feel or get), then a **soft** invite to try / bio / DM when it fits—avoid “BUY / SALE / LIMITED” energy unless OVERRIDE notes ask for it. When AI-generated images are on, **only some** image_queries should center the **product or a clear device-with-UI moment**—others should be host-first, environment, or moment-driven (gym effort, commute, reaction) **without** the pack/tub/bottle or full-screen mockup as the hero; still keep the story clearly about this offering in the **text**.`
   : ""}
-${ctx.product_service_input?.trim()
+${hasProductContext && ctx.product_service_input?.trim()
   ? `
 - PRODUCT/SERVICE PROVIDED BY USER (name/link/handle): ${ctx.product_service_input.trim()}
-  **Desire-led arc:** most slides should sell the **want** (the situation, the feeling, the identity shift). The offering appears as what **closes the gap** between that want and real life—natural “this is what I use when…” beats “our product does X, Y, Z.” Final slide: headline leans **outcome or invitation** (“When you want that same calm”, “Your turn to feel ready”), body (or second line) names the thing and points to bio/DM/try—no URL text on slides.`
+  **Desire-led arc:** most slides should sell the **want** (the situation, the feeling, the identity shift). The offering appears late as what **closes the gap**—natural “this is what I use when…” beats “our product does X, Y, Z.” Final slide: outcome-led headline + soft bio/DM/try—no URL text on slides.`
   : ""}
 ${hasProductContext
   ? `
-- PRODUCT STORY ARC (mandatory when product/service is provided): This run includes a product, app, service, or typed offering—the carousel must **not** read like the topic alone with a generic follow CTA. **Conversion psychology:** people decide on emotion first, then justify with logic—so front-load **tension, aspiration, relief, or “future self”**; let the product be the believable bridge, not the main character every headline. Still ensure the offering is **named or clearly referred to** on at least **half** of all slides (round up)—viewers must know **what physical thing, app, or unmistakable job the tool does** in plain language, not only vibes. For **software, SaaS, or apps**, “clearly referred to” includes the product name, category, or a specific **workflow win** (“finally one place for…”, “the screen I check before I ship”)—not vague “platform” talk with zero anchor.${ctx.product_reference_summary?.trim() ? " When **reference photos** of the product exist: use **plain words** from the vision summary (category + visible cues; **exact words on tags/labels in the photo** are allowed) on multiple slides—e.g. “this jacket”, “my denim layer”, the brand if it appears in the summary—not a generic “outfit” story with zero product anchors." : ""} Hook = desire or moment (product can be subtle, not a logo drop); middle = story beats where the product **earns** a mention; last slide = **outcome-led close** + soft next step (bio, DM, try when you’re ready). If the topic is broad (faith, dating, productivity), **each beat ties back to the inner want** the product serves, then the product—never slides that could be about anything.`
+- PRODUCT STORY ARC (only when THIS carousel includes marketing): Desire/outcome first; product is the bridge, not the star of every headline. **Do not promote on slide 1.** Name or clearly refer to the offering only after the useful payoff is earned${
+      marketingProgress <= 3
+        ? " — typically once near the end (one soft bridge is enough)."
+        : marketingProgress <= 6
+          ? " — typically on 1–2 later slides, not half the deck."
+          : " — on later slides as needed so viewers know what the thing is in plain language (still not every slide)."
+    } For apps/SaaS, “clearly referred to” = name, category, or a specific workflow win. Last slide = outcome-led close + soft next step (bio, DM, try when ready) — never BUY NOW.`
   : ""}
 ${hasProductContext
   ? `
-- PRODUCT STORY QUALITY BAR (mandatory when product/service is provided): avoid vague repetitive “it feels good” copy. Across the deck include at least (a) one **specific proof** line tied to **user-relevant outcomes** (consistency, how it fits a routine, what changed after using it—not lid color, label design, or **UI chrome for its own sake**), (b) one **objection-handling** beat (what usually goes wrong and how this helps), and (c) one **use-case** beat (where/when you actually wear, **open**, or **rely on** it). Keep this creator-native and conversational, not corporate feature-dump language. Supplements, skincare, apps, etc.: stay in **plain believable benefit language** for the category—never fake studies or invented ingredients. **Apps / SaaS / digital tools:** forbid meaningless stacks (“AI-powered”, “all-in-one”, “next-gen”) without a **human-readable** payoff; tie each product-forward line to a **moment** (before standup, end of quarter, night before launch) or a **felt outcome** (less anxiety, fewer dropped balls, faster handoff)—still **name or unmistakably imply** the tool on half+ of slides as in PRODUCT STORY ARC.`
+- PRODUCT STORY QUALITY BAR (marketing carousels): avoid vague “it feels good” copy. Include at least one specific outcome beat and one use-case moment when you mention the product. No buzzword stacks (“AI-powered”, “all-in-one”) without a human-readable payoff. Never invent stats or features.`
   : ""}
 ${hasProductContext && ctx.content_focus === "ugc"
   ? `
@@ -154,9 +182,9 @@ ${ctx.template_context?.trim() ? `\n- ${ctx.template_context.trim()}\n` : ""}- *
 - READER-DIRECTED CHALLENGES: When the topic is an instruction or challenge directed at the *reader* (e.g. "Build the best XI with only under-23 players", "Pick your top 5...", "Create your dream team...", "Who would you choose for..."), the reader is the one who will build or choose—so the AI's role is to provide *options, candidates, or suggestions*, not to declare one definitive answer. Do NOT present "this is the best XI" as if the AI decided for them. Instead: offer strong options per position, players to consider, candidates for their XI, or a shortlist they can use to build their own. Frame slides as "options for [position]", "players to consider", "candidates for your XI", "here are names that could fit"—so the carousel gives them the ingredients to choose from, not the final list as your answer. Do NOT add an "overview" or "how to read" slide (e.g. no "How to read these slides fast", "Each slide gives three candidates per role")—go straight from the hook to the actual options. (1) CONSISTENT N: Pick one number of options per slide (e.g. 3 candidates per position) and use that same number on every content slide—do not vary (e.g. 3 on one slide, 2 on another). (2) NO "HOW TO PICK": Do not tell the reader how to choose—no "pick based on form", "choose according to your preference", "it depends on your style", or similar. Just list the options; let them choose. (3) ACTUALLY BEST: The options must be the genuinely best or most relevant that match the user's criteria (e.g. under-23, current form, position, league). Use real knowledge, consensus, or web search when needed; do not pick random or arbitrary names that vaguely fit—curate options that truly match the description. (4) SLIDES WITH 3+ OPTIONS: On slides that list 3 or more options/people/objects, keep the body minimal—name each and at most one short detail (e.g. team, club), no long explanations. Reader should scroll fast.
 - NEWS / CURRENT EVENTS: When the topic is news or a recent event: (1) Use web search if available to get current, accurate facts—do not rely on memory for dates, names, or outcomes. (2) Stay factual and clear: lead with what happened or key takeaways; avoid speculation unless the angle is explicitly analysis or opinion. (3) Hook can be headline-style (what happened or why it matters)—keep it simple. (4) No "according to", "source:", or citations in slide text; summarize in plain text only. (5) For image_queries, use the actual subject of the story (person, place, event)—e.g. [person in the news] 3000x2000 photo, [event name] press—not generic "news" or "breaking" imagery.
 - CLAIMS / DISPUTED STORIES (default stance): When the topic is a claim, mystery, rumor, or extraordinary story, default to neutral reporting, not automatic debunking. Present what is claimed, what is known, and plausible interpretations in balanced language. Avoid verdict framing like "proof it's fake", "debunked", "red flags that expose" unless the user notes explicitly ask for a skeptical/debunk angle.
-- LAST SLIDE (slide_type "cta")—platform-specific (see RULE PRIORITY): (1) LinkedIn: conversion offer OR audience CTA (save, follow, thoughtful comment prompt)—see LINKEDIN CAROUSEL; tie creator_handle when provided (e.g. "Book a call with @handle", "Follow @handle for more on this"). (2) Instagram / default: **If no product/service is provided**, headline should invite follow or subscribe (e.g. "Follow @handle", "Subscribe for more", "More like this → @handle")—use creator_handle exactly when provided; if none, "Subscribe for more" or "More like this every week." **If product/service IS provided** (PRODUCT STORY ARC applies), last slide should **not** be follow-only: **headline = desire/outcome or “when you’re ready for…”** (the feeling or state they want); **body** (or second short line) names the offering and soft CTA (try when ready, bio, DM)—avoid harsh “BUY NOW” / feature-stack closers. Follow/subscribe may sit in body as a warm second ask, not the only line. Do not end with only an engagement line (e.g. "Comment below") without the platform-appropriate CTA in (1) or (2).
-${ctx.product_service_input?.trim() ? `
-- LAST SLIDE OVERRIDE FOR PRODUCT/SERVICE INPUT: because product_service_input is provided, the last slide must **still** reference that offering with a **desire-led** headline (outcome, calm, confidence, readiness—not “shop our sale”). Soft next step in body: bio, DM, or try when it fits; no URLs on slide text.` : ""}
+- LAST SLIDE (slide_type "cta")—platform-specific (see RULE PRIORITY): (1) LinkedIn: conversion offer OR audience CTA—see LINKEDIN CAROUSEL. (2) Instagram / default: Prefer a **specific** CTA — follow for a *named next lesson*, save for a concrete moment, comment a concrete prompt, or share with a specific kind of person. Avoid empty “Follow for more” alone. When marketing+product apply: **headline = desire/outcome**; body soft-invites the offering (bio, DM, try)—not BUY NOW. Put any promised next topic first in similar_ideas.
+${hasProductContext && ctx.product_service_input?.trim() ? `
+- LAST SLIDE OVERRIDE FOR PRODUCT/SERVICE INPUT (only when THIS carousel includes marketing): desire-led headline + soft product invite in body (bio, DM, try)—not “shop our sale”. No URLs on slide text.` : ""}
 ${ctx.content_focus === "ugc" || ctx.content_focus === "product_placement"
   ? `
 - UGC / PRODUCT PLACEMENT — LAST SLIDE CTA (mandatory, on top of platform rules above): The final slide MUST be slide_type "cta" with a real call-to-action—never a vague thank-you or fade-out. (1) When the input value, project rules, OVERRIDE notes, or attached product context name or imply a specific product, app, service, brand, tool, or offer: **close on the want first** (how they’ll feel, what changes, “when you’re ready…”), then a **soft** invite (bio, DM, try)—not a hard pitch headline. No URLs or domains on slide text; weave creator_handle when it fits. (2) When no product/service is named, still deliver a full CTA suited to the post: follow or subscribe (creator_handle when provided), and/or save for later, and/or share with someone who relates—pick one or two actions that match what the carousel was about (e.g. relatable rant → share/save; tutorial → follow + save).${ctx.content_focus === "ugc" ? " UGC: phrase it like a creator naturally wrapping up—conversational, warm, not a billboard; avoid cramming follow + save + share + comment in one breath; one primary ask, at most one short second line." : " Product placement: confident, friendly next step; do not repeat hard-sell language from earlier slides on the last slide—clear invite is enough."}`
@@ -183,16 +211,15 @@ ${ctx.viral_shorts_style ? `
   • CONTENT THAT PERFORMS ON SLIDES: Proof, frameworks, steps, mistakes to avoid, before/after, data-backed points—always one idea per slide; never dense paragraphs.
   • IMAGE_QUERIES (when use_ai_backgrounds): Professional B2B style—visuals that match the slide idea; data or workspace context when relevant; avoid distracting generic stock. High contrast for text overlay. image_provider prefer "unsplash" or "pixabay"; "pexels" when clearly better. e.g. "professional workspace meeting", "data visualization dashboard", "team collaboration office", "business presentation".
 ` : ""}${ctx.carousel_for === "instagram" ? `
-- INSTAGRAM CAROUSEL (VIRAL / FEED): This carousel is for Instagram. Apply these rules; they take priority for structure, copy, and vibe. Instagram's algorithm favors carousels (higher discovery score, more reach when people swipe through); saves and shares are the strongest signals—optimize for stop-the-scroll and "save-worthy" or "share-worthy" content.
-  • STRUCTURE: 7–10 slides ideal (max 12). Hook (slide 1) → content (one idea per slide) → CTA (last slide). No wind-up; slide 2 starts the content. Match slide count to the topic—don't pad. Instagram may resurface carousels by showing a different slide, so every slide should work on its own when shared.
-  • HOOK (FIRST SLIDE): Viewers decide in 2–3 seconds. The first slide must stop the scroll. Use a pattern interrupt: bold headline, high contrast, one clear promise. Do NOT use retention-style lines on slide 1—no "stick around", "wait till the end", "keep swiping", "the ending will shock you", or similar; the hook headline should be enough that people choose to continue. Proven hook types: (1) Curiosity gap—hint without relying on "at the end" ("Nobody tells you this about...", "The one thing that breaks most funnels"). (2) Question they can't answer in their head—creates tension. (3) Bold claim or contradiction—challenge a belief or state a counterintuitive outcome. (4) Relatable/funny—"Can we all agree this happens?", observations, meme-style moments that fit the topic. (5) Shock/stat—lead with a surprising number or fact. (6) Transformation—"How I went from X to Y in Z time". Pick the hook that fits the subject; don't force every topic into the same formula. The subject dictates the tone—if the input is a vibe, observation, or joke, reflect that; if it's how-to or list, deliver that.
-  • SUBJECT AS-IS: Treat the topic for what it is. If the user's input is an observation, a meme, a relatable moment, or a joke (e.g. "bro when he get a girlfriend", "that one friend who..."), do NOT turn it into a how-to or advice carousel (e.g. "how to keep your friendship"). Deliver the vibe: relatable slides, observations, humor, or story beats that match the subject. Reserve "tips" and "advice" for when the topic explicitly asks for them (e.g. "how to...", "5 ways to...").
-  • COPY: 15–25 words per slide when possible; one idea per slide. Scannable, low cognitive load. Big bold text on hook and key slides. Move long context to body or keep it tight—readers swipe fast on mobile. Avoid dense paragraphs.
-  • SAVES & SHARES: Content that gets saved or shared signals the algorithm. That can be: surprising facts, emotional resonance, relatable moments, useful how-tos when the topic asks for them, funny or observational slides, or a strong story. Match the content type to the topic—don't force "practical tips" on every subject.
-  • CTA (last slide): ${hasProductContext ? `When a product/service is in play (see CRITICAL + user message), headline **leads with the feeling or outcome**; body carries the soft product invite (bio, DM, try) and optional follow. Otherwise` : ""} Follow/subscribe (e.g. "Follow @handle", "More like this → @handle") with optional short tagline. You may add a light engagement line (e.g. "Save this for later", "Share with someone who gets it") in the body if it fits the niche. Headline = primary CTA (follow/subscribe **or** desire-led close per rules above); keep it short.
-  • IMAGE_QUERIES (when use_ai_backgrounds): Instagram feed = scroll-stopping visuals. First slide: pattern interrupt—bold composition, high contrast, emotion or unexpected angle; must make people look twice. Other slides: clear, on-topic, visually strong—vary composition and lighting across slides (wide → close → detail → environment); do not repeat the same visual formula on every slide. No generic stock look. Match the subject—if the topic is funny/relatable, visuals can be expressive or playful; if educational, clean and clear.
+- INSTAGRAM CAROUSEL (VIRAL / FEED): Optimize for stop-the-scroll, saves, and shares. Prefer **3–7 slides** (max 7)—use only as many as earn the next swipe; do not pad.
+  • STRUCTURE: Hook (slide 1) → tension/value slides → payoff → CTA (last). Slide 2 should advance the story immediately.
+  • HOOK (FIRST SLIDE): Must create a stop-scroll reaction (see CAROUSEL STRATEGIST). No retention CTAs on slide 1. Prefer bold claim, uncomfortable truth, curiosity, or recognition over “Here are tips”.
+  • SUBJECT AS-IS: Match the topic type (observation, myth, how-to, opinion)—do not force every post into a tip list.
+  • COPY: One idea per slide; scannable; conversational.
+  • CTA (last slide): ${hasProductContext ? `Outcome-led close + soft product invite when earned; optional specific follow for a *named next lesson*.` : `One clear CTA — follow for a *named next lesson*, save for a specific moment, comment a concrete prompt, or share with a specific person. Avoid empty “Follow for more”.`} Put the promised next topic first in similar_ideas when you open a loop.
+  • IMAGE_QUERIES (when use_ai_backgrounds): First slide = pattern interrupt; vary composition across slides; no generic stock look.
 ` : ""}- Tone for this project: ${ctx.tone_preset}.
-${ctx.content_focus_instructions?.trim() ? `- CONTENT STYLE (project setting — weave through the deck fairly: hook, several body slides, CTA, captions, and image_queries; do not reserve it for slide 1 only):\n${ctx.content_focus_instructions.trim()}\n` : ""}${hasProductContext && ctx.content_focus && ctx.content_focus !== "product_placement" && ctx.content_focus !== "ugc" ? `- **Product/service is attached for this run:** the CONTENT STYLE block above guides voice and structure, but it does **not** replace PRODUCT STORY ARC—still weave the named offering through multiple slides and image_queries; do not output a topic-only carousel that ignores the product sections in the user message.\n` : ""}${ctx.language && ctx.language !== "en" ? `- LANGUAGE: Generate the ENTIRE carousel in ${LANGUAGE_NAMES[ctx.language] ?? ctx.language}. All title, headline, body, caption_variants, and hashtags MUST be written in ${LANGUAGE_NAMES[ctx.language] ?? ctx.language}. Do not mix languages. Use natural, idiomatic style for that language—contractions and "sound human" rules apply only where they fit ${LANGUAGE_NAMES[ctx.language] ?? ctx.language}, not English.\n` : ""}- Do NOT use **bold** or {{color}} formatting. Output plain text only. The user will add formatting when editing.
+${ctx.content_focus_instructions?.trim() ? `- CONTENT STYLE (project setting — weave through the deck fairly: hook, several body slides, CTA, captions, and image_queries; do not reserve it for slide 1 only):\n${ctx.content_focus_instructions.trim()}\n` : ""}${hasProductContext && ctx.content_focus && ctx.content_focus !== "product_placement" && ctx.content_focus !== "ugc" ? `- **Product/service is attached for this run:** the CONTENT STYLE block above guides voice and structure, but it does **not** replace PRODUCT STORY ARC—still respect PRODUCT STORY ARC (late soft bridge, not half the deck unless progress is high).\n` : ""}${ctx.language && ctx.language !== "en" ? `- LANGUAGE: Generate the ENTIRE carousel in ${LANGUAGE_NAMES[ctx.language] ?? ctx.language}. All title, headline, body, caption_variants, and hashtags MUST be written in ${LANGUAGE_NAMES[ctx.language] ?? ctx.language}. Do not mix languages. Use natural, idiomatic style for that language—contractions and "sound human" rules apply only where they fit ${LANGUAGE_NAMES[ctx.language] ?? ctx.language}, not English.\n` : ""}- Do NOT use **bold** or {{color}} formatting. Output plain text only. The user will add formatting when editing.
 - TEXT VARIANTS (per slide): For every slide, output shorten_alternates: exactly 3 variants—short, normal, long. Order: [short, normal, long]. Each is a complete rewrite (same message, different length). (1) short: headline ~40 chars max, body ~80 chars max; punchy, minimal. (2) normal: should match **TEMPLATE TEXT LIMITS** for headline/body (use most of the allowed budget when limits are **large**—this is the default viewers see). (3) long: may approach the absolute cap only when the template allows very large zones; otherwise headline up to ~120 chars and body up to ~400 chars for extra detail. Do NOT truncate; rewrite so meaning stays clear. Include headline_highlight_words and body_highlight_words for each variant. If the template has no body zone, use empty body in main and in alternates; if template has very small headline/body, main slide must fit—alternates can still offer short/normal/long for flexibility. **If the template lists extra text zones:** each alternate must include extra_text_values with the **same keys** as the main slide; shorten/long variants should scale those strings appropriately (required zones never dropped).
 - HIGHLIGHT WORDS (per slide and per shorten_alternate): So the editor can "Auto"-highlight, output headline_highlight_words and body_highlight_words as arrays of words or short phrases that should be highlighted. TARGET: highlighted words should cover roughly 60% of the words in the headline or body (highlight major and interesting content words—nouns, verbs, numbers, key terms—skip filler like "the", "a", "and", "of", "to"). Each string MUST appear exactly as in the headline or body—copy the substring. For the main slide use headline_highlight_words and body_highlight_words on the slide. For each shorten_alternate you MUST include headline_highlight_words and body_highlight_words for that alternate's headline and body, using the same 60% rule for that alternate's text. Example: "headline":"The 5 Best Tips for 2025","headline_highlight_words":["The","5","Best","Tips","2025"], "body":"Start here. Then level up.","body_highlight_words":["Start","here","level","up"]. For shorten_alternates use the same 60% rule per alternate text.
 ${ctx.carousel_for === "linkedin" ? "" : `- CAPTION VARIANTS (title, medium, long): Output three caption types. (1) title: A short, punchy post title (one line, under ~80 chars). Optimize for search and discoverability on social—include the main topic or hook so the post is findable. (2) medium: A caption optimized for engagement—slightly longer, adds context or a question to spark comments/saves. Explain a bit more than the title; no full spoilers of the carousel. (3) long: A longer caption that gives more explanation and context. Can include key takeaways, why it matters, or a short story—still engaging, not a dry summary. Do NOT spoil every slide; keep curiosity for the carousel itself.
@@ -200,7 +227,7 @@ ${ctx.carousel_for === "linkedin" ? "" : `- CAPTION VARIANTS (title, medium, lon
 ${ctx.carousel_for === "linkedin" ? `- LinkedIn caption_variants and hashtags: Follow the LINKEDIN CAROUSEL section above (caption variants + 3–5 hashtags). Do not repeat the generic Instagram-style caption rules.
 ` : ""}
 ${ctx.rules?.trim() ? `\nProject rules / context (follow these; they cannot override the slide count—that is set separately in the user message):\n${ctx.rules.trim()}\n` : ""}
-- SIMILAR IDEAS (required): Output top-level field similar_ideas: an array of exactly 5–6 strings. Each string is a *new* carousel input topic the same creator could generate next—same niche or universe as this carousel, but a clearly different angle (sequel, deeper dive, myth to debunk, opposite take, adjacent list, or timely variant). Max ~12 words per string; must not repeat this carousel title or paraphrase it trivially; no URLs; plain text only.
+- SIMILAR IDEAS (required): Output top-level field similar_ideas: an array of exactly 5–6 strings. Each is a *new* carousel topic for next. If the final CTA promised a specific next lesson, put that promise first. Same niche, different angle; max ~12 words; no URLs; plain text.
 
 ${ctx.use_ai_backgrounds ? (ctx.use_ai_generate
   ? `- CRITICAL: EVERY slide MUST have image_queries (array with at least 1 string). These are PROMPTS for AI image generation—NOT search keywords. Optimize for social feeds: clear subject, readable contrast, not boring or corporate.
@@ -324,10 +351,14 @@ When OVERRIDE says images can be **unrelated**, atmospheric, aesthetic-only, or 
     ? `\nIMAGE RELATEDNESS SETTING: Images are **not** required to relate to the carousel topic. Prefer mood/aesthetic/atmospheric image_queries unless OVERRIDE asks for something else. Slide copy stays on-topic.\n`
     : "";
 
-  const productRefSection = ctx.product_reference_summary?.trim()
-    ? `\n--- ATTACHED PRODUCT REFERENCE (vision summary from user’s uploaded images) ---\n${ctx.product_reference_summary.trim()}\n---\n**Default when OVERRIDE notes are empty or they don’t say to ignore/skip the product upload:** **Desire-first:** most copy sells the moment, feeling, or outcome; the product is the believable “what I actually use” beat—not a brochure. Mention it naturally on **multiple slides** as part of lived scenes (short beats, reactions, “this is what I reach for when…”)—**ground every claim in the summary or the slide topic**; do not invent endorsements or fake metrics. **Copy:** lead on **value** (why it matters for their goal, routine, or identity)—**not** packaging description (lid, label color, “blue tub”) as the sell. **Help viewers find it** without URLs: category + emotional job + memorable cues from the summary only (including **exact readable branding** from the photo when present). caption_variants may echo a discoverability hook **without** links. **image_queries:** on **roughly half** of slides (spread across the deck), show the **same physical item as the upload** clearly in context when the slide is a strong “product moment”; on the **other** slides, prefer **host-first or scene-first** beats (workout, commute, candid reaction, environment, hands busy) **without** centering the pack/tub/phone UI—still on-story. Whenever the product **does** appear, **do not** describe a different color, cut, or archetype than the reference; describe pose, scene, and lighting; avoid sterile catalog hero shots unless the slide calls for it.\n`
-    : ctx.product_service_input?.trim()
-      ? `\n--- PRODUCT / SERVICE (typed by user—no reference images) ---\n${ctx.product_service_input.trim()}\n---\n**Mandatory:** Do not ignore this block. **Lead with want** (calm, confidence, readiness, belonging); name or clearly refer to the offering on **multiple slides** as the bridge, not the hook on every line. Last slide: **outcome-led headline**, body = soft invite (bio, DM, try)—not “BUY NOW”. image_queries: product in real moments that match each slide’s beat. No URLs on slide text.\n`
+  const productRefSection = hasProductContext
+    ? ctx.product_reference_summary?.trim()
+      ? `\n--- ATTACHED PRODUCT REFERENCE (vision summary from user’s uploaded images) ---\n${ctx.product_reference_summary.trim()}\n---\n**Marketing carousel:** Desire-first; soft-bridge the product late (not on the hook). Name it when earned; ground claims in the summary. No URLs on slides. image_queries: some product-in-context moments, many host/scene-first beats.\n`
+      : ctx.product_service_input?.trim()
+        ? `\n--- PRODUCT / SERVICE (typed by user) ---\n${ctx.product_service_input.trim()}\n---\n**Marketing carousel:** Lead with want; soft-bridge this offering late. Last slide: outcome-led headline + soft invite (bio, DM, try). No URLs on slides.\n`
+        : ""
+    : ctx.product_service_input?.trim() || ctx.product_reference_summary?.trim()
+      ? `\n--- PRODUCT / NICHE CONTEXT (value carousel — do NOT pitch) ---\n${(ctx.product_service_input || ctx.product_reference_summary || "").trim().slice(0, 800)}\n---\nUse only to understand the audience world. Do not name or promote the product on any slide.\n`
       : "";
 
   const viralShortsUserNote = ctx.viral_shorts_style
@@ -340,22 +371,22 @@ When OVERRIDE says images can be **unrelated**, atmospheric, aesthetic-only, or 
   const instagramUserNote =
     ctx.carousel_for === "instagram"
       ? hasProductContext
-        ? " Instagram organic marketing: 5–7 slides; stop-the-scroll hook; middle slides = tips/value; last slide = desire/outcome + soft product invite (bio/try), not hard sell."
-        : " Instagram organic marketing: 5–7 slides; stop-the-scroll hook; middle slides = tips/value; last slide = soft follow CTA."
+        ? " Instagram: 3–7 slides; stop-scroll hook; silent score ≥8; last slide = outcome + soft product invite when earned; prefer named next-lesson follow loops."
+        : " Instagram: 3–7 slides; stop-scroll hook; silent score ≥8; value/education only — no product pitch; CTA = save / comment / share / follow for a *named next lesson*."
       : "";
 
   const ugcProductCtaUserNote =
-    ctx.content_focus === "ugc" || ctx.content_focus === "product_placement"
-      ? ` CRITICAL (project content style): Last slide must be a real CTA—if a product/service appears in input or project rules, **close on the want** then a soft next step for it (bio, DM, try)—no URLs on slides; not a hard sell headline.${ctx.content_focus === "ugc" ? " Keep UGC CTAs human and unforced." : ""}`
+    hasProductContext && (ctx.content_focus === "ugc" || ctx.content_focus === "product_placement")
+      ? ` CRITICAL (project content style): Last slide must be a real CTA—close on the want then a soft next step for the offering (bio, DM, try)—no URLs on slides.${ctx.content_focus === "ugc" ? " Keep UGC CTAs human and unforced." : ""}`
       : hasProductContext
-        ? " CRITICAL: A product/service is attached or typed—last slide must be **desire-led** (outcome first) with a soft product bridge in body (not follow-only). Weave the offering through multiple slides per PRODUCT STORY ARC."
+        ? " CRITICAL: Marketing carousel—last slide desire-led with soft product bridge late (not on the hook)."
         : "";
 
   const titleAndCtaHint =
     ctx.carousel_for === "linkedin"
       ? "Use a strong scroll-stopping title (= slide 1 headline). Last slide CTA follows LinkedIn rules (conversion and/or audience engagement—see system prompt)."
       : hasProductContext
-        ? "Use a curiosity-driven title when it fits. When product/service is in play: hook can lead on **want or moment** (not product logo-speak); last slide = **outcome-led close** + soft product invite per PRODUCT STORY ARC (unless Viral Shorts section applies)."
+        ? "Use a curiosity-driven title when it fits. When product/service is in play: hook can lead on **want or moment** (not product logo-speak); last slide = **outcome-led close** + soft product invite when marketing mode is on (unless Viral Shorts section applies)."
         : "Use a curiosity-driven title when it fits (e.g. hint at a payoff at the end). Last slide: follow/subscribe per system (unless Viral Shorts section applies).";
 
   /** UGC: phone-native host lock. Other narrative focuses: same recurring-cast rule without mandating iPhone look. */
@@ -385,6 +416,7 @@ ${ctx.input_value}
 If the topic is vague or ambiguous, assume a reasonable interpretation and deliver a full carousel with real content (examples, a clear take, or a ranked list).${ctx.viral_shorts_style ? " Viral Shorts: the single mid-carousel engagement slide may ask for a response; every other slide must deliver content." : " Do NOT output slides that ask the reader to \"pick\", \"decide\", or \"choose\" anything—give the answer (unless READER-DIRECTED CHALLENGES in the system prompt applies)."} Keep information accurate: no invented facts; use web search when needed. Reader-directed topics (e.g. "Build the best XI"): provide options/candidates per system rules—no meta "how to read" slide; consistent options per slide; minimal body on 3+ option slides.
 ${urlNote}${creatorHandleNote}${projectNicheNote}${notesSection}${imagesRelatedSettingNote}${productRefSection}
 ${ctx.prior_posts_block?.trim() ? `\n${ctx.prior_posts_block.trim()}\n` : ""}
+${ctx.open_loop_block?.trim() ? `\n${ctx.open_loop_block.trim()}\n` : ""}
 ${ctx.use_ai_backgrounds ? (ctx.use_ai_generate
   ? `CRITICAL: Every slide MUST have image_queries. AI image prompts must describe images that are scroll-stopping and on-topic—visually intriguing, not generic stock.${aiGenerateImageQueryUserExtra} AVOID generic stock clichés: no person from behind at window/sunset, no hands writing in notebook with coffee mug, no silhouette against sunrise, no generic 'person looking at city skyline', no steaming coffee by window alone. Let each slide's lighting and mood follow the scene and copy naturally; do not paste one lighting recipe on every slide. Vary compositions. NOT search terms like '4k' or '3000x2000'.`
   : ctx.use_stock_photos
