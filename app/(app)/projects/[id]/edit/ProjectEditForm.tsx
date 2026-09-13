@@ -63,15 +63,18 @@ export function ProjectEditForm({
   projectId,
   defaultValues,
   productBrief,
+  productUrl,
 }: {
   projectId: string;
   defaultValues: ProjectFormInput;
   /** AI/page brief stored for generation (read-only hint). */
   productBrief?: string;
+  productUrl?: string | null;
 }) {
   const [isPending, setIsPending] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [websiteUrl, setWebsiteUrl] = useState(productUrl ?? "");
   const router = useRouter();
 
   const form = useForm<ProjectFormInput>({
@@ -90,6 +93,7 @@ export function ProjectEditForm({
     fd.set("number_of_slides", "5");
     fd.set("rules", data.project_rules.rules ?? "");
     fd.set("product_to_promote", data.project_rules.product_to_promote ?? "");
+    fd.set("product_url", websiteUrl.trim());
     fd.set(
       "organic_marketing_progress",
       String(data.project_rules.organic_marketing_progress ?? 0)
@@ -150,6 +154,20 @@ export function ProjectEditForm({
             </FormItem>
           )}
         />
+        <div className="space-y-2">
+          <FormLabel htmlFor="product-url">Website (optional)</FormLabel>
+          <Input
+            id="product-url"
+            type="text"
+            inputMode="url"
+            placeholder="yourproduct.com"
+            value={websiteUrl}
+            onChange={(event) => setWebsiteUrl(event.target.value)}
+          />
+          <p className="text-muted-foreground text-xs">
+            We use public details from this page to keep your product context up to date.
+          </p>
+        </div>
         <FormField
           control={form.control}
           name="project_rules.product_to_promote"
@@ -157,17 +175,17 @@ export function ProjectEditForm({
             const len = (field.value ?? "").length;
             return (
               <FormItem>
-                <FormLabel>Product or page to promote</FormLabel>
+                <FormLabel>Describe your offer</FormLabel>
                 <FormControl>
                   <Textarea
-                    placeholder="Paste your product/SaaS URL, or type what you sell — e.g. https://yourapp.com or “Notion-style planner for freelancers”"
+                    placeholder="What is it, who is it for, and what result does it help them get?"
                     className="min-h-20"
                     maxLength={PRODUCT_TO_PROMOTE_MAX_CHARS}
                     {...field}
                   />
                 </FormControl>
                 <p className="text-muted-foreground text-xs">
-                  Link or short description. Carousels stay problem-first and soft-sell this offer—never hard ads. If you paste a URL, we read the page and build a product brief.
+                  Add this when a website alone does not tell the full story. Carousels stay problem-first and soft-sell this offer.
                 </p>
                 {productBrief?.trim() ? (
                   <p className="text-muted-foreground bg-muted/50 rounded-md border p-2 text-xs leading-relaxed">

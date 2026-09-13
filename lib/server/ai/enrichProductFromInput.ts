@@ -9,9 +9,9 @@ const BRIEF_MAX_CHARS = 1800;
 const URL_RE = /https?:\/\/[^\s<>"')\]]+/gi;
 
 export type ProductContextFields = {
-  /** Raw user input (URL and/or description). */
+  /** The user's own description of the offer. */
   product_to_promote: string;
-  /** First http(s) URL extracted from input, if any. */
+  /** Website used to enrich the product brief, if available. */
   product_url: string | null;
   /** Text the generation model should use (enriched from page or typed text). */
   product_brief: string;
@@ -28,6 +28,21 @@ export function extractFirstHttpUrl(text: string): string | null {
   } catch {
     return null;
   }
+}
+
+/** Accept a pasted website with or without its protocol. */
+export function normalizeWebsiteUrl(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const directUrl = extractFirstHttpUrl(trimmed);
+  if (directUrl) return directUrl;
+
+  if (/^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}(?:[/?#][^\s]*)?$/i.test(trimmed)) {
+    return extractFirstHttpUrl(`https://${trimmed}`);
+  }
+
+  return null;
 }
 
 function isPrivateOrLocalHost(hostname: string): boolean {
@@ -166,40 +181,47 @@ ${params.pageText}`,
 }
 
 /**
- * Resolve product context for a project: URL → fetch + AI brief; plain text → use as brief.
- * Reuses previous brief when the raw input is unchanged.
+ * Resolve product context for a project. A website creates an enriched brief; without
+ * one, the user's own description becomes the brief. Older projects that kept a URL
+ * inside product_to_promote continue to work.
  */
 export async function enrichProductContext(
-  rawInput: string,
-  previous?: Partial<ProductContextFields> | null
+  productDescription: string,
+  previous?: Partial<ProductContextFields> | null,
+  websiteInput?: string
 ): Promise<ProductContextFields> {
-  const product_to_promote = rawInput.trim().slice(0, PRODUCT_TO_PROMOTE_MAX_CHARS);
-  if (!product_to_promote) {
+  const product_to_promote = productDescription.trim().slice(0, PRODUCT_TO_PROMOTE_MAX_CHARS);
+  const legacyUrl = extractFirstHttpUrl(product_to_promote);
+  const product_url = normalizeWebsiteUrl(websiteInput ?? "") ?? legacyUrl;
+  const notesWithoutUrl = legacyUrl
+    ? product_to_promote.replace(legacyUrl, " ").replace(/\s+/g, " ").trim()
+    : product_to_promote;
+
+  if (!product_to_promote && !product_url) {
     return { product_to_promote: "", product_url: null, product_brief: "" };
   }
 
   if (
     previous &&
     previous.product_to_promote?.trim() === product_to_promote &&
+    previous.product_url === product_url &&
     previous.product_brief?.trim()
   ) {
     return {
       product_to_promote,
-      product_url: previous.product_url ?? extractFirstHttpUrl(product_to_promote),
+      product_url,
       product_brief: previous.product_brief.trim().slice(0, BRIEF_MAX_CHARS),
     };
   }
 
-  const product_url = extractFirstHttpUrl(product_to_promote);
   if (!product_url) {
     return {
       product_to_promote,
       product_url: null,
-      product_brief: product_to_promote.slice(0, BRIEF_MAX_CHARS),
+      product_brief: notesWithoutUrl.slice(0, BRIEF_MAX_CHARS),
     };
   }
 
-  const notesWithoutUrl = product_to_promote.replace(product_url, " ").replace(/\s+/g, " ").trim();
   const pageText = await fetchPageText(product_url);
   if (!pageText) {
     // Fetch failed — still pass URL + any typed notes so generation can use web search / name alone.

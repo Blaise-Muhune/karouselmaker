@@ -68,7 +68,7 @@ export default async function EditProjectPage({
           <div>
             <h1 className="text-xl font-semibold tracking-tight">Edit project</h1>
             <p className="text-muted-foreground text-sm mt-0.5">
-              Niche, product to soft-sell, and brand basics for organic Instagram & TikTok carousels.
+              Niche, product context, and brand basics for organic Instagram & TikTok carousels.
             </p>
           </div>
         </div>
@@ -76,6 +76,7 @@ export default async function EditProjectPage({
           projectId={project.id}
           defaultValues={defaultValues}
           productBrief={rulesParsed.product_brief}
+          productUrl={rulesParsed.product_url}
         />
       </div>
     </div>

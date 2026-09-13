@@ -27,6 +27,7 @@ export async function updateProject(projectId: string, formData: FormData) {
     number_of_slides: Number(formData.get("number_of_slides")) || 5,
     rules: (formData.get("rules") as string) ?? "",
     product_to_promote: (formData.get("product_to_promote") as string) ?? "",
+    product_url: (formData.get("product_url") as string) ?? "",
     organic_marketing_progress: Number(formData.get("organic_marketing_progress") ?? 0),
     primary_color: (formData.get("primary_color") as string) ?? "",
     secondary_color: (formData.get("secondary_color") as string) ?? "",
@@ -58,7 +59,11 @@ export async function updateProject(projectId: string, formData: FormData) {
   }
 
   const previous = parseProjectRulesJson(existing.project_rules);
-  const product = await enrichProductContext(parsed.data.project_rules.product_to_promote ?? "", previous);
+  const product = await enrichProductContext(
+    parsed.data.project_rules.product_to_promote ?? "",
+    previous,
+    raw.product_url
+  );
   const payload = projectFormToDbPayload(parsed.data, {
     product_url: product.product_url,
     product_brief: product.product_brief,
