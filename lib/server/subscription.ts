@@ -2,17 +2,18 @@
 
 import { getProfile } from "@/lib/server/db/profiles";
 import { countCarouselsLifetime } from "@/lib/server/db/carousels";
-import type { Plan } from "@/lib/server/db/types";
+import type { PaidPlan } from "@/lib/server/db/types";
 import { PLAN_LIMITS, TESTER_EMAILS, FREE_FULL_ACCESS_GENERATIONS, type PlanLimits } from "@/lib/constants";
 
 export type Subscription = {
-  plan: Plan;
-  /** True when on any paid tier (Starter, Pro, or Studio). */
+  plan: "free" | PaidPlan;
+  /** True when on Creator or Growth. */
   isPro: boolean;
 };
 
-function planFromProfileRow(raw: string | undefined | null): Plan {
-  if (raw === "starter" || raw === "pro" || raw === "studio") return raw;
+function planFromProfileRow(raw: string | undefined | null): Subscription["plan"] {
+  if (raw === "creator" || raw === "starter") return "creator";
+  if (raw === "growth" || raw === "pro" || raw === "studio") return "growth";
   return "free";
 }
 
@@ -24,7 +25,7 @@ export async function getSubscription(
   userId: string,
   email?: string | null
 ): Promise<Subscription> {
-  if (TESTER_EMAILS.includes(email ?? "")) return { plan: "pro", isPro: true };
+  if (TESTER_EMAILS.includes(email ?? "")) return { plan: "growth", isPro: true };
   const profile = await getProfile(userId);
   const plan = planFromProfileRow(profile?.plan);
   return { plan, isPro: plan !== "free" };
@@ -60,7 +61,7 @@ export async function hasFullProFeatureAccess(
 }
 
 /**
- * Paid users get their tier’s limits (Starter / Pro / Studio). Free users in the first N lifetime carousels get Pro-tier
+ * Paid users get their tier’s limits. Free users in the first N lifetime carousels get Growth-tier
  * quotas. Everyone else gets free limits.
  */
 export async function getEffectivePlanLimits(
@@ -74,17 +75,17 @@ export async function getEffectivePlanLimits(
   }
   const lifetimeCount = await countCarouselsLifetime(userId);
   if (lifetimeCount < FREE_FULL_ACCESS_GENERATIONS) {
-    return PLAN_LIMITS.pro;
+    return PLAN_LIMITS.growth;
   }
   return PLAN_LIMITS.free;
 }
 
-/** Allow paid users or free users still within their full-access generations. */
+/** Editing an existing carousel and downloading it never consume a post pack. */
 export async function requirePro(
   userId: string,
   email?: string | null
 ): Promise<{ allowed: boolean; error?: string }> {
-  const ok = await hasFullProFeatureAccess(userId, email);
-  if (ok) return { allowed: true };
-  return { allowed: false, error: "Upgrade to edit carousels and export." };
+  void userId;
+  void email;
+  return { allowed: true };
 }

@@ -157,7 +157,7 @@ export function AssetLibrary({
     <div className="space-y-6">
       {atLimit && !isPro && (
         <UpgradeBanner
-          message={`You've reached the ${assetLimit} image limit on the free plan. Paid plans include up to ${PLAN_LIMITS.studio.assets} library images (Studio).`}
+          message={`You've reached the ${assetLimit} image limit on the free plan. Growth includes up to ${PLAN_LIMITS.growth.assets} library images.`}
           variant="inline"
         />
       )}

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
-import { upsertProfileAsAdmin } from "@/lib/server/db/profiles";
+import { grantPostPackCreditsForCheckout, upsertProfileAsAdmin } from "@/lib/server/db/profiles";
 import { planFromStripeSubscription } from "@/lib/server/stripe/planFromStripeSubscription";
+import { POST_PACK_SIZE } from "@/lib/constants";
 
 const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY;
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
@@ -39,6 +40,15 @@ export async function POST(request: Request) {
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
         const userId = session.metadata?.user_id;
+        if (session.mode === "payment" && session.metadata?.kind === "post_pack") {
+          if (!userId || session.payment_status !== "paid") break;
+          const requestedCredits = Number(session.metadata.credits);
+          const credits = Number.isInteger(requestedCredits) && requestedCredits > 0
+            ? requestedCredits
+            : POST_PACK_SIZE;
+          await grantPostPackCreditsForCheckout(userId, session.id, credits);
+          break;
+        }
         const subscriptionId = subscriptionIdFromCheckoutSession(session);
         if (!userId || !subscriptionId) break;
         const sub = await stripe.subscriptions.retrieve(subscriptionId);

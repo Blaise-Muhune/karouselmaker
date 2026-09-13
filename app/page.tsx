@@ -8,7 +8,7 @@ import { HeroCarouselPreview } from "@/components/landing/HeroCarouselPreview";
 import { LandingMarketingHeader } from "@/components/landing/LandingMarketingHeader";
 import { LandingMarketingFooter } from "@/components/landing/LandingMarketingFooter";
 import { MarketingPricingSection } from "@/components/landing/MarketingPricingSection";
-import { FREE_FULL_ACCESS_GENERATIONS, STARTER_PRICE_DISPLAY } from "@/lib/constants";
+import { FREE_FULL_ACCESS_GENERATIONS, CREATOR_PRICE_DISPLAY } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
 const display = Instrument_Serif({
@@ -54,7 +54,7 @@ const FAQS = [
   },
   {
     q: "What’s free?",
-    a: `Full-access limits on your first ${FREE_FULL_ACCESS_GENERATIONS} carousels. Paid plans start at ${STARTER_PRICE_DISPLAY}/mo when you need more volume.`,
+    a: `Create ${FREE_FULL_ACCESS_GENERATIONS} complete posts free. Paid plans start at ${CREATOR_PRICE_DISPLAY}/mo when you want a consistent posting rhythm.`,
   },
 ] as const;
 

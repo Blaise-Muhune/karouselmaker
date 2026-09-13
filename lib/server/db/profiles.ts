@@ -1,6 +1,6 @@
 "use server";
 
-import { queryOne } from "./pg";
+import { getPool, queryOne } from "./pg";
 import type { Plan, Profile } from "./types";
 
 type ProfilePlanPayload = {
@@ -9,6 +9,7 @@ type ProfilePlanPayload = {
   how_found_us?: string | null;
   stripe_customer_id?: string | null;
   stripe_subscription_id?: string | null;
+  post_pack_credits?: number;
 };
 
 export async function getProfile(userId: string): Promise<Profile | null> {
@@ -53,6 +54,8 @@ async function upsertProfileRow(
     add("stripe_customer_id", payload.stripe_customer_id);
   if (payload.stripe_subscription_id !== undefined)
     add("stripe_subscription_id", payload.stripe_subscription_id);
+  if (payload.post_pack_credits !== undefined)
+    add("post_pack_credits", payload.post_pack_credits);
 
   const row = await queryOne<Profile>(
     `update profiles set ${sets.join(", ")} where user_id = $1 returning *`,
@@ -78,4 +81,58 @@ export async function upsertProfileAsAdmin(
   payload: ProfilePlanPayload
 ): Promise<Profile> {
   return upsertProfileRow(userId, payload);
+}
+
+/**
+ * Atomically record a one-time Stripe Checkout fulfillment and add post packs.
+ * Stripe can retry webhook delivery, so the checkout session is the idempotency key.
+ */
+export async function grantPostPackCreditsForCheckout(
+  userId: string,
+  checkoutSessionId: string,
+  credits: number
+): Promise<boolean> {
+  const client = await getPool().connect();
+  try {
+    await client.query("begin");
+    const fulfilled = await client.query<{ stripe_checkout_session_id: string }>(
+      `insert into stripe_fulfillments (stripe_checkout_session_id, user_id, kind, quantity)
+       values ($1, $2, 'post_pack', $3)
+       on conflict (stripe_checkout_session_id) do nothing
+       returning stripe_checkout_session_id`,
+      [checkoutSessionId, userId, credits]
+    );
+    if (fulfilled.rowCount === 0) {
+      await client.query("commit");
+      return false;
+    }
+    await client.query(
+      `insert into profiles (user_id, plan, post_pack_credits)
+       values ($1, 'free', $2)
+       on conflict (user_id) do update
+       set post_pack_credits = profiles.post_pack_credits + excluded.post_pack_credits,
+           updated_at = now()`,
+      [userId, credits]
+    );
+    await client.query("commit");
+    return true;
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/** Use one purchased post pack only after the monthly subscription allowance is exhausted. */
+export async function consumePostPackCredit(userId: string): Promise<boolean> {
+  const row = await queryOne<{ post_pack_credits: number }>(
+    `update profiles
+     set post_pack_credits = post_pack_credits - 1,
+         updated_at = now()
+     where user_id = $1 and post_pack_credits > 0
+     returning post_pack_credits`,
+    [userId]
+  );
+  return Boolean(row);
 }

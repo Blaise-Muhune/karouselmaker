@@ -6,7 +6,7 @@ import { UpgradePlansDialog } from "@/components/subscription/UpgradePlansDialog
 import { Gem } from "lucide-react";
 
 /**
- * Slim bar for users without a paid plan. Opens plan picker (Starter / Pro / Studio).
+ * Slim bar for users without a paid plan. Opens the Creator / Growth plan picker.
  */
 export function GoProBar() {
   const [plansOpen, setPlansOpen] = useState(false);
@@ -15,7 +15,7 @@ export function GoProBar() {
     <>
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/50 bg-muted/30 px-3 py-2 sm:px-4 sm:py-2.5">
         <p className="text-muted-foreground text-xs sm:text-sm">
-          Unlock more organic carousels, exports, and web images with a paid plan.
+          Your free posts are used. Choose a plan or add a post pack when you are ready for the next one.
         </p>
         <Button
           variant="default"

@@ -231,11 +231,11 @@ export default async function AdminPage() {
           </div>
           <div>
             <dt className="text-muted-foreground text-xs">Free limits</dt>
-            <dd className="font-medium mt-0.5">5 carousels, 2 exports, 5 images</dd>
+            <dd className="font-medium mt-0.5">3 free post packs, then post packs or a plan</dd>
           </div>
           <div>
             <dt className="text-muted-foreground text-xs">Pro benefits</dt>
-            <dd className="font-medium mt-0.5">50 carousels, 100 exports, 100 images</dd>
+            <dd className="font-medium mt-0.5">Growth: 60 posts each month, unlimited downloads</dd>
           </div>
         </dl>
           </div>

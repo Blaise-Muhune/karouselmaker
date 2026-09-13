@@ -9,12 +9,10 @@ import {
   listSlides,
   createExport,
   updateExport,
-  countExportsThisMonth,
   getAsset,
 } from "@/lib/server/db";
 import { getExportStoragePaths } from "@/lib/server/db/exports";
 import { getDefaultTemplateId } from "@/lib/server/db/templates";
-import { getSubscription, getEffectivePlanLimits, hasFullProFeatureAccess } from "@/lib/server/subscription";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { renderSlideHtml } from "@/lib/server/renderer/renderSlideHtml";
 import { resolveBrandKitLogo } from "@/lib/server/brandKit";
@@ -88,19 +86,6 @@ export async function POST(
   const carousel = await getCarousel(userId, carouselId);
   if (!carousel) {
     return NextResponse.json({ error: "Carousel not found" }, { status: 404 });
-  }
-
-  const { isPro } = await getSubscription(userId, user.email);
-  const fullAccess = await hasFullProFeatureAccess(userId, user.email);
-  const limits = await getEffectivePlanLimits(userId, user.email);
-  const exportCount = await countExportsThisMonth(userId);
-  if (exportCount >= limits.exportsPerMonth) {
-    return NextResponse.json(
-      {
-        error: `Export limit: ${exportCount}/${limits.exportsPerMonth} this month.${isPro || fullAccess ? "" : " Upgrade for a higher limit."}`,
-      },
-      { status: 403 }
-    );
   }
 
   const carouselExportFormat = (carousel as { export_format?: string }).export_format ?? "png";
@@ -375,7 +360,7 @@ export async function POST(
         const merged = mergeWithTemplateDefaults(normalized, templateDefaults);
         const showCounterOverride = merged.showCounterOverride;
         const showWatermarkOverride = merged.showWatermarkOverride ?? defaultShowWatermark;
-        const showMadeWithOverride = merged.showMadeWithOverride ?? !fullAccess;
+        const showMadeWithOverride = merged.showMadeWithOverride ?? false;
         const fontOverrides = merged.fontOverrides;
         const zoneOverrides = merged.zoneOverrides;
         const chromeOverrides = merged.chromeOverrides;

@@ -34,7 +34,6 @@ import { WaitingGamesDialog } from "@/components/waiting/WaitingGamesDialog";
 import { GenerationProgressRing } from "@/components/carousels/GenerationProgressRing";
 import {
   Gem,
-  GlobeIcon,
   ImageIcon,
   LayoutTemplateIcon,
   LightbulbIcon,
@@ -42,7 +41,6 @@ import {
   ChevronDownIcon,
   ChevronUpIcon,
 } from "lucide-react";
-import { WEB_IMAGES_SOURCE_DESCRIPTION } from "@/lib/utils/imageSourceDisplay";
 import { cn } from "@/lib/utils";
 import {
   CAROUSEL_INPUT_MAX_CHARS,
@@ -53,7 +51,40 @@ import {
 
 const CAROUSEL_GENERATION_OVERLAY_REFRESH_MS = 5 * 60 * 1000;
 
-type ImageSource = "stock" | "brave" | "library";
+type ImageSource = "stock" | "library";
+
+function imageSourceStorageKey(projectId: string) {
+  return `karouselmaker:imageSource:${projectId}`;
+}
+
+function readRememberedImageSource(projectId: string): ImageSource | null {
+  try {
+    const v = localStorage.getItem(imageSourceStorageKey(projectId));
+    return v === "library" || v === "stock" ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+function rememberImageSource(projectId: string, source: ImageSource) {
+  try {
+    localStorage.setItem(imageSourceStorageKey(projectId), source);
+  } catch {
+    /* ignore */
+  }
+}
+
+function resolveInitialImageSource(opts: {
+  initialBackgroundAssetIds?: string[];
+  initialUseAiBackgrounds?: boolean;
+  initialUseStockPhotos?: boolean;
+}): ImageSource {
+  if (opts.initialBackgroundAssetIds && opts.initialBackgroundAssetIds.length > 0) return "library";
+  if (opts.initialUseAiBackgrounds === false && opts.initialUseStockPhotos !== true) return "library";
+  if (opts.initialUseStockPhotos === true) return "stock";
+  // Web images removed from UI — map any prior web default to stock.
+  return "stock";
+}
 
 export function NewCarouselForm({
   projectId,
@@ -109,13 +140,13 @@ export function NewCarouselForm({
     }
     return "";
   });
-  const [imageSource, setImageSource] = useState<ImageSource>(() => {
-    if (initialUseStockPhotos) return "stock";
-    if (initialBackgroundAssetIds && initialBackgroundAssetIds.length > 0) return "library";
-    if (initialUseAiBackgrounds === false && !initialUseStockPhotos) return "library";
-    // Prefer web images when entitled; otherwise stock — silent default.
-    return "brave";
-  });
+  const [imageSource, setImageSource] = useState<ImageSource>(() =>
+    resolveInitialImageSource({
+      initialBackgroundAssetIds,
+      initialUseAiBackgrounds,
+      initialUseStockPhotos,
+    })
+  );
   const [backgroundAssetIds, setBackgroundAssetIds] = useState<string[]>(initialBackgroundAssetIds ?? []);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(
     initialSelectedTemplateId || defaultTemplateId
@@ -123,13 +154,7 @@ export function NewCarouselForm({
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [backgroundPickerOpen, setBackgroundPickerOpen] = useState(false);
   const [driveBusy, setDriveBusy] = useState(false);
-  const [showCustomize, setShowCustomize] = useState(
-    !!(initialBackgroundAssetIds && initialBackgroundAssetIds.length > 0) ||
-      !!(initialSelectedTemplateId && initialSelectedTemplateId !== defaultTemplateId) ||
-      !!initialNotes ||
-      initialNumberOfSlides != null
-  );
-  const [showMore, setShowMore] = useState(false);
+  const [showMore, setShowMore] = useState(!!initialNotes || initialNumberOfSlides != null);
   const [saveAsNewCarousel, setSaveAsNewCarousel] = useState(false);
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -151,14 +176,23 @@ export function NewCarouselForm({
   const userEditedTopicRef = useRef(userEditedTopic);
   userEditedTopicRef.current = userEditedTopic;
 
-  const canUseBrave = hasFullAccess || isPro;
   const instagramTemplates = templateOptions.filter((t) => (t.category ?? "").toLowerCase() !== "linkedin");
 
+  /** Remember last choice: if user last used My images, default to that when nothing was carried. */
   useEffect(() => {
-    if (imageSource === "brave" && !canUseBrave) {
-      setImageSource("stock");
-    }
-  }, [imageSource, canUseBrave]);
+    const forcedFromCarry =
+      (initialBackgroundAssetIds?.length ?? 0) > 0 ||
+      initialUseStockPhotos === true ||
+      initialUseAiBackgrounds === false;
+    if (forcedFromCarry) return;
+    const remembered = readRememberedImageSource(projectId);
+    if (remembered === "library") setImageSource("library");
+  }, [projectId, initialBackgroundAssetIds, initialUseAiBackgrounds, initialUseStockPhotos]);
+
+  function selectImageSource(next: ImageSource) {
+    setImageSource(next);
+    rememberImageSource(projectId, next);
+  }
 
   /** Default flow: load/seed topic lineup and preselect the next topic in order. */
   useEffect(() => {
@@ -290,8 +324,6 @@ export function NewCarouselForm({
       if (imageSource === "stock") {
         formData.set("use_ai_backgrounds", "true");
         formData.set("use_stock_photos", "true");
-      } else if (imageSource === "brave") {
-        formData.set("use_ai_backgrounds", "true");
       } else {
         formData.set("background_asset_ids", JSON.stringify(backgroundAssetIds));
       }
@@ -300,6 +332,8 @@ export function NewCarouselForm({
       if (notes.trim()) formData.set("notes", notes.trim());
       if (selectedTemplateId) formData.set("template_id", selectedTemplateId);
       formData.set("include_marketing", includeMarketing ? "true" : "false");
+
+      rememberImageSource(projectId, imageSource);
 
       const result = await startCarouselGeneration(formData);
       if ("error" in result && !("carouselId" in result)) {
@@ -468,185 +502,163 @@ export function NewCarouselForm({
           </CardContent>
         </Card>
 
+        <Card className="gap-4 rounded-2xl border-border/70 bg-card/95 py-4 shadow-sm">
+          <CardHeader className="pb-0 px-5">
+            <CardTitle className="text-sm font-semibold">Images</CardTitle>
+            <CardDescription>
+              Stock photos by default. Use your own library or Drive when you want branded shots.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 px-5 pt-0">
+            <div className="flex flex-col gap-2">
+              {(
+                [
+                  { id: "stock" as const, label: "Stock photos", desc: "Unsplash / Pexels / Pixabay", icon: ImageIcon },
+                  { id: "library" as const, label: "My images", desc: "Library upload or Google Drive", icon: ImageIcon },
+                ] as const
+              ).map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => selectImageSource(opt.id)}
+                  className={cn(
+                    "rounded-lg border px-3 py-2.5 text-left text-sm transition-colors",
+                    imageSource === opt.id
+                      ? "border-primary bg-primary/5 ring-1 ring-primary"
+                      : "border-border/60 hover:bg-muted/40"
+                  )}
+                >
+                  <span className="font-medium flex items-center gap-2">
+                    <opt.icon className="size-3.5" />
+                    {opt.label}
+                  </span>
+                  <span className="text-muted-foreground mt-0.5 block text-xs">{opt.desc}</span>
+                </button>
+              ))}
+            </div>
+            {imageSource === "library" && (
+              <div className="flex flex-wrap gap-2 pt-1">
+                <Button type="button" variant="outline" size="sm" onClick={() => setBackgroundPickerOpen(true)}>
+                  Library ({backgroundAssetIds.length})
+                </Button>
+                <GoogleDriveMultiFilePicker
+                  disabled={driveBusy}
+                  onError={(msg) => setError(msg)}
+                  onFilesPicked={async (fileIds, accessToken) => {
+                    setDriveBusy(true);
+                    try {
+                      const result = await importFilesFromGoogleDrive(fileIds, accessToken, projectId);
+                      if (result.ok) {
+                        setBackgroundAssetIds((prev) => [
+                          ...new Set([...prev, ...result.assets.map((a) => a.id)]),
+                        ]);
+                      } else setError(result.error);
+                    } finally {
+                      setDriveBusy(false);
+                    }
+                  }}
+                >
+                  Drive files
+                </GoogleDriveMultiFilePicker>
+                <GoogleDriveFolderPicker
+                  disabled={driveBusy}
+                  onError={(msg) => setError(msg)}
+                  onFolderPicked={async (folderId, accessToken) => {
+                    setDriveBusy(true);
+                    try {
+                      const result = await importFromGoogleDrive(folderId, accessToken, projectId);
+                      if (result.ok) {
+                        setBackgroundAssetIds((prev) => [
+                          ...new Set([...prev, ...result.assets.map((a) => a.id)]),
+                        ]);
+                      } else setError(result.error);
+                    } finally {
+                      setDriveBusy(false);
+                    }
+                  }}
+                >
+                  Drive folder
+                </GoogleDriveFolderPicker>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="gap-4 rounded-2xl border-border/70 bg-card/95 py-4 shadow-sm">
+          <CardHeader className="pb-0 px-5">
+            <CardTitle className="text-sm font-semibold">Template</CardTitle>
+          </CardHeader>
+          <CardContent className="px-5 pt-0">
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full justify-start gap-2"
+              onClick={() => setTemplateModalOpen(true)}
+            >
+              <LayoutTemplateIcon className="size-4" />
+              {selectedTemplate?.name ?? "Choose template"}
+            </Button>
+          </CardContent>
+        </Card>
+
         <div className="space-y-3">
           <Button
             type="button"
             variant="ghost"
             size="sm"
             className="-ml-1 text-muted-foreground"
-            onClick={() => setShowCustomize((v) => !v)}
+            onClick={() => setShowMore((v) => !v)}
           >
-            {showCustomize ? <ChevronUpIcon className="mr-1.5 size-4" /> : <ChevronDownIcon className="mr-1.5 size-4" />}
-            {showCustomize ? "Hide look options" : "Change look"}
+            {showMore ? <ChevronUpIcon className="mr-1.5 size-4" /> : <ChevronDownIcon className="mr-1.5 size-4" />}
+            {showMore ? "Fewer options" : "More options"}
           </Button>
-          {showCustomize && (
-            <div className="space-y-4 rounded-2xl border border-border/70 bg-card/95 p-4 shadow-sm">
+          {showMore && (
+            <div className="space-y-4 rounded-lg border border-border/60 bg-muted/20 p-3">
               <div className="space-y-2">
-                <p className="text-sm font-medium">Images</p>
-                <p className="text-muted-foreground text-xs">
-                  Default: {canUseBrave ? "web images" : "stock photos"}. Switch only if you want something else.
-                </p>
-                <div className="flex flex-col gap-2">
-                  {(
-                    [
-                      { id: "stock" as const, label: "Stock photos", desc: "Unsplash / Pexels / Pixabay", icon: ImageIcon },
-                      {
-                        id: "brave" as const,
-                        label: "Web images",
-                        desc: canUseBrave ? WEB_IMAGES_SOURCE_DESCRIPTION : "Upgrade for web image search",
-                        icon: GlobeIcon,
-                        disabled: !canUseBrave,
-                      },
-                      { id: "library" as const, label: "My images", desc: "Library upload or Google Drive", icon: ImageIcon },
-                    ] as const
-                  ).map((opt) => (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      disabled={"disabled" in opt && opt.disabled}
-                      onClick={() => setImageSource(opt.id)}
-                      className={cn(
-                        "rounded-lg border px-3 py-2.5 text-left text-sm transition-colors",
-                        imageSource === opt.id
-                          ? "border-primary bg-primary/5 ring-1 ring-primary"
-                          : "border-border/60 hover:bg-muted/40",
-                        "disabled" in opt && opt.disabled && "opacity-50 cursor-not-allowed"
-                      )}
-                    >
-                      <span className="font-medium flex items-center gap-2">
-                        <opt.icon className="size-3.5" />
-                        {opt.label}
-                      </span>
-                      <span className="text-muted-foreground mt-0.5 block text-xs">{opt.desc}</span>
-                    </button>
-                  ))}
+                <Label>
+                  Number of slides ({CAROUSEL_SLIDES_MIN}–{CAROUSEL_SLIDES_MAX}, blank = AI decides)
+                </Label>
+                <div className="flex h-10 w-full max-w-xs items-center rounded-lg border border-input bg-background">
+                  <button
+                    type="button"
+                    className="flex h-full w-10 items-center justify-center border-r"
+                    onClick={() => {
+                      if (numberOfSlides === "") return;
+                      const n = parseInt(numberOfSlides, 10);
+                      if (n <= CAROUSEL_SLIDES_MIN) setNumberOfSlides("");
+                      else setNumberOfSlides(String(n - 1));
+                    }}
+                  >
+                    <ChevronDownIcon className="size-4" />
+                  </button>
+                  <span className="flex-1 text-center text-sm">{numberOfSlides || "AI"}</span>
+                  <button
+                    type="button"
+                    className="flex h-full w-10 items-center justify-center border-l"
+                    onClick={() => {
+                      if (numberOfSlides === "") setNumberOfSlides(String(CAROUSEL_SLIDES_MIN));
+                      else {
+                        const n = parseInt(numberOfSlides, 10);
+                        if (n < CAROUSEL_SLIDES_MAX) setNumberOfSlides(String(n + 1));
+                      }
+                    }}
+                  >
+                    <ChevronUpIcon className="size-4" />
+                  </button>
                 </div>
-                {imageSource === "library" && (
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    <Button type="button" variant="outline" size="sm" onClick={() => setBackgroundPickerOpen(true)}>
-                      Library ({backgroundAssetIds.length})
-                    </Button>
-                    <GoogleDriveMultiFilePicker
-                      disabled={driveBusy}
-                      onError={(msg) => setError(msg)}
-                      onFilesPicked={async (fileIds, accessToken) => {
-                        setDriveBusy(true);
-                        try {
-                          const result = await importFilesFromGoogleDrive(fileIds, accessToken, projectId);
-                          if (result.ok) {
-                            setBackgroundAssetIds((prev) => [
-                              ...new Set([...prev, ...result.assets.map((a) => a.id)]),
-                            ]);
-                          } else setError(result.error);
-                        } finally {
-                          setDriveBusy(false);
-                        }
-                      }}
-                    >
-                      Drive files
-                    </GoogleDriveMultiFilePicker>
-                    <GoogleDriveFolderPicker
-                      disabled={driveBusy}
-                      onError={(msg) => setError(msg)}
-                      onFolderPicked={async (folderId, accessToken) => {
-                        setDriveBusy(true);
-                        try {
-                          const result = await importFromGoogleDrive(folderId, accessToken, projectId);
-                          if (result.ok) {
-                            setBackgroundAssetIds((prev) => [
-                              ...new Set([...prev, ...result.assets.map((a) => a.id)]),
-                            ]);
-                          } else setError(result.error);
-                        } finally {
-                          setDriveBusy(false);
-                        }
-                      }}
-                    >
-                      Drive folder
-                    </GoogleDriveFolderPicker>
-                  </div>
-                )}
               </div>
               <div className="space-y-2">
-                <p className="text-sm font-medium">Template</p>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full justify-start gap-2"
-                  onClick={() => setTemplateModalOpen(true)}
-                >
-                  <LayoutTemplateIcon className="size-4" />
-                  {selectedTemplate?.name ?? "Choose template"}
-                </Button>
-              </div>
-              <div className="space-y-2">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="-ml-1 text-muted-foreground"
-                  onClick={() => setShowMore((v) => !v)}
-                >
-                  {showMore ? <ChevronUpIcon className="mr-1.5 size-4" /> : <ChevronDownIcon className="mr-1.5 size-4" />}
-                  {showMore ? "Fewer options" : "More options"}
-                </Button>
-                {showMore && (
-                  <div className="space-y-4 rounded-lg border border-border/60 bg-muted/20 p-3">
-                    <div className="space-y-2">
-                      <Label>
-                        Number of slides ({CAROUSEL_SLIDES_MIN}–{CAROUSEL_SLIDES_MAX}, blank = AI decides)
-                      </Label>
-                      <div className="flex h-10 w-full max-w-xs items-center rounded-lg border border-input bg-background">
-                        <button
-                          type="button"
-                          className="flex h-full w-10 items-center justify-center border-r"
-                          onClick={() => {
-                            if (numberOfSlides === "") return;
-                            const n = parseInt(numberOfSlides, 10);
-                            if (n <= CAROUSEL_SLIDES_MIN) setNumberOfSlides("");
-                            else setNumberOfSlides(String(n - 1));
-                          }}
-                        >
-                          <ChevronDownIcon className="size-4" />
-                        </button>
-                        <span className="flex-1 text-center text-sm">{numberOfSlides || "AI"}</span>
-                        <button
-                          type="button"
-                          className="flex h-full w-10 items-center justify-center border-l"
-                          onClick={() => {
-                            if (numberOfSlides === "") setNumberOfSlides(String(CAROUSEL_SLIDES_MIN));
-                            else {
-                              const n = parseInt(numberOfSlides, 10);
-                              if (n < CAROUSEL_SLIDES_MAX) setNumberOfSlides(String(n + 1));
-                            }
-                          }}
-                        >
-                          <ChevronUpIcon className="size-4" />
-                        </button>
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Notes (optional)</Label>
-                      <Textarea
-                        value={notes}
-                        onChange={(e) => setNotes(e.target.value.slice(0, CAROUSEL_NOTES_MAX_CHARS))}
-                        className="min-h-20"
-                        placeholder="e.g. Keep it beginner-friendly"
-                      />
-                    </div>
-                  </div>
-                )}
+                <Label>Notes (optional)</Label>
+                <Textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value.slice(0, CAROUSEL_NOTES_MAX_CHARS))}
+                  className="min-h-20"
+                  placeholder="e.g. Keep it beginner-friendly"
+                />
               </div>
             </div>
           )}
         </div>
-
-        {!showCustomize && (
-          <p className="text-muted-foreground text-xs">
-            Using {imageSource === "stock" ? "stock photos" : imageSource === "brave" ? "web images" : "your images"}
-            {selectedTemplate?.name ? ` · ${selectedTemplate.name}` : ""}. Open Change look to switch.
-          </p>
-        )}
 
         <Button type="submit" className="w-full" size="lg" disabled={isPending || topicQueueLoading} loading={isPending}>
           {regenerateCarouselId ? "Regenerate post" : "Generate post"}

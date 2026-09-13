@@ -73,7 +73,7 @@ export default async function ProjectsPage({
                 </>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  Open a project → <strong>New post</strong> → pick a topic and Generate. Soft-sell your product without sounding like an ad. Your first one is free.
+                  Open a project → <strong>New post</strong> → pick a topic and Generate. Soft-sell your product without sounding like an ad. Your first 3 are free.
                 </p>
               )}
             </CardContent>

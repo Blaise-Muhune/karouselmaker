@@ -199,7 +199,7 @@ export default async function EditSlidePage({
       {!hasFullAccess && (
         <div className="shrink-0 px-3 py-1.5">
           <UpgradeBanner
-            message="You've used your 3 free generations with full access. Choose a plan to edit template, background, and all carousel features."
+            message="Your 3 free posts are used. This carousel is still yours to edit and download."
             variant="inline"
           />
         </div>

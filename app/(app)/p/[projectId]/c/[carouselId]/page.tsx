@@ -242,10 +242,10 @@ export default async function CarouselEditorPage({
         {!subscription.isPro && (
           hasFullAccess ? (
             <p className="text-sm text-muted-foreground">
-              <strong>{freeGenerationsLeft}</strong> of {FREE_FULL_ACCESS_GENERATIONS} free generations left. Subscribe for full limits.
+              <strong>{freeGenerationsLeft}</strong> of {FREE_FULL_ACCESS_GENERATIONS} free posts left.
             </p>
           ) : (
-            <UpgradeBanner message="You've used all 3 free generations. Choose a plan to edit carousels, export, and unlock web images." />
+            <UpgradeBanner message="Your 3 free posts are used. This post is still yours to edit and download." />
           )
         )}
 

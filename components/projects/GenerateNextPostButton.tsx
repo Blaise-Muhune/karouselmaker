@@ -40,7 +40,6 @@ export function GenerateNextPostButton({
   const [error, setError] = useState<string | null>(null);
   const [plansOpen, setPlansOpen] = useState(false);
 
-  const canUseWeb = hasFullAccess || isPro;
   const topic = nextTopic?.trim() || "";
 
   async function handleGenerate() {
@@ -49,12 +48,6 @@ export function GenerateNextPostButton({
       router.push(`/p/${projectId}/new`);
       return;
     }
-    if (carouselCount >= carouselLimit) {
-      setError("You've reached this month's carousel limit. Upgrade for more.");
-      setPlansOpen(true);
-      return;
-    }
-
     setIsPending(true);
     try {
       const formData = new FormData();
@@ -63,7 +56,7 @@ export function GenerateNextPostButton({
       formData.set("input_value", topic);
       formData.set("carousel_for", "instagram");
       formData.set("use_ai_backgrounds", "true");
-      if (!canUseWeb) formData.set("use_stock_photos", "true");
+      formData.set("use_stock_photos", "true");
       formData.set("images_related_to_topic", "true");
       formData.set("include_marketing", includeMarketing ? "true" : "false");
       if (defaultTemplateId) formData.set("template_id", defaultTemplateId);
@@ -71,6 +64,7 @@ export function GenerateNextPostButton({
       const result = await startCarouselGeneration(formData);
       if ("error" in result && !("carouselId" in result)) {
         setError(result.error);
+        setPlansOpen(true);
         return;
       }
 

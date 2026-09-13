@@ -132,17 +132,17 @@ export default async function NewCarouselPage({
     <div className="p-6 md:p-8">
       <div className="mx-auto max-w-xl space-y-6">
         {!subscription.isPro && !hasFullAccess && (
-          <UpgradeBanner message="You've used all free full-access generations. Stock photos and library images still work. Upgrade for web images and higher limits." />
+          <UpgradeBanner message="Your 3 free posts are used. Choose a plan or add a post pack to create the next one." />
         )}
         {!subscription.isPro && hasFullAccess && freeGenerationsLeft <= 1 && (
           <UpgradeBanner
-            message={`${freeGenerationsLeft} free full-access generation left (web images). After that, stock and library images still work.`}
+            message={`${freeGenerationsLeft} free post left. Finish it whenever you are ready, then choose a plan or add a post pack.`}
             variant="inline"
           />
         )}
         {!subscription.isPro && hasFullAccess && freeGenerationsLeft > 1 && (
           <p className="rounded-lg border border-border/50 bg-muted/30 px-4 py-2 text-sm text-muted-foreground">
-            You have <strong>{FREE_FULL_ACCESS_GENERATIONS} free full-access generations</strong> (web images). {freeGenerationsLeft} left.
+            You have <strong>{FREE_FULL_ACCESS_GENERATIONS} free posts</strong>. {freeGenerationsLeft} left.
           </p>
         )}
         <div className="flex items-center justify-between gap-2">

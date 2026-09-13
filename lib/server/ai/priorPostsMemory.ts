@@ -15,30 +15,32 @@ export async function loadPriorPostsForProject(
   projectId: string,
   options?: { limit?: number; excludeCarouselId?: string }
 ): Promise<PriorPostSummary[]> {
-  const limit = options?.limit ?? 20;
+  const limit = options?.limit ?? 8;
   const carousels = await listCarousels(userId, projectId, { limit: limit + 5 });
-  const out: PriorPostSummary[] = [];
+  const eligible = carousels
+    .filter((c) => c.id !== options?.excludeCarouselId)
+    .filter((c) => c.status !== "generating" && c.status !== "failed")
+    .slice(0, limit);
 
-  for (const c of carousels) {
-    if (options?.excludeCarouselId && c.id === options.excludeCarouselId) continue;
-    if (c.status === "generating" || c.status === "failed") continue;
-    let hook = "";
-    try {
-      const slides = await listSlides(userId, c.id);
-      const first = slides.find((s) => s.slide_index === 1) ?? slides[0];
-      hook = (first?.headline ?? "").trim();
-    } catch {
-      hook = "";
-    }
-    out.push({
-      title: (c.title ?? "").trim(),
-      input_value: (c.input_value ?? "").trim(),
-      hook_headline: hook,
-    });
-    if (out.length >= limit) break;
-  }
-
-  return out;
+  // Historical hooks prevent repetition, but must not create a serial DB
+  // waterfall before every new post.
+  return Promise.all(
+    eligible.map(async (c) => {
+      let hook = "";
+      try {
+        const slides = await listSlides(userId, c.id);
+        const first = slides.find((s) => s.slide_index === 1) ?? slides[0];
+        hook = (first?.headline ?? "").trim();
+      } catch {
+        // Missing historical slides should never block a new post.
+      }
+      return {
+        title: (c.title ?? "").trim(),
+        input_value: (c.input_value ?? "").trim(),
+        hook_headline: hook,
+      };
+    })
+  );
 }
 
 export function formatPriorPostsForPrompt(posts: PriorPostSummary[]): string {

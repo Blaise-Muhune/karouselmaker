@@ -1,9 +1,11 @@
 import type { PaidPlan } from "@/lib/server/db/types";
 
 /** Display prices — must match Stripe Products. */
-export const STARTER_PRICE_DISPLAY = "$25";
-export const PRO_PRICE_DISPLAY = "$39";
-export const STUDIO_PRICE_DISPLAY = "$59";
+export const CREATOR_PRICE_DISPLAY = "$19";
+export const GROWTH_PRICE_DISPLAY = "$39";
+export const POST_PACK_PRICE_DISPLAY = "$12";
+export const POST_PACK_SIZE = 10;
+export const YEARLY_DISCOUNT_PERCENT = 20;
 
 /** Landing / upgrade copy: ordered paid tiers. */
 export const PAID_TIER_CARDS: {
@@ -14,47 +16,31 @@ export const PAID_TIER_CARDS: {
   highlights: string[];
 }[] = [
   {
-    id: "starter",
-    name: "Starter",
-    priceDisplay: STARTER_PRICE_DISPLAY,
-    blurb: "Solo marketers getting consistent on IG & TikTok.",
+    id: "creator",
+    name: "Creator",
+    priceDisplay: CREATOR_PRICE_DISPLAY,
+    blurb: "For a consistent weekly posting habit.",
     highlights: [
-      "25 carousels / month",
-      "40 exports / month",
-      "40 library images",
-      "Web image search",
+      "20 ready-to-post carousels / month",
+      "Captions, hashtags, and stock images",
+      "Unlimited editing and downloads",
     ],
   },
   {
-    id: "pro",
-    name: "Pro",
-    priceDisplay: PRO_PRICE_DISPLAY,
-    blurb: "Most popular — weekly organic posting + heavier use.",
+    id: "growth",
+    name: "Growth",
+    priceDisplay: GROWTH_PRICE_DISPLAY,
+    blurb: "For brands posting most days of the week.",
     highlights: [
-      "50 carousels / month",
-      "100 exports / month",
-      "100 library images",
-      "Web image search",
-    ],
-  },
-  {
-    id: "studio",
-    name: "Studio",
-    priceDisplay: STUDIO_PRICE_DISPLAY,
-    blurb: "High-volume organic product marketing (solo).",
-    highlights: [
-      "100 carousels / month",
-      "200 exports / month",
-      "200 library images",
-      "Web image search",
+      "60 ready-to-post carousels / month",
+      "Captions, hashtags, and stock images",
+      "Unlimited editing and downloads",
     ],
   },
 ];
 
 /**
- * Free users get this many carousels (lifetime count) with Pro-like feature access:
- * web image search, templates, export, editor, and paid-tier quotas.
- * After this count, plan reverts to free limits and feature gates.
+ * A new account gets this many complete post packs, once.
  */
 export const FREE_FULL_ACCESS_GENERATIONS = 3;
 
@@ -90,44 +76,35 @@ export const TESTER_EMAILS: string[] = ["muyumba@andrews.edu", "prudencemange@gm
 export const PLAN_LIMITS = {
   free: {
     assets: 5,
-    carouselsPerMonth: 5,
-    exportsPerMonth: 5,
+    carouselsPerMonth: 0,
+    exportsPerMonth: 0,
     customTemplates: 1,
     aiGenerateCarouselsPerMonth: 0,
     maxProjectStyleReferenceAssets: 2,
     maxUgcAvatarReferenceAssets: 2,
   },
-  starter: {
-    assets: 40,
-    carouselsPerMonth: 25,
-    exportsPerMonth: 40,
+  creator: {
+    assets: 100,
+    carouselsPerMonth: 20,
+    exportsPerMonth: 0,
     customTemplates: 4,
-    aiGenerateCarouselsPerMonth: 10,
+    aiGenerateCarouselsPerMonth: 0,
     maxProjectStyleReferenceAssets: 5,
     maxUgcAvatarReferenceAssets: 3,
   },
-  pro: {
-    assets: 100,
-    carouselsPerMonth: 50,
-    exportsPerMonth: 100,
+  growth: {
+    assets: 250,
+    carouselsPerMonth: 60,
+    exportsPerMonth: 0,
     customTemplates: 10,
     aiGenerateCarouselsPerMonth: 25,
-    maxProjectStyleReferenceAssets: 10,
-    maxUgcAvatarReferenceAssets: 5,
-  },
-  studio: {
-    assets: 200,
-    carouselsPerMonth: 100,
-    exportsPerMonth: 200,
-    customTemplates: 20,
-    aiGenerateCarouselsPerMonth: 50,
     maxProjectStyleReferenceAssets: 10,
     maxUgcAvatarReferenceAssets: 5,
   },
   tester: {
     assets: 200,
     carouselsPerMonth: 500,
-    exportsPerMonth: 200,
+    exportsPerMonth: 0,
     customTemplates: 20,
     aiGenerateCarouselsPerMonth: 999,
     maxProjectStyleReferenceAssets: 10,

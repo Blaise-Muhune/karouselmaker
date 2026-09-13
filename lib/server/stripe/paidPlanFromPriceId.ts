@@ -1,23 +1,23 @@
 import type { PaidPlan } from "@/lib/server/db/types";
 
-export const PAID_PLAN_ORDER: readonly PaidPlan[] = ["starter", "pro", "studio"];
+export const PAID_PLAN_ORDER: readonly PaidPlan[] = ["creator", "growth"];
 export type BillingInterval = "monthly" | "yearly";
 
 export function stripePriceIdForPaidPlan(plan: PaidPlan, interval: BillingInterval = "monthly"): string | undefined {
   const raw =
     interval === "yearly"
-      ? plan === "starter"
-        ? process.env.STRIPE_SUBSCRIPTION_STARTER_YEARLY_PRICE_ID
-        : plan === "pro"
-          ? process.env.STRIPE_SUBSCRIPTION_PRO_YEARLY_PRICE_ID
-          : process.env.STRIPE_SUBSCRIPTION_STUDIO_YEARLY_PRICE_ID
-      : plan === "starter"
-        ? process.env.STRIPE_SUBSCRIPTION_STARTER_PRICE_ID
-        : plan === "pro"
-          ? process.env.STRIPE_SUBSCRIPTION_PRO_PRICE_ID
-          : process.env.STRIPE_SUBSCRIPTION_STUDIO_PRICE_ID;
+      ? plan === "creator"
+        ? process.env.STRIPE_SUBSCRIPTION_CREATOR_YEARLY_PRICE_ID
+        : process.env.STRIPE_SUBSCRIPTION_GROWTH_YEARLY_PRICE_ID
+      : plan === "creator"
+        ? process.env.STRIPE_SUBSCRIPTION_CREATOR_MONTHLY_PRICE_ID
+        : process.env.STRIPE_SUBSCRIPTION_GROWTH_MONTHLY_PRICE_ID;
   const t = raw?.trim();
   return t || undefined;
+}
+
+export function stripePostPackPriceId(): string | undefined {
+  return process.env.STRIPE_POST_PACK_PRICE_ID?.trim() || undefined;
 }
 
 /** Map Stripe subscription item price id → paid plan. Unknown ids return null. */

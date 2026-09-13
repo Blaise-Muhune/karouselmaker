@@ -27,11 +27,11 @@ const sans = Manrope({
 export const metadata: Metadata = {
   title: "Pricing",
   description:
-    "Karouselmaker plans for organic Instagram & TikTok carousel marketing. Free, Starter, Pro, and Studio—same workflow, higher limits as you post more. Monthly pricing in USD.",
+    "Karouselmaker plans for organic Instagram & TikTok carousel marketing. Try three posts free, then choose Creator or Growth. Monthly pricing in USD.",
   openGraph: {
     title: "Pricing | Karouselmaker",
     description:
-      "Free, Starter, Pro, and Studio — organic IG & TikTok carousel marketing. Same workflow, higher posting limits.",
+      "Three free posts, then Creator or Growth for organic IG & TikTok carousel marketing.",
   },
 };
 
@@ -51,8 +51,7 @@ export default async function PricingPage() {
       <section className="relative flex-1 px-4 pb-16 pt-12 sm:px-6 sm:pt-16">
         <MarketingPricingSection className="mx-auto mt-0 w-full max-w-6xl px-0" sectionId="pricing" />
         <p className="mx-auto mt-10 max-w-lg text-center text-sm text-muted-foreground">
-          New accounts get full-access limits on the first {FREE_FULL_ACCESS_GENERATIONS} carousels; after that, free-tier
-          limits apply until you subscribe.
+          New accounts get {FREE_FULL_ACCESS_GENERATIONS} complete post packs, once. You can keep editing and downloading every post you create.
         </p>
         <div className="mx-auto mt-14 flex max-w-6xl flex-col items-start justify-between gap-6 border-t border-border/50 pt-12 sm:flex-row sm:items-end">
           <div className="max-w-md">

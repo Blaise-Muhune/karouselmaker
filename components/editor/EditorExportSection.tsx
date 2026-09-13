@@ -14,9 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
 import { WaitingGamesDialog } from "@/components/waiting/WaitingGamesDialog";
-import { PLAN_LIMITS } from "@/lib/constants";
 import { slugifyForFilename } from "@/lib/utils";
 import { triggerBlobDownload } from "@/lib/client/blobDownload";
 import { combineCaptionWithHashtags } from "@/components/editor/EditorCaptionSection";
@@ -41,6 +39,7 @@ const EXPORT_SIZE_LABELS: Record<ExportSize, string> = {
 
 type EditorExportSectionProps = {
   carouselId: string;
+  /** Retained for callers while exports are no longer plan-metered. */
   isPro?: boolean;
   exportsUsedThisMonth?: number;
   exportsLimit?: number;
@@ -60,9 +59,9 @@ type EditorExportSectionProps = {
 
 export function EditorExportSection({
   carouselId,
-  isPro = true,
-  exportsUsedThisMonth = 0,
-  exportsLimit,
+  isPro: _isPro = true,
+  exportsUsedThisMonth: _exportsUsedThisMonth = 0,
+  exportsLimit: _exportsLimit,
   exportFormat = "png",
   exportSize = "1080x1350",
   recentExports: _recentExports,
@@ -74,11 +73,12 @@ export function EditorExportSection({
   exportSettingsPath,
 }: EditorExportSectionProps) {
   void _recentExports;
+  void _isPro;
+  void _exportsUsedThisMonth;
+  void _exportsLimit;
   const downloadSlug =
     slugifyForFilename([projectName, carouselTitle].filter(Boolean).join(" - ")) || "carousel";
-  const limit =
-    exportsLimit ?? (isPro ? PLAN_LIMITS.pro.exportsPerMonth : PLAN_LIMITS.free.exportsPerMonth);
-  const canExport = exportsUsedThisMonth < limit;
+  const canExport = true;
   const router = useRouter();
   const initialFormat: "png" | "jpeg" = exportFormat === "jpeg" ? "jpeg" : "png";
   const [localExportFormat, setLocalExportFormat] = useState<"png" | "jpeg">(initialFormat);
@@ -157,9 +157,6 @@ export function EditorExportSection({
           {localExportSize === "1080x1350" ? " (4:5 feed)" : ""}.
         </p>
       </div>
-      {!canExport && (
-        <UpgradeBanner message={`You've used ${exportsUsedThisMonth}/${limit} exports this month. Upgrade for more.`} />
-      )}
       <div className="flex flex-wrap gap-2">
         <Button
           type="button"
@@ -243,7 +240,7 @@ export function EditorExportSection({
       )}
       {exportError && <p className="text-destructive text-sm">{exportError}</p>}
       <p className="text-muted-foreground text-xs">
-        {exportsUsedThisMonth}/{limit} exports this month · default {EXPORT_FORMAT_LABELS[localExportFormat]}{" "}
+        Downloads do not use a post pack · default {EXPORT_FORMAT_LABELS[localExportFormat]}{" "}
         {EXPORT_SIZE_LABELS[localExportSize]}
       </p>
     </section>

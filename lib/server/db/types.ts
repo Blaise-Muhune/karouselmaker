@@ -2,10 +2,12 @@
 
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
-/** Paid subscription tiers (Stripe). */
-export type PaidPlan = "starter" | "pro" | "studio";
+/** Paid subscription tiers shown to customers. */
+export type PaidPlan = "creator" | "growth";
+/** Older Stripe prices may still appear in the database during migration. */
+export type LegacyPaidPlan = "starter" | "pro" | "studio";
 
-export type Plan = "free" | PaidPlan;
+export type Plan = "free" | PaidPlan | LegacyPaidPlan;
 
 export interface Profile {
   id: string;
@@ -15,6 +17,8 @@ export interface Profile {
   how_found_us: string | null;
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
+  /** One-time post packs purchased outside a subscription. */
+  post_pack_credits: number;
   created_at: string;
   updated_at: string;
 }

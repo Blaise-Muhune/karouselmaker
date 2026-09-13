@@ -6,7 +6,7 @@ import { queryMany, queryOne } from "./pg";
 import type { Plan } from "./types";
 
 function profilePlanLabel(raw: string | null | undefined): Plan | null {
-  if (raw === "free" || raw === "starter" || raw === "pro" || raw === "studio") return raw;
+  if (raw === "free" || raw === "creator" || raw === "growth" || raw === "starter" || raw === "pro" || raw === "studio") return raw;
   return null;
 }
 
@@ -301,7 +301,7 @@ export async function getAdminStats(): Promise<AdminStats | null> {
       (r) => Number(r?.count ?? 0)
     ),
     queryOne<{ count: string }>(
-      `select count(*)::text as count from profiles where plan = 'pro'`
+      `select count(*)::text as count from profiles where plan in ('creator', 'growth', 'starter', 'pro', 'studio')`
     ).then((r) => Number(r?.count ?? 0)),
     queryMany<{ created_at: string }>(
       `select created_at from profiles where created_at >= $1`,

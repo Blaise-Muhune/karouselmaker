@@ -5,22 +5,27 @@ import { z } from "zod";
 import { getUser } from "@/lib/server/auth/getUser";
 import { getProfile, upsertProfile } from "@/lib/server/db/profiles";
 import type { PaidPlan } from "@/lib/server/db/types";
-import { stripePriceIdForPaidPlan, type BillingInterval } from "@/lib/server/stripe/paidPlanFromPriceId";
+import {
+  stripePostPackPriceId,
+  stripePriceIdForPaidPlan,
+  type BillingInterval,
+} from "@/lib/server/stripe/paidPlanFromPriceId";
+import { POST_PACK_SIZE } from "@/lib/constants";
 
 const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY;
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
-const tierSchema = z.enum(["starter", "pro", "studio"]);
+const tierSchema = z.enum(["creator", "growth"]);
 const intervalSchema = z.enum(["monthly", "yearly"]);
 
 export async function createCheckoutSession(
-  tier: PaidPlan = "pro",
+  tier: PaidPlan = "growth",
   interval: BillingInterval = "monthly"
 ): Promise<{ url: string } | { error: string }> {
   const { user } = await getUser();
   const parsedTier = tierSchema.safeParse(tier);
   const parsedInterval = intervalSchema.safeParse(interval);
-  const plan = parsedTier.success ? parsedTier.data : "pro";
+  const plan = parsedTier.success ? parsedTier.data : "growth";
   const billingInterval = parsedInterval.success ? parsedInterval.data : "monthly";
   const priceId = stripePriceIdForPaidPlan(plan, billingInterval);
 
@@ -69,4 +74,34 @@ export async function createCheckoutSession(
   const url = session.url;
   if (!url) return { error: "Failed to create checkout session" };
   return { url };
+}
+
+/** Buy a small one-time pack after a user reaches their monthly post allowance. */
+export async function createPostPackCheckoutSession(): Promise<{ url: string } | { error: string }> {
+  const { user } = await getUser();
+  const priceId = stripePostPackPriceId();
+  if (!STRIPE_SECRET || !priceId) return { error: "Post packs are not configured yet" };
+
+  const stripe = new Stripe(STRIPE_SECRET);
+  const profile = await getProfile(user.id);
+  let customerId = profile?.stripe_customer_id;
+  if (!customerId) {
+    const customer = await stripe.customers.create({
+      email: user.email ?? undefined,
+      metadata: { user_id: user.id },
+    });
+    customerId = customer.id;
+    await upsertProfile(user.id, { stripe_customer_id: customerId });
+  }
+
+  const session = await stripe.checkout.sessions.create({
+    customer: customerId,
+    mode: "payment",
+    line_items: [{ price: priceId, quantity: 1 }],
+    success_url: `${APP_URL}/projects?subscription=post_pack_success`,
+    cancel_url: `${APP_URL}/projects?subscription=post_pack_cancelled`,
+    metadata: { user_id: user.id, kind: "post_pack", credits: String(POST_PACK_SIZE) },
+  });
+  if (!session.url) return { error: "Failed to start post pack checkout" };
+  return { url: session.url };
 }

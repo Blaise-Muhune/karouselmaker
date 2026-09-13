@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { PLAN_LIMITS, PRO_PRICE_DISPLAY, STARTER_PRICE_DISPLAY, STUDIO_PRICE_DISPLAY } from "@/lib/constants";
+import { CREATOR_PRICE_DISPLAY, GROWTH_PRICE_DISPLAY, PLAN_LIMITS } from "@/lib/constants";
 import { Gem, Check } from "lucide-react";
 
 /**
@@ -21,19 +21,19 @@ export function PremiumCard({
             <Gem className="size-5" />
           </div>
           <div>
-            <h3 className="font-semibold text-foreground text-lg">Free · Starter · Pro · Studio</h3>
+            <h3 className="font-semibold text-foreground text-lg">Free · Creator · Growth</h3>
             <p className="text-sm text-muted-foreground">
-              $0 → {STARTER_PRICE_DISPLAY} → {PRO_PRICE_DISPLAY} → {STUDIO_PRICE_DISPLAY}/mo
+              $0 → {CREATOR_PRICE_DISPLAY} → {GROWTH_PRICE_DISPLAY}/mo
             </p>
           </div>
         </div>
         <p className="text-muted-foreground text-xs mb-4">
-          Same organic marketing workflow on every tier—only monthly limits change (carousels, exports, web images, library size).
+          Same organic marketing workflow on every tier. Choose how many ready-to-post carousels you need each month.
         </p>
         <ul className="mb-6 space-y-2 text-xs text-muted-foreground">
           <li className="flex items-center gap-2">
             <Check className="size-3.5 shrink-0 text-primary" />
-            Up to {PLAN_LIMITS.studio.carouselsPerMonth} organic carousels/mo on Studio
+            Up to {PLAN_LIMITS.growth.carouselsPerMonth} organic carousels/mo on Growth
           </li>
           <li className="flex items-center gap-2">
             <Check className="size-3.5 shrink-0 text-primary" />

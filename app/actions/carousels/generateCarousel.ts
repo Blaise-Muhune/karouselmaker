@@ -10,6 +10,7 @@ import { createCarousel, getCarousel, updateCarousel, countCarouselsThisMonth, c
 import { replaceSlides, updateSlide, getSlide } from "@/lib/server/db/slides";
 import type { Json } from "@/lib/server/db/types";
 import { getAsset } from "@/lib/server/db/assets";
+import { consumePostPackCredit } from "@/lib/server/db/profiles";
 import {
   createCarouselOutputSchema,
   type CarouselOutput,
@@ -493,11 +494,7 @@ export async function generateCarousel(formData: FormData): Promise<
     countCarouselsThisMonth(user.id),
     countCarouselsLifetime(user.id),
   ]);
-  if (count >= limits.carouselsPerMonth) {
-    return {
-      error: `Generation limit: ${count}/${limits.carouselsPerMonth} carousels this month.${isPro ? "" : " Upgrade for a higher limit."}`,
-    };
-  }
+  const needsPostPackCredit = !data.carousel_id && count >= limits.carouselsPerMonth;
   const hasFreeFullAccess = !isPro && lifetimeCount < FREE_FULL_ACCESS_GENERATIONS;
   const hasFullAccess = isPro || hasFreeFullAccess;
   /** Web image search (Brave) — same tier as LLM web search: Pro or first N free generations. */
@@ -522,6 +519,13 @@ export async function generateCarousel(formData: FormData): Promise<
     }
     LOG("carousel", `using existing ${carousel.id}`);
   } else {
+    if (needsPostPackCredit && !(await consumePostPackCredit(user.id))) {
+      return {
+        error: isPro
+          ? "You have used this month’s post allowance. Add a 10-post pack to keep creating."
+          : "Your 3 free posts are used. Choose a plan or add a 10-post pack to keep creating.",
+      };
+    }
     carousel = await createCarousel(
       user.id,
       data.project_id,
@@ -624,11 +628,9 @@ export async function generateCarousel(formData: FormData): Promise<
 
   const orderedRequestedTemplateIds = (data.template_ids?.length ? data.template_ids : (data.template_id ? [data.template_id] : [])).slice(0, 3);
   // Resolve template(s) for prompt so AI gets slot-aware zone limits.
-  const selectedTemplatesForPrompt: NonNullable<Awaited<ReturnType<typeof getTemplate>>>[] = [];
-  for (const templateId of orderedRequestedTemplateIds) {
-    const tpl = await getTemplate(user.id, templateId);
-    if (tpl) selectedTemplatesForPrompt.push(tpl);
-  }
+  const selectedTemplatesForPrompt = (
+    await Promise.all(orderedRequestedTemplateIds.map((templateId) => getTemplate(user.id, templateId)))
+  ).filter((template): template is NonNullable<typeof template> => Boolean(template));
 
   if (selectedTemplatesForPrompt.length === 0) {
     const defaultForPrompt = await getDefaultTemplateForNewCarousel(user.id);
@@ -644,7 +646,9 @@ export async function generateCarousel(formData: FormData): Promise<
     undefined;
 
   const priorPosts = await loadPriorPostsForProject(user.id, data.project_id, {
-    limit: 20,
+    // Enough history to avoid repetition without adding a large prompt or a
+    // database waterfall before every generation.
+    limit: 8,
     excludeCarouselId: carousel.id,
   });
   const prior_posts_block = formatPriorPostsForPrompt(priorPosts);
@@ -815,43 +819,66 @@ export async function generateCarousel(formData: FormData): Promise<
       }),
     ];
 
-    const judgePrompts = buildQcJudgePrompts({
-      carousel: validated,
-      hardIssues: qcHardIssues,
-      includeMarketing,
-      niche: project.niche?.trim() || undefined,
-      topic: data.input_value,
-    });
-    try {
-      const judgeCompletion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: judgePrompts.system },
-          { role: "user", content: judgePrompts.user },
-        ],
-        response_format: { type: "json_object" },
-        temperature: 0.2,
+    // A second model is valuable for product-forward posts, promised follow-up
+    // content, and deterministic defects. Early educational posts that clear
+    // the hard checks can ship their first strong draft immediately.
+    const shouldRunQcJudge =
+      qcHardIssues.length > 0 ||
+      Boolean(pendingOpenLoop?.trim()) ||
+      (includeMarketing && projectRulesParsed.organic_marketing_progress >= 4);
+
+    if (shouldRunQcJudge) {
+      const judgePrompts = buildQcJudgePrompts({
+        carousel: validated,
+        hardIssues: qcHardIssues,
+        includeMarketing,
+        niche: project.niche?.trim() || undefined,
+        topic: data.input_value,
       });
-      const judgeRaw = judgeCompletion.choices[0]?.message?.content ?? "";
-      const ju = judgeCompletion.usage;
-      tokenUsageSteps.push({
-        step: "QC judge",
-        inputTokens: ju?.prompt_tokens ?? 0,
-        outputTokens: ju?.completion_tokens ?? 0,
-      });
-      qcJudge = parseQcJudgeResponse(judgeRaw);
-    } catch (e) {
-      LOG("QC", `judge failed: ${e instanceof Error ? e.message : String(e)}`);
-      qcJudge = {
-        pass: qcHardIssues.length === 0,
-        total: qcHardIssues.length === 0 ? 8 : 5,
-        fails: qcHardIssues.map((i) => i.message).slice(0, 8),
-        rewrite_brief: "Fix hard copy issues; strengthen hook and CTA.",
-      };
+      try {
+        const judgeCompletion = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [
+            { role: "system", content: judgePrompts.system },
+            { role: "user", content: judgePrompts.user },
+          ],
+          response_format: { type: "json_object" },
+          temperature: 0.2,
+        });
+        const judgeRaw = judgeCompletion.choices[0]?.message?.content ?? "";
+        const ju = judgeCompletion.usage;
+        tokenUsageSteps.push({
+          step: "QC judge",
+          inputTokens: ju?.prompt_tokens ?? 0,
+          outputTokens: ju?.completion_tokens ?? 0,
+        });
+        qcJudge = parseQcJudgeResponse(judgeRaw);
+      } catch (e) {
+        LOG("QC", `judge failed: ${e instanceof Error ? e.message : String(e)}`);
+        qcJudge = {
+          pass: qcHardIssues.length === 0,
+          total: qcHardIssues.length === 0 ? 8 : 5,
+          fails: qcHardIssues.map((i) => i.message).slice(0, 8),
+          rewrite_brief: "Fix hard copy issues; strengthen hook and CTA.",
+        };
+      }
+    } else {
+      LOG("QC", "hard checks passed; skipped optional judge for this low-risk value post");
     }
 
-    const needsRewrite = !qcJudge.pass || qcHardIssues.length > 0;
+    // A full second generation only runs for deterministic defects or a clear
+    // quality failure. A near-pass is logged, without making the creator wait
+    // for a rewrite that may not improve the post.
+    const needsRewrite =
+      qcHardIssues.length > 0 ||
+      (qcJudge !== null && !qcJudge.pass && qcJudge.total < 7);
     if (needsRewrite) {
+      const judgeForRewrite: QcJudgeResult = qcJudge ?? {
+        pass: false,
+        total: 5,
+        fails: qcHardIssues.map((issue) => issue.message).slice(0, 8),
+        rewrite_brief: "Fix the deterministic copy issues and strengthen the hook and CTA.",
+      };
       LOG(
         "QC",
         `rewrite needed — ${summarizeQcForLog({ hardIssues: qcHardIssues, judge: qcJudge, rewritten: false })}`
@@ -859,7 +886,7 @@ export async function generateCarousel(formData: FormData): Promise<
       const rewritePrompts = buildQcRewritePrompts({
         carousel: validated,
         hardIssues: qcHardIssues,
-        judge: qcJudge,
+        judge: judgeForRewrite,
         includeMarketing,
         templateLimits: templateCharLimits,
         openLoop: pendingOpenLoop,
@@ -2328,11 +2355,7 @@ export async function startCarouselGeneration(formData: FormData): Promise<
     countCarouselsThisMonth(user.id),
     countCarouselsLifetime(user.id),
   ]);
-  if (count >= limits.carouselsPerMonth) {
-    return {
-      error: `Generation limit: ${count}/${limits.carouselsPerMonth} carousels this month.${isPro ? "" : " Upgrade for a higher limit."}`,
-    };
-  }
+  const needsPostPackCredit = !data.carousel_id && count >= limits.carouselsPerMonth;
   const hasFreeFullAccess = !isPro && lifetimeCount < FREE_FULL_ACCESS_GENERATIONS;
   const hasFullAccess = isPro || hasFreeFullAccess;
   const requestedAiGenerate = parsed.data.carousel_for !== "linkedin" && !!data.use_ai_generate;
@@ -2452,6 +2475,14 @@ export async function startCarouselGeneration(formData: FormData): Promise<
       generation_options: generationOptions,
     });
     return { carouselId: existing.id };
+  }
+
+  if (needsPostPackCredit && !(await consumePostPackCredit(user.id))) {
+    return {
+      error: isPro
+        ? "You have used this month’s post allowance. Add a 10-post pack to keep creating."
+        : "Your 3 free posts are used. Choose a plan or add a 10-post pack to keep creating.",
+    };
   }
 
   const carousel = await createCarousel(

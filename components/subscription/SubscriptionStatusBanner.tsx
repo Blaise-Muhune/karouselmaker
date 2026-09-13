@@ -21,6 +21,15 @@ const MESSAGES: Record<string, { message: string; variant: "success" | "info" | 
     message: "Your subscription has been updated.",
     variant: "info",
   },
+  post_pack_success: {
+    message: "Your 10-post pack is ready. Create your next carousel whenever you are ready.",
+    variant: "success",
+  },
+  post_pack_cancelled: {
+    message: "Post-pack checkout was cancelled. Your current posts and downloads are unchanged.",
+    variant: "muted",
+    showUpgrade: true,
+  },
   expired: {
     message: "Your paid plan has ended. Subscribe again anytime to restore full limits.",
     variant: "muted",
@@ -49,7 +58,7 @@ export function SubscriptionStatusBanner() {
   }, [status, clearParam]);
 
   useEffect(() => {
-    if (status === "success" || status === "updated") {
+    if (status === "success" || status === "updated" || status === "post_pack_success") {
       router.refresh();
       const t1 = setTimeout(() => router.refresh(), 800);
       const t2 = setTimeout(() => router.refresh(), 2500);
