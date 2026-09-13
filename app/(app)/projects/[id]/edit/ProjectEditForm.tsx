@@ -6,12 +6,9 @@ import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
 import { updateProject } from "@/app/actions/projects/updateProject";
+import { buildProductBrief } from "@/app/actions/projects/buildProductBrief";
 import { uploadProjectLogo } from "@/app/actions/projects/uploadProjectLogo";
-import { PRODUCT_TO_PROMOTE_MAX_CHARS, PROJECT_RULES_MAX_CHARS } from "@/lib/constants";
-import {
-  ORGANIC_MARKETING_PROGRESS_MAX,
-  organicMarketingProgressLabel,
-} from "@/lib/organicMarketingProgress";
+import { PRODUCT_TO_PROMOTE_MAX_CHARS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ColorPicker } from "@/components/ui/color-picker";
@@ -59,22 +56,27 @@ const LANGUAGE_OPTIONS = [
   { value: "ko", label: "Korean" },
 ] as const;
 
+const ACCOUNT_STAGES = [
+  { value: 0, title: "Starting fresh", description: "Mostly useful niche posts" },
+  { value: 4, title: "Building trust", description: "Helpful posts with occasional promotion" },
+  { value: 8, title: "Already promoting", description: "Audience is used to product mentions" },
+] as const;
+
 export function ProjectEditForm({
   projectId,
   defaultValues,
-  productBrief,
   productUrl,
 }: {
   projectId: string;
   defaultValues: ProjectFormInput;
-  /** AI/page brief stored for generation (read-only hint). */
-  productBrief?: string;
   productUrl?: string | null;
 }) {
   const [isPending, setIsPending] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [websiteUrl, setWebsiteUrl] = useState(productUrl ?? "");
+  const [briefWebsiteUrl, setBriefWebsiteUrl] = useState(productUrl ?? "");
+  const [isResearchingWebsite, setIsResearchingWebsite] = useState(false);
   const router = useRouter();
 
   const form = useForm<ProjectFormInput>({
@@ -91,9 +93,11 @@ export function ProjectEditForm({
     fd.set("tone_preset", data.tone_preset);
     fd.set("language", data.language ?? "en");
     fd.set("number_of_slides", "5");
-    fd.set("rules", data.project_rules.rules ?? "");
+    fd.set("rules", "");
     fd.set("product_to_promote", data.project_rules.product_to_promote ?? "");
     fd.set("product_url", websiteUrl.trim());
+    fd.set("product_brief", data.project_rules.product_to_promote ?? "");
+    fd.set("product_brief_url", briefWebsiteUrl);
     fd.set(
       "organic_marketing_progress",
       String(data.project_rules.organic_marketing_progress ?? 0)
@@ -117,6 +121,24 @@ export function ProjectEditForm({
     } finally {
       setIsPending(false);
     }
+  }
+
+  async function refreshProductContext() {
+    setSubmitError(null);
+    if (!websiteUrl.trim()) {
+      setSubmitError("Add a website first, or edit the product context directly.");
+      return;
+    }
+    setIsResearchingWebsite(true);
+    const result = await buildProductBrief(websiteUrl);
+    setIsResearchingWebsite(false);
+    if ("error" in result) {
+      setSubmitError(result.error ?? "We couldn't read that website. Edit the product context directly.");
+      return;
+    }
+    setWebsiteUrl(result.productUrl);
+    setBriefWebsiteUrl(result.productUrl);
+    form.setValue("project_rules.product_to_promote", result.productBrief, { shouldDirty: true });
   }
 
   return (
@@ -162,11 +184,17 @@ export function ProjectEditForm({
             inputMode="url"
             placeholder="yourproduct.com"
             value={websiteUrl}
-            onChange={(event) => setWebsiteUrl(event.target.value)}
+            onChange={(event) => {
+              setWebsiteUrl(event.target.value);
+              setBriefWebsiteUrl("");
+            }}
           />
           <p className="text-muted-foreground text-xs">
-            We use public details from this page to keep your product context up to date.
+            Use public page details to build or refresh the product context.
           </p>
+          <Button type="button" variant="outline" size="sm" onClick={refreshProductContext} loading={isResearchingWebsite}>
+            {isResearchingWebsite ? "Researching website…" : "Refresh from website"}
+          </Button>
         </div>
         <FormField
           control={form.control}
@@ -175,26 +203,18 @@ export function ProjectEditForm({
             const len = (field.value ?? "").length;
             return (
               <FormItem>
-                <FormLabel>Describe your offer</FormLabel>
+                <FormLabel>Product context</FormLabel>
                 <FormControl>
                   <Textarea
                     placeholder="What is it, who is it for, and what result does it help them get?"
-                    className="min-h-20"
+                    className="min-h-32"
                     maxLength={PRODUCT_TO_PROMOTE_MAX_CHARS}
                     {...field}
                   />
                 </FormControl>
                 <p className="text-muted-foreground text-xs">
-                  Add this when a website alone does not tell the full story. Carousels stay problem-first and soft-sell this offer.
+                  This is what the AI uses when it creates your carousel. Review and edit it whenever the offer changes.
                 </p>
-                {productBrief?.trim() ? (
-                  <p className="text-muted-foreground bg-muted/50 rounded-md border p-2 text-xs leading-relaxed">
-                    <span className="text-foreground font-medium">Saved brief: </span>
-                    {productBrief.trim().length > 280
-                      ? `${productBrief.trim().slice(0, 280)}…`
-                      : productBrief.trim()}
-                  </p>
-                ) : null}
                 <p className={cn("text-xs tabular-nums text-muted-foreground", len >= PRODUCT_TO_PROMOTE_MAX_CHARS && "text-destructive")}>
                   {len}/{PRODUCT_TO_PROMOTE_MAX_CHARS}
                 </p>
@@ -223,25 +243,28 @@ export function ProjectEditForm({
                 name="project_rules.organic_marketing_progress"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>How often posts mention your product</FormLabel>
+                    <FormLabel>Account stage</FormLabel>
                     <FormControl>
-                      <div className="space-y-2">
-                        <input
-                          type="range"
-                          min={0}
-                          max={ORGANIC_MARKETING_PROGRESS_MAX}
-                          step={1}
-                          className="w-full accent-primary"
-                          value={field.value ?? 0}
-                          onChange={(e) => field.onChange(Number(e.target.value))}
-                        />
-                        <p className="text-sm text-foreground">
-                          {field.value ?? 0}/{ORGANIC_MARKETING_PROGRESS_MAX} —{" "}
-                          {organicMarketingProgressLabel(field.value ?? 0)}
-                        </p>
+                      <div className="grid gap-2">
                         <p className="text-muted-foreground text-xs">
-                          Auto-raises as you generate marketing posts. Override only if you want a faster/slower cadence.
+                          This starts the balance of value posts and product mentions. We gradually advance it as you create marketing posts.
                         </p>
+                        {ACCOUNT_STAGES.map((stage) => (
+                          <button
+                            key={stage.value}
+                            type="button"
+                            onClick={() => field.onChange(stage.value)}
+                            className={cn(
+                              "rounded-lg border p-3 text-left transition-colors",
+                              field.value === stage.value
+                                ? "border-primary bg-primary/5 ring-1 ring-primary"
+                                : "border-border hover:bg-muted/50"
+                            )}
+                          >
+                            <p className="text-sm font-medium">{stage.title}</p>
+                            <p className="text-muted-foreground mt-0.5 text-xs">{stage.description}</p>
+                          </button>
+                        ))}
                       </div>
                     </FormControl>
                     <FormMessage />
@@ -295,30 +318,6 @@ export function ProjectEditForm({
                     <FormMessage />
                   </FormItem>
                 )}
-              />
-              <FormField
-                control={form.control}
-                name="project_rules.rules"
-                render={({ field }) => {
-                  const len = (field.value ?? "").length;
-                  return (
-                    <FormItem>
-                      <FormLabel>Rules or voice (optional)</FormLabel>
-                      <FormControl>
-                        <Textarea
-                          placeholder="e.g. Short sentences. Problem-first tips OK; soft product mention only on the last slide."
-                          className="min-h-24"
-                          maxLength={PROJECT_RULES_MAX_CHARS}
-                          {...field}
-                        />
-                      </FormControl>
-                      <p className="text-xs tabular-nums text-muted-foreground">
-                        {len}/{PROJECT_RULES_MAX_CHARS}
-                      </p>
-                      <FormMessage />
-                    </FormItem>
-                  );
-                }}
               />
               <div className="space-y-2">
                 <FormLabel>Brand kit (optional)</FormLabel>

@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { getUser } from "@/lib/server/auth/getUser";
 import { getProject, updateProject as dbUpdateProject } from "@/lib/server/db";
 import type { ProjectUpdate } from "@/lib/server/db/types";
-import { enrichProductContext } from "@/lib/server/ai/enrichProductFromInput";
+import { enrichProductContext, normalizeWebsiteUrl } from "@/lib/server/ai/enrichProductFromInput";
 import {
   parseProjectRulesJson,
   projectFormSchema,
@@ -28,6 +28,8 @@ export async function updateProject(projectId: string, formData: FormData) {
     rules: (formData.get("rules") as string) ?? "",
     product_to_promote: (formData.get("product_to_promote") as string) ?? "",
     product_url: (formData.get("product_url") as string) ?? "",
+    product_brief: (formData.get("product_brief") as string) ?? "",
+    product_brief_url: (formData.get("product_brief_url") as string) ?? "",
     organic_marketing_progress: Number(formData.get("organic_marketing_progress") ?? 0),
     primary_color: (formData.get("primary_color") as string) ?? "",
     secondary_color: (formData.get("secondary_color") as string) ?? "",
@@ -59,9 +61,17 @@ export async function updateProject(projectId: string, formData: FormData) {
   }
 
   const previous = parseProjectRulesJson(existing.project_rules);
+  const productPrevious = raw.product_brief.trim()
+    ? {
+        ...previous,
+        product_to_promote: parsed.data.project_rules.product_to_promote ?? "",
+        product_url: normalizeWebsiteUrl(raw.product_brief_url),
+        product_brief: raw.product_brief,
+      }
+    : previous;
   const product = await enrichProductContext(
     parsed.data.project_rules.product_to_promote ?? "",
-    previous,
+    productPrevious,
     raw.product_url
   );
   const payload = projectFormToDbPayload(parsed.data, {

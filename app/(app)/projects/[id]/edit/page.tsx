@@ -37,7 +37,7 @@ export default async function EditProjectPage({
     },
     project_rules: {
       rules: rulesParsed.rules,
-      product_to_promote: rulesParsed.product_to_promote,
+      product_to_promote: rulesParsed.product_brief || rulesParsed.product_to_promote,
       organic_marketing_progress: rulesParsed.organic_marketing_progress,
     },
     brand_kit: {
@@ -75,7 +75,6 @@ export default async function EditProjectPage({
         <ProjectEditForm
           projectId={project.id}
           defaultValues={defaultValues}
-          productBrief={rulesParsed.product_brief}
           productUrl={rulesParsed.product_url}
         />
       </div>
