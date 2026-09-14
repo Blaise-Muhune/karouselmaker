@@ -1068,6 +1068,7 @@ export async function generateCarousel(formData: FormData): Promise<
     use_saved_ugc_character: parsed.data.use_saved_ugc_character !== false,
     ugc_used_project_avatar_refs: ugcUsedProjectAvatarRefs,
     generation_started: false,
+    generation_phase: "assembling",
     ...(carouselFor && { carousel_for: carouselFor }),
     images_related_to_topic: data.images_related_to_topic !== false,
     ...(data.notes?.trim() && { notes: data.notes.trim() }),
@@ -1208,6 +1209,9 @@ export async function generateCarousel(formData: FormData): Promise<
   });
 
   const createdSlides = await replaceSlides(user.id, carousel.id, slideRows);
+  await updateCarousel(user.id, carousel.id, {
+    generation_options: { ...finalGenerationOptions, generation_phase: "visuals" },
+  });
   const createdSlidesOrdered = [...createdSlides].sort((a, b) => a.slide_index - b.slide_index);
   const templateIdBySlideId = new Map<string, string>();
   for (let i = 0; i < createdSlidesOrdered.length; i++) {
@@ -1313,7 +1317,7 @@ export async function generateCarousel(formData: FormData): Promise<
       const curBg = await getCarousel(user.id, carousel.id);
       const po = (curBg?.generation_options ?? {}) as Record<string, unknown>;
       await updateCarousel(user.id, carousel.id, {
-        generation_options: { ...po, ai_backgrounds_pending: true },
+        generation_options: { ...po, ai_backgrounds_pending: true, generation_phase: "visuals" },
       });
     }
 
@@ -2085,6 +2089,11 @@ export async function generateCarousel(formData: FormData): Promise<
   // Apply full template defaults per slide (overlay, defaults.meta, image_display, etc.) to match editor behavior.
   if (defaultTemplateId || templateIdsForRun.length > 0) {
     LOG("backgrounds", "applying template defaults to slides");
+    const current = await getCarousel(user.id, carousel.id);
+    const opts = (current?.generation_options ?? {}) as Record<string, unknown>;
+    await updateCarousel(user.id, carousel.id, {
+      generation_options: { ...opts, generation_phase: "finishing" },
+    });
     for (const slide of createdSlides) {
       const templateIdForSlide = templateIdBySlideId.get(slide.id) ?? defaultTemplateId;
       if (!templateIdForSlide) continue;
@@ -2097,6 +2106,7 @@ export async function generateCarousel(formData: FormData): Promise<
   const generationOptionsForDb: Record<string, unknown> = {
     ...finalGenerationOptions,
     generation_complete: true,
+    generation_phase: "complete",
     ai_backgrounds_pending: false,
     ugc_single_character_mode: ugcSingleCharacterModeForCarousel,
     ugc_recurring_entity_mode: ugcRecurringEntityModeForCarousel,
@@ -2124,6 +2134,7 @@ export async function generateCarousel(formData: FormData): Promise<
         generation_options: {
           generation_started: false,
           generation_complete: true,
+          generation_phase: "complete",
           ai_backgrounds_pending: false,
         },
       });
@@ -2197,6 +2208,7 @@ export async function generateCarousel(formData: FormData): Promise<
           ...finalGenerationOptions,
           generation_started: false,
           generation_complete: true,
+          generation_phase: "complete",
           ai_backgrounds_pending: false,
           generation_error_recovery: true,
         };
@@ -2219,6 +2231,7 @@ export async function generateCarousel(formData: FormData): Promise<
               generation_options: {
                 generation_started: false,
                 generation_complete: true,
+                generation_phase: "complete",
                 ai_backgrounds_pending: false,
                 generation_error_recovery: true,
               },
@@ -2443,6 +2456,7 @@ export async function startCarouselGeneration(formData: FormData): Promise<
     use_web_search: hasFullAccess && !!data.use_web_search,
     use_saved_ugc_character: parsed.data.use_saved_ugc_character !== false,
     generation_started: false,
+    generation_phase: "queued",
     number_of_slides: data.number_of_slides,
     notes: data.notes,
     images_related_to_topic: data.images_related_to_topic !== false,

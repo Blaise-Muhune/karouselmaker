@@ -21,7 +21,9 @@ export async function getCarouselGenerationSnapshot(carouselId: string): Promise
       status: string;
       generation_started: boolean;
       generation_complete: boolean;
+      generation_phase: string;
       use_ai_backgrounds: boolean;
+      use_ai_generate: boolean;
       /** True while server is still running AI/stock image pipeline for slides. */
       ai_backgrounds_pending: boolean;
     }
@@ -35,7 +37,9 @@ export async function getCarouselGenerationSnapshot(carouselId: string): Promise
     status: c.status,
     generation_started: o.generation_started === true,
     generation_complete: o.generation_complete === true,
+    generation_phase: typeof o.generation_phase === "string" ? o.generation_phase : "queued",
     use_ai_backgrounds: o.use_ai_backgrounds === true,
+    use_ai_generate: o.use_ai_generate === true,
     ai_backgrounds_pending: o.ai_backgrounds_pending === true,
   };
 }

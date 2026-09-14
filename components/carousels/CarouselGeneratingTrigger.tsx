@@ -5,7 +5,12 @@ import { useRouter } from "next/navigation";
 import { Loader2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { WaitingGamesDialog } from "@/components/waiting/WaitingGamesDialog";
-import { GenerationProgressRing } from "@/components/carousels/GenerationProgressRing";
+import {
+  GenerationProgress,
+  GenerationProgressRing,
+  generationPhaseCopy,
+  type GenerationPhase,
+} from "@/components/carousels/GenerationProgressRing";
 import { getCarouselGenerationSnapshot } from "@/app/actions/carousels/carouselActions";
 
 const POLL_STUCK_MS = 120_000;
@@ -116,6 +121,17 @@ export function CarouselGeneratingBanner() {
 /** After this many ms of polling, force a full reload once to bypass any stale router cache. */
 const POLL_FULL_RELOAD_AFTER_MS = 5 * 60 * 1000;
 const GENERATION_RELOAD_MARKER_PREFIX = "km:carousel-gen:reloaded:";
+const GENERATION_PHASES: GenerationPhase[] = ["queued", "writing", "assembling", "visuals", "finishing", "complete"];
+
+function generationPhaseFromSnapshot(value: string): GenerationPhase {
+  return GENERATION_PHASES.includes(value as GenerationPhase) ? (value as GenerationPhase) : "queued";
+}
+
+function formatElapsed(seconds: number) {
+  if (seconds < 10) return "Just started";
+  if (seconds < 60) return `${seconds}s elapsed`;
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s elapsed`;
+}
 
 /**
  * Full-page loading state when user lands on carousel page while status is still "generating".
@@ -125,10 +141,8 @@ const GENERATION_RELOAD_MARKER_PREFIX = "km:carousel-gen:reloaded:";
  * full reload to bypass stale client cache.
  */
 export function CarouselGeneratingPage({
-  projectId,
   carouselId,
 }: {
-  projectId: string;
   carouselId: string;
 }) {
   const router = useRouter();
@@ -136,13 +150,25 @@ export function CarouselGeneratingPage({
   const reloadMarker = `${GENERATION_RELOAD_MARKER_PREFIX}${carouselId}`;
   const [hasReloadedAfterTimeout, setHasReloadedAfterTimeout] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [phase, setPhase] = useState<GenerationPhase>("queued");
+  const [usesAiImages, setUsesAiImages] = useState(false);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   useEffect(() => {
-    try {
-      setHasReloadedAfterTimeout(window.sessionStorage.getItem(reloadMarker) === "1");
-    } catch {
-      setHasReloadedAfterTimeout(false);
-    }
+    const startedAt = Date.now();
+    const interval = window.setInterval(() => setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000)), 1000);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      try {
+        setHasReloadedAfterTimeout(window.sessionStorage.getItem(reloadMarker) === "1");
+      } catch {
+        // Keep the initial false value when sessionStorage is unavailable.
+      }
+    }, 0);
+    return () => window.clearTimeout(timeout);
   }, [reloadMarker]);
 
   useEffect(() => {
@@ -175,6 +201,8 @@ export function CarouselGeneratingPage({
       }
       const snap = await getCarouselGenerationSnapshot(carouselId);
       if (!snap.ok) return;
+      setPhase(generationPhaseFromSnapshot(snap.generation_phase));
+      setUsesAiImages(snap.use_ai_generate);
       if (isGenerationPollComplete(snap, startedAt)) {
         try {
           window.sessionStorage.removeItem(reloadMarker);
@@ -216,9 +244,15 @@ export function CarouselGeneratingPage({
     >
       <div className="mx-auto max-w-sm space-y-6 px-6 text-center">
         <GenerationProgressRing durationMs={POLL_FULL_RELOAD_AFTER_MS} />
-        <p className="text-sm font-medium text-foreground">Generating your carousel…</p>
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-foreground">{generationPhaseCopy(phase)}</p>
+          <p className="text-xs text-muted-foreground">{formatElapsed(elapsedSeconds)}</p>
+        </div>
+        <GenerationProgress phase={phase} />
         <p className="text-xs text-muted-foreground">
-          Hang tight. This ring fills in 5 minutes while we keep checking for your result.
+          {usesAiImages
+            ? "AI visuals can take a few minutes. You can safely switch tabs while this finishes."
+            : "We’ll open your carousel as soon as the final step is done. You can safely switch tabs."}
         </p>
         {hasReloadedAfterTimeout && (
           <p className="text-xs text-muted-foreground">

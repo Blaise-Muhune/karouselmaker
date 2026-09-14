@@ -82,7 +82,7 @@ export default async function CarouselEditorPage({
 
   // Show loading immediately when generating; skip heavy work so refresh gets fresh status.
   if (carousel.status === "generating") {
-    return <CarouselGeneratingPage projectId={projectId} carouselId={carouselId} />;
+    return <CarouselGeneratingPage carouselId={carouselId} />;
   }
 
   const favoriteIdSet = new Set(favoriteIds);
