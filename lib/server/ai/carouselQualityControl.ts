@@ -355,7 +355,9 @@ Rubric (total /10):
 - Useful and satisfying payoff: /2
 - Strength and relevance of CTA: /1
 
-Auto-fail (list in fails, set pass=false) if: generic brand-agnostic copy; slide 1 needs prior context; middle slides repeat; product pitched too early; empty "Follow for more" CTA; payoff weaker than hook; format/UI words; invented stats vibe.
+For educational, career, decision, or advice posts, also require: a clear decision criterion, concrete examples matched to a situation, one meaningful caveat or proof step, and a practical next action. Do not pass generic advice that could apply to any niche.
+
+Auto-fail (list in fails, set pass=false) if: generic brand-agnostic copy; slide 1 needs prior context; middle slides repeat; product pitched too early; empty "Follow for more" CTA; payoff weaker than hook; format/UI words; invented stats vibe; advice without a concrete criterion, example, caveat, or proof step when the topic is a decision.
 
 Marketing mode for this post: ${input.includeMarketing ? "ON (soft-sell allowed late only)" : "OFF (no product pitch)"}.
 
