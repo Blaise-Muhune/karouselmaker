@@ -68,21 +68,21 @@ function MetricCard({ icon: Icon, label, value, detail }: { icon: typeof Layers3
 
 function ProjectCard({ project, index }: { project: WorkspaceProject; index: number }) {
   const accent = PROJECT_ACCENTS[index % PROJECT_ACCENTS.length];
-  const target = project.latest_carousel_id ? `/p/${project.id}/c/${project.latest_carousel_id}` : `/p/${project.id}/new`;
 
   return (
     <article className="group relative overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5">
+      <Link href={`/p/${project.id}`} aria-label={`Open ${project.name}`} className="absolute inset-0 z-0" />
       <div className={`pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-br ${accent}`} />
-      <div className="relative p-5">
+      <div className="pointer-events-none relative z-10 p-5">
         <div className="flex items-start justify-between gap-3">
-          <Link href={`/p/${project.id}`} className="flex min-w-0 items-center gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             <span className="grid size-10 shrink-0 place-items-center rounded-xl border border-background/60 bg-background/80 text-sm font-semibold shadow-sm backdrop-blur">{initials(project.name)}</span>
             <span className="min-w-0">
               <span className="block truncate font-semibold tracking-tight">{project.name}</span>
               <span className="mt-0.5 block truncate text-xs text-muted-foreground">{project.niche || "General content"}</span>
             </span>
-          </Link>
-          <ProjectMenuDropdown projectId={project.id} projectName={project.name} />
+          </div>
+          <span className="pointer-events-auto"><ProjectMenuDropdown projectId={project.id} projectName={project.name} /></span>
         </div>
 
         <div className="mt-7 rounded-xl border border-border/60 bg-background/55 p-3.5 backdrop-blur-sm">
@@ -94,9 +94,7 @@ function ProjectCard({ project, index }: { project: WorkspaceProject; index: num
           <p className="mt-1 text-xs text-muted-foreground">{formatRelativeDate(project.latest_carousel_updated_at)}</p>
         </div>
 
-        <Button variant="ghost" size="sm" className="mt-3 -ml-2 gap-1.5 text-foreground" asChild>
-          <Link href={target}>{project.latest_carousel_id ? "Open post" : "Create post"}<ArrowRightIcon className="size-3.5 transition-transform group-hover:translate-x-0.5" /></Link>
-        </Button>
+        <span className="mt-3 inline-flex h-8 items-center gap-1.5 px-2 text-sm font-medium text-foreground">View project <ArrowRightIcon className="size-3.5 transition-transform group-hover:translate-x-0.5" /></span>
       </div>
     </article>
   );
