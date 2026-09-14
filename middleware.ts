@@ -9,7 +9,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const response = NextResponse.next({
+  let response = NextResponse.next({
     request,
   });
 
@@ -19,6 +19,12 @@ export async function middleware(request: NextRequest) {
         return request.cookies.getAll();
       },
       setAll(cookiesToSet) {
+        // The current render must see refreshed tokens too, not just the browser's
+        // next request. Otherwise Server Components refresh stale tokens again.
+        cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+        const previousCookies = response.cookies.getAll();
+        response = NextResponse.next({ request });
+        previousCookies.forEach((cookie) => response.cookies.set(cookie));
         cookiesToSet.forEach(({ name, value, options }) =>
           response.cookies.set(name, value, options)
         );
