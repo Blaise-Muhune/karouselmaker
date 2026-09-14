@@ -1502,6 +1502,7 @@ export function SlideEditForm({
   const expandedPreviewContainerRef = useRef<HTMLDivElement>(null);
   const [isMobile, setIsMobile] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const [pendingDownload, setPendingDownload] = useState<{ url: string; filename: string } | null>(null);
   const pendingDownloadLinkRef = useRef<HTMLAnchorElement>(null);
   const pendingBlobUrlRef = useRef<string | null>(null);
@@ -3208,6 +3209,7 @@ export function SlideEditForm({
 
   const handleDownloadSlide = async () => {
     setDownloading(true);
+    setDownloadError(null);
     clearPendingDownload();
     try {
       const saveResult = await performSave(false);
@@ -3219,9 +3221,11 @@ export function SlideEditForm({
         : `slide-${slide.slide_index}.${ext}`;
       const url = `/api/export/slide/${slide.id}?format=${rasterFormat}&size=${exportSize}`;
       const res = await fetch(url, { credentials: "include" });
-      if (!res.ok) return;
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error || "Couldn’t download this frame. Try again.");
+      }
       const blob = await res.blob();
-      setDownloading(false);
       if (isMobile) {
         const blobUrl = URL.createObjectURL(blob);
         if (pendingBlobUrlRef.current) URL.revokeObjectURL(pendingBlobUrlRef.current);
@@ -3230,7 +3234,9 @@ export function SlideEditForm({
       } else {
         triggerBlobDownload(blob, filename);
       }
-    } catch {
+    } catch (error) {
+      setDownloadError(error instanceof Error ? error.message : "Couldn’t download this frame. Try again.");
+    } finally {
       setDownloading(false);
     }
   };
@@ -3625,7 +3631,11 @@ export function SlideEditForm({
       const res = await fetch(`/api/export/${carouselId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image_overlay: true }),
+        body: JSON.stringify({
+          image_overlay: true,
+          format: exportFormat,
+          size: exportSize,
+        }),
       });
       const contentType = res.headers.get("content-type") ?? "";
       if (!res.ok) {
@@ -5528,6 +5538,11 @@ export function SlideEditForm({
   return (
     <>
     <div className="flex flex-col min-h-0 w-full md:h-full md:overflow-hidden">
+      {downloadError && (
+        <p className="mx-3 mt-3 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">
+          {downloadError}
+        </p>
+      )}
       {isMobile && !mobileBannerDismissed && (
         <div className="flex items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 shrink-0">
           <MonitorIcon className="size-5 shrink-0 text-amber-600 dark:text-amber-500" />

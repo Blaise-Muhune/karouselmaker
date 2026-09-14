@@ -5,7 +5,7 @@ import { updateExportSettings } from "@/app/actions/carousels/updateExportFormat
 import type { ExportSize } from "@/lib/server/db/types";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { CheckIcon, ChevronDownIcon, ChevronUpIcon, CopyIcon, DownloadIcon, Loader2Icon } from "lucide-react";
+import { CheckIcon, CopyIcon, DownloadIcon, Loader2Icon, PackageCheckIcon } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -86,8 +86,8 @@ export function EditorExportSection({
   const [updatingExportSettings, setUpdatingExportSettings] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
-  const [showMore, setShowMore] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [downloaded, setDownloaded] = useState(false);
 
   const captionText = combineCaptionWithHashtags(
     (captionVariants.long || captionVariants.medium || captionVariants.short || "").trim(),
@@ -119,16 +119,24 @@ export function EditorExportSection({
     setExportError(null);
     setExporting(true);
     try {
-      const res = await fetch(`/api/export/${carouselId}?format=${localExportFormat}&size=${localExportSize}`, {
-        method: "GET",
+      const res = await fetch(`/api/export/${carouselId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          image_overlay: true,
+          format: localExportFormat,
+          size: localExportSize,
+        }),
       });
       if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || `Export failed (${res.status})`);
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error || `Export failed (${res.status})`);
       }
       const blob = await res.blob();
       const filename = `${downloadSlug}.zip`;
       await triggerBlobDownload(blob, filename);
+      setDownloaded(true);
+      window.setTimeout(() => setDownloaded(false), 3000);
       router.refresh();
     } catch (e) {
       setExportError(e instanceof Error ? e.message : "Export failed");
@@ -149,24 +157,77 @@ export function EditorExportSection({
   }, [captionText, disabled]);
 
   return (
-    <section className="space-y-3 rounded-2xl border border-border/70 bg-card/80 p-4 shadow-sm">
-      <div>
-        <p className="text-sm font-semibold text-foreground">Finish & post</p>
-        <p className="text-muted-foreground text-xs mt-0.5">
-          Download a ZIP for Instagram or TikTok
-          {localExportSize === "1080x1350" ? " (4:5 feed)" : ""}.
-        </p>
+    <section className="space-y-5 rounded-2xl border border-border/70 bg-card/80 p-5 shadow-sm">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-foreground">Download your post</p>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            A ready-to-upload ZIP with every slide, sized for your chosen placement.
+          </p>
+        </div>
+        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
+          <PackageCheckIcon className="size-3.5" aria-hidden />
+          Ready
+        </span>
       </div>
-      <div className="flex flex-wrap gap-2">
+      <div className="grid gap-3 rounded-xl border border-border/60 bg-muted/20 p-3 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label className="text-xs font-medium text-muted-foreground">File format</Label>
+          <Select
+            value={localExportFormat}
+            disabled={disabled || updatingExportSettings}
+            onValueChange={(v) => {
+              const next = v === "jpeg" ? "jpeg" : "png";
+              setLocalExportFormat(next);
+              void persistSettings(next, localExportSize);
+            }}
+          >
+            <SelectTrigger className="w-full bg-background">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {(Object.keys(EXPORT_FORMAT_LABELS) as Array<"png" | "jpeg">).map((k) => (
+                <SelectItem key={k} value={k}>
+                  {EXPORT_FORMAT_LABELS[k]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs font-medium text-muted-foreground">Placement</Label>
+          <Select
+            value={localExportSize}
+            disabled={disabled || updatingExportSettings}
+            onValueChange={(v) => {
+              const next = v as ExportSize;
+              setLocalExportSize(next);
+              void persistSettings(localExportFormat, next);
+            }}
+          >
+            <SelectTrigger className="w-full bg-background">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {(Object.keys(EXPORT_SIZE_LABELS) as ExportSize[]).map((k) => (
+                <SelectItem key={k} value={k}>
+                  {EXPORT_SIZE_LABELS[k]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
         <Button
           type="button"
           size="lg"
-          className="gap-2"
+          className="gap-2 sm:min-w-48"
           disabled={!canExport || disabled || exporting}
           onClick={() => void handleDownload()}
         >
-          {exporting ? <Loader2Icon className="size-4 animate-spin" /> : <DownloadIcon className="size-4" />}
-          Download for Instagram & TikTok
+          {exporting ? <Loader2Icon className="size-4 animate-spin" /> : downloaded ? <CheckIcon className="size-4" /> : <DownloadIcon className="size-4" />}
+          {exporting ? "Building ZIP…" : downloaded ? "ZIP downloaded" : "Download ZIP"}
         </Button>
         {captionText ? (
           <Button type="button" variant="outline" size="lg" className="gap-2" disabled={disabled} onClick={() => void copyCaption()}>
@@ -174,74 +235,20 @@ export function EditorExportSection({
             {copied ? "Copied" : "Copy caption"}
           </Button>
         ) : null}
-        {exporting && (
-          <WaitingGamesDialog loadingMessage="Building your ZIP…" triggerClassName="bg-background/80" />
-        )}
       </div>
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className="-ml-1 text-muted-foreground"
-        onClick={() => setShowMore((v) => !v)}
-      >
-        {showMore ? <ChevronUpIcon className="mr-1.5 size-4" /> : <ChevronDownIcon className="mr-1.5 size-4" />}
-        {showMore ? "Hide format options" : "Format & size"}
-      </Button>
-      {showMore && (
-        <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border/60 bg-muted/20 p-3">
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Format</Label>
-            <Select
-              value={localExportFormat}
-              disabled={disabled || updatingExportSettings}
-              onValueChange={(v) => {
-                const next = v === "jpeg" ? "jpeg" : "png";
-                setLocalExportFormat(next);
-                void persistSettings(next, localExportSize);
-              }}
-            >
-              <SelectTrigger className="w-[120px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {(Object.keys(EXPORT_FORMAT_LABELS) as Array<"png" | "jpeg">).map((k) => (
-                  <SelectItem key={k} value={k}>
-                    {EXPORT_FORMAT_LABELS[k]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Size</Label>
-            <Select
-              value={localExportSize}
-              disabled={disabled || updatingExportSettings}
-              onValueChange={(v) => {
-                const next = v as ExportSize;
-                setLocalExportSize(next);
-                void persistSettings(localExportFormat, next);
-              }}
-            >
-              <SelectTrigger className="w-[150px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {(Object.keys(EXPORT_SIZE_LABELS) as ExportSize[]).map((k) => (
-                  <SelectItem key={k} value={k}>
-                    {EXPORT_SIZE_LABELS[k]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+      {exporting && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/20 bg-primary/5 px-3 py-2.5" aria-live="polite">
+          <p className="text-xs text-muted-foreground">Rendering your slides and packaging the ZIP. Keep this tab open.</p>
+          <WaitingGamesDialog loadingMessage="Building your ZIP…" triggerClassName="bg-background/80" />
         </div>
       )}
-      {exportError && <p className="text-destructive text-sm">{exportError}</p>}
-      <p className="text-muted-foreground text-xs">
-        Downloads do not use a post pack · default {EXPORT_FORMAT_LABELS[localExportFormat]}{" "}
-        {EXPORT_SIZE_LABELS[localExportSize]}
+      {exportError && (
+        <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">
+          Couldn’t create the ZIP: {exportError}
+        </p>
+      )}
+      <p className="text-xs text-muted-foreground" aria-live="polite">
+        {downloaded ? "Your download has started." : `${EXPORT_FORMAT_LABELS[localExportFormat]} · ${EXPORT_SIZE_LABELS[localExportSize]} · Downloads do not use a post pack.`}
       </p>
     </section>
   );

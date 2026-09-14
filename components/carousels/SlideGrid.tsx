@@ -541,6 +541,7 @@ export function SlideGrid({
   const [reorderPending, setReorderPending] = useState(false);
   const [shufflingSlideId, setShufflingSlideId] = useState<string | null>(null);
   const [downloadingSlideId, setDownloadingSlideId] = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const [deletingSlideId, setDeletingSlideId] = useState<string | null>(null);
   const [addingSlide, setAddingSlide] = useState(false);
   const router = useRouter();
@@ -726,6 +727,11 @@ export function SlideGrid({
 
   return (
     <>
+      {downloadError && (
+        <p className="mb-3 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">
+          {downloadError}
+        </p>
+      )}
       {canEdit && (
         <div className="mb-3 flex flex-wrap items-center gap-3 pt-3 pb-2">
           {selectionCount > 0 ? (
@@ -1167,6 +1173,7 @@ export function SlideGrid({
                       onClick={async () => {
                         if (downloadingSlideId) return;
                         setDownloadingSlideId(slide.id);
+                        setDownloadError(null);
                         const rasterFormat = exportFormat === "pdf" ? "png" : exportFormat;
                         const url = `/api/export/slide/${slide.id}?format=${rasterFormat}&size=${exportSize ?? "1080x1350"}`;
                         const ext = rasterFormat === "jpeg" ? "jpg" : "png";
@@ -1175,9 +1182,14 @@ export function SlideGrid({
                           : `slide-${slide.slide_index}.${ext}`;
                         try {
                           const res = await fetch(url);
-                          if (!res.ok) throw new Error("Download failed");
+                          if (!res.ok) {
+                            const data = (await res.json().catch(() => ({}))) as { error?: string };
+                            throw new Error(data.error || "Couldn’t download this frame. Try again.");
+                          }
                           const blob = await res.blob();
                           triggerBlobDownload(blob, filename);
+                        } catch (error) {
+                          setDownloadError(error instanceof Error ? error.message : "Couldn’t download this frame. Try again.");
                         } finally {
                           setDownloadingSlideId(null);
                         }

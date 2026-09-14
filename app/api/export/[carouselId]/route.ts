@@ -33,6 +33,7 @@ import {
 } from "@/lib/server/export/fetchImageAsDataUrl";
 import type { BrandKit } from "@/lib/renderer/renderModel";
 import { slugifyForFilename } from "@/lib/utils";
+import { buildCarouselPdfFromPngPages } from "@/lib/server/export/buildCarouselPdf";
 
 import JSZip from "jszip";
 
@@ -52,26 +53,39 @@ function normalizeStoragePathForBucket(path: string | undefined, bucket: string)
   return trimmed.startsWith(bucketPrefix) ? trimmed.slice(bucketPrefix.length) : trimmed;
 }
 
-async function readImageOverlayFromRequest(request: Request): Promise<boolean> {
+type ExportRequestOptions = {
+  imageOverlay: boolean;
+  format?: "png" | "jpeg" | "pdf";
+  size?: "1080x1080" | "1080x1350" | "1080x1920";
+};
+
+async function readExportRequestOptions(request: Request): Promise<ExportRequestOptions> {
   try {
     const ct = request.headers.get("content-type") ?? "";
-    if (!ct.includes("application/json")) return true;
+    if (!ct.includes("application/json")) return { imageOverlay: true };
     const body: unknown = await request.json();
-    if (body && typeof body === "object" && "image_overlay" in body) {
-      const v = (body as { image_overlay?: unknown }).image_overlay;
-      if (typeof v === "boolean") return v;
-    }
+    if (!body || typeof body !== "object") return { imageOverlay: true };
+    const value = body as { image_overlay?: unknown; format?: unknown; size?: unknown };
+    return {
+      imageOverlay: typeof value.image_overlay === "boolean" ? value.image_overlay : true,
+      format: value.format === "png" || value.format === "jpeg" || value.format === "pdf" ? value.format : undefined,
+      size:
+        value.size === "1080x1080" || value.size === "1080x1350" || value.size === "1080x1920"
+          ? value.size
+          : undefined,
+    };
   } catch {
     /* empty or non-JSON body */
   }
-  return true;
+  return { imageOverlay: true };
 }
 
 export async function POST(
   _request: Request,
   context: { params: Promise<{ carouselId: string }> }
 ) {
-  const imageOverlay = await readImageOverlayFromRequest(_request);
+  const requestOptions = await readExportRequestOptions(_request);
+  const imageOverlay = requestOptions.imageOverlay;
   const { carouselId } = await context.params;
   const supabase = await createClient();
   const {
@@ -88,10 +102,11 @@ export async function POST(
     return NextResponse.json({ error: "Carousel not found" }, { status: 404 });
   }
 
-  const carouselExportFormat = (carousel as { export_format?: string }).export_format ?? "png";
-  const carouselExportSize = (carousel as { export_size?: string }).export_size ?? "1080x1350";
-  const exportMode = carouselExportFormat === "jpeg" ? "jpeg" : "png";
-  const rasterFormat = exportMode;
+  const carouselExportFormat = requestOptions.format ?? (carousel as { export_format?: string }).export_format ?? "png";
+  const carouselExportSize = requestOptions.size ?? (carousel as { export_size?: string }).export_size ?? "1080x1350";
+  const exportMode = carouselExportFormat === "jpeg" || carouselExportFormat === "pdf" ? carouselExportFormat : "png";
+  // pdf-lib embeds PNG pages, so render PNG frames when assembling a PDF.
+  const rasterFormat = exportMode === "jpeg" ? "jpeg" : "png";
   const dimensions =
     carouselExportSize === "1080x1350"
       ? { w: 1080, h: 1350 }
@@ -493,6 +508,20 @@ export async function POST(
       }
     }
     await updateExport(userId, exportId, { status: "ready", storage_path: paths.slidesDir });
+
+    if (exportMode === "pdf") {
+      const pdf = await buildCarouselPdfFromPngPages(slideBuffers, dimensions.w, dimensions.h);
+      const pdfFilename = `${assetSlug}.pdf`;
+      return new NextResponse(new Uint8Array(pdf), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `attachment; filename="${pdfFilename}"`,
+          "X-Suggested-Filename": pdfFilename,
+          "X-Export-Id": exportId,
+        },
+      });
+    }
 
     const zip = new JSZip();
     for (let i = 0; i < slideBuffers.length; i++) {

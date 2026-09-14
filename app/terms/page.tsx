@@ -1,7 +1,6 @@
 import Link from "next/link";
-import { ThemeToggle } from "@/components/theme-toggle";
-import { Button } from "@/components/ui/button";
-import { ContactUsModal } from "@/components/admin/ContactUsModal";
+import type { ReactNode } from "react";
+import { LegalPageShell } from "@/components/legal/LegalPageShell";
 
 export const metadata = {
   title: "Terms of Service",
@@ -9,186 +8,45 @@ export const metadata = {
   alternates: { canonical: "/terms" },
 };
 
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return <section className="space-y-2"><h2 className="text-base font-semibold text-foreground sm:text-lg">{title}</h2>{children}</section>;
+}
+function Copy({ children }: { children: ReactNode }) {
+  return <p className="leading-relaxed text-muted-foreground">{children}</p>;
+}
+
 export default function TermsPage() {
   return (
-    <main className="min-h-screen flex flex-col bg-background">
-      <header className="border-b bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/80 sticky top-0 z-10">
-        <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4 sm:px-6">
-          <Link href="/" className="font-semibold text-lg hover:opacity-80 transition-opacity">
-            Karouselmaker
-          </Link>
-          <nav className="flex items-center gap-1 sm:gap-2">
-            <ThemeToggle />
-            <Button variant="ghost" size="sm" className="hidden sm:inline-flex" asChild>
-              <Link href="/login">Sign in</Link>
-            </Button>
-            <Button size="sm" asChild>
-              <Link href="/signup">Start marketing</Link>
-            </Button>
-          </nav>
-        </div>
-      </header>
-
-      <article className="flex-1 mx-auto max-w-3xl w-full px-4 sm:px-6 py-10 sm:py-14 md:py-16">
-        <div className="rounded-xl border border-border/60 bg-card p-6 sm:p-8 md:p-10 shadow-sm">
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">Terms of Service</h1>
-          <p className="text-muted-foreground text-xs sm:text-sm mt-1">Last updated: January 2025</p>
-
-          <div className="mt-8 sm:mt-10 space-y-8 sm:space-y-10 text-sm sm:text-base text-foreground">
-        <section className="space-y-2">
-          <h2 className="text-base sm:text-lg font-semibold text-foreground">1. Acceptance of Terms</h2>
-          <p className="text-muted-foreground leading-relaxed">
-            By accessing or using Karouselmaker (&quot;the Service&quot;), you agree to be bound by these Terms of Service.
-            If you do not agree, do not use the Service.
-          </p>
-        </section>
-
-        <section className="space-y-2">
-          <h2 className="text-base sm:text-lg font-semibold text-foreground">2. Description of Service</h2>
-          <p className="text-muted-foreground leading-relaxed">
-            Karouselmaker is a marketing tool for organic Instagram and TikTok carousels that promote a product
-            without sounding like ads. The Service uses AI to draft problem-first swipe content and provides templates
-            for layout. Images may be sourced from third-party providers including Unsplash and Brave Search.
-          </p>
-        </section>
-
-        <section className="space-y-2">
-          <h2 className="text-base sm:text-lg font-semibold text-foreground">3. User Responsibilities</h2>
-          <p className="text-muted-foreground leading-relaxed">
-            You are responsible for all content you create, publish, or export using the Service. You must ensure that:
-          </p>
-          <ul className="list-disc pl-5 space-y-2 text-muted-foreground leading-relaxed">
-            <li>Your use of the Service complies with applicable laws and platform policies (e.g., Instagram, TikTok).</li>
-            <li>You have the right to use any content you upload or incorporate into your carousels.</li>
-            <li>
-              <strong>Image attribution:</strong> When you use images from third-party sources (e.g., Unsplash, Brave Search)
-              in your carousels or exports, <strong>you are solely responsible for providing proper attribution to the
-              original authors</strong>. The Service may include attribution information in exports where available; it is
-              your obligation to include such attribution when publishing or distributing your work. Failure to attribute
-              may violate the terms of the image provider and applicable copyright or licensing requirements.
-            </li>
-            <li>
-              <strong>Likenesses and publicity:</strong> When you use images of identifiable people (e.g. athletes, celebrities),
-              you are responsible for obtaining any rights needed for your use, including for commercial or promotional purposes.
-            </li>
-            <li>
-              <strong>AI-generated content:</strong> You should verify the accuracy of AI-generated or edited content before
-              publishing. We are not liable for defamation, inaccuracy, or other harm arising from content generated or
-              modified through the Service.
-            </li>
-          </ul>
-        </section>
-
-        <section className="space-y-2">
-          <h2 className="text-base sm:text-lg font-semibold text-foreground">4. Third-Party Content</h2>
-          <p className="text-muted-foreground leading-relaxed">
-            Images provided through the Service may come from Unsplash, Brave Search, or other third-party sources.
-            Each provider has its own terms and licensing. You must comply with those terms when using their content.
-            Karouselmaker does not guarantee the availability, accuracy, or licensing of third-party content.
-          </p>
-        </section>
-
-        <section className="space-y-2">
-          <h2 className="text-base sm:text-lg font-semibold text-foreground">5. Account and Data</h2>
-          <p className="text-muted-foreground leading-relaxed">
-            You must provide accurate information when creating an account and be at least 13 years of age (or the minimum
-            age required in your jurisdiction). You may not use the Service where prohibited by law. You are responsible
-            for maintaining the security of your credentials. We process your data in accordance with our{" "}
-            <Link href="/privacy" className="text-primary underline hover:no-underline">Privacy Policy</Link>.
-          </p>
-        </section>
-
-        <section className="space-y-2">
-          <h2 className="text-base sm:text-lg font-semibold text-foreground">6. DMCA and Copyright</h2>
-          <p className="text-muted-foreground leading-relaxed">
-            We respond to valid notices of copyright infringement under the DMCA and similar laws. If you believe content
-            on or through the Service infringes your copyright, see our{" "}
-            <Link href="/copyright" className="text-primary underline hover:no-underline">Copyright / DMCA</Link> page for
-            our designated agent and how to send a takedown notice. We may terminate accounts of repeat infringers.
-          </p>
-        </section>
-
-        <section className="space-y-2">
-          <h2 className="text-base sm:text-lg font-semibold text-foreground">7. Acceptable Use</h2>
-          <p className="text-muted-foreground leading-relaxed">You may not use the Service to:</p>
-          <ul className="list-disc pl-5 space-y-2 text-muted-foreground leading-relaxed">
-            <li>Violate any law or third-party rights.</li>
-            <li>Generate or distribute harmful, misleading, or illegal content.</li>
-            <li>Abuse, overload, or attempt to compromise the Service or its infrastructure.</li>
-            <li>Resell or redistribute the Service without authorization.</li>
-          </ul>
-        </section>
-
-        <section className="space-y-2">
-          <h2 className="text-base sm:text-lg font-semibold text-foreground">8. Intellectual Property</h2>
-          <p className="text-muted-foreground leading-relaxed">
-            Karouselmaker and its branding, templates, and software remain our property. You retain ownership of content
-            you create. By using the Service, you grant us a limited license to process and store your content as needed
-            to provide the Service.
-          </p>
-        </section>
-
-        <section className="space-y-2">
-          <h2 className="text-base sm:text-lg font-semibold text-foreground">9. Disclaimers</h2>
-          <p className="text-muted-foreground leading-relaxed">
-            The Service is provided &quot;as is.&quot; We do not warrant uninterrupted access, accuracy of AI-generated content,
-            or compatibility with third-party platforms. We are not liable for how you use exported content or for any
-            attribution or licensing issues arising from third-party images.
-          </p>
-          <p className="text-muted-foreground leading-relaxed">
-            <strong className="text-foreground">Use of generated content:</strong> We are not responsible for what you decide to do with carousels you
-            generate using the Service. You alone are responsible for how you publish, distribute, or otherwise use your
-            exported content, including compliance with laws and platform policies.
-          </p>
-        </section>
-
-        <section className="space-y-2">
-          <h2 className="text-base sm:text-lg font-semibold text-foreground">10. Refunds</h2>
-          <p className="text-muted-foreground leading-relaxed">
-            All payments are final. We do not offer refunds for subscriptions or other purchases. If you cancel a
-            subscription, you retain access until the end of your billing period.
-          </p>
-        </section>
-
-        <section className="space-y-2">
-          <h2 className="text-base sm:text-lg font-semibold text-foreground">11. Limitation of Liability</h2>
-          <p className="text-muted-foreground leading-relaxed">
-            To the maximum extent permitted by law, Karouselmaker and its operators shall not be liable for any indirect,
-            incidental, special, or consequential damages arising from your use of the Service.
-          </p>
-        </section>
-
-        <section className="space-y-2">
-          <h2 className="text-base sm:text-lg font-semibold text-foreground">12. Changes</h2>
-          <p className="text-muted-foreground leading-relaxed">
-            We may update these terms from time to time. Continued use of the Service after changes constitutes
-            acceptance. Material changes will be communicated via the Service or email where appropriate.
-          </p>
-        </section>
-
-        <section className="space-y-2">
-          <h2 className="text-base sm:text-lg font-semibold text-foreground">13. Contact</h2>
-          <p className="text-muted-foreground leading-relaxed">
-            For questions about these terms, please contact us through the contact information provided in the
-            application or on our website.
-          </p>
-        </section>
-          </div>
-        </div>
-      </article>
-
-      <footer className="border-t py-6 mt-8 sm:mt-12">
-        <div className="mx-auto max-w-5xl px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-4 text-xs sm:text-sm text-muted-foreground">
-          <span>Karouselmaker</span>
-          <div className="flex gap-4">
-            <Link href="/" className="hover:text-foreground transition-colors">Home</Link>
-            <Link href="/privacy" className="hover:text-foreground transition-colors">Privacy</Link>
-            <Link href="/terms" className="hover:text-foreground transition-colors">Terms</Link>
-            <Link href="/copyright" className="hover:text-foreground transition-colors">Copyright</Link>
-            <ContactUsModal userEmail="" />
-          </div>
-        </div>
-      </footer>
-    </main>
+    <LegalPageShell title="Terms of Service" updated="September 13, 2026">
+      <Section title="1. Using Karouselmaker">
+        <Copy>Karouselmaker helps you turn a project, product context, and topic into an editable social carousel. The Service can draft slide copy, captions, and hashtags; apply templates; use library or selected third-party images; and export individual images, ZIP files, or PDF documents where available.</Copy>
+        <Copy>By creating an account or using the Service, you agree to these terms. If you use Karouselmaker for an organization, you confirm that you can accept these terms for that organization.</Copy>
+      </Section>
+      <Section title="2. Your account and access">
+        <Copy>Keep your sign-in credentials secure and provide accurate account information. You are responsible for activity performed through your account. We may limit or suspend access when needed to protect the Service, comply with law, or address a material breach of these terms.</Copy>
+      </Section>
+      <Section title="3. Your content and generated drafts">
+        <Copy>You retain your rights in the projects, prompts, copy, images, and other content you submit to Karouselmaker. You give us the limited permission needed to host, process, render, and export that content to operate the Service for you.</Copy>
+        <Copy>AI output is a draft. Review it for accuracy, originality, audience fit, claims about products or people, and compliance before publishing. You decide whether and where to publish an export, and you are responsible for the final content you publish.</Copy>
+      </Section>
+      <Section title="4. Images and third-party material">
+        <Copy>You may upload images from your device, import images you select from Google Drive, or use image results made available through third-party providers. You must have the rights, permissions, and releases needed for your intended use, including commercial use and any use of identifiable people, brands, or artwork.</Copy>
+        <Copy>Third-party sources have their own licenses and terms. Web-search results in particular can be subject to copyright or other restrictions. Karouselmaker may include available attribution in an export, but attribution does not itself grant permission to use an image. Check the source and obtain permission when it is required.</Copy>
+      </Section>
+      <Section title="5. Plans, subscriptions, and post packs">
+        <Copy>The Service may offer free generations, recurring Creator or Growth subscriptions, and one-time post packs. Current features, limits, prices, billing interval, and taxes (if applicable) are shown before checkout. Paid subscriptions renew until cancelled through the billing portal or as otherwise provided at checkout.</Copy>
+        <Copy>Post packs add the stated number of generation credits after successful payment. We may change future prices or plan features with notice where required; a change does not alter a checkout already completed.</Copy>
+      </Section>
+      <Section title="6. Acceptable use">
+        <Copy>You may not use the Service to violate law or another person&apos;s rights, including intellectual-property, privacy, publicity, or consumer-protection rights. You may not interfere with the Service, bypass limits or security measures, use another person&apos;s account without permission, or resell access without our written permission.</Copy>
+      </Section>
+      <Section title="7. Service availability and liability">
+        <Copy>We work to keep Karouselmaker available, but generation, image search, exports, and third-party connections can be unavailable or change. We may update, replace, or discontinue features to operate and improve the Service. To the maximum extent permitted by law, Karouselmaker and its operators are not liable for indirect, incidental, special, consequential, or punitive damages, or for loss arising from your publication or use of generated content or third-party material.</Copy>
+      </Section>
+      <Section title="8. Privacy, copyright, and changes">
+        <Copy>Our handling of personal information is described in the <Link href="/privacy" className="text-primary underline hover:no-underline">Privacy Policy</Link>. To report claimed infringement, follow the instructions on our <Link href="/copyright" className="text-primary underline hover:no-underline">Copyright page</Link>. We may update these terms. The date above shows the latest version; continued use after an update means you accept the revised terms where permitted by law.</Copy>
+      </Section>
+      <Section title="9. Contact"><Copy>Use the Contact us link in the footer for questions about these terms or the Service.</Copy></Section>
+    </LegalPageShell>
   );
 }
