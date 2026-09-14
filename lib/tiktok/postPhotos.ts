@@ -10,8 +10,21 @@ type TikTokApiResponse = {
   error?: { code?: string; message?: string };
 };
 
+/** Map opaque TikTok API messages to actionable admin guidance. */
 function errorMessage(response: TikTokApiResponse, fallback: string) {
-  return response.error?.message || response.error?.code || fallback;
+  const code = response.error?.code?.trim();
+  const message = response.error?.message?.trim();
+  if (code === "unaudited_client_can_only_post_to_private_accounts") {
+    return "TikTok requires the connected account to be private until Direct Post is audited. Set the TikTok account to Private, keep posts as Only you, then try again.";
+  }
+  if (code === "url_ownership_unverified") {
+    return "TikTok has not verified this app’s media URL prefix. Verify the domain in TikTok for Developers, then match TIKTOK_VERIFIED_MEDIA_URL_PREFIX.";
+  }
+  if (code === "privacy_level_option_mismatch") {
+    return "TikTok rejected the privacy setting for this account. Reconnect TikTok and confirm Only you / SELF_ONLY is still allowed.";
+  }
+  if (code && message) return `${code}: ${message}`;
+  return message || code || fallback;
 }
 
 /** TikTok requires this query before a Direct Post so current creator settings are honored. */

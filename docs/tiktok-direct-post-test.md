@@ -32,7 +32,7 @@ The API supports up to 35 photos. The queue stores an unguessable media token an
 ## Limits
 
 - TikTok requires Direct Post apps to query creator settings and honor account privacy options. The implementation uses `SELF_ONLY` for the admin test.
-- Until TikTok audits the client, Direct Post uploads remain restricted to private viewing.
+- Until TikTok audits the client, Direct Post uploads remain restricted to private viewing. The connected TikTok **account** must also be Private; otherwise TikTok returns `unaudited_client_can_only_post_to_private_accounts` (often with the content-sharing-guidelines link).
 - Scheduling happens in Karouselmaker’s cron queue. TikTok does not accept a publish-at time in the Photo Content Posting endpoint.
 - The included Vercel cron configuration runs every five minutes. Vercel requires a Pro or Enterprise plan for a sub-daily cron; on Hobby, use another authenticated scheduler or upgrade before deploying this configuration.
 - Do not add logo, watermark, promotional branding, or promotional overlay text to content sent through this integration unless TikTok’s current sharing rules allow it.

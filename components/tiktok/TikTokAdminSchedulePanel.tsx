@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarClockIcon, CheckCircle2Icon, ExternalLinkIcon } from "lucide-react";
+import { CalendarClockIcon, CheckCircle2Icon, ExternalLinkIcon, UnplugIcon } from "lucide-react";
+import { disconnectTikTokAction } from "@/app/actions/tiktok/disconnectTikTok";
 import { scheduleTikTokPhotoPostAction } from "@/app/actions/tiktok/schedulePhotoPost";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,8 +43,26 @@ export function TikTokAdminSchedulePanel({
   const [title, setTitle] = useState(initialTitle.slice(0, 90));
   const [description, setDescription] = useState(initialDescription.slice(0, 4000));
   const [pending, setPending] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const connectedLabel = useMemo(() => connectedAccount || "Not connected", [connectedAccount]);
+  const oauthUrl = `/api/oauth/tiktok?return_to=${encodeURIComponent(pathname)}`;
+
+  async function disconnect() {
+    setDisconnecting(true);
+    setMessage(null);
+    try {
+      const result = await disconnectTikTokAction({ pathname });
+      if (!result.ok) {
+        setMessage(result.error);
+        return;
+      }
+      setMessage("TikTok disconnected. Connect a different private test account.");
+      router.refresh();
+    } finally {
+      setDisconnecting(false);
+    }
+  }
 
   async function schedule() {
     setPending(true);
@@ -90,7 +109,7 @@ export function TikTokAdminSchedulePanel({
         <div>
           <p className="text-sm font-semibold">TikTok Photo Mode, admin test</p>
           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            Saves the current slides as a fixed export, then schedules them as a private post. TikTok must approve Direct Post before public publishing is enabled.
+            Saves the current slides as a fixed export, then schedules them as a private post. Until TikTok audits Direct Post, the connected TikTok account itself must be set to Private, and posts stay Only you.
           </p>
         </div>
         <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-violet-500/30 bg-background px-2.5 py-1 text-xs font-medium">
@@ -99,11 +118,19 @@ export function TikTokAdminSchedulePanel({
       </div>
 
       {!connectedAccount ? (
-        <Button type="button" size="sm" onClick={() => window.location.assign(`/api/oauth/tiktok?return_to=${encodeURIComponent(pathname)}`)}>
+        <Button type="button" size="sm" onClick={() => window.location.assign(oauthUrl)}>
           <ExternalLinkIcon className="mr-2 size-4" /> Connect TikTok test account
         </Button>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
+          <div className="flex flex-wrap gap-2 sm:col-span-2">
+            <Button type="button" size="sm" variant="outline" disabled={disconnecting || pending} onClick={() => void disconnect()}>
+              <UnplugIcon className="mr-2 size-4" /> {disconnecting ? "Disconnecting…" : "Disconnect"}
+            </Button>
+            <Button type="button" size="sm" variant="ghost" disabled={disconnecting || pending} onClick={() => window.location.assign(oauthUrl)}>
+              <ExternalLinkIcon className="mr-2 size-4" /> Switch account
+            </Button>
+          </div>
           <div className="space-y-1.5 sm:col-span-2">
             <Label htmlFor="tiktok-schedule-title">TikTok title</Label>
             <Input id="tiktok-schedule-title" value={title} onChange={(event) => setTitle(event.target.value)} maxLength={90} />
@@ -117,7 +144,7 @@ export function TikTokAdminSchedulePanel({
             <Input id="tiktok-schedule-time" type="datetime-local" value={scheduledFor} min={initialDateTime()} onChange={(event) => setScheduledFor(event.target.value)} />
           </div>
           <div className="flex items-end">
-            <Button type="button" className="w-full" disabled={pending} onClick={() => void schedule()}>
+            <Button type="button" className="w-full" disabled={pending || disconnecting} onClick={() => void schedule()}>
               <CalendarClockIcon className="mr-2 size-4" /> {pending ? "Saving and scheduling…" : "Schedule private test"}
             </Button>
           </div>
