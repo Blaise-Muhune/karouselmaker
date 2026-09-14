@@ -4,25 +4,39 @@ import { Pool, types, type QueryResultRow } from "pg";
 types.setTypeParser(types.builtins.TIMESTAMPTZ, (v) => v);
 types.setTypeParser(types.builtins.TIMESTAMP, (v) => v);
 
-let pool: Pool | null = null;
+type GlobalPg = typeof globalThis & { __karouselmakerPgPool?: Pool };
+const globalPg = globalThis as GlobalPg;
+
+function poolMaxConnections(): number {
+  const configured = Number.parseInt(process.env.DATABASE_POOL_MAX ?? "", 10);
+  if (Number.isFinite(configured) && configured >= 1) return Math.min(configured, 10);
+  // Vercel can run many isolated function instances. One client per instance is
+  // deliberate: it protects the small Azure Postgres server from connection storms.
+  return process.env.VERCEL ? 1 : 5;
+}
 
 /**
  * Azure PostgreSQL pool. Auth stays on Supabase; this is the app data plane only.
  * Requires DATABASE_URL (postgresql://...sslmode=require).
  */
 export function getPool(): Pool {
-  if (pool) return pool;
+  if (globalPg.__karouselmakerPgPool) return globalPg.__karouselmakerPgPool;
   const connectionString = process.env.DATABASE_URL?.trim();
   if (!connectionString) {
     throw new Error(
       "Missing DATABASE_URL. Set it to your Azure PostgreSQL connection string (see docs/azure-postgres.md)."
     );
   }
-  pool = new Pool({
+  const pool = new Pool({
     connectionString,
     ssl: { rejectUnauthorized: false },
-    max: 10,
+    max: poolMaxConnections(),
+    idleTimeoutMillis: 5_000,
+    connectionTimeoutMillis: 5_000,
+    // Do not keep a Vercel function alive just to preserve an idle DB connection.
+    allowExitOnIdle: true,
   });
+  globalPg.__karouselmakerPgPool = pool;
   return pool;
 }
 
