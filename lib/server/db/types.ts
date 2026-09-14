@@ -78,6 +78,19 @@ export interface Template {
   updated_at: string;
 }
 
+/** A reusable one-, two-, or three-template carousel recipe. */
+export interface TemplateBundle {
+  id: string;
+  user_id: string | null;
+  name: string;
+  /** One = every slide; two = first/last + middle; three = first/middle/last. */
+  template_ids: string[];
+  is_locked: boolean;
+  is_hidden: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export type ExportFormat = "png" | "jpeg" | "pdf";
 export type ExportSize = "1080x1080" | "1080x1350" | "1080x1920";
 
@@ -198,6 +211,16 @@ export type ProjectInsert = Omit<Project, "id" | "created_at" | "updated_at"> & 
 export type ProjectUpdate = Partial<Omit<Project, "id" | "user_id" | "created_at">>;
 
 export type TemplateInsert = Omit<Template, "id" | "created_at" | "updated_at" | "is_hidden"> & {
+  id?: string;
+  created_at?: string;
+  updated_at?: string;
+  is_hidden?: boolean;
+};
+
+export type TemplateBundleInsert = Omit<
+  TemplateBundle,
+  "id" | "created_at" | "updated_at" | "is_hidden"
+> & {
   id?: string;
   created_at?: string;
   updated_at?: string;

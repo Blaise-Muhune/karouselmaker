@@ -1,5 +1,6 @@
 export * from "./projects";
 export * from "./templates";
+export * from "./templateBundles";
 export * from "./carousels";
 export * from "./slides";
 export * from "./exports";

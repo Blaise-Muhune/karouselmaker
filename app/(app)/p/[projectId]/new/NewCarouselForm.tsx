@@ -21,6 +21,7 @@ import { GoogleDriveFolderPicker } from "@/components/drive/GoogleDriveFolderPic
 import { GoogleDriveMultiFilePicker } from "@/components/drive/GoogleDriveMultiFilePicker";
 import { importFromGoogleDrive, importFilesFromGoogleDrive } from "@/app/actions/assets/importFromGoogleDrive";
 import { TemplateSelectCards, type TemplateOption } from "@/components/carousels/TemplateSelectCards";
+import { TemplateBundlePicker, type TemplateBundleOption } from "@/components/carousels/TemplateBundlePicker";
 import {
   CHOOSE_TEMPLATE_MODAL_DIALOG_CONTENT_CLASS,
   CHOOSE_TEMPLATE_MODAL_INITIAL_VISIBLE_COUNT,
@@ -95,6 +96,7 @@ export function NewCarouselForm({
   regenerateCarouselId,
   initialSettingsCarriedFromCarousel,
   initialSelectedTemplateId,
+  initialSelectedTemplateIds,
   initialBackgroundAssetIds,
   initialNumberOfSlides,
   initialInputValue,
@@ -102,6 +104,7 @@ export function NewCarouselForm({
   initialUseStockPhotos,
   initialNotes,
   templateOptions,
+  templateBundles,
   defaultTemplateId,
   defaultTemplateConfig,
   primaryColor,
@@ -115,6 +118,7 @@ export function NewCarouselForm({
   regenerateCarouselId?: string;
   initialSettingsCarriedFromCarousel?: boolean;
   initialSelectedTemplateId?: string;
+  initialSelectedTemplateIds?: string[];
   initialBackgroundAssetIds?: string[];
   initialNumberOfSlides?: number;
   initialInputValue?: string;
@@ -122,6 +126,7 @@ export function NewCarouselForm({
   initialUseStockPhotos?: boolean;
   initialNotes?: string;
   templateOptions: TemplateOption[];
+  templateBundles: TemplateBundleOption[];
   defaultTemplateId: string | null;
   defaultTemplateConfig: TemplateConfig | null;
   primaryColor: string;
@@ -150,10 +155,14 @@ export function NewCarouselForm({
     })
   );
   const [backgroundAssetIds, setBackgroundAssetIds] = useState<string[]>(initialBackgroundAssetIds ?? []);
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(
-    initialSelectedTemplateId || defaultTemplateId
-  );
+  const [selectedTemplateIds, setSelectedTemplateIds] = useState<string[]>(() => {
+    const initial = initialSelectedTemplateIds?.filter(Boolean).slice(0, 3) ?? [];
+    return initial.length > 0 ? initial : initialSelectedTemplateId || defaultTemplateId ? [initialSelectedTemplateId || defaultTemplateId!] : [];
+  });
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
+  const [templatePickerMode, setTemplatePickerMode] = useState<"single" | "bundle">(
+    initialSelectedTemplateIds && initialSelectedTemplateIds.length > 1 ? "bundle" : "single"
+  );
   const [backgroundPickerOpen, setBackgroundPickerOpen] = useState(false);
   const [driveBusy, setDriveBusy] = useState(false);
   const [showMore, setShowMore] = useState(!!initialNotes || initialNumberOfSlides != null);
@@ -334,7 +343,8 @@ export function NewCarouselForm({
 
       formData.set("images_related_to_topic", "true");
       if (notes.trim()) formData.set("notes", notes.trim());
-      if (selectedTemplateId) formData.set("template_id", selectedTemplateId);
+      if (selectedTemplateIds.length === 1) formData.set("template_id", selectedTemplateIds[0]!);
+      if (selectedTemplateIds.length > 1) formData.set("template_ids", JSON.stringify(selectedTemplateIds));
       formData.set("include_marketing", includeMarketing ? "true" : "false");
 
       rememberImageSource(projectId, imageSource);
@@ -366,7 +376,14 @@ export function NewCarouselForm({
     }
   }
 
-  const selectedTemplate = instagramTemplates.find((t) => t.id === selectedTemplateId);
+  const selectedTemplate = instagramTemplates.find((t) => t.id === selectedTemplateIds[0]);
+  const selectedTemplateNames = selectedTemplateIds
+    .map((id) => instagramTemplates.find((template) => template.id === id)?.name)
+    .filter((name): name is string => Boolean(name));
+  const templateButtonLabel =
+    selectedTemplateIds.length <= 1
+      ? selectedTemplate?.name ?? "Choose template"
+      : `Bundle: ${selectedTemplateNames.join(" · ")}`;
 
   return (
     <>
@@ -600,7 +617,7 @@ export function NewCarouselForm({
               onClick={() => setTemplateModalOpen(true)}
             >
               <LayoutTemplateIcon className="size-4" />
-              {selectedTemplate?.name ?? "Choose template"}
+              {templateButtonLabel}
             </Button>
           </CardContent>
         </Card>
@@ -714,27 +731,54 @@ export function NewCarouselForm({
       <Dialog open={templateModalOpen} onOpenChange={setTemplateModalOpen}>
         <DialogContent className={CHOOSE_TEMPLATE_MODAL_DIALOG_CONTENT_CLASS}>
           <ChooseTemplateModalLayout
-            title="Choose template"
-            description="System templates for Instagram-style carousels."
+            title="Choose templates"
+            description="Use one template for every slide, or a first / middle / last bundle."
           >
-            <TemplateSelectCards
-              templates={instagramTemplates}
-              value={selectedTemplateId}
-              onChange={(id) => {
-                setSelectedTemplateId(id);
-                setTemplateModalOpen(false);
-              }}
-              primaryColor={primaryColor}
-              defaultTemplateId={defaultTemplateId}
-              defaultTemplateConfig={defaultTemplateConfig}
-              showMyTemplatesSection={false}
-              initialVisibleCount={CHOOSE_TEMPLATE_MODAL_INITIAL_VISIBLE_COUNT}
-              paginateInternally
-              favoriteRevalidatePath={`/p/${projectId}/new`}
-              visibilityRevalidatePath={`/p/${projectId}/new`}
-              isAdmin={isAdmin}
-              onTemplateDeleted={() => router.refresh()}
-            />
+            <div className="mb-4 inline-flex rounded-lg border bg-muted/30 p-1 text-sm">
+              <button
+                type="button"
+                className={cn("rounded-md px-3 py-1.5", templatePickerMode === "single" && "bg-background shadow-sm")}
+                onClick={() => setTemplatePickerMode("single")}
+              >
+                One template
+              </button>
+              <button
+                type="button"
+                className={cn("rounded-md px-3 py-1.5", templatePickerMode === "bundle" && "bg-background shadow-sm")}
+                onClick={() => setTemplatePickerMode("bundle")}
+              >
+                Template bundle
+              </button>
+            </div>
+            {templatePickerMode === "single" ? (
+              <TemplateSelectCards
+                templates={instagramTemplates}
+                value={selectedTemplateIds[0] ?? null}
+                onChange={(id) => {
+                  setSelectedTemplateIds(id ? [id] : []);
+                  setTemplateModalOpen(false);
+                }}
+                primaryColor={primaryColor}
+                defaultTemplateId={defaultTemplateId}
+                defaultTemplateConfig={defaultTemplateConfig}
+                showMyTemplatesSection={false}
+                initialVisibleCount={CHOOSE_TEMPLATE_MODAL_INITIAL_VISIBLE_COUNT}
+                paginateInternally
+                favoriteRevalidatePath={`/p/${projectId}/new`}
+                visibilityRevalidatePath={`/p/${projectId}/new`}
+                isAdmin={isAdmin}
+                onTemplateDeleted={() => router.refresh()}
+              />
+            ) : (
+              <TemplateBundlePicker
+                templates={instagramTemplates}
+                bundles={templateBundles}
+                value={selectedTemplateIds}
+                onChange={setSelectedTemplateIds}
+                isAdmin={isAdmin}
+                revalidatePathname={`/p/${projectId}/new`}
+              />
+            )}
           </ChooseTemplateModalLayout>
         </DialogContent>
       </Dialog>

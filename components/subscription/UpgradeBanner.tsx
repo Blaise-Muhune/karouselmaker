@@ -26,9 +26,11 @@ export function UpgradeBanner({
   if (variant === "inline") {
     return (
       <>
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4">
-          <p className="text-foreground mb-3 text-sm">{message}</p>
-          {cta}
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2.5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-foreground text-sm leading-5">{message}</p>
+            <span className="shrink-0">{cta}</span>
+          </div>
         </div>
         <UpgradePlansDialog open={plansOpen} onOpenChange={setPlansOpen} />
       </>

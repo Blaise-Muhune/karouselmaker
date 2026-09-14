@@ -9,6 +9,7 @@ import {
   countCarouselsThisMonth,
   countCarouselsLifetime,
   listTemplatesForUser,
+  listTemplateBundlesForUser,
   listFavoriteTemplateIds,
   getDefaultTemplateForNewCarousel,
 } from "@/lib/server/db";
@@ -18,6 +19,7 @@ import { NewCarouselForm } from "./NewCarouselForm";
 import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
 import { Button } from "@/components/ui/button";
 import type { TemplateOption } from "@/components/carousels/TemplateSelectCards";
+import type { TemplateBundleOption } from "@/components/carousels/TemplateBundlePicker";
 import { ArrowLeftIcon } from "lucide-react";
 
 export const maxDuration = 800;
@@ -51,7 +53,7 @@ export default async function NewCarouselPage({
   const fromCarouselId =
     typeof fromRaw === "string" ? fromRaw.trim() : Array.isArray(fromRaw) ? fromRaw[0]?.trim() ?? "" : "";
 
-  const [project, subscription, limits, carouselCount, lifetimeCarouselCount, regenerateCarousel, templatesRaw, defaultTemplate, favoriteIds] =
+  const [project, subscription, limits, carouselCount, lifetimeCarouselCount, regenerateCarousel, templatesRaw, bundlesRaw, defaultTemplate, favoriteIds] =
     await Promise.all([
       getProject(user.id, projectId),
       getSubscription(user.id, user.email),
@@ -60,6 +62,7 @@ export default async function NewCarouselPage({
       countCarouselsLifetime(user.id),
       regenerateCarouselId ? getCarousel(user.id, regenerateCarouselId) : Promise.resolve(null),
       listTemplatesForUser(user.id, { includeSystem: true, includeHidden: userIsAdmin }),
+      listTemplateBundlesForUser(user.id, { includeSystem: true, includeHidden: userIsAdmin }),
       getDefaultTemplateForNewCarousel(user.id),
       listFavoriteTemplateIds(user.id),
     ]);
@@ -84,6 +87,16 @@ export default async function NewCarouselPage({
     }
   }
   const defaultTemplateId = defaultTemplate?.templateId ?? null;
+  const availableTemplateIds = new Set(templateOptions.map((template) => template.id));
+  const templateBundles: TemplateBundleOption[] = bundlesRaw
+    .filter((bundle) => bundle.template_ids.every((templateId) => availableTemplateIds.has(templateId)))
+    .map((bundle) => ({
+      id: bundle.id,
+      name: bundle.name,
+      templateIds: bundle.template_ids,
+      isSystemBundle: bundle.user_id == null,
+      isHidden: bundle.is_hidden,
+    }));
   const defaultTemplateConfig =
     defaultTemplateId != null
       ? templateOptions.find((o) => o.id === defaultTemplateId)?.parsedConfig ?? null
@@ -100,6 +113,7 @@ export default async function NewCarouselPage({
     use_stock_photos?: boolean;
     notes?: string;
     template_id?: string;
+    template_ids?: unknown;
     background_asset_ids?: unknown;
     number_of_slides?: unknown;
     use_ai_backgrounds?: boolean;
@@ -108,6 +122,9 @@ export default async function NewCarouselPage({
   const initialUseStockPhotosFromOpts =
     genOpts == null ? undefined : genOpts.use_stock_photos;
   const templateIdFromOpts = typeof genOpts?.template_id === "string" ? genOpts.template_id.trim() : "";
+  const templateIdsFromOpts = Array.isArray(genOpts?.template_ids)
+    ? (genOpts.template_ids as unknown[]).filter((id): id is string => typeof id === "string" && availableTemplateIds.has(id)).slice(0, 3)
+    : undefined;
   const backgroundIdsFromOpts = Array.isArray(genOpts?.background_asset_ids)
     ? (genOpts!.background_asset_ids as unknown[]).filter((id): id is string => typeof id === "string" && id.length > 0)
     : undefined;
@@ -174,6 +191,7 @@ export default async function NewCarouselPage({
           regenerateCarouselId={regenerateCarousel?.id}
           initialSettingsCarriedFromCarousel={!!carrySettingsCarousel && !regenerateCarousel}
           initialSelectedTemplateId={templateIdFromOpts || undefined}
+          initialSelectedTemplateIds={templateIdsFromOpts}
           initialBackgroundAssetIds={backgroundIdsFromOpts}
           initialNumberOfSlides={initialNumberOfSlides}
           initialInputValue={regenerateCarousel?.input_value ?? (topicPrefill || undefined)}
@@ -181,6 +199,7 @@ export default async function NewCarouselPage({
           initialUseStockPhotos={initialUseStockPhotosFromOpts}
           initialNotes={regenerateCarousel ? genOpts?.notes : carrySettingsCarousel ? "" : undefined}
           templateOptions={templateOptions}
+          templateBundles={templateBundles}
           defaultTemplateId={defaultTemplateId}
           defaultTemplateConfig={defaultTemplateConfig}
           primaryColor={primaryColor}
