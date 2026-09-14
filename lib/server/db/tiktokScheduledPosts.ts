@@ -43,9 +43,16 @@ export async function getTikTokScheduledPostForMedia(
   scheduleId: string,
   mediaToken: string
 ): Promise<TikTokScheduledPost | null> {
+  // TikTok pulls images after content/init. Keep URLs live through publishing and briefly after
+  // publish so delayed downloads/retries do not 404.
   return queryOne<TikTokScheduledPost>(
     `select * from tiktok_scheduled_posts
-     where id = $1 and media_token = $2 and status in ('scheduled', 'publishing')`,
+     where id = $1
+       and media_token = $2
+       and (
+         status in ('scheduled', 'publishing')
+         or (status = 'published' and published_at > now() - interval '2 hours')
+       )`,
     [scheduleId, mediaToken]
   );
 }
@@ -55,7 +62,18 @@ export async function claimDueTikTokScheduledPosts(limit = 5): Promise<TikTokSch
   return queryMany<TikTokScheduledPost>(
     `with due as (
        select id from tiktok_scheduled_posts
-       where status = 'scheduled' and scheduled_for <= now()
+       where
+         (status = 'scheduled' and scheduled_for <= now())
+         or (
+           status = 'publishing'
+           and tiktok_publish_id is not null
+           and updated_at <= now() - interval '20 seconds'
+         )
+         or (
+           status = 'publishing'
+           and tiktok_publish_id is null
+           and updated_at <= now() - interval '2 minutes'
+         )
        order by scheduled_for asc
        limit $1
        for update skip locked
@@ -66,6 +84,15 @@ export async function claimDueTikTokScheduledPosts(limit = 5): Promise<TikTokSch
      where scheduled.id = due.id
      returning scheduled.*`,
     [Math.max(1, Math.min(limit, 20))]
+  );
+}
+
+export async function attachTikTokPublishId(scheduleId: string, publishId: string): Promise<void> {
+  await query(
+    `update tiktok_scheduled_posts
+     set tiktok_publish_id = $2, status = 'publishing', updated_at = now()
+     where id = $1`,
+    [scheduleId, publishId]
   );
 }
 

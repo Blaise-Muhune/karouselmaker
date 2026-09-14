@@ -1,12 +1,17 @@
 import { getExportStoragePaths } from "@/lib/server/db/exports";
 import {
+  attachTikTokPublishId,
   getPlatformConnection,
   markTikTokScheduledPostFailed,
   markTikTokScheduledPostPublished,
   upsertPlatformConnection,
 } from "@/lib/server/db";
 import type { TikTokScheduledPost } from "@/lib/server/db/types";
-import { postPhotosToTikTok, refreshTikTokAccessToken } from "@/lib/tiktok/postPhotos";
+import {
+  postPhotosToTikTok,
+  refreshTikTokAccessToken,
+  waitForTikTokPublishComplete,
+} from "@/lib/tiktok/postPhotos";
 
 export function getTikTokVerifiedMediaOrigin(): string | null {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, "");
@@ -58,14 +63,31 @@ async function accessTokenForSchedule(schedule: TikTokScheduledPost): Promise<st
 export async function publishScheduledTikTokPost(schedule: TikTokScheduledPost): Promise<void> {
   try {
     const accessToken = await accessTokenForSchedule(schedule);
-    const result = await postPhotosToTikTok({
-      accessToken,
-      photoUrls: mediaUrls(schedule),
-      title: schedule.title,
-      description: schedule.description,
-      privacyLevel: "SELF_ONLY",
-    });
-    await markTikTokScheduledPostPublished(schedule.id, result.publishId);
+    let publishId = schedule.tiktok_publish_id;
+
+    if (!publishId) {
+      const result = await postPhotosToTikTok({
+        accessToken,
+        photoUrls: mediaUrls(schedule),
+        title: schedule.title,
+        description: schedule.description,
+        privacyLevel: "SELF_ONLY",
+      });
+      publishId = result.publishId;
+      // Keep status as publishing so TikTok can still pull slide images.
+      await attachTikTokPublishId(schedule.id, publishId);
+    }
+
+    const settled = await waitForTikTokPublishComplete({ accessToken, publishId });
+    if (settled.status === "complete") {
+      await markTikTokScheduledPostPublished(schedule.id, publishId);
+      return;
+    }
+    if (settled.status === "failed") {
+      await markTikTokScheduledPostFailed(schedule.id, settled.error);
+      return;
+    }
+    // Still downloading. Leave publishing so the next cron tick can poll again.
   } catch (error) {
     await markTikTokScheduledPostFailed(
       schedule.id,

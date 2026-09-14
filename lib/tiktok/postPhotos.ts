@@ -6,8 +6,19 @@ export type TikTokCreatorInfo = {
 };
 
 type TikTokApiResponse = {
-  data?: { publish_id?: string; privacy_level_options?: string[]; comment_disabled?: boolean };
+  data?: {
+    publish_id?: string;
+    privacy_level_options?: string[];
+    comment_disabled?: boolean;
+    status?: string;
+    fail_reason?: string;
+  };
   error?: { code?: string; message?: string };
+};
+
+export type TikTokPublishStatus = {
+  status: "PROCESSING_UPLOAD" | "PROCESSING_DOWNLOAD" | "SEND_TO_USER_INBOX" | "PUBLISH_COMPLETE" | "FAILED" | string;
+  failReason?: string;
 };
 
 /** Map opaque TikTok API messages to actionable admin guidance. */
@@ -94,6 +105,62 @@ export async function postPhotosToTikTok(input: {
   const publishId = body.data?.publish_id;
   if (!publishId) throw new Error("TikTok did not return a publish ID.");
   return { publishId };
+}
+
+/** Poll until TikTok finishes pulling photos or fails. Init success alone is not enough. */
+export async function fetchTikTokPublishStatus(accessToken: string, publishId: string): Promise<TikTokPublishStatus> {
+  const response = await fetch(`${TIKTOK_API}/v2/post/publish/status/fetch/`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json; charset=UTF-8",
+    },
+    body: JSON.stringify({ publish_id: publishId }),
+  });
+  const body = (await response.json().catch(() => ({}))) as TikTokApiResponse;
+  if (!response.ok || (body.error && body.error.code !== "ok")) {
+    throw new Error(errorMessage(body, "TikTok publish status could not be read."));
+  }
+  const status = body.data?.status?.trim();
+  if (!status) throw new Error("TikTok did not return a publish status.");
+  return {
+    status,
+    failReason: body.data?.fail_reason?.trim() || undefined,
+  };
+}
+
+function publishFailMessage(failReason: string | undefined) {
+  switch (failReason) {
+    case "photo_pull_failed":
+      return "TikTok could not download the slide images. Confirm the verified media URL is public HTTPS and try again.";
+    case "picture_size_check_failed":
+      return "TikTok rejected a slide image size. Export again at the carousel size and retry.";
+    case "file_format_check_failed":
+      return "TikTok rejected the image format. Export as PNG or JPEG and retry.";
+    case "spam_risk_text":
+      return "TikTok blocked the title or description as spam risk. Edit the text and retry.";
+    default:
+      return failReason ? `TikTok publish failed (${failReason}).` : "TikTok publish failed.";
+  }
+}
+
+/** Waits for Direct Post download/publish to finish within the cron budget. */
+export async function waitForTikTokPublishComplete(input: {
+  accessToken: string;
+  publishId: string;
+  timeoutMs?: number;
+  intervalMs?: number;
+}): Promise<{ status: "complete" } | { status: "failed"; error: string } | { status: "pending" }> {
+  const timeoutMs = input.timeoutMs ?? 45_000;
+  const intervalMs = input.intervalMs ?? 3_000;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const current = await fetchTikTokPublishStatus(input.accessToken, input.publishId);
+    if (current.status === "PUBLISH_COMPLETE") return { status: "complete" };
+    if (current.status === "FAILED") return { status: "failed", error: publishFailMessage(current.failReason) };
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  return { status: "pending" };
 }
 
 export async function refreshTikTokAccessToken(refreshToken: string): Promise<{

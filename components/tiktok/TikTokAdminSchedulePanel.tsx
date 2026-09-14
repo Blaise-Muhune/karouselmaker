@@ -109,7 +109,7 @@ export function TikTokAdminSchedulePanel({
         <div>
           <p className="text-sm font-semibold">TikTok Photo Mode, admin test</p>
           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            Saves the current slides as a fixed export, then schedules them as a private post. Until TikTok audits Direct Post, the connected TikTok account itself must be set to Private, and posts stay Only you.
+            Saves the current slides as a fixed export, then schedules them as a private Only you post. Until TikTok audits Direct Post, the connected account must be Private. Successful posts will not appear on your public profile; open TikTok logged into that account and check your profile as yourself.
           </p>
         </div>
         <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-violet-500/30 bg-background px-2.5 py-1 text-xs font-medium">
@@ -154,7 +154,11 @@ export function TikTokAdminSchedulePanel({
       {schedules.length > 0 && (
         <div className="border-t border-violet-500/20 pt-3 text-xs text-muted-foreground">
           {schedules.slice(0, 3).map((schedule) => (
-            <p key={schedule.id}>{new Date(schedule.scheduledFor).toLocaleString()} · {schedule.status}{schedule.lastError ? ` · ${schedule.lastError}` : ""}</p>
+            <p key={schedule.id}>
+              {new Date(schedule.scheduledFor).toLocaleString()} · {schedule.status}
+              {schedule.status === "published" ? " · Only you (not public)" : ""}
+              {schedule.lastError ? ` · ${schedule.lastError}` : ""}
+            </p>
           ))}
         </div>
       )}

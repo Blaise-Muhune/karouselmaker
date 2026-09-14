@@ -25,14 +25,15 @@ The app now has an **admin-only** TikTok Photo Mode scheduling panel on each car
 1. Open a finished carousel as an admin.
 2. In **TikTok Photo Mode, admin test**, connect the test account through TikTok OAuth.
 3. Enter a title, description, and future time, then select **Schedule private test**. The app saves the current rendered slides as the immutable scheduled snapshot; no download is required.
-4. The scheduled worker checks due jobs every five minutes and creates a private TikTok Photo Mode post using that saved snapshot. Snapshots are protected until the job finishes, then retained for seven days for diagnostics.
+4. The scheduled worker checks due jobs every five minutes, creates a private TikTok Photo Mode post, then **polls TikTok status** until the photo pull finishes. Snapshots stay downloadable while TikTok is pulling images, then are retained for seven days for diagnostics.
 
-The API supports up to 35 photos. The queue stores an unguessable media token and only serves those image URLs while a job is scheduled or publishing.
+The API supports up to 35 photos. The queue stores an unguessable media token and only serves those image URLs while a job is scheduled/publishing (and briefly after publish for TikTok retries).
 
 ## Limits
 
 - TikTok requires Direct Post apps to query creator settings and honor account privacy options. The implementation uses `SELF_ONLY` for the admin test.
 - Until TikTok audits the client, Direct Post uploads remain restricted to private viewing. The connected TikTok **account** must also be Private; otherwise TikTok returns `unaudited_client_can_only_post_to_private_accounts` (often with the content-sharing-guidelines link).
+- `published` in the admin panel means TikTok reported `PUBLISH_COMPLETE`. The post is **Only you**, so it will not show on a public profile grid. Open the TikTok app while logged into that account to see it.
 - Scheduling happens in Karouselmaker’s cron queue. TikTok does not accept a publish-at time in the Photo Content Posting endpoint.
 - The included Vercel cron configuration runs every five minutes. Vercel requires a Pro or Enterprise plan for a sub-daily cron; on Hobby, use another authenticated scheduler or upgrade before deploying this configuration.
 - Do not add logo, watermark, promotional branding, or promotional overlay text to content sent through this integration unless TikTok’s current sharing rules allow it.
