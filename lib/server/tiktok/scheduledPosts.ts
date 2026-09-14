@@ -1,5 +1,3 @@
-"use server";
-
 import { getExportStoragePaths } from "@/lib/server/db/exports";
 import {
   getPlatformConnection,
