@@ -1,6 +1,7 @@
 "use server";
 
 import { getUser } from "@/lib/server/auth/getUser";
+import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { getTemplate } from "@/lib/server/db";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
@@ -14,6 +15,7 @@ export async function getTemplateConfigAction(
 
   const template = await getTemplate(user.id, templateId);
   if (!template?.config) return null;
+  if (template.is_hidden && !isAdmin(user.email)) return null;
 
   const parsed = templateConfigSchema.safeParse(template.config);
   return parsed.success ? parsed.data : null;

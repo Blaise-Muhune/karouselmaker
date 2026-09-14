@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { getUser } from "@/lib/server/auth/getUser";
+import { isAdmin } from "@/lib/server/auth/isAdmin";
+import { preserveTextVisibility } from "@/lib/templates/textVisibilityPermissions";
 import { requirePro } from "@/lib/server/subscription";
 import { getCarousel, listSlides, updateSlide, getTemplate } from "@/lib/server/db";
 import type { Json } from "@/lib/server/db/types";
@@ -126,7 +128,8 @@ export async function applyToAllSlides(
           ...(incomingMeta.extra_text_values as Record<string, unknown>),
         };
       }
-      slidePatch.meta = { ...existingMeta, ...incomingMeta } as Json;
+      const mergedMeta = { ...existingMeta, ...incomingMeta };
+      slidePatch.meta = (isAdmin(user.email) ? mergedMeta : preserveTextVisibility(mergedMeta, existingMeta)) as Json;
     }
     await updateSlide(user.id, slide.id, slidePatch);
   }

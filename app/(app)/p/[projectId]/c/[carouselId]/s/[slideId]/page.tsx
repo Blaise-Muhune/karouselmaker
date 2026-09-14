@@ -36,6 +36,7 @@ export default async function EditSlidePage({
   searchParams: Promise<{ tab?: string }>;
 }>) {
   const { user } = await getUser();
+  const userIsAdmin = isAdmin(user.email);
   const { projectId, carouselId, slideId } = await params;
   const { tab: tabParam } = await searchParams;
   const initialTab = parseTab(tabParam ?? null);
@@ -51,7 +52,8 @@ export default async function EditSlidePage({
     getCarousel(user.id, carouselId),
     getProject(user.id, projectId),
     listSlides(user.id, carouselId),
-    listTemplatesForUser(user.id, { includeSystem: true }),
+    // Include hidden configs so this slide stays renderable; the picker filters them for non-admins.
+    listTemplatesForUser(user.id, { includeSystem: true, includeHidden: true }),
     listFavoriteTemplateIds(user.id),
   ]);
 
@@ -233,7 +235,7 @@ export default async function EditSlidePage({
           initialImageSources={initialImageSources}
           initialSecondaryBackgroundImageUrl={initialSecondaryBackgroundImageUrl}
           initialMadeWithText={defaultMadeWithSuffix}
-          isAdmin={isAdmin(user.email)}
+          isAdmin={userIsAdmin}
           allowRegenerateAiBackground={allowRegenerateAiBackground}
         />
       </div>

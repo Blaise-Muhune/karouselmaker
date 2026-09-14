@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
+import { TemplateTextFields } from "@/components/templates/TemplateTextFields";
 import { usePathname, useRouter } from "next/navigation";
 import { SlidePreview, PREVIEW_FONTS, type SlideBackgroundOverride } from "@/components/renderer/SlidePreview";
 import { FontPickerModal, getFontStack } from "@/components/FontPickerModal";
@@ -747,15 +748,16 @@ export function SlideEditForm({
 }: SlideEditFormProps) {
   /** Full template-maker controls. Creators get a minimal text + background editor. */
   const showAdvancedEditor = isAdmin;
+  const defaultTemplateForEditor = templates.find((t) => !t.is_hidden || isAdmin) ?? templates[0];
   const router = useRouter();
   const pathname = usePathname();
   const downloadSlug =
     slugifyForFilename([projectName, carouselTitle].filter(Boolean).join(" - ")) || undefined;
   const [headline, setHeadline] = useState(() => slide.headline);
   const [body, setBody] = useState(() => slide.body ?? "");
-  const [templateId, setTemplateId] = useState<string | null>(() => slide.template_id ?? templates[0]?.id ?? null);
+  const [templateId, setTemplateId] = useState<string | null>(() => slide.template_id ?? defaultTemplateForEditor?.id ?? null);
   const [background, setBackground] = useState<SlideBackgroundState>(() => {
-    const initTemplateConfig = getTemplateConfig(slide.template_id ?? templates[0]?.id ?? null, templates);
+    const initTemplateConfig = getTemplateConfig(slide.template_id ?? defaultTemplateForEditor?.id ?? null, templates);
     const templateOverlayStrength = initTemplateConfig?.overlays?.gradient?.strength ?? 0.5;
     const bg = slide.background as SlideBackgroundState | null;
     if (bg && (bg.mode === "image" || bg.style || bg.color != null)) {
@@ -829,7 +831,7 @@ export function SlideEditForm({
   const [imageDisplay, setImageDisplay] = useState<ImageDisplayState>(() => {
     const bg = slide.background as { image_display?: ImageDisplayState; images?: unknown[] } | null;
     const meta = slide.meta as { image_display?: ImageDisplayState } | null;
-    const initTemplateConfig = getTemplateConfig(slide.template_id ?? templates[0]?.id ?? null, templates);
+    const initTemplateConfig = getTemplateConfig(slide.template_id ?? defaultTemplateForEditor?.id ?? null, templates);
     const templateImageDisplay = initTemplateConfig?.defaults?.meta && typeof initTemplateConfig.defaults.meta === "object" && "image_display" in initTemplateConfig.defaults.meta
       ? (initTemplateConfig.defaults.meta as { image_display?: unknown }).image_display
       : undefined;
@@ -853,8 +855,8 @@ export function SlideEditForm({
     else if (ds === "double" || ds === "triple") merged.dividerStyle = "scalloped";
     if (Object.keys(merged).length > 0) return merged;
     const fc = brandKit.primary_color?.trim() || "#ffffff";
-    const initTemplateId = slide.template_id ?? templates[0]?.id ?? null;
-    const initTemplate = initTemplateId ? templates.find((t) => t.id === initTemplateId) : templates[0];
+    const initTemplateId = slide.template_id ?? defaultTemplateForEditor?.id ?? null;
+    const initTemplate = initTemplateId ? templates.find((t) => t.id === initTemplateId) : defaultTemplateForEditor;
     const isLinkedIn = initTemplate?.category === "linkedin";
     return {
       position: "top",
@@ -986,7 +988,7 @@ export function SlideEditForm({
   });
   const imageUrlsRef = useRef(imageUrls);
   imageUrlsRef.current = imageUrls;
-  const initialTemplateForChrome = getTemplateConfig(slide.template_id ?? templates[0]?.id ?? null, templates);
+  const initialTemplateForChrome = getTemplateConfig(slide.template_id ?? defaultTemplateForEditor?.id ?? null, templates);
   const templateDefaultsMeta = initialTemplateForChrome?.defaults?.meta && typeof initialTemplateForChrome.defaults.meta === "object"
     ? (initialTemplateForChrome.defaults.meta as {
         show_counter?: boolean;
@@ -1209,6 +1211,7 @@ export function SlideEditForm({
     return typeof v === "number" ? clampFontWeight(v) : 700;
   });
   type ZoneOverride = {
+    enabled?: boolean;
     x?: number;
     y?: number;
     w?: number;
@@ -1516,6 +1519,8 @@ export function SlideEditForm({
   }, []);
   const [savedFeedback, setSavedFeedback] = useState(false);
   const previewWrapRef = useRef<HTMLDivElement>(null);
+  const previewAreaRef = useRef<HTMLDivElement>(null);
+  const [previewAreaSize, setPreviewAreaSize] = useState<{ w: number; h: number } | null>(null);
   const [previewWrapSize, setPreviewWrapSize] = useState<{ w: number; h: number } | null>(null);
   const [activeEditZone, setActiveEditZone] = useState<string | null>(null);
   const [expandedExtraTextZoneId, setExpandedExtraTextZoneId] = useState<string | null>(null);
@@ -1742,6 +1747,16 @@ export function SlideEditForm({
       vv.removeEventListener("scroll", handleViewportResize);
     };
   }, [isMobile]);
+
+  useEffect(() => {
+    const el = previewAreaRef.current;
+    if (!el) return;
+    const updateSize = () => setPreviewAreaSize({ w: el.clientWidth, h: el.clientHeight });
+    const ro = new ResizeObserver(updateSize);
+    ro.observe(el);
+    updateSize();
+    return () => ro.disconnect();
+  }, []);
 
   useEffect(() => {
     const el = previewWrapRef.current;
@@ -2050,11 +2065,13 @@ export function SlideEditForm({
     bodyZoneFromTemplate && templateDefaultsOverrides.zoneOverrides?.body
       ? ({ ...bodyZoneFromTemplate, ...templateDefaultsOverrides.zoneOverrides.body } as TextZone)
       : bodyZoneFromTemplate;
+  const headlineEnabled = !!effectiveHeadlineZoneBase && (headlineZoneOverride?.enabled ?? effectiveHeadlineZoneBase.enabled) !== false;
+  const bodyEnabled = !!effectiveBodyZoneBase && (bodyZoneOverride?.enabled ?? effectiveBodyZoneBase.enabled) !== false;
 
   /** Merged body zone for deterministic main / short / long body rewrites (headline-independent). */
   const bodyZoneForRewrite = useMemo((): TextZone | null => {
     const base = effectiveBodyZoneBase ?? bodyZoneFromTemplate;
-    if (!base) return null;
+    if (!base || (bodyZoneOverride?.enabled ?? base.enabled) === false) return null;
     return { ...base, ...bodyZoneOverride } as TextZone;
   }, [effectiveBodyZoneBase, bodyZoneFromTemplate, bodyZoneOverride]);
 
@@ -2262,7 +2279,7 @@ export function SlideEditForm({
           onMadeWithYChange: (v: number) => setMadeWithZoneOverride((o) => ({ ...(o ?? {}), y: v })),
         }
       : undefined;
-  const restTemplates = templates.slice(1);
+  const restTemplates = templates.filter((t) => t.id !== defaultTemplateForEditor?.id && (!t.is_hidden || isAdmin));
   const sortedTemplatesForModal = [...restTemplates].sort((a, b) => {
     const aLinkedIn = (a.category ?? "").toLowerCase() === "linkedin";
     const bLinkedIn = (b.category ?? "").toLowerCase() === "linkedin";
@@ -2279,6 +2296,7 @@ export function SlideEditForm({
       category: t.category,
       isSystemTemplate: t.user_id == null,
       isFavorite: t.isFavorite === true,
+      isHidden: t.is_hidden === true,
     };
   });
   const templateOptionsForModal = [
@@ -2293,7 +2311,7 @@ export function SlideEditForm({
     ...baseModalOptions.filter((t) => !recentlyCreatedTemplates.some((r) => r.id === t.id)),
   ];
   const favoriteRevalidatePath = editorPath;
-  const firstTemplate = templates[0];
+  const firstTemplate = defaultTemplateForEditor;
   useEffect(() => {
     setOverrideTemplateConfig(null);
     setLastHeadlineHighlightAction("manual");
@@ -2326,7 +2344,7 @@ export function SlideEditForm({
     setExpandedExtraTextZoneId(null);
   }, [slide.id, normalizeExtraTextZone]);
 
-  const effectiveTemplateId = slide.template_id ?? templates[0]?.id ?? null;
+  const effectiveTemplateId = slide.template_id ?? defaultTemplateForEditor?.id ?? null;
   useEffect(() => {
     if (!slide.id || !effectiveTemplateId) return;
     let cancelled = false;
@@ -3288,7 +3306,7 @@ export function SlideEditForm({
 
   /** Ensure headline_variants (hook) are in meta so we can cycle. Body rewrites (main / short / long) are computed in the editor from the body zone — not tied to headline rewrite. */
   useEffect(() => {
-    const needHook = isPro && isHook && headlineVariants.length === 0;
+    const needHook = isPro && isHook && headlineEnabled && headlineVariants.length === 0;
     if (!needHook) return;
     let cancelled = false;
     setEnsuringVariants(true);
@@ -3301,7 +3319,7 @@ export function SlideEditForm({
       }
     });
     return () => { cancelled = true; };
-  }, [slide.id, editorPath, isPro, isHook, headlineVariants.length]);
+  }, [slide.id, editorPath, isPro, isHook, headlineEnabled, headlineVariants.length]);
 
   const handleCycleHook = async () => {
     if (headlineVariants.length === 0) return;
@@ -4189,7 +4207,9 @@ export function SlideEditForm({
         const idx = base.findIndex((b) => b.id === zoneId);
         if (idx < 0 || !effectiveBase) return;
         const merged = { ...effectiveBase, ...(ovr ?? {}) } as TextZone;
-        base[idx] = { ...merged, maxLines: clampMaxLinesToZoneGeometry(merged) };
+        // Saving an empty field creates a template that does not generate that field.
+        const text = zoneId === "headline" ? headline : body;
+        base[idx] = { ...merged, enabled: merged.enabled !== false && text.trim().length > 0, maxLines: clampMaxLinesToZoneGeometry(merged) };
       };
       mergeHb("headline", effectiveHeadlineZoneBase, headlineZoneOverride);
       mergeHb("body", effectiveBodyZoneBase, bodyZoneOverride);
@@ -4293,6 +4313,8 @@ export function SlideEditForm({
       // Apply the new template only to the current slide (not to other slides in the carousel).
       // Per-slide shapes are merged into template.overlayShapes above; clear meta so they are not drawn twice.
       await setSlideTemplate(slide.id, newTemplateId, editorPath, { clearSlideOverlayShapes: true });
+      setHeadlineZoneOverride(undefined);
+      setBodyZoneOverride(undefined);
       setSlideOverlayShapes([]);
       setOverlayShapesReplaceTemplate(false);
       router.refresh();
@@ -5017,10 +5039,10 @@ export function SlideEditForm({
   );
 
   const previewContent = (
-    <div className="flex flex-col rounded-xl border border-border/50 bg-muted/5 overflow-hidden max-lg:max-h-[calc(100dvh-7.5rem)]">
+    <div className="flex min-w-0 min-h-0 flex-col rounded-xl border border-border/50 bg-muted/5 overflow-hidden max-lg:max-h-[calc(100dvh-7.5rem)] lg:h-full">
       {/* Top bar: Download (icon) + Save + Expand, and Slide/Size */}
-      <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 border-b border-border/40 bg-card/30">
-        <div className="flex items-center gap-2 min-w-0">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-3 py-2 border-b border-border/40 bg-card/30">
+        <div className="flex flex-wrap items-center gap-2 min-w-0">
           <h2 className="text-sm font-semibold text-foreground shrink-0">Live preview</h2>
           <button type="button" onClick={() => setInfoSection("preview")} className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0" aria-label="Preview help" title="Help">
             <InfoIcon className="size-3.5" />
@@ -5134,14 +5156,16 @@ export function SlideEditForm({
         ) : (
           <div className="w-9 shrink-0" aria-hidden />
         )}
-        <div className="flex flex-1 min-w-0 justify-center items-center">
+        <div ref={previewAreaRef} className="flex flex-1 min-w-0 min-h-0 h-[min(55dvh,560px)] lg:h-full justify-center items-center">
           <div
             ref={previewWrapRef}
             className="w-full max-w-full rounded-lg border border-border bg-background/50 shadow-sm relative"
             role="img"
             aria-label="Frame preview"
             style={{
-              maxWidth: getPreviewDimensions(exportSize).w,
+              maxWidth: previewAreaSize
+                ? Math.max(0, Math.min(getPreviewDimensions(exportSize).w, previewAreaSize.w, previewAreaSize.h * 1080 / exportCanvasHeight))
+                : getPreviewDimensions(exportSize).w,
               aspectRatio: `${1080}/${exportSize === "1080x1080" ? 1080 : exportSize === "1080x1350" ? 1350 : 1920}`,
               overflow: "visible",
               clipPath: "inset(0 round 8px)",
@@ -5486,7 +5510,7 @@ export function SlideEditForm({
           <div className="w-9 shrink-0" aria-hidden />
         )}
       </div>
-      <div className="mx-auto mb-2 flex w-full max-w-[560px] items-center justify-center gap-2 rounded-lg border border-border/70 bg-card/80 px-3 py-2 shadow-sm">
+      <div className="mx-auto mb-2 flex shrink-0 flex-wrap w-full min-w-0 max-w-[560px] items-center justify-center gap-2 rounded-lg border border-border/70 bg-card/80 px-3 py-2 shadow-sm">
         <span className="text-foreground/85 text-[11px] font-medium">Template</span>
         <Button
           type="button"
@@ -5699,6 +5723,16 @@ export function SlideEditForm({
             <p className="text-muted-foreground text-sm">
               Save the current layout and overlay settings as a new template. You can use it on other slides or carousels from the Template dropdown.
             </p>
+            <p className="text-muted-foreground text-sm">
+              {headlineEnabled && headline.trim() && bodyEnabled && body.trim()
+                ? "This template will generate a headline and body."
+                : bodyEnabled && body.trim()
+                  ? "This template will generate body only, containing the complete slide idea."
+                  : headlineEnabled && headline.trim()
+                    ? "This template will generate headline only: clean, concise, and focused on the main idea."
+                    : "This template will not generate a headline or body."}
+              {" "}Empty or hidden fields stay hidden in the saved template.
+            </p>
           </DialogHeader>
           <div className="space-y-2">
             <Label htmlFor="template-name">Template name</Label>
@@ -5841,12 +5875,13 @@ export function SlideEditForm({
               isAdmin={isAdmin}
               isPro={isPro}
               favoriteRevalidatePath={favoriteRevalidatePath}
+              visibilityRevalidatePath={favoriteRevalidatePath}
               onTemplateDeleted={() => {
                 setTemplateModalOpen(false);
                 router.refresh();
               }}
               onChange={async (id) => {
-                const resolvedId = id === null ? (templates[0]?.id ?? null) : id;
+                const resolvedId = id === null ? (firstTemplate?.id ?? null) : id;
                 setApplyingTemplate(true);
                 await new Promise((r) => setTimeout(r, 0));
                 if (resolvedId) {
@@ -6477,9 +6512,9 @@ export function SlideEditForm({
       <div className="lg:flex lg:flex-1 lg:min-h-0 lg:overflow-hidden">
       <main
         ref={mainScrollRef}
-        className="relative z-10 flex-1 min-h-[min(36vh,320px)] lg:min-h-0 flex items-start justify-center p-4 lg:px-10 lg:py-8 bg-muted/20 overflow-visible order-1 max-lg:border-b max-lg:border-border/60 max-lg:bg-background max-lg:shadow-sm lg:overflow-hidden lg:order-2"
+        className="relative z-10 flex-1 min-w-0 min-h-[min(36vh,320px)] lg:min-h-0 flex items-start justify-center p-4 xl:px-10 xl:py-8 bg-muted/20 overflow-visible order-1 max-lg:border-b max-lg:border-border/60 max-lg:bg-background max-lg:shadow-sm lg:overflow-hidden lg:order-2"
       >
-        <div className="w-full max-w-[760px] shrink-0">{previewContent}</div>
+        <div className="w-full min-w-0 min-h-0 max-w-[760px] lg:h-full">{previewContent}</div>
       </main>
 
       <section ref={editorSectionRef} className="relative z-0 shrink-0 border-t-0 border-border order-2 lg:border-t-0 lg:border-r lg:w-[500px] lg:min-w-[470px] lg:max-w-[560px] lg:bg-card lg:flex lg:flex-col lg:order-1 lg:h-full lg:overflow-y-auto">
@@ -7670,6 +7705,16 @@ export function SlideEditForm({
             </div>
             )}
             <div className="relative min-h-0 space-y-3">
+            {showAdvancedEditor && <TemplateTextFields
+              headline={headlineEnabled}
+              body={bodyEnabled}
+              hasHeadline={!!effectiveHeadlineZoneBase}
+              hasBody={!!effectiveBodyZoneBase}
+              onChange={(field, enabled) => {
+                if (field === "headline") setHeadlineZoneOverride((prev) => ({ ...prev, enabled }));
+                else setBodyZoneOverride((prev) => ({ ...prev, enabled }));
+              }}
+            />}
             {/* Headline: collapsible */}
             <div className={`rounded-lg border transition-colors ${activeEditZone === "headline" ? "border-primary/60 ring-1 ring-primary/30" : "border-border/50"} bg-muted/5 overflow-hidden`}>
               <button
@@ -7696,6 +7741,7 @@ export function SlideEditForm({
               <Textarea
                 ref={headlineRef}
                 id="headline"
+                disabled={!headlineEnabled}
                 value={headline}
                 onChange={(e) => setHeadline(e.target.value)}
                 onFocus={() => {
@@ -8399,6 +8445,7 @@ export function SlideEditForm({
               <Textarea
                 ref={bodyRef}
                 id="body"
+                disabled={!bodyEnabled}
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
                 onFocus={() => {

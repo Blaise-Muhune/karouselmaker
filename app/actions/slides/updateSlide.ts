@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { getUser } from "@/lib/server/auth/getUser";
+import { isAdmin } from "@/lib/server/auth/isAdmin";
+import { preserveTextVisibility } from "@/lib/templates/textVisibilityPermissions";
 import { requirePro } from "@/lib/server/subscription";
 import { updateSlide as dbUpdateSlide, getSlide } from "@/lib/server/db";
 import type { Json } from "@/lib/server/db/types";
@@ -66,6 +68,11 @@ export async function updateSlide(
   }
 
   const { slide_id, ...patch } = parsed.data;
+  if (patch.meta !== undefined && !isAdmin(user.email)) {
+    const existing = await getSlide(user.id, slide_id);
+    if (!existing) return { ok: false, error: "Slide not found" };
+    patch.meta = preserveTextVisibility(patch.meta, (existing.meta as Record<string, unknown>) ?? {});
+  }
   const payload: Parameters<typeof dbUpdateSlide>[2] = {
     updated_at: new Date().toISOString(),
   };

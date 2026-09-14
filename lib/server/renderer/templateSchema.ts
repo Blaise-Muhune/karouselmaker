@@ -16,6 +16,8 @@ const safeAreaSchema = z.object({
 
 const textZoneSchema = z.object({
   id: z.string(),
+  /** Disabled zones retain their styling but are omitted from rendering and generation. */
+  enabled: z.boolean().optional(),
   /** Optional label shown in editors for custom/additional text zones. */
   label: z.string().max(80).optional(),
   /** Optional zones can be intentionally omitted by AI/content if not needed. */

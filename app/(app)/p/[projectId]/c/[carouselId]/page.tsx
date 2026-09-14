@@ -53,6 +53,7 @@ export default async function CarouselEditorPage({
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }>) {
   const { user } = await getUser();
+  const userIsAdmin = isAdmin(user.email ?? null);
   const { projectId, carouselId } = await params;
   const resolvedSearchParams = await searchParams;
   const showGenerationPartial = resolvedSearchParams?.generation === "partial";
@@ -62,7 +63,8 @@ export default async function CarouselEditorPage({
       getCarousel(user.id, carouselId),
       getProject(user.id, projectId),
       listSlides(user.id, carouselId),
-      listTemplatesForUser(user.id, { includeSystem: true }),
+      // Include hidden configs so existing slides keep their design; the picker filters them for non-admins.
+      listTemplatesForUser(user.id, { includeSystem: true, includeHidden: true }),
       listExportsByCarousel(user.id, carouselId, 3),
       getSubscription(user.id, user.email),
       countExportsThisMonth(user.id),
@@ -70,7 +72,6 @@ export default async function CarouselEditorPage({
       getEffectivePlanLimits(user.id, user.email),
       listFavoriteTemplateIds(user.id),
     ]);
-  const userIsAdmin = isAdmin(user.email ?? null);
 
   const hasFullAccess = subscription.isPro || lifetimeCarouselCount < FREE_FULL_ACCESS_GENERATIONS;
   const freeGenerationsLeft = hasFullAccess && !subscription.isPro

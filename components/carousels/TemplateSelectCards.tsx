@@ -3,13 +3,14 @@
 import { useState, useEffect, useMemo, type ComponentProps, type MouseEvent } from "react";
 import { SlidePreview, type SlideBackgroundOverride } from "@/components/renderer/SlidePreview";
 import { DeleteTemplateButton } from "@/components/templates/DeleteTemplateButton";
+import { TemplateVisibilityButton } from "@/components/templates/TemplateVisibilityButton";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { getTemplatePreviewBackgroundOverride, getLinkedInPreviewOverlayOverride, getTemplatePreviewOverlayOverride } from "@/lib/renderer/getTemplatePreviewBackground";
 import {
   getTemplatePreviewImageUrls,
   getTemplateIntendedBackgroundImageSlotCount,
 } from "@/lib/renderer/templatePreviewImages";
-import { CheckIcon, LayoutTemplateIcon, StarIcon } from "lucide-react";
+import { CheckIcon, EyeOffIcon, LayoutTemplateIcon, StarIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getSlidePreviewSpreadFromTemplateConfig, getTemplatePreviewExtraTextValues } from "@/lib/renderer/templateDefaultsForSlidePreview";
 import { getSampleSlideCopyForTemplatePreview } from "@/lib/templates/zoneCharBudget";
@@ -78,6 +79,8 @@ export type TemplateOption = {
   isSystemTemplate?: boolean;
   /** When true, current user has favorited this template. */
   isFavorite?: boolean;
+  /** Hidden templates are shown only to admins, so they can restore them. */
+  isHidden?: boolean;
 };
 
 export type TemplateSelectCardsProps = {
@@ -112,6 +115,8 @@ export type TemplateSelectCardsProps = {
   emphasizeLoadMoreButton?: boolean;
   /** Path to revalidate after starring (e.g. `/p/{projectId}/new`). */
   favoriteRevalidatePath?: string;
+  /** Path to refresh after an admin hides or shows a system template. */
+  visibilityRevalidatePath?: string;
 };
 
 export function TemplateSelectCards({
@@ -134,6 +139,7 @@ export function TemplateSelectCards({
   initialVisibleCount,
   emphasizeLoadMoreButton = false,
   favoriteRevalidatePath,
+  visibilityRevalidatePath,
 }: TemplateSelectCardsProps) {
   const { w: PREVIEW_W, h: PREVIEW_H, scale: SCALE } = usePreviewSize();
   const brandKit = { primary_color: primaryColor };
@@ -141,6 +147,14 @@ export function TemplateSelectCards({
     () => new Set(templates.filter((t) => t.isFavorite).map((t) => t.id))
   );
   const [favoriteBusyId, setFavoriteBusyId] = useState<string | null>(null);
+  const visibleTemplates = useMemo(
+    () => templates.filter((t) => !t.isHidden || isAdmin),
+    [templates, isAdmin]
+  );
+  const visibleDefaultTemplate =
+    defaultTemplateId && visibleTemplates.some((t) => t.id === defaultTemplateId)
+      ? defaultTemplateId
+      : null;
 
   useEffect(() => {
     setFavoriteIds(new Set(templates.filter((t) => t.isFavorite).map((t) => t.id)));
@@ -195,18 +209,18 @@ export function TemplateSelectCards({
   const previewImageUrl = getPreviewImage(0);
   const isDefaultLinkedIn =
     defaultTemplateCategory === "linkedin" ||
-    (defaultTemplateId ? templates.find((t) => t.id === defaultTemplateId)?.category === "linkedin" : false);
+    (visibleDefaultTemplate ? visibleTemplates.find((t) => t.id === visibleDefaultTemplate)?.category === "linkedin" : false);
 
   const [layoutFilter, setLayoutFilter] = useState<TemplateLayoutFilter>(initialLayoutFilter);
   const pageSize = Math.max(TEMPLATE_PAGE_SIZE, initialVisibleCount ?? TEMPLATE_PAGE_SIZE);
   const [visibleCount, setVisibleCount] = useState(pageSize);
 
   const effectiveDefaultTemplateConfig =
-    defaultTemplateConfig ??
-    (defaultTemplateId
-      ? (templates.find((t) => t.id === defaultTemplateId)?.parsedConfig ?? null)
+    (visibleDefaultTemplate ? defaultTemplateConfig : null) ??
+    (visibleDefaultTemplate
+      ? (visibleTemplates.find((t) => t.id === visibleDefaultTemplate)?.parsedConfig ?? null)
       : null) ??
-    templates[0]?.parsedConfig ??
+    visibleTemplates[0]?.parsedConfig ??
     null;
   const defaultTemplateStoredUrls = effectiveDefaultTemplateConfig
     ? getTemplatePreviewImageUrls(effectiveDefaultTemplateConfig)
@@ -236,7 +250,7 @@ export function TemplateSelectCards({
     defaultTemplateBgUrl = merged[0];
   }
 
-  const myTemplates = useMemo(() => templates.filter((t) => !t.isSystemTemplate), [templates]);
+  const myTemplates = useMemo(() => visibleTemplates.filter((t) => !t.isSystemTemplate), [visibleTemplates]);
   const hasMyTemplates = showMyTemplatesSection && myTemplates.length > 0;
 
   const myTemplatesFiltered = useMemo(() => {
@@ -249,13 +263,13 @@ export function TemplateSelectCards({
   }, [myTemplates, layoutFilter, favoriteIds]);
 
   const catalogFiltered = useMemo(() => {
-    const list = filterByLayout(templates, layoutFilter);
+    const list = filterByLayout(visibleTemplates, layoutFilter);
     return [...list].sort((a, b) => {
       const af = favoriteIds.has(a.id) ? 0 : 1;
       const bf = favoriteIds.has(b.id) ? 0 : 1;
       return af - bf;
     });
-  }, [templates, layoutFilter, favoriteIds]);
+  }, [visibleTemplates, layoutFilter, favoriteIds]);
 
   const displayList = paginateInternally ? catalogFiltered.slice(0, visibleCount) : catalogFiltered;
   const hasMore = paginateInternally && catalogFiltered.length > visibleCount;
@@ -292,6 +306,7 @@ export function TemplateSelectCards({
       slide_type: "point" as const,
     };
     const isSystem = t.isSystemTemplate === true;
+    const isHidden = t.isHidden === true;
     const showDelete = (isAdmin && isSystem) || (!isSystem && isPro);
     const isFavorite = favoriteIds.has(t.id);
     const storedPreviewUrls = getTemplatePreviewImageUrls(t.parsedConfig);
@@ -345,6 +360,15 @@ export function TemplateSelectCards({
           >
             <StarIcon className={cn("size-3.5", isFavorite && "fill-current")} />
           </button>
+          {isAdmin && isSystem && (
+            <TemplateVisibilityButton
+              templateId={t.id}
+              templateName={t.name}
+              isHidden={isHidden}
+              revalidatePath={visibilityRevalidatePath}
+              onChanged={onTemplateDeleted}
+            />
+          )}
         </div>
         {showDelete && (
           <div className="absolute right-2 top-2 z-10">
@@ -366,6 +390,11 @@ export function TemplateSelectCards({
             "focus:outline-none focus:ring-0"
           )}
         >
+          {isHidden && (
+            <span className="absolute bottom-2 left-2 z-[5] inline-flex items-center gap-1 rounded bg-background/95 px-1.5 py-1 text-[10px] font-medium text-muted-foreground shadow-sm">
+              <EyeOffIcon className="size-3" /> Hidden
+            </span>
+          )}
           {value === t.id && (
             <span className="absolute right-2 top-2 z-[5] rounded-full bg-primary p-0.5 text-primary-foreground">
               <CheckIcon className="size-3.5" />

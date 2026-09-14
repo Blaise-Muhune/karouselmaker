@@ -72,6 +72,8 @@ export interface Template {
   aspect_ratio: string;
   config: Json;
   is_locked: boolean;
+  /** Hidden system templates stay usable on existing slides but are removed from the public picker. */
+  is_hidden: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -195,10 +197,11 @@ export type ProjectInsert = Omit<Project, "id" | "created_at" | "updated_at"> & 
 };
 export type ProjectUpdate = Partial<Omit<Project, "id" | "user_id" | "created_at">>;
 
-export type TemplateInsert = Omit<Template, "id" | "created_at" | "updated_at"> & {
+export type TemplateInsert = Omit<Template, "id" | "created_at" | "updated_at" | "is_hidden"> & {
   id?: string;
   created_at?: string;
   updated_at?: string;
+  is_hidden?: boolean;
 };
 
 export type SlideInsert = Omit<Slide, "id" | "created_at" | "updated_at"> & {

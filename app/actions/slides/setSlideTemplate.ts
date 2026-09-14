@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getUser } from "@/lib/server/auth/getUser";
+import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { requirePro } from "@/lib/server/subscription";
 import { getTemplate, getSlide, updateSlide } from "@/lib/server/db";
 import { templateConfigSchema, type TemplateConfig } from "@/lib/server/renderer/templateSchema";
@@ -151,6 +152,7 @@ export async function setSlideTemplate(
   } else {
     const template = await getTemplate(user.id, templateId);
     if (!template) return { ok: false, error: "Template not found" };
+    if (template.is_hidden && !isAdmin(user.email)) return { ok: false, error: "This template is no longer available." };
 
     const parsed = templateConfigSchema.safeParse(template.config);
     const grad = parsed.data?.overlays?.gradient;

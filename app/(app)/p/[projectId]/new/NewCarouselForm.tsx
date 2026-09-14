@@ -105,6 +105,7 @@ export function NewCarouselForm({
   defaultTemplateId,
   defaultTemplateConfig,
   primaryColor,
+  isAdmin = false,
 }: {
   projectId: string;
   isPro: boolean;
@@ -124,6 +125,7 @@ export function NewCarouselForm({
   defaultTemplateId: string | null;
   defaultTemplateConfig: TemplateConfig | null;
   primaryColor: string;
+  isAdmin?: boolean;
 }) {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
@@ -176,7 +178,9 @@ export function NewCarouselForm({
   const userEditedTopicRef = useRef(userEditedTopic);
   userEditedTopicRef.current = userEditedTopic;
 
-  const instagramTemplates = templateOptions.filter((t) => (t.category ?? "").toLowerCase() !== "linkedin");
+  const instagramTemplates = templateOptions.filter(
+    (t) => (t.category ?? "").toLowerCase() !== "linkedin" && (!t.isHidden || isAdmin)
+  );
 
   /** Remember last choice: if user last used My images, default to that when nothing was carried. */
   useEffect(() => {
@@ -727,6 +731,9 @@ export function NewCarouselForm({
               initialVisibleCount={CHOOSE_TEMPLATE_MODAL_INITIAL_VISIBLE_COUNT}
               paginateInternally
               favoriteRevalidatePath={`/p/${projectId}/new`}
+              visibilityRevalidatePath={`/p/${projectId}/new`}
+              isAdmin={isAdmin}
+              onTemplateDeleted={() => router.refresh()}
             />
           </ChooseTemplateModalLayout>
         </DialogContent>

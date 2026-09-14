@@ -68,6 +68,7 @@ import {
 } from "@/lib/constants";
 import { buildBodyRewriteVariants } from "@/lib/renderer/bodyRewriteVariants";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
+import { templateForSlide } from "@/lib/templates/templateSlot";
 import { parseProjectRulesJson } from "@/lib/validations/project";
 import { formatPriorPostsForPrompt, loadPriorPostsForProject } from "@/lib/server/ai/priorPostsMemory";
 import {
@@ -631,6 +632,9 @@ export async function generateCarousel(formData: FormData): Promise<
   const selectedTemplatesForPrompt = (
     await Promise.all(orderedRequestedTemplateIds.map((templateId) => getTemplate(user.id, templateId)))
   ).filter((template): template is NonNullable<typeof template> => Boolean(template));
+  if (!isAdmin(user.email) && selectedTemplatesForPrompt.some((template) => template.is_hidden)) {
+    return { error: "One of the selected templates is no longer available." };
+  }
 
   if (selectedTemplatesForPrompt.length === 0) {
     const defaultForPrompt = await getDefaultTemplateForNewCarousel(user.id);
@@ -655,17 +659,15 @@ export async function generateCarousel(formData: FormData): Promise<
   const pendingOpenLoop = projectRulesParsed.pending_open_loop;
   const open_loop_block = formatOpenLoopForPrompt(pendingOpenLoop);
 
-  const templateCharLimits: TemplateCharLimits | null = (() => {
-    const cfg = selectedTemplatesForPrompt[0]?.config;
-    if (!cfg) return null;
-    const m = getHeadlineBodyMaxCharsFromTemplateConfig(cfg);
+  const templateCharLimits: TemplateCharLimits[] = selectedTemplatesForPrompt.map((template) => {
+    const m = getHeadlineBodyMaxCharsFromTemplateConfig(template.config);
     return {
       headlineMaxChars: m.headlineMaxChars,
       bodyMaxChars: m.bodyMaxChars,
       hasHeadline: m.hasHeadline,
       hasBody: m.hasBody,
     };
-  })();
+  });
 
   const ctx = {
     tone_preset: project.tone_preset,
@@ -888,7 +890,7 @@ export async function generateCarousel(formData: FormData): Promise<
         hardIssues: qcHardIssues,
         judge: judgeForRewrite,
         includeMarketing,
-        templateLimits: templateCharLimits,
+        templateContext: template_context,
         openLoop: pendingOpenLoop,
       });
       try {
@@ -1131,34 +1133,26 @@ export async function generateCarousel(formData: FormData): Promise<
     return defaultTemplateId ? [defaultTemplateId] : [];
   })();
   const chooseTemplateIdForSlideIndex = (slideIndex: number, totalSlides: number): string | null => {
-    const [t1, t2, t3] = templateIdsForRun;
-    if (templateIdsForRun.length >= 3) {
-      if (slideIndex <= 1) return t1 ?? null;
-      if (slideIndex >= totalSlides) return t3 ?? null;
-      return t2 ?? t1 ?? t3 ?? null;
-    }
-    if (templateIdsForRun.length === 2) {
-      if (slideIndex <= 1 || slideIndex >= totalSlides) return t1 ?? null;
-      return t2 ?? t1 ?? null;
-    }
-    return t1 ?? null;
+    return templateForSlide(templateIdsForRun, slideIndex, totalSlides) ?? null;
   };
   const totalSlideCount = validated.slides.length;
   const isFollowCta = defaultTemplate && "isFollowCta" in defaultTemplate ? !!defaultTemplate.isFollowCta : false;
 
   const slideRows = validated.slides.map((s, idx) => {
     const templateIdForSlide = chooseTemplateIdForSlideIndex(idx + 1, totalSlideCount);
-    const rawHeadline = s.slide_index === 1 ? stripLinksFromText(validated.title) : stripLinksFromText(s.headline);
-    const rawBody = s.body ? stripLinksFromText(s.body) : "";
+    const slideTemplate = templateIdForSlide ? resolvedTemplates.get(templateIdForSlide) : selectedTemplate;
+    const fields = getHeadlineBodyMaxCharsFromTemplateConfig(slideTemplate?.config);
+    // Keep the fitted, slot-specific hook. The carousel title is metadata, not visible copy.
+    const rawHeadline = fields.hasHeadline ? stripLinksFromText(s.headline) : "";
+    const rawBody = fields.hasBody && s.body ? stripLinksFromText(s.body) : "";
     const fullHeadline = ensureListNewlines(rawHeadline);
     const fullBody = ensureListNewlines(rawBody);
     const mainHeadlineWords = sanitizeHighlightWordsForText(fullHeadline, s.headline_highlight_words);
     const mainBodyWords = sanitizeHighlightWordsForText(fullBody, s.body_highlight_words);
     const alternates = (s as { shorten_alternates?: { headline: string; body?: string; headline_highlight_words?: string[]; body_highlight_words?: string[] }[] }).shorten_alternates;
-    const slideTemplate = templateIdForSlide ? resolvedTemplates.get(templateIdForSlide) : selectedTemplate;
     const templateConfigParsed = slideTemplate ? templateConfigSchema.safeParse(slideTemplate.config) : null;
     const bodyZoneForRewrite =
-      templateConfigParsed?.success ? templateConfigParsed.data.textZones.find((z) => z.id === "body") : undefined;
+      fields.hasBody && templateConfigParsed?.success ? templateConfigParsed.data.textZones.find((z) => z.id === "body") : undefined;
 
     let body_rewrite_variants: [string, string, string] = ["", "", ""];
     if (bodyZoneForRewrite && fullBody.trim()) {

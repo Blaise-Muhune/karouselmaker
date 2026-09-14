@@ -1,7 +1,7 @@
 import type { Json } from "@/lib/server/db/types";
 import {
   getHeadlineBodyMaxCharsFromTemplateConfig,
-  getTextZonesFromTemplateConfig,
+  getEffectiveTextZonesFromTemplateConfig,
   maxCharsForExtraTextZone,
   placementBandsForTextZone,
   visualLinesForZone,
@@ -29,7 +29,7 @@ const DEFAULT_FALLBACK_BODY = 600;
  * the right amount of text.
  */
 export function buildTemplateContextForPrompt(templateConfig: Json | null | undefined): TemplateContextForPrompt | null {
-  const zones = getTextZonesFromTemplateConfig(templateConfig);
+  const zones = getEffectiveTextZonesFromTemplateConfig(templateConfig);
   if (zones.length === 0) {
     return {
       hasHeadline: true,
@@ -42,7 +42,7 @@ export function buildTemplateContextForPrompt(templateConfig: Json | null | unde
   }
 
   const m = getHeadlineBodyMaxCharsFromTemplateConfig(templateConfig);
-  const extraZones = zones.filter((z) => z.id !== "headline" && z.id !== "body");
+  const extraZones = zones.filter((z) => z.id !== "headline" && z.id !== "body" && z.enabled !== false);
 
   const headlineMaxChars = m.headlineMaxChars;
   const bodyMaxChars = m.bodyMaxChars;
@@ -51,8 +51,19 @@ export function buildTemplateContextForPrompt(templateConfig: Json | null | unde
 
   const lines: string[] = [];
   lines.push("TEMPLATE TEXT LIMITS (strict—never exceed; text must fit the visible container):");
+  if (m.hasHeadline && m.hasBody) {
+    lines.push("TEXT MODE: HEADLINE + BODY. Headline states the main idea clearly; body explains it with useful context, specifics, or action. They must complement each other, not repeat the same sentence.");
+  } else if (m.hasBody) {
+    lines.push('TEXT MODE: BODY ONLY. The body must carry the complete slide idea by itself, including the context normally supplied by a headline. Write a self-contained thought with the essential explanation or action, within its size budget. The first slide body must deliver the hook; the last slide body must deliver the payoff/CTA. Never refer to an unseen title. Set headline to "" and headline_highlight_words to [] in every slide and every shorten_alternate.');
+  } else if (m.hasHeadline) {
+    lines.push('TEXT MODE: HEADLINE ONLY. Express each slide’s core idea as one clean, clear, title-like statement, usually 3–10 words (fewer for tiny zones). Prioritize the takeaway; omit detailed explanations, supporting clauses, and lists. Do not fill a large box just because it has room. The headline alone must make sense and advance the story. Set body to "" and body_highlight_words to [] in every slide and every shorten_alternate. This concise mode overrides all instructions to fill a large text budget.');
+  } else {
+    lines.push('TEXT MODE: NO HEADLINE OR BODY. Set headline and body to "" and their highlight arrays to [] in every slide and alternate. Use only the enabled extra text zones listed below.');
+  }
   if (m.hasHeadline) {
-    if (headlineMaxChars <= 12)
+    if (!m.hasBody) {
+      lines.push(`- Headline zone: maximum ~${headlineMaxChars} characters. This is a ceiling, not a target: use one concise title-like thought, even in a large zone.`);
+    } else if (headlineMaxChars <= 12)
       lines.push("- Headline zone: tiny. Use one to four words only; a single word is fine. Do not exceed ~12 characters.");
     else if (headlineMaxChars <= 25)
       lines.push(`- Headline zone: very small (~${headlineMaxChars} chars max). One short phrase or a few words; one word is OK.`);
@@ -64,7 +75,9 @@ export function buildTemplateContextForPrompt(templateConfig: Json | null | unde
       );
     else
       lines.push(`- Headline zone: max ~${headlineMaxChars} characters. Stay within this so text fits without overflow.`);
-    if (headlineVisualLines <= 1) {
+    if (!m.hasBody) {
+      lines.push(`- Headline visual capacity: about ${headlineVisualLines} lines. Keep the idea compact; do not add detail to fill these lines.`);
+    } else if (headlineVisualLines <= 1) {
       lines.push("- Headline visual capacity: about 1 line. Keep headline to one compact line, avoid list formatting.");
     } else if (headlineVisualLines === 2) {
       lines.push("- Headline visual capacity: about 2 lines. You may use two lines of meaning if the char limit allows; avoid cramped multi-item lists.");
@@ -141,7 +154,7 @@ export function buildTemplateContextForPrompt(templateConfig: Json | null | unde
     "**SCALE TO THE ZONE:** Match **main** slide headline, body, **and each extra text zone** density to the numbers above—**large limits = richer, more concrete copy** that still fits; **tiny limits = telegraphic**. Do not default to generic short copy when the template allows much more. shorten_alternates can still vary short / normal / long."
   );
   lines.push(
-    "Do not exceed these character counts. Prefer fewer characters only when the limit is low; it is OK to use a single word or very few words in tiny zones. shorten_alternates can vary in length (short / normal / long)."
+    "Do not exceed these character counts. HEADLINE ONLY stays concise regardless of capacity. BODY ONLY must remain self-contained in all short / normal / long variants. Hidden fields stay empty in every variant."
   );
 
   return {
@@ -199,7 +212,7 @@ export function buildTemplateContextForPromptSelection(
       ? "- Slot mapping: first slide uses slot 1 limits, middle slides use slot 2 limits, last slide uses slot 3 limits."
       : "- Slot mapping: first and last slides use slot 1 limits, middle slides use slot 2 limits.",
     "- Keep each slide's copy within the limits of the slot used by that slide index.",
-    "- **SCALE TO EACH SLOT:** use the full headline/body budget when a slot shows **large** max characters—do not shrink all slots to short generic copy.",
+    "- Follow each slot's TEXT MODE independently: headline-only stays concise, body-only carries the whole idea, and both fields complement each other. Never generate text for a hidden field. These rules also apply to every shorten_alternate.",
     "- For `slide.extra_text_values`, use **only** the extra zone ids listed in the slot section that applies to that slide (first vs middle vs last)—do not mix zone ids from a different slot.",
   ];
 

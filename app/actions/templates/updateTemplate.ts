@@ -3,6 +3,7 @@
 import { getUser } from "@/lib/server/auth/getUser";
 import { hasFullProFeatureAccess } from "@/lib/server/subscription";
 import { isAdmin } from "@/lib/server/auth/isAdmin";
+import { templateTextVisibilityChanged } from "@/lib/templates/textVisibilityPermissions";
 import { getTemplate, updateTemplate as updateTemplateDb, updateTemplateAsAdmin } from "@/lib/server/db";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { normalizeNoImageTemplateDefaults, normalizeTemplateTextZoneMaxLines } from "@/lib/server/renderer/normalizeTemplateConfig";
@@ -26,6 +27,9 @@ export async function updateTemplateAction(
     const parsed = templateConfigSchema.safeParse(payload.config);
     if (!parsed.success) return { ok: false, error: "Invalid template config." };
     updatePayload.config = normalizeNoImageTemplateDefaults(normalizeTemplateTextZoneMaxLines(parsed.data));
+    if (!userIsAdmin && templateTextVisibilityChanged(template.config, updatePayload.config)) {
+      return { ok: false, error: "Only admins can change template text fields." };
+    }
   }
 
   if (isSystemTemplate) {

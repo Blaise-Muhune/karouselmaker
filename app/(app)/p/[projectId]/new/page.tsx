@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getUser } from "@/lib/server/auth/getUser";
+import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { getSubscription, getEffectivePlanLimits } from "@/lib/server/subscription";
 import {
   getProject,
@@ -33,6 +34,7 @@ export default async function NewCarouselPage({
   }>;
 }>) {
   const { user } = await getUser();
+  const userIsAdmin = isAdmin(user.email);
   const { projectId } = await params;
   const sp = await searchParams;
   const regenerateCarouselIdRaw = sp.regenerate;
@@ -57,7 +59,7 @@ export default async function NewCarouselPage({
       countCarouselsThisMonth(user.id),
       countCarouselsLifetime(user.id),
       regenerateCarouselId ? getCarousel(user.id, regenerateCarouselId) : Promise.resolve(null),
-      listTemplatesForUser(user.id, { includeSystem: true }),
+      listTemplatesForUser(user.id, { includeSystem: true, includeHidden: userIsAdmin }),
       getDefaultTemplateForNewCarousel(user.id),
       listFavoriteTemplateIds(user.id),
     ]);
@@ -77,6 +79,7 @@ export default async function NewCarouselPage({
         category: t.category,
         isSystemTemplate: t.user_id == null,
         isFavorite: favoriteIdSet.has(t.id),
+        isHidden: t.is_hidden === true,
       });
     }
   }
@@ -181,6 +184,7 @@ export default async function NewCarouselPage({
           defaultTemplateId={defaultTemplateId}
           defaultTemplateConfig={defaultTemplateConfig}
           primaryColor={primaryColor}
+          isAdmin={userIsAdmin}
         />
       </div>
     </div>

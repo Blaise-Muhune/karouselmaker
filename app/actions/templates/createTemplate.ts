@@ -2,6 +2,7 @@
 
 import { getUser } from "@/lib/server/auth/getUser";
 import { isAdmin } from "@/lib/server/auth/isAdmin";
+import { templateTextVisibilityChanged } from "@/lib/templates/textVisibilityPermissions";
 import { getEffectivePlanLimits, hasFullProFeatureAccess } from "@/lib/server/subscription";
 import { getTemplate, createTemplate, createSystemTemplate, countUserTemplates } from "@/lib/server/db";
 import type { Json } from "@/lib/server/db/types";
@@ -59,6 +60,9 @@ export async function createTemplateAction(payload: {
     const parsed = templateConfigSchema.safeParse(payload.config);
     if (!parsed.success) return { ok: false, error: "Invalid template config." };
     config = parsed.data;
+    if (!isAdmin(user.email) && templateTextVisibilityChanged(null, config)) {
+      return { ok: false, error: "Only admins can configure template text fields. Choose an existing template instead." };
+    }
 
     const refUrl = typeof payload.referenceImageDataUrl === "string" ? payload.referenceImageDataUrl.trim() : "";
     if (refUrl.length > 0 && !asSystem) {

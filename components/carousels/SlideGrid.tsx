@@ -592,13 +592,15 @@ export function SlideGrid({
   const isApplyingTemplate =
     applyingSingleTemplate || bulkTemplateProgress != null;
 
-  const templateOptions: TemplateOption[] = templates.map((t) => ({
+  const selectableTemplates = templates.filter((t) => !t.is_hidden || isAdmin);
+  const templateOptions: TemplateOption[] = selectableTemplates.map((t) => ({
     id: t.id,
     name: t.name,
     parsedConfig: t.parsedConfig,
     category: t.category ?? undefined,
-    isSystemTemplate: t.user_id == null,
-    isFavorite: t.isFavorite === true,
+      isSystemTemplate: t.user_id == null,
+      isFavorite: t.isFavorite === true,
+      isHidden: t.is_hidden === true,
   }));
   const favoriteRevalidatePath = `/p/${projectId}/c/${carouselId}`;
 
@@ -866,7 +868,7 @@ export function SlideGrid({
             effectiveTemplateConfig,
             templateDefaults.chromeOverrides
           );
-          const currentTemplateId = slide.template_id ?? templates[0]?.id;
+          const currentTemplateId = slide.template_id ?? selectableTemplates[0]?.id;
           const fromSlide = getBackgroundOverride(slide, effectiveTemplateConfig);
           const hasBackgroundImage =
             (typeof bgUrls === "string" && bgUrls.length > 0) ||
@@ -1275,7 +1277,7 @@ export function SlideGrid({
                     startTransition(async () => {
                       const result = await createSlideAction(carouselId, {
                         revalidatePathname: editorPath,
-                        defaultTemplateId: templates[0]?.id ?? null,
+                        defaultTemplateId: selectableTemplates[0]?.id ?? null,
                       });
                       setAddingSlide(false);
                       if (result.ok) router.refresh();
@@ -1355,20 +1357,21 @@ export function SlideGrid({
                 <TemplateSelectCards
                   key={`bulk-${ids.join("-")}`}
                   templates={templateOptions}
-                  defaultTemplateId={templates[0]?.id ?? null}
-                  defaultTemplateConfig={templates[0]?.parsedConfig ?? null}
-                  defaultTemplateCategory={templates[0]?.category ?? undefined}
+                  defaultTemplateId={selectableTemplates[0]?.id ?? null}
+                  defaultTemplateConfig={selectableTemplates[0]?.parsedConfig ?? null}
+                  defaultTemplateCategory={selectableTemplates[0]?.category ?? undefined}
                   showLayoutFilter
                   value={null}
                   previewImageUrls={previewImageUrlsForBulk}
                   isAdmin={isAdmin}
                   isPro={isPro}
-                  favoriteRevalidatePath={favoriteRevalidatePath}
+                    favoriteRevalidatePath={favoriteRevalidatePath}
+                    visibilityRevalidatePath={favoriteRevalidatePath}
                   onTemplateDeleted={() => {
                     router.refresh();
                   }}
                   onChange={async (id) => {
-                    const templateId = id === null ? templates[0]?.id ?? null : id;
+                    const templateId = id === null ? selectableTemplates[0]?.id ?? null : id;
                     if (!templateId) return;
                     setBulkActionPending(true);
                     setBulkTemplateProgress({ done: 0, total: ids.length });
@@ -1414,7 +1417,7 @@ export function SlideGrid({
           })()}
           {templateModalSlideId != null && !isBulkTemplateOpen && (() => {
             const slideForModal = slidesOrder.find((s) => s.id === templateModalSlideId);
-            const currentTemplateIdForModal = slideForModal?.template_id ?? templates[0]?.id ?? null;
+            const currentTemplateIdForModal = slideForModal?.template_id ?? selectableTemplates[0]?.id ?? null;
             if (!slideForModal) return null;
             const slideBgImages = slideBackgroundImageUrls[slideForModal.id];
             const previewImageUrlsForModal =
@@ -1427,21 +1430,22 @@ export function SlideGrid({
                 <TemplateSelectCards
                   key={templateModalSlideId}
                   templates={templateOptions}
-                  defaultTemplateId={templates[0]?.id ?? null}
-                  defaultTemplateConfig={templates[0]?.parsedConfig ?? null}
-                  defaultTemplateCategory={templates[0]?.category ?? undefined}
+                  defaultTemplateId={selectableTemplates[0]?.id ?? null}
+                  defaultTemplateConfig={selectableTemplates[0]?.parsedConfig ?? null}
+                  defaultTemplateCategory={selectableTemplates[0]?.category ?? undefined}
                   showLayoutFilter
-                  value={currentTemplateIdForModal === templates[0]?.id ? null : currentTemplateIdForModal}
+                  value={currentTemplateIdForModal === selectableTemplates[0]?.id ? null : currentTemplateIdForModal}
                   previewImageUrls={previewImageUrlsForModal}
                   isAdmin={isAdmin}
                   isPro={isPro}
-                  favoriteRevalidatePath={favoriteRevalidatePath}
+                    favoriteRevalidatePath={favoriteRevalidatePath}
+                    visibilityRevalidatePath={favoriteRevalidatePath}
                   onTemplateDeleted={() => {
                     setTemplateModalSlideId(null);
                     router.refresh();
                   }}
                   onChange={async (id) => {
-                    const templateId = id === null ? templates[0]?.id ?? null : id;
+                    const templateId = id === null ? selectableTemplates[0]?.id ?? null : id;
                     if (!templateId || templateId === slideForModal.template_id) {
                       setTemplateModalSlideId(null);
                       return;
