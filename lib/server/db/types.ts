@@ -202,6 +202,26 @@ export interface PlatformConnection {
   updated_at: string;
 }
 
+/** Admin-only test queue for TikTok Photo Mode posts. */
+export interface TikTokScheduledPost {
+  id: string;
+  user_id: string;
+  carousel_id: string;
+  export_id: string;
+  media_token: string;
+  slide_count: number;
+  title: string;
+  description: string;
+  privacy_level: "SELF_ONLY";
+  scheduled_for: string;
+  status: "scheduled" | "publishing" | "published" | "failed" | "cancelled";
+  tiktok_publish_id: string | null;
+  last_error: string | null;
+  published_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 // Insert/update payloads (partial)
 export type ProjectInsert = Omit<Project, "id" | "created_at" | "updated_at"> & {
   id?: string;

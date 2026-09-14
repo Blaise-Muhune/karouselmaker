@@ -57,6 +57,8 @@ type ExportRequestOptions = {
   imageOverlay: boolean;
   format?: "png" | "jpeg" | "pdf";
   size?: "1080x1080" | "1080x1350" | "1080x1920";
+  /** Store a fixed export for an in-app destination without sending a file to the browser. */
+  delivery?: "download" | "schedule";
 };
 
 async function readExportRequestOptions(request: Request): Promise<ExportRequestOptions> {
@@ -65,7 +67,7 @@ async function readExportRequestOptions(request: Request): Promise<ExportRequest
     if (!ct.includes("application/json")) return { imageOverlay: true };
     const body: unknown = await request.json();
     if (!body || typeof body !== "object") return { imageOverlay: true };
-    const value = body as { image_overlay?: unknown; format?: unknown; size?: unknown };
+    const value = body as { image_overlay?: unknown; format?: unknown; size?: unknown; delivery?: unknown };
     return {
       imageOverlay: typeof value.image_overlay === "boolean" ? value.image_overlay : true,
       format: value.format === "png" || value.format === "jpeg" || value.format === "pdf" ? value.format : undefined,
@@ -73,6 +75,7 @@ async function readExportRequestOptions(request: Request): Promise<ExportRequest
         value.size === "1080x1080" || value.size === "1080x1350" || value.size === "1080x1920"
           ? value.size
           : undefined,
+      delivery: value.delivery === "schedule" ? "schedule" : "download",
     };
   } catch {
     /* empty or non-JSON body */
@@ -486,6 +489,9 @@ export async function POST(
 
     // Store slide images so Post to Facebook/Instagram can use them (same for PNG/JPEG/PDF).
     const paths = getExportStoragePaths(userId, carouselId, exportId);
+    // Record the prefix before uploading. If a render fails partway through, the daily
+    // retention job can still discover and remove any partial slide files.
+    await updateExport(userId, exportId, { status: "pending", storage_path: paths.slidesDir });
     const rasterContentType = rasterFormat === "jpeg" ? "image/jpeg" : "image/png";
     for (let i = 0; i < slideBuffers.length; i++) {
       const buf = slideBuffers[i];
@@ -508,6 +514,11 @@ export async function POST(
       }
     }
     await updateExport(userId, exportId, { status: "ready", storage_path: paths.slidesDir });
+
+    // Scheduling uses the same immutable raster files as a download, but does not need a ZIP.
+    if (requestOptions.delivery === "schedule") {
+      return NextResponse.json({ exportId });
+    }
 
     if (exportMode === "pdf") {
       const pdf = await buildCarouselPdfFromPngPages(slideBuffers, dimensions.w, dimensions.h);

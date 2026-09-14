@@ -1,6 +1,12 @@
 import { query, queryMany, queryOne } from "./pg";
 import type { ExportRow } from "./types";
 
+export type StoredExport = {
+  id: string;
+  user_id: string;
+  carousel_id: string;
+};
+
 /**
  * Storage path convention (Supabase Storage bucket):
  * - user/{userId}/exports/{carouselId}/{exportId}/slides/01.png, 02.png, ...
@@ -156,4 +162,78 @@ export async function listExportsByCarousel(
      limit $2`,
     [carouselId, limit]
   );
+}
+
+/** Export files that belong to one owned carousel. Used before a carousel is deleted. */
+export async function listStoredExportsByCarousel(userId: string, carouselId: string): Promise<StoredExport[]> {
+  return queryMany<StoredExport>(
+    `select e.id, c.user_id, e.carousel_id
+     from exports e
+     join carousels c on c.id = e.carousel_id
+     where c.user_id = $1 and e.carousel_id = $2 and e.storage_path is not null`,
+    [userId, carouselId]
+  );
+}
+
+/** Export files that belong to a project. Library assets are deliberately not included. */
+export async function listStoredExportsByProject(userId: string, projectId: string): Promise<StoredExport[]> {
+  return queryMany<StoredExport>(
+    `select e.id, c.user_id, e.carousel_id
+     from exports e
+     join carousels c on c.id = e.carousel_id
+     where c.user_id = $1 and c.project_id = $2 and e.storage_path is not null`,
+    [userId, projectId]
+  );
+}
+
+/**
+ * Finds stored exports that are safe to remove. Normal exports expire after one day;
+ * completed TikTok test snapshots are kept for seven days for diagnostics.
+ */
+export async function listExpiredStoredExports(limit = 100): Promise<StoredExport[]> {
+  return queryMany<StoredExport>(
+    `with schedule_summary as (
+       select
+         export_id,
+         bool_or(status in ('scheduled', 'publishing')) as has_active_schedule,
+         max(updated_at) as last_schedule_activity
+       from tiktok_scheduled_posts
+       group by export_id
+     )
+     select e.id, c.user_id, e.carousel_id
+     from exports e
+     join carousels c on c.id = e.carousel_id
+     left join schedule_summary s on s.export_id = e.id
+     where e.storage_path is not null
+       and coalesce(s.has_active_schedule, false) = false
+       and (
+         (s.export_id is null and e.created_at < now() - interval '1 day')
+         or (s.export_id is not null and s.last_schedule_activity < now() - interval '7 days')
+       )
+     order by e.created_at asc
+     limit $1`,
+    [Math.max(1, Math.min(limit, 500))]
+  );
+}
+
+/** A scheduled or in-flight TikTok post must keep its exact slide snapshot. */
+export async function hasActiveTikTokScheduleForExport(userId: string, exportId: string): Promise<boolean> {
+  const row = await queryOne<{ active: boolean }>(
+    `select exists(
+       select 1
+       from tiktok_scheduled_posts s
+       join exports e on e.id = s.export_id
+       join carousels c on c.id = e.carousel_id
+       where s.export_id = $1
+         and c.user_id = $2
+         and s.status in ('scheduled', 'publishing')
+     ) as active`,
+    [exportId, userId]
+  );
+  return row?.active === true;
+}
+
+/** Marks a stored export as released after its files have been removed. */
+export async function clearExportStoragePath(exportId: string): Promise<void> {
+  await query(`update exports set storage_path = null where id = $1`, [exportId]);
 }

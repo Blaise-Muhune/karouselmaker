@@ -7,5 +7,6 @@ export * from "./exports";
 export * from "./assets";
 export * from "./slidePresets";
 export * from "./platformConnections";
+export * from "./tiktokScheduledPosts";
 export * from "./admin";
 export * from "./types";

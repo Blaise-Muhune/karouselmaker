@@ -9,6 +9,8 @@ import {
   updateCarousel,
   cloneCarousel,
 } from "@/lib/server/db/carousels";
+import { listStoredExportsByCarousel } from "@/lib/server/db/exports";
+import { removeStoredExportFiles } from "@/lib/server/storage/exportRetention";
 import { startCarouselGeneration } from "./generateCarousel";
 
 export type CarouselActionResult = { ok: true } | { ok: false; error: string };
@@ -52,6 +54,12 @@ export async function deleteCarousel(
   const carousel = await getCarousel(user.id, carouselId);
   if (!carousel || carousel.project_id !== projectId) {
     return { ok: false, error: "Carousel not found" };
+  }
+  try {
+    const exports = await listStoredExportsByCarousel(user.id, carouselId);
+    for (const exported of exports) await removeStoredExportFiles(exported);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Could not remove carousel export files" };
   }
   const result = await dbDeleteCarousel(user.id, carouselId);
   if (!result.ok) return result;

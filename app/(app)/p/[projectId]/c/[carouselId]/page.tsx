@@ -5,7 +5,7 @@ import { getUser } from "@/lib/server/auth/getUser";
 /** Ensure router.refresh() always gets fresh data so generating→done transition is visible. */
 export const dynamic = "force-dynamic";
 import { getSubscription, getEffectivePlanLimits } from "@/lib/server/subscription";
-import { getCarousel, getProject, listSlides, listTemplatesForUser, listFavoriteTemplateIds, listExportsByCarousel, countExportsThisMonth, getAsset, countCarouselsLifetime } from "@/lib/server/db";
+import { getCarousel, getProject, listSlides, listTemplatesForUser, listFavoriteTemplateIds, listExportsByCarousel, countExportsThisMonth, getAsset, countCarouselsLifetime, getPlatformConnection, listTikTokScheduledPosts } from "@/lib/server/db";
 import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { resolveBrandKitLogo } from "@/lib/server/brandKit";
@@ -25,6 +25,7 @@ import { FREE_FULL_ACCESS_GENERATIONS } from "@/lib/constants";
 import { slugifyForFilename } from "@/lib/utils";
 import { GenerationPartialBanner } from "@/components/carousels/GenerationPartialBanner";
 import { CarouselGeneratingPage } from "@/components/carousels/CarouselGeneratingTrigger";
+import { TikTokAdminSchedulePanel } from "@/components/tiktok/TikTokAdminSchedulePanel";
 import { ArrowLeftIcon, SparklesIcon } from "lucide-react";
 
 function normalizeStoragePathForBucket(path: string | undefined, bucket: string): string | undefined {
@@ -58,7 +59,7 @@ export default async function CarouselEditorPage({
   const resolvedSearchParams = await searchParams;
   const showGenerationPartial = resolvedSearchParams?.generation === "partial";
 
-  const [carousel, project, slides, templatesRaw, recentExports, subscription, exportCount, lifetimeCarouselCount, limits, favoriteIds] =
+  const [carousel, project, slides, templatesRaw, recentExports, subscription, exportCount, lifetimeCarouselCount, limits, favoriteIds, tiktokConnection, tiktokSchedules] =
     await Promise.all([
       getCarousel(user.id, carouselId),
       getProject(user.id, projectId),
@@ -71,6 +72,8 @@ export default async function CarouselEditorPage({
       countCarouselsLifetime(user.id),
       getEffectivePlanLimits(user.id, user.email),
       listFavoriteTemplateIds(user.id),
+      userIsAdmin ? getPlatformConnection(user.id, "tiktok") : Promise.resolve(null),
+      userIsAdmin ? listTikTokScheduledPosts(user.id, carouselId) : Promise.resolve([]),
     ]);
 
   const hasFullAccess = subscription.isPro || lifetimeCarouselCount < FREE_FULL_ACCESS_GENERATIONS;
@@ -313,6 +316,17 @@ export default async function CarouselEditorPage({
           carouselTitle={carousel.title}
           projectName={project.name}
         />
+
+        {userIsAdmin && (
+          <TikTokAdminSchedulePanel
+            carouselId={carouselId}
+            pathname={editorPath}
+            connectedAccount={tiktokConnection?.platform_username ?? (tiktokConnection ? "Connected" : null)}
+            initialTitle={carousel.title}
+            initialDescription={[captionVariants.long ?? captionVariants.medium ?? "", hashtags.map((tag) => tag.startsWith("#") ? tag : `#${tag}`).join(" ")].filter(Boolean).join("\n\n")}
+            schedules={tiktokSchedules.map((schedule) => ({ id: schedule.id, scheduledFor: schedule.scheduled_for, status: schedule.status, lastError: schedule.last_error }))}
+          />
+        )}
 
         {/* Frames */}
         <section className={isGenerating ? "pointer-events-none opacity-70" : ""} aria-disabled={isGenerating}>

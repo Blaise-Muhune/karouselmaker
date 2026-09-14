@@ -4,6 +4,14 @@
     {
       "path": "/api/cron/weekly-creator-note",
       "schedule": "0 14 * * 1"
+    },
+    {
+      "path": "/api/cron/tiktok-scheduled-posts",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/storage-cleanup",
+      "schedule": "17 3 * * *"
     }
   ],
   "functions": {

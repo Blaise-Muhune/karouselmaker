@@ -21,7 +21,8 @@ export function getAuthUrl(platform: PlatformName, state: string): string | null
     case "tiktok": {
       const clientKey = process.env.TIKTOK_CLIENT_KEY;
       if (!clientKey) return null;
-      const scope = encodeURIComponent("user.info.basic,video.upload");
+      // Direct Photo Mode posting requires video.publish. Admin-only scheduling is private-only until audit.
+      const scope = encodeURIComponent("user.info.basic,video.publish");
       return `https://www.tiktok.com/v2/auth/authorize/?client_key=${clientKey}&scope=${scope}&response_type=code&redirect_uri=${redirectUri}&state=${encodeURIComponent(state)}`;
     }
     case "instagram": {

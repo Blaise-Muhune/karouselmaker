@@ -1,0 +1,119 @@
+const TIKTOK_API = "https://open.tiktokapis.com";
+
+export type TikTokCreatorInfo = {
+  privacyLevels: string[];
+  commentDisabled: boolean;
+};
+
+type TikTokApiResponse = {
+  data?: { publish_id?: string; privacy_level_options?: string[]; comment_disabled?: boolean };
+  error?: { code?: string; message?: string };
+};
+
+function errorMessage(response: TikTokApiResponse, fallback: string) {
+  return response.error?.message || response.error?.code || fallback;
+}
+
+/** TikTok requires this query before a Direct Post so current creator settings are honored. */
+export async function getTikTokCreatorInfo(accessToken: string): Promise<TikTokCreatorInfo> {
+  const response = await fetch(`${TIKTOK_API}/v2/post/publish/creator_info/query/`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json; charset=UTF-8",
+    },
+  });
+  const body = (await response.json().catch(() => ({}))) as TikTokApiResponse;
+  if (!response.ok || (body.error && body.error.code !== "ok")) {
+    throw new Error(errorMessage(body, "TikTok creator settings could not be read."));
+  }
+  return {
+    privacyLevels: body.data?.privacy_level_options ?? [],
+    commentDisabled: body.data?.comment_disabled === true,
+  };
+}
+
+/** Directly creates a TikTok Photo Mode post from public URLs on a verified app domain. */
+export async function postPhotosToTikTok(input: {
+  accessToken: string;
+  photoUrls: string[];
+  title: string;
+  description: string;
+  privacyLevel: "SELF_ONLY";
+}): Promise<{ publishId: string }> {
+  if (input.photoUrls.length === 0 || input.photoUrls.length > 35) {
+    throw new Error("TikTok requires between 1 and 35 photos.");
+  }
+  const creator = await getTikTokCreatorInfo(input.accessToken);
+  if (!creator.privacyLevels.includes(input.privacyLevel)) {
+    throw new Error("TikTok no longer allows the selected private visibility for this account.");
+  }
+
+  const response = await fetch(`${TIKTOK_API}/v2/post/publish/content/init/`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${input.accessToken}`,
+      "Content-Type": "application/json; charset=UTF-8",
+    },
+    body: JSON.stringify({
+      post_info: {
+        title: input.title.slice(0, 90),
+        description: input.description.slice(0, 4000),
+        privacy_level: input.privacyLevel,
+        disable_comment: creator.commentDisabled,
+        auto_add_music: true,
+        brand_content_toggle: false,
+        brand_organic_toggle: false,
+      },
+      source_info: {
+        source: "PULL_FROM_URL",
+        photo_cover_index: 0,
+        photo_images: input.photoUrls,
+      },
+      post_mode: "DIRECT_POST",
+      media_type: "PHOTO",
+    }),
+  });
+  const body = (await response.json().catch(() => ({}))) as TikTokApiResponse;
+  if (!response.ok || (body.error && body.error.code !== "ok")) {
+    throw new Error(errorMessage(body, "TikTok photo post could not be scheduled."));
+  }
+  const publishId = body.data?.publish_id;
+  if (!publishId) throw new Error("TikTok did not return a publish ID.");
+  return { publishId };
+}
+
+export async function refreshTikTokAccessToken(refreshToken: string): Promise<{
+  accessToken: string;
+  refreshToken?: string;
+  expiresAt?: string;
+}> {
+  const clientKey = process.env.TIKTOK_CLIENT_KEY?.trim();
+  const clientSecret = process.env.TIKTOK_CLIENT_SECRET?.trim();
+  if (!clientKey || !clientSecret) throw new Error("TikTok credentials are not configured.");
+  const response = await fetch(`${TIKTOK_API}/v2/oauth/token/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_key: clientKey,
+      client_secret: clientSecret,
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+    }),
+  });
+  const body = (await response.json().catch(() => ({}))) as {
+    access_token?: string;
+    refresh_token?: string;
+    expires_in?: number;
+    error?: string;
+    error_description?: string;
+  };
+  if (!response.ok || !body.access_token) {
+    throw new Error(body.error_description || body.error || "TikTok access token refresh failed.");
+  }
+  return {
+    accessToken: body.access_token,
+    refreshToken: body.refresh_token,
+    expiresAt: body.expires_in ? new Date(Date.now() + body.expires_in * 1000).toISOString() : undefined,
+  };
+}

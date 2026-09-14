@@ -5,7 +5,7 @@
  */
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { getExport, updateExport } from "@/lib/server/db/exports";
+import { getExport, hasActiveTikTokScheduleForExport, updateExport } from "@/lib/server/db/exports";
 
 const BUCKET = "carousel-assets";
 
@@ -40,6 +40,9 @@ export async function POST(
   const exportRow = await getExport(userId, exportId);
   if (!exportRow || exportRow.carousel_id !== carouselId) {
     return NextResponse.json({ error: "Export not found" }, { status: 404 });
+  }
+  if (await hasActiveTikTokScheduleForExport(userId, exportId)) {
+    return NextResponse.json({ error: "This export is being kept for a scheduled TikTok post." }, { status: 409 });
   }
 
   const prefix = `user/${userId}/exports/${carouselId}/${exportId}`;
