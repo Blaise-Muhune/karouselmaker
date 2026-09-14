@@ -3,6 +3,8 @@ import Stripe from "stripe";
 import { grantPostPackCreditsForCheckout, upsertProfileAsAdmin } from "@/lib/server/db/profiles";
 import { planFromStripeSubscription } from "@/lib/server/stripe/planFromStripeSubscription";
 import { POST_PACK_SIZE } from "@/lib/constants";
+import { postPackEmail, subscriptionActivatedEmail } from "@/lib/server/email/messages";
+import { sendTransactionalEmail } from "@/lib/server/email/transactional";
 
 const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY;
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
@@ -40,13 +42,19 @@ export async function POST(request: Request) {
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
         const userId = session.metadata?.user_id;
+        const customerEmail = session.customer_details?.email ?? session.customer_email ?? undefined;
         if (session.mode === "payment" && session.metadata?.kind === "post_pack") {
           if (!userId || session.payment_status !== "paid") break;
           const requestedCredits = Number(session.metadata.credits);
           const credits = Number.isInteger(requestedCredits) && requestedCredits > 0
             ? requestedCredits
             : POST_PACK_SIZE;
-          await grantPostPackCreditsForCheckout(userId, session.id, credits);
+          const fulfilled = await grantPostPackCreditsForCheckout(userId, session.id, credits);
+          if (fulfilled && customerEmail) {
+            const message = postPackEmail(credits);
+            const result = await sendTransactionalEmail({ to: customerEmail, ...message, idempotencyKey: `post-pack:${session.id}` });
+            if (!result.sent) console.error("Post-pack email error:", result.reason);
+          }
           break;
         }
         const subscriptionId = subscriptionIdFromCheckoutSession(session);
@@ -57,6 +65,11 @@ export async function POST(request: Request) {
           plan,
           stripe_subscription_id: sub.id,
         });
+        if (customerEmail && (plan === "creator" || plan === "growth")) {
+          const message = subscriptionActivatedEmail(plan);
+          const result = await sendTransactionalEmail({ to: customerEmail, ...message, idempotencyKey: `subscription:${session.id}` });
+          if (!result.sent) console.error("Subscription email error:", result.reason);
+        }
         break;
       }
       case "customer.subscription.created": {

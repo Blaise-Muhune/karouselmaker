@@ -40,7 +40,13 @@ export async function signUp(formData: FormData) {
   const { email, password, howFoundUs } = parsed.data;
 
   const supabase = await createClient();
-  const { data, error } = await supabase.auth.signUp({ email, password });
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const emailRedirectTo = `${baseUrl.replace(/\/$/, "")}/auth/callback`;
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: { emailRedirectTo },
+  });
 
   if (error) {
     return { error: error.message };
