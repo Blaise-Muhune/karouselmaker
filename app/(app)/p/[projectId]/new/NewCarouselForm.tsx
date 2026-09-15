@@ -327,6 +327,7 @@ export function NewCarouselForm({
       formData.set("input_type", "topic");
       formData.set("input_value", trimmed);
       formData.set("carousel_for", "instagram");
+      formData.set("generation_speed", "fast");
 
       const numSlides = numberOfSlides.trim() ? parseInt(numberOfSlides, 10) : NaN;
       if (

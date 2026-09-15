@@ -144,17 +144,6 @@ function logTokenSummary(steps: StepUsage[], imageCostTrack?: ImageCostTrack) {
   LOG("-------------------", "");
 }
 
-/** Heuristic: true when input looks like news or time-sensitive so we auto-enable web search for current facts. */
-function looksLikeNewsOrTimeSensitive(inputValue: string, inputType: string): boolean {
-  const lower = inputValue.trim().toLowerCase();
-  if (!lower) return false;
-  const newsKeywords =
-    /\b(news|breaking|headlines?|today|recent|latest|current|election|update|announcement|just in|this week|this month|2024|2025)\b/;
-  if (newsKeywords.test(lower)) return true;
-  if (inputType === "url") return true;
-  return false;
-}
-
 /** Ensure list items in headline/body each have a newline (e.g. "1. A 2. B" -> "1. A\n2. B"). */
 function ensureListNewlines(text: string): string {
   if (!text?.trim()) return text;
@@ -423,6 +412,7 @@ export async function generateCarousel(formData: FormData): Promise<
     use_stock_photos: formData.get("use_stock_photos") ?? undefined,
     use_ai_generate: formData.get("use_ai_generate") ?? undefined,
     use_web_search: formData.get("use_web_search") ?? undefined,
+    generation_speed: (formData.get("generation_speed") as string | null)?.trim() || undefined,
     use_saved_ugc_character: formData.get("use_saved_ugc_character") ?? undefined,
     images_related_to_topic: formData.get("images_related_to_topic") ?? undefined,
     notes: ((formData.get("notes") as string | null) ?? "").trim() || undefined,
@@ -604,9 +594,12 @@ export async function generateCarousel(formData: FormData): Promise<
   const requestedBravePath = !useStockPhotosRaw && !useAiGenerate;
   let effectiveUseStockPhotos =
     useStockPhotosRaw || (requestedBravePath && !canUseWebImages);
+  const generationSpeed = parsed.data.generation_speed === "quality" ? "quality" : "fast";
   const userAskedWebSearch = !!data.use_web_search;
-  const autoNewsWebSearch = hasFullAccess && looksLikeNewsOrTimeSensitive(data.input_value, data.input_type);
-  const useWebSearch = hasFullAccess && (userAskedWebSearch || autoNewsWebSearch);
+  // Current facts are valuable when explicitly requested. Do not silently add a
+  // slower research pass to the normal creator workflow just because a topic
+  // contains a date-like word.
+  const useWebSearch = generationSpeed === "quality" && hasFullAccess && userAskedWebSearch;
   const projectLanguage = (project as { language?: string }).language?.trim() || undefined;
 
   /** Recurring character refs + brief: all content styles when this run uses AI images. */
@@ -825,9 +818,10 @@ export async function generateCarousel(formData: FormData): Promise<
     // content, and deterministic defects. Early educational posts that clear
     // the hard checks can ship their first strong draft immediately.
     const shouldRunQcJudge =
-      qcHardIssues.length > 0 ||
-      Boolean(pendingOpenLoop?.trim()) ||
-      (includeMarketing && projectRulesParsed.organic_marketing_progress >= 4);
+      generationSpeed === "quality" &&
+      (qcHardIssues.length > 0 ||
+        Boolean(pendingOpenLoop?.trim()) ||
+        (includeMarketing && projectRulesParsed.organic_marketing_progress >= 4));
 
     if (shouldRunQcJudge) {
       const judgePrompts = buildQcJudgePrompts({
@@ -1054,6 +1048,7 @@ export async function generateCarousel(formData: FormData): Promise<
     }
   }
 
+  const writingDurationMs = elapsedMs(totalStart);
   const resolvedTitle =
     (validated.title?.trim() && validated.title.trim() !== "Generating…")
       ? validated.title.trim()
@@ -1063,6 +1058,7 @@ export async function generateCarousel(formData: FormData): Promise<
   const prevGenOpts = (carousel.generation_options ?? {}) as Record<string, unknown>;
   const finalGenerationOptions: Record<string, unknown> = {
     ...prevGenOpts,
+    generation_speed: generationSpeed,
     use_ai_backgrounds: requestedUseAiBackgrounds,
     use_stock_photos: effectiveUseStockPhotos,
     use_ai_generate: useAiGenerate,
@@ -1973,16 +1969,28 @@ export async function generateCarousel(formData: FormData): Promise<
         };
         const tryQueryWithFallback = async (query: string, preferred: StockProvider): Promise<ImageResult | null> => {
           const order = [preferred, ...providers.filter((p) => p !== preferred)];
-          for (const p of order) {
-            const r = await tryProvider(query, p);
-            if (r) return r;
-          }
-          return null;
+          // A provider can be slow or unavailable. Start fallbacks together and
+          // take the first usable result instead of waiting through three 15s
+          // timeouts for every slide.
+          return new Promise<ImageResult | null>((resolve) => {
+            let remaining = order.length;
+            for (const provider of order) {
+              void tryProvider(query, provider).catch(() => null).then((result) => {
+                if (result) {
+                  resolve(result);
+                  return;
+                }
+                remaining -= 1;
+                if (remaining === 0) resolve(null);
+              });
+            }
+          });
         };
         const processOneSearchSlide = async (job: { slide: (typeof createdSlides)[number]; queries: string[]; image_provider: StockProvider }) => {
           const { slide, queries, image_provider } = job;
           let imageResults: ImageResult[] = [];
-          for (const q of queries.slice(0, 4)) {
+          const queriesToTry = generationSpeed === "fast" ? queries.slice(0, 1) : queries.slice(0, 4);
+          for (const q of queriesToTry) {
             const r = await tryQueryWithFallback(q, image_provider);
             if (r) {
               imageResults = [r];
@@ -2102,6 +2110,11 @@ export async function generateCarousel(formData: FormData): Promise<
     generation_complete: true,
     generation_phase: "complete",
     ai_backgrounds_pending: false,
+    generation_timing_ms: {
+      total: elapsedMs(totalStart),
+      writing: writingDurationMs,
+      visuals: elapsedMs(backgroundsStart),
+    },
     ugc_single_character_mode: ugcSingleCharacterModeForCarousel,
     ugc_recurring_entity_mode: ugcRecurringEntityModeForCarousel,
     ...(ugcSeriesCharacterBriefForCarousel
@@ -2311,6 +2324,7 @@ export async function startCarouselGeneration(formData: FormData): Promise<
     use_stock_photos: formData.get("use_stock_photos") ?? undefined,
     use_ai_generate: formData.get("use_ai_generate") ?? undefined,
     use_web_search: formData.get("use_web_search") ?? undefined,
+    generation_speed: (formData.get("generation_speed") as string | null)?.trim() || undefined,
     use_saved_ugc_character: formData.get("use_saved_ugc_character") ?? undefined,
     images_related_to_topic: formData.get("images_related_to_topic") ?? undefined,
     notes: ((formData.get("notes") as string | null) ?? "").trim() || undefined,
