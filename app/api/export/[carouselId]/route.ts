@@ -19,7 +19,6 @@ import { renderSlideHtml } from "@/lib/server/renderer/renderSlideHtml";
 import { resolveBrandKitLogo } from "@/lib/server/brandKit";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
 import { createProxyImageUrl } from "@/lib/server/proxyImageUrl";
-import { formatUnsplashAttributionLine } from "@/lib/server/unsplash";
 import {
   normalizeSlideMetaForRender,
   getTemplateDefaultOverrides,
@@ -142,19 +141,6 @@ export async function POST(
     const defaultTemplateId = await getDefaultTemplateId(userId);
     /** Collect slide PNG/JPEG buffers in memory; we do not persist to storage. */
     const slideBuffers: Buffer[] = [];
-
-    const unsplashAttributions = new Map<
-      string,
-      { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string }
-    >();
-    const pixabayAttributions = new Map<
-      string,
-      { userName: string; userId: number; pageURL: string; photoURL: string }
-    >();
-    const pexelsAttributions = new Map<
-      string,
-      { photographer: string; photographer_url: string; photo_url: string }
-    >();
 
     const CONTENT_TIMEOUT_MS = 25000;
     const SELECTOR_TIMEOUT_MS = 30000;
@@ -290,18 +276,6 @@ export async function POST(
                   // skip this slot
                 }
               }
-              if (img.unsplash_attribution) {
-                const key = img.unsplash_attribution.photographerUsername;
-                if (!unsplashAttributions.has(key)) unsplashAttributions.set(key, img.unsplash_attribution);
-              }
-              if (img.pixabay_attribution) {
-                const key = `${img.pixabay_attribution.userName}-${img.pixabay_attribution.userId}`;
-                if (!pixabayAttributions.has(key)) pixabayAttributions.set(key, img.pixabay_attribution);
-              }
-              if (img.pexels_attribution) {
-                const key = img.pexels_attribution.photo_url;
-                if (!pexelsAttributions.has(key)) pexelsAttributions.set(key, img.pexels_attribution);
-              }
             }
             if (resolved.length === 1) backgroundImageUrl = resolved[0] ?? null;
             else if (resolved.length >= 2) backgroundImageUrls = resolved;
@@ -328,18 +302,6 @@ export async function POST(
               }
               if (!backgroundImageUrl) backgroundImageUrl = slideBg.image_url;
             }
-          }
-          if (slideBg.unsplash_attribution) {
-            const key = slideBg.unsplash_attribution.photographerUsername;
-            if (!unsplashAttributions.has(key)) unsplashAttributions.set(key, slideBg.unsplash_attribution);
-          }
-          if (slideBg.pixabay_attribution) {
-            const key = `${slideBg.pixabay_attribution.userName}-${slideBg.pixabay_attribution.userId}`;
-            if (!pixabayAttributions.has(key)) pixabayAttributions.set(key, slideBg.pixabay_attribution);
-          }
-          if (slideBg.pexels_attribution) {
-            const key = slideBg.pexels_attribution.photo_url;
-            if (!pexelsAttributions.has(key)) pexelsAttributions.set(key, slideBg.pexels_attribution);
           }
           if (slide.slide_type === "hook" && !backgroundImageUrls) {
             if (slideBg.secondary_storage_path) {
@@ -443,47 +405,6 @@ export async function POST(
           }
         }
       }
-      const captionVariants = (carousel.caption_variants ?? {}) as {
-      title?: string;
-      medium?: string;
-      long?: string;
-      short?: string;
-      spicy?: string;
-    };
-    const hashtags = (carousel.hashtags ?? []) as string[];
-    const hashtagLine =
-      hashtags.length > 0
-        ? hashtags.map((h) => (h.startsWith("#") ? h : `#${h}`)).join(" ")
-        : "";
-    const creditsLines: string[] = [];
-    if (unsplashAttributions.size > 0) {
-      creditsLines.push("Image credits (Unsplash):", ...Array.from(unsplashAttributions.values()).map(formatUnsplashAttributionLine));
-    }
-    if (pixabayAttributions.size > 0) {
-      creditsLines.push(
-        "Image credits (Pixabay):",
-        ...Array.from(pixabayAttributions.values()).map(
-          (a) => `Image by ${a.userName} on Pixabay — ${a.photoURL}`
-        )
-      );
-    }
-    if (pexelsAttributions.size > 0) {
-      creditsLines.push(
-        "Image credits (Pexels):",
-        ...Array.from(pexelsAttributions.values()).map(
-          (a) => `Photo by ${a.photographer} on Pexels — ${a.photo_url}`
-        )
-      );
-    }
-    const titleBlock = (captionVariants?.title ?? captionVariants?.short)?.trim();
-    const longBlock = (captionVariants?.long ?? captionVariants?.spicy ?? captionVariants?.medium)?.trim();
-    const captionWithTags = [longBlock, hashtagLine].filter(Boolean).join(longBlock && hashtagLine ? "\n\n" : "");
-    const captionSections: string[] = [];
-    if (titleBlock) captionSections.push(`--- Title (SEO) ---\n${titleBlock}`);
-    if (captionWithTags) captionSections.push(`--- Caption ---\n${captionWithTags}`);
-    captionSections.push(...creditsLines);
-    const captionText = captionSections.filter(Boolean).join("\n\n");
-
     const assetSlug =
       slugifyForFilename([project.name, carousel.title].filter(Boolean).join(" - ")) || "carousel";
 
@@ -533,35 +454,6 @@ export async function POST(
         zip.file(filename, buf);
       }
     }
-    if (captionText.trim()) zip.file("caption.txt", captionText.trim());
-    const hasAnyCredits = unsplashAttributions.size > 0 || pixabayAttributions.size > 0 || pexelsAttributions.size > 0;
-    if (hasAnyCredits) {
-      const creditsFileLines: string[] = [
-        "IMAGE CREDITS",
-        "-------------",
-        "When publishing or distributing your carousel, you are responsible for providing proper attribution.",
-        "",
-      ];
-      if (unsplashAttributions.size > 0) {
-        creditsFileLines.push("Unsplash:", ...Array.from(unsplashAttributions.values()).map(formatUnsplashAttributionLine), "");
-      }
-      if (pixabayAttributions.size > 0) {
-        creditsFileLines.push(
-          "Pixabay:",
-          ...Array.from(pixabayAttributions.values()).map((a) => `Image by ${a.userName} — ${a.photoURL}`),
-          ""
-        );
-      }
-      if (pexelsAttributions.size > 0) {
-        creditsFileLines.push(
-          "Pexels:",
-          ...Array.from(pexelsAttributions.values()).map((a) => `Photo by ${a.photographer} — ${a.photo_url}`),
-          ""
-        );
-      }
-      zip.file("CREDITS.txt", creditsFileLines.join("\n").trim());
-    }
-
     const zipBuffer = await zip.generateAsync({ type: "nodebuffer" });
     const zipFilename = `${assetSlug}.zip`;
 
