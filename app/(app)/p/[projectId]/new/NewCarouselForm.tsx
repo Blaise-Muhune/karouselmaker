@@ -38,6 +38,7 @@ import {
   ImageIcon,
   LayoutTemplateIcon,
   LightbulbIcon,
+  Loader2Icon,
   RefreshCwIcon,
   ChevronDownIcon,
   ChevronUpIcon,
@@ -165,6 +166,8 @@ export function NewCarouselForm({
   );
   const [backgroundPickerOpen, setBackgroundPickerOpen] = useState(false);
   const [driveBusy, setDriveBusy] = useState(false);
+  const [driveStatus, setDriveStatus] = useState<string | null>(null);
+  const [libraryImportBusy, setLibraryImportBusy] = useState(false);
   const [showMore, setShowMore] = useState(!!initialNotes || initialNumberOfSlides != null);
   const [saveAsNewCarousel, setSaveAsNewCarousel] = useState(false);
   const [isPending, setIsPending] = useState(false);
@@ -299,6 +302,10 @@ export function NewCarouselForm({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    if (driveBusy || libraryImportBusy) {
+      setError("Wait for images to finish importing before generating.");
+      return;
+    }
     const trimmed = topic.trim();
     if (!trimmed) {
       setError("Pick or enter a topic for this post.");
@@ -558,48 +565,100 @@ export function NewCarouselForm({
               ))}
             </div>
             {imageSource === "library" && (
-              <div className="flex flex-wrap gap-2 pt-1">
-                <Button type="button" variant="outline" size="sm" onClick={() => setBackgroundPickerOpen(true)}>
-                  Library ({backgroundAssetIds.length})
-                </Button>
-                <GoogleDriveMultiFilePicker
-                  disabled={driveBusy}
-                  onError={(msg) => setError(msg)}
-                  onFilesPicked={async (fileIds, accessToken) => {
-                    setDriveBusy(true);
-                    try {
-                      const result = await importFilesFromGoogleDrive(fileIds, accessToken, projectId);
-                      if (result.ok) {
-                        setBackgroundAssetIds((prev) => [
-                          ...new Set([...prev, ...result.assets.map((a) => a.id)]),
-                        ]);
-                      } else setError(result.error);
-                    } finally {
-                      setDriveBusy(false);
-                    }
-                  }}
-                >
-                  Drive files
-                </GoogleDriveMultiFilePicker>
-                <GoogleDriveFolderPicker
-                  disabled={driveBusy}
-                  onError={(msg) => setError(msg)}
-                  onFolderPicked={async (folderId, accessToken) => {
-                    setDriveBusy(true);
-                    try {
-                      const result = await importFromGoogleDrive(folderId, accessToken, projectId);
-                      if (result.ok) {
-                        setBackgroundAssetIds((prev) => [
-                          ...new Set([...prev, ...result.assets.map((a) => a.id)]),
-                        ]);
-                      } else setError(result.error);
-                    } finally {
-                      setDriveBusy(false);
-                    }
-                  }}
-                >
-                  Drive folder
-                </GoogleDriveFolderPicker>
+              <div className="space-y-2 pt-1">
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" variant="outline" size="sm" disabled={driveBusy} onClick={() => setBackgroundPickerOpen(true)}>
+                    Library ({backgroundAssetIds.length})
+                  </Button>
+                  <GoogleDriveMultiFilePicker
+                    disabled={driveBusy}
+                    onError={(msg) => {
+                      setDriveStatus(null);
+                      setError(msg);
+                    }}
+                    onFilesPicked={async (fileIds, accessToken) => {
+                      setError(null);
+                      setDriveBusy(true);
+                      setDriveStatus("Importing images from Drive…");
+                      try {
+                        const result = await importFilesFromGoogleDrive(fileIds, accessToken, projectId);
+                        if (result.ok) {
+                          setBackgroundAssetIds((prev) => [
+                            ...new Set([...prev, ...result.assets.map((a) => a.id)]),
+                          ]);
+                          setDriveStatus(
+                            result.assets.length > 0
+                              ? `Imported ${result.assets.length} image${result.assets.length === 1 ? "" : "s"}. Ready to generate.`
+                              : "No images could be imported from those files."
+                          );
+                        } else {
+                          setDriveStatus(null);
+                          setError(result.error);
+                        }
+                      } finally {
+                        setDriveBusy(false);
+                      }
+                    }}
+                  >
+                    {driveBusy ? (
+                      <>
+                        <Loader2Icon className="mr-1.5 size-3.5 animate-spin" />
+                        Importing…
+                      </>
+                    ) : (
+                      "Drive files"
+                    )}
+                  </GoogleDriveMultiFilePicker>
+                  <GoogleDriveFolderPicker
+                    disabled={driveBusy}
+                    onError={(msg) => {
+                      setDriveStatus(null);
+                      setError(msg);
+                    }}
+                    onFolderPicked={async (folderId, accessToken) => {
+                      setError(null);
+                      setDriveBusy(true);
+                      setDriveStatus("Importing folder images from Drive…");
+                      try {
+                        const result = await importFromGoogleDrive(folderId, accessToken, projectId);
+                        if (result.ok) {
+                          setBackgroundAssetIds((prev) => [
+                            ...new Set([...prev, ...result.assets.map((a) => a.id)]),
+                          ]);
+                          setDriveStatus(
+                            result.assets.length > 0
+                              ? `Imported ${result.assets.length} image${result.assets.length === 1 ? "" : "s"}. Ready to generate.`
+                              : "No images found in that folder."
+                          );
+                        } else {
+                          setDriveStatus(null);
+                          setError(result.error);
+                        }
+                      } finally {
+                        setDriveBusy(false);
+                      }
+                    }}
+                  >
+                    {driveBusy ? (
+                      <>
+                        <Loader2Icon className="mr-1.5 size-3.5 animate-spin" />
+                        Importing…
+                      </>
+                    ) : (
+                      "Drive folder"
+                    )}
+                  </GoogleDriveFolderPicker>
+                </div>
+                {driveBusy ? (
+                  <p className="text-muted-foreground flex items-center gap-1.5 text-xs" role="status">
+                    <Loader2Icon className="size-3.5 animate-spin" />
+                    {driveStatus ?? "Importing images from Drive…"}
+                  </p>
+                ) : driveStatus ? (
+                  <p className="text-muted-foreground text-xs" role="status">
+                    {driveStatus}
+                  </p>
+                ) : null}
               </div>
             )}
           </CardContent>
@@ -681,8 +740,18 @@ export function NewCarouselForm({
           )}
         </div>
 
-        <Button type="submit" className="w-full" size="lg" disabled={isPending || topicQueueLoading} loading={isPending}>
-          {regenerateCarouselId ? "Regenerate post" : "Generate post"}
+        <Button
+          type="submit"
+          className="w-full"
+          size="lg"
+          disabled={isPending || topicQueueLoading || driveBusy || libraryImportBusy}
+          loading={isPending}
+        >
+          {driveBusy || libraryImportBusy
+            ? "Importing images…"
+            : regenerateCarouselId
+              ? "Regenerate post"
+              : "Generate post"}
         </Button>
       </form>
 
@@ -789,6 +858,7 @@ export function NewCarouselForm({
         selectedIds={backgroundAssetIds}
         onConfirm={setBackgroundAssetIds}
         contextProjectId={projectId}
+        onImportBusyChange={setLibraryImportBusy}
       />
       <UpgradePlansDialog open={plansOpen} onOpenChange={setPlansOpen} />
     </>

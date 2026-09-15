@@ -16,13 +16,20 @@ function getExtensionFromMime(mime: string | undefined): string {
 
 /**
  * Resize (max 1920px) and compress image to JPEG for storage when sharp is installed.
+ * Applies EXIF orientation first so phone/Drive photos are not stored sideways after metadata is stripped.
  * If sharp is not installed, returns the original buffer (build works without sharp).
  */
 export async function processImageBuffer(
   inputBuffer: Buffer,
   inputMime?: string
 ): Promise<ProcessImageResult> {
-  let sharp: (input: Buffer, opts?: { failOnError?: boolean }) => { resize: (w: number, h: number, opts: unknown) => { jpeg: (opts: { quality: number }) => { toBuffer: () => Promise<Buffer> } } };
+  let sharp: (input: Buffer, opts?: { failOnError?: boolean }) => {
+    rotate: () => {
+      resize: (w: number, h: number, opts: unknown) => {
+        jpeg: (opts: { quality: number }) => { toBuffer: () => Promise<Buffer> };
+      };
+    };
+  };
   try {
     sharp = (await import("sharp")).default as typeof sharp;
   } catch {
@@ -33,7 +40,10 @@ export async function processImageBuffer(
     };
   }
 
+  // `.rotate()` with no args: honor EXIF Orientation and bake it into pixels, then strip the tag.
+  // Without this, JPEG re-encode drops EXIF and phone photos often appear rotated in the app.
   const pipeline = sharp(inputBuffer, { failOnError: true })
+    .rotate()
     .resize(MAX_DIMENSION, MAX_DIMENSION, {
       fit: "inside",
       withoutEnlargement: true,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { uploadAssets } from "@/app/actions/assets/uploadAsset";
 import { importFromGoogleDrive, importFilesFromGoogleDrive } from "@/app/actions/assets/importFromGoogleDrive";
@@ -12,8 +12,10 @@ import { cn } from "@/lib/utils";
 export type LibraryImageImportBarProps = {
   /** New uploads and Drive imports are tagged with this project (omit or null = global library). */
   attachProjectId?: string | null;
-  /** Called after a successful add so the parent can refetch the library. */
-  onRefresh: () => void | Promise<void>;
+  /** Called after a successful add so the parent can refetch the library. Passes new asset ids when available. */
+  onRefresh: (newAssetIds?: string[]) => void | Promise<void>;
+  /** Notifies parent while upload/Drive import is in progress (so Confirm/Generate can wait). */
+  onBusyChange?: (busy: boolean) => void;
   disabled?: boolean;
   atLimit?: boolean;
   className?: string;
@@ -29,6 +31,7 @@ export type LibraryImageImportBarProps = {
 export function LibraryImageImportBar({
   attachProjectId,
   onRefresh,
+  onBusyChange,
   disabled = false,
   atLimit = false,
   className,
@@ -43,6 +46,10 @@ export function LibraryImageImportBar({
   const busy = disabled || atLimit || uploading || driveBusy;
   const btnSize = size === "sm" ? "sm" : "default";
   const h = size === "sm" ? "h-8 text-xs" : "";
+
+  useEffect(() => {
+    onBusyChange?.(uploading || driveBusy);
+  }, [uploading, driveBusy, onBusyChange]);
 
   async function handleFilesSelected(files: FileList | null) {
     if (!files?.length || atLimit) return;
@@ -65,7 +72,7 @@ export function LibraryImageImportBar({
             ? `Added 1 image.${extra}`
             : `Added ${result.assetIds.length} images.${extra}`
         );
-        await onRefresh();
+        await onRefresh(result.assetIds);
       } else {
         setMessage(result.error);
       }
@@ -118,7 +125,7 @@ export function LibraryImageImportBar({
               const result = await importFromGoogleDrive(folderId, accessToken, attachProjectId ?? undefined);
               if (result.ok && result.assets.length > 0) {
                 setMessage(`Imported ${result.assets.length} image(s) from Drive.`);
-                await onRefresh();
+                await onRefresh(result.assets.map((a) => a.id));
               } else if (!result.ok) {
                 setMessage(result.error);
               } else {
@@ -149,7 +156,7 @@ export function LibraryImageImportBar({
               const result = await importFilesFromGoogleDrive(fileIds, accessToken, attachProjectId ?? undefined);
               if (result.ok && result.assets.length > 0) {
                 setMessage(`Imported ${result.assets.length} image(s) from Drive.`);
-                await onRefresh();
+                await onRefresh(result.assets.map((a) => a.id));
               } else if (!result.ok) {
                 setMessage(result.error);
               } else {
@@ -165,7 +172,11 @@ export function LibraryImageImportBar({
           className={cn(h)}
           disabled={busy}
         >
-          <ImageIcon className="mr-1.5 size-3.5" />
+          {driveBusy ? (
+            <Loader2Icon className="mr-1.5 size-3.5 animate-spin" />
+          ) : (
+            <ImageIcon className="mr-1.5 size-3.5" />
+          )}
           Drive files
         </GoogleDriveMultiFilePicker>
       </div>

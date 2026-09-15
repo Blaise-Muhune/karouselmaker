@@ -42,6 +42,8 @@ type BackgroundImagesPickerModalProps = {
   contextProjectId?: string;
   /** When true, Confirm works with 0 images (clears selection). */
   allowEmptyConfirm?: boolean;
+  /** Lets the parent disable Generate while this modal is importing. */
+  onImportBusyChange?: (busy: boolean) => void;
 };
 
 export function BackgroundImagesPickerModal({
@@ -54,10 +56,12 @@ export function BackgroundImagesPickerModal({
   dialogDescription = "Select 1–30 images. They will be applied to frames in order (round-robin). First frame can use 1 or 2 images (full + circle).",
   contextProjectId,
   allowEmptyConfirm = false,
+  onImportBusyChange,
 }: BackgroundImagesPickerModalProps) {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [urls, setUrls] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
+  const [importBusy, setImportBusy] = useState(false);
   const [libraryScope, setLibraryScope] = useState<LibraryScope>("all");
   const [selection, setSelection] = useState<Set<string>>(() => new Set(selectedIds.slice(0, maxSelection)));
 
@@ -73,6 +77,30 @@ export function BackgroundImagesPickerModal({
       setLoading(false);
     }
   }, []);
+
+  const handleBusyChange = useCallback(
+    (busy: boolean) => {
+      setImportBusy(busy);
+      onImportBusyChange?.(busy);
+    },
+    [onImportBusyChange]
+  );
+
+  const handleRefresh = useCallback(
+    async (newAssetIds?: string[]) => {
+      await loadLibrary();
+      if (!newAssetIds?.length) return;
+      setSelection((prev) => {
+        const next = new Set(prev);
+        for (const id of newAssetIds) {
+          if (next.size >= maxSelection) break;
+          next.add(id);
+        }
+        return next;
+      });
+    },
+    [loadLibrary, maxSelection]
+  );
 
   useEffect(() => {
     const ids = selectedIds.slice(0, maxSelection);
@@ -130,9 +158,16 @@ export function BackgroundImagesPickerModal({
           )}
           <LibraryImageImportBar
             attachProjectId={contextProjectId ?? null}
-            onRefresh={loadLibrary}
+            onRefresh={handleRefresh}
+            onBusyChange={handleBusyChange}
             size="sm"
           />
+          {importBusy ? (
+            <p className="text-muted-foreground flex items-center gap-1.5 text-xs" role="status">
+              <Loader2Icon className="size-3.5 animate-spin" />
+              Importing images… wait until they appear and are selected, then confirm.
+            </p>
+          ) : null}
         </div>
 
         {loading ? (
@@ -191,12 +226,17 @@ export function BackgroundImagesPickerModal({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={handleConfirm} disabled={!allowEmptyConfirm && selection.size === 0}>
-            {selection.size === 0
-              ? allowEmptyConfirm
-                ? "Clear"
-                : "Select at least one"
-              : `Use ${selection.size} image${selection.size !== 1 ? "s" : ""}`}
+          <Button
+            onClick={handleConfirm}
+            disabled={importBusy || loading || (!allowEmptyConfirm && selection.size === 0)}
+          >
+            {importBusy
+              ? "Importing…"
+              : selection.size === 0
+                ? allowEmptyConfirm
+                  ? "Clear"
+                  : "Select at least one"
+                : `Use ${selection.size} image${selection.size !== 1 ? "s" : ""}`}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -4502,8 +4502,8 @@ export function SlideEditForm({
       setDriveError(null);
       setDriveSuccess(null);
       setDriveImporting(true);
+      try {
       const result = await importSingleFileFromGoogleDrive(fileId, accessToken, projectId ?? undefined);
-      setDriveImporting(false);
       if (result.ok && result.asset.url) {
         const { asset } = result;
         const latestRows = imageUrlsRef.current;
@@ -4602,6 +4602,9 @@ export function SlideEditForm({
         setTimeout(() => setDriveSuccess(null), 4000);
       } else if (!result.ok) {
         setDriveError(result.error);
+      }
+      } finally {
+        setDriveImporting(false);
       }
     },
     [

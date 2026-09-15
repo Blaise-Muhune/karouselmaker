@@ -34,7 +34,7 @@ function loadScript(src: string): Promise<void> {
 const IMAGE_MIME_TYPES = "image/jpeg,image/jpg,image/png,image/webp,image/gif";
 
 type GoogleDriveFilePickerProps = {
-  onFilePicked: (fileId: string, accessToken: string) => void;
+  onFilePicked: (fileId: string, accessToken: string) => void | Promise<void>;
   onError?: (message: string) => void;
   variant?: "default" | "outline" | "ghost" | "link" | "destructive" | "secondary";
   size?: "default" | "sm" | "lg" | "icon" | "icon-sm";
@@ -127,10 +127,20 @@ export function GoogleDriveFilePicker({
             .setOAuthToken(accessToken)
             .addView(docsView)
             .setCallback((data: GooglePickerResponse) => {
-              finish();
-              if (data.action !== "picked" || !data.docs?.length) return;
-              const fileId = data.docs[0]!.id;
-              if (fileId) onFilePicked(fileId, accessToken);
+              void (async () => {
+                if (data.action !== "picked" || !data.docs?.length) {
+                  finish();
+                  return;
+                }
+                const fileId = data.docs[0]!.id;
+                try {
+                  if (fileId) await Promise.resolve(onFilePicked(fileId, accessToken));
+                } catch (e) {
+                  onError?.(e instanceof Error ? e.message : "Drive import failed.");
+                } finally {
+                  finish();
+                }
+              })();
             });
 
           if (apiKey) builder.setDeveloperKey(apiKey);
@@ -154,7 +164,7 @@ export function GoogleDriveFilePicker({
       },
     });
     tokenClient.requestAccessToken();
-  }, [onError]);
+  }, [onFilePicked, onError]);
 
   return (
     <Button

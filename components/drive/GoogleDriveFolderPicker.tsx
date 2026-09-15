@@ -65,7 +65,7 @@ function loadScript(src: string): Promise<void> {
 }
 
 type GoogleDriveFolderPickerProps = {
-  onFolderPicked: (folderId: string, accessToken: string) => void;
+  onFolderPicked: (folderId: string, accessToken: string) => void | Promise<void>;
   onError?: (message: string) => void;
   variant?: "default" | "outline" | "ghost" | "link" | "destructive" | "secondary";
   size?: "default" | "sm" | "lg" | "icon" | "icon-sm";
@@ -166,10 +166,20 @@ type PickerApi = {
             .setOAuthToken(accessToken)
             .addView(docsView)
             .setCallback((data: GooglePickerResponse) => {
-              finish();
-              if (data.action !== "picked" || !data.docs?.length) return;
-              const folderId = data.docs[0]!.id;
-              if (folderId) onFolderPicked(folderId, accessToken);
+              void (async () => {
+                if (data.action !== "picked" || !data.docs?.length) {
+                  finish();
+                  return;
+                }
+                const folderId = data.docs[0]!.id;
+                try {
+                  if (folderId) await Promise.resolve(onFolderPicked(folderId, accessToken));
+                } catch (e) {
+                  onError?.(e instanceof Error ? e.message : "Drive import failed.");
+                } finally {
+                  finish();
+                }
+              })();
             });
 
           if (apiKey) builder.setDeveloperKey(apiKey);
@@ -194,7 +204,7 @@ type PickerApi = {
       },
     });
     tokenClient.requestAccessToken();
-  }, [onError]);
+  }, [onFolderPicked, onError]);
 
   return (
     <Button

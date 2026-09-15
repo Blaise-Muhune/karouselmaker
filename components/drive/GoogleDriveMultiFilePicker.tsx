@@ -32,7 +32,7 @@ function loadScript(src: string): Promise<void> {
 }
 
 type GoogleDriveMultiFilePickerProps = {
-  onFilesPicked: (fileIds: string[], accessToken: string) => void;
+  onFilesPicked: (fileIds: string[], accessToken: string) => void | Promise<void>;
   onError?: (message: string) => void;
   variant?: "default" | "outline" | "ghost" | "link" | "destructive" | "secondary";
   size?: "default" | "sm" | "lg" | "icon" | "icon-sm";
@@ -140,10 +140,20 @@ export function GoogleDriveMultiFilePicker({
             .setOAuthToken(accessToken)
             .addView(view)
             .setCallback((data: GooglePickerResponse) => {
-              finish();
-              if (data.action !== "picked" || !data.docs?.length) return;
-              const fileIds = data.docs.map((d) => d.id).filter(Boolean);
-              if (fileIds.length) onFilesPicked(fileIds, accessToken);
+              void (async () => {
+                if (data.action !== "picked" || !data.docs?.length) {
+                  finish();
+                  return;
+                }
+                const fileIds = data.docs.map((d) => d.id).filter(Boolean);
+                try {
+                  if (fileIds.length) await Promise.resolve(onFilesPicked(fileIds, accessToken));
+                } catch (e) {
+                  onError?.(e instanceof Error ? e.message : "Drive import failed.");
+                } finally {
+                  finish();
+                }
+              })();
             });
           const b = builder as { enableFeature?: (f: number) => unknown };
           if (typeof b.enableFeature === "function" && pickerApi.Feature?.MULTISELECT_ENABLED != null) {
