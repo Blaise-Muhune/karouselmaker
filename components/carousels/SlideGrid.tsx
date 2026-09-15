@@ -1,6 +1,6 @@
 "use client";
 
-import { normalizeSlideMetaForRender } from "@/lib/server/export/normalizeSlideMetaForRender";
+import { normalizeSlideMetaForRender, getTemplateDefaultOverrides, mergeWithTemplateDefaults } from "@/lib/server/export/normalizeSlideMetaForRender";
 
 import Link from "next/link";
 import { useEffect, useRef, useState, useTransition } from "react";
@@ -401,14 +401,12 @@ function getHighlightStyles(slide: Slide): { headline: "text" | "background"; bo
   };
 }
 
-function getOutlineStrokes(slide: Slide): { headline: number; body: number } {
-  const m = slide.meta as SlideMeta | null;
-  const h = m?.headline_outline_stroke;
-  const b = m?.body_outline_stroke;
-  return {
-    headline: typeof h === "number" && h >= 0 && h <= 8 ? h : 0,
-    body: typeof b === "number" && b >= 0 && b <= 8 ? b : 0,
-  };
+function getOutlineStrokes(slide: Slide, config: TemplateConfig | null): { headline: number; body: number } {
+  const merged = mergeWithTemplateDefaults(
+    normalizeSlideMetaForRender(slide.meta as Record<string, unknown> | null),
+    getTemplateDefaultOverrides(config)
+  );
+  return { headline: merged.outlineStrokes?.headline ?? 0, body: merged.outlineStrokes?.body ?? 0 };
 }
 
 function getHighlightSpans(slide: Slide): { headline_highlights?: SlideMeta["headline_highlights"]; body_highlights?: SlideMeta["body_highlights"] } {
@@ -975,8 +973,8 @@ export function SlideGrid({
                             chromeOverrides={previewChromeOverrides}
                             headlineHighlightStyle={getHighlightStyles(slide).headline}
                             bodyHighlightStyle={getHighlightStyles(slide).body}
-                            headlineOutlineStroke={getOutlineStrokes(slide).headline}
-                            bodyOutlineStroke={getOutlineStrokes(slide).body}
+                            headlineOutlineStroke={getOutlineStrokes(slide, effectiveTemplateConfig).headline}
+                            bodyOutlineStroke={getOutlineStrokes(slide, effectiveTemplateConfig).body}
                             headline_highlights={getHighlightSpans(slide).headline_highlights}
                             body_highlights={getHighlightSpans(slide).body_highlights}
                             borderedFrame={hasBackgroundImage}
@@ -1091,8 +1089,8 @@ export function SlideGrid({
                             chromeOverrides={previewChromeOverrides}
                             headlineHighlightStyle={getHighlightStyles(slide).headline}
                             bodyHighlightStyle={getHighlightStyles(slide).body}
-                            headlineOutlineStroke={getOutlineStrokes(slide).headline}
-                            bodyOutlineStroke={getOutlineStrokes(slide).body}
+                            headlineOutlineStroke={getOutlineStrokes(slide, effectiveTemplateConfig).headline}
+                            bodyOutlineStroke={getOutlineStrokes(slide, effectiveTemplateConfig).body}
                             headline_highlights={getHighlightSpans(slide).headline_highlights}
                             body_highlights={getHighlightSpans(slide).body_highlights}
                             borderedFrame={hasBackgroundImage}

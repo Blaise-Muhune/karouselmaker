@@ -1,7 +1,7 @@
-import { waitForFontsInPage } from "@/lib/server/browser/waitForFonts";
+import { cacheRender, getCachedRender, renderCacheKey } from "@/lib/server/export/renderCache";
+import { waitForSlideReady } from "@/lib/server/browser/waitForSlideReady";
 import { NextResponse } from "next/server";
 import { launchChromium } from "@/lib/server/browser/launchChromium";
-import { waitForImagesInPage } from "@/lib/server/browser/waitForImages";
 import { createClient } from "@/lib/supabase/server";
 import { getSlide, getTemplate, getCarousel, getProject, listSlides, getAsset } from "@/lib/server/db";
 import { getDefaultTemplateId } from "@/lib/server/db/templates";
@@ -289,20 +289,25 @@ export async function GET(
     slideMeta
   );
 
-  const browser = await launchChromium();
+  let browser: Awaited<ReturnType<typeof launchChromium>> | undefined;
   const CONTENT_TIMEOUT_MS = 25000;
   const SELECTOR_TIMEOUT_MS = 30000;
   try {
-    const page = await browser.newPage();
-    try {
-      await page.setViewportSize({ width: dimensions.w, height: dimensions.h });
-      await page.setContent(html, { waitUntil: "load", timeout: CONTENT_TIMEOUT_MS });
-      await page.waitForSelector(".slide-wrap", { state: "visible", timeout: SELECTOR_TIMEOUT_MS });
-      await waitForImagesInPage(page, CONTENT_TIMEOUT_MS).catch(() => {});
-          await waitForFontsInPage(page);
-      await new Promise((r) => setTimeout(r, 1200));
-      const buffer = await page.locator(".slide-wrap").screenshot({ type: format, timeout: SELECTOR_TIMEOUT_MS });
-      const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+    const cacheKey = renderCacheKey(userId, html, format, dimensions.w, dimensions.h);
+    let buf = getCachedRender(cacheKey);
+    if (!buf) {
+      browser = await launchChromium();
+      const page = await browser.newPage();
+      try {
+        await page.setViewportSize({ width: dimensions.w, height: dimensions.h });
+        await page.setContent(html, { waitUntil: "load", timeout: CONTENT_TIMEOUT_MS });
+        await page.waitForSelector(".slide-wrap", { state: "visible", timeout: SELECTOR_TIMEOUT_MS });
+        await waitForSlideReady(page, CONTENT_TIMEOUT_MS);
+        const buffer = await page.locator(".slide-wrap").screenshot({ type: format, timeout: SELECTOR_TIMEOUT_MS });
+        buf = Buffer.from(buffer);
+        cacheRender(cacheKey, buf);
+      } finally { await page.close(); }
+    }
       const ext = format === "jpeg" ? "jpg" : "png";
       const slug =
         slugifyForFilename([project.name, carousel.title].filter(Boolean).join(" - ")) || "slide";
@@ -314,9 +319,6 @@ export async function GET(
           "Content-Disposition": `attachment; filename="${filename}"`,
         },
       });
-    } finally {
-      await page.close();
-    }
   } catch (e) {
     const raw = e instanceof Error ? e.message : "Export failed";
     const isBrowserClosed =
@@ -328,6 +330,6 @@ export async function GET(
       : raw;
     return NextResponse.json({ error: msg }, { status: 500 });
   } finally {
-    await browser.close();
+    await browser?.close();
   }
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { normalizeSlideMetaForRender } from "@/lib/server/export/normalizeSlideMetaForRender";
+import { normalizeSlideMetaForRender, getTemplateDefaultOverrides, mergeWithTemplateDefaults } from "@/lib/server/export/normalizeSlideMetaForRender";
 
 import { useState, useMemo } from "react";
 import { SlidePreview, type SlideBackgroundOverride } from "@/components/renderer/SlidePreview";
@@ -400,6 +400,8 @@ export function SlideEditorModal({
                       slide_type: slide.slide_type,
                     }}
                     templateConfig={templateConfig}
+                    headlineOutlineStroke={mergeWithTemplateDefaults(normalizeSlideMetaForRender(slide.meta as Record<string, unknown> | null), getTemplateDefaultOverrides(templateConfig)).outlineStrokes?.headline ?? 0}
+                    bodyOutlineStroke={mergeWithTemplateDefaults(normalizeSlideMetaForRender(slide.meta as Record<string, unknown> | null), getTemplateDefaultOverrides(templateConfig)).outlineStrokes?.body ?? 0}
                     brandKit={brandKit}
                     totalSlides={totalSlides}
                     backgroundImageUrl={previewBackgroundImageUrl}

@@ -1623,7 +1623,9 @@ export function SlideEditForm({
     ]
   );
   const lastSavedRef = useRef<string>(buildEditorDirtySnapshotString());
-  const hasUnsavedChanges = buildEditorDirtySnapshotString() !== lastSavedRef.current;
+  const editorSnapshot = buildEditorDirtySnapshotString();
+  const hasUnsavedChanges = editorSnapshot !== lastSavedRef.current;
+  const saveQueueRef = useRef<Promise<unknown>>(Promise.resolve());
 
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
@@ -2940,7 +2942,11 @@ export function SlideEditForm({
     return Object.keys(payload).length > 0 ? payload : undefined;
   };
 
-  const performSave = async (navigateBack = false) => {
+  const persistSlide = async (navigateBack = false) => {
+    if (buildEditorDirtySnapshotString() === lastSavedRef.current) {
+      if (navigateBack) router.push(backHref);
+      return { ok: true as const };
+    }
     setSaving(true);
     setSaveError(null);
     const overlayPayload = background.overlay ?? { gradient: true, darken: 0.5, color: "#000000", textColor: "#ffffff" };
@@ -3118,7 +3124,7 @@ export function SlideEditForm({
       lastSavedRef.current = buildEditorDirtySnapshotString();
       setSavedFeedback(true);
       setTimeout(() => setSavedFeedback(false), 1500);
-      router.refresh();
+
       if (navigateBack) router.push(backHref);
     } else {
       setSaveError("error" in result ? result.error : "Save failed");
@@ -3200,13 +3206,30 @@ export function SlideEditForm({
       lastSavedRef.current = buildEditorDirtySnapshotString();
       setSavedFeedback(true);
       setTimeout(() => setSavedFeedback(false), 1500);
-      router.refresh();
+
       if (navigateBack) router.push(backHref);
     } else {
       setSaveError("error" in result ? result.error : "Save failed");
     }
     return result;
   };
+
+  // Serialize saves so slower requests cannot overwrite newer edits.
+  const performSave = (navigateBack = false) => {
+    const next = saveQueueRef.current.then(() => persistSlide(navigateBack)).catch(() => {
+      setSaveError("Could not save changes. Please retry.");
+      return { ok: false as const, error: "Could not save changes. Please retry." };
+    }).finally(() => setSaving(false));
+    saveQueueRef.current = next;
+    return next;
+  };
+  const latestSaveRef = useRef(performSave);
+  useEffect(() => { latestSaveRef.current = performSave; });
+  useEffect(() => {
+    if (!hasUnsavedChanges || saveError) return;
+    const timer = setTimeout(() => { void latestSaveRef.current(false); }, 800);
+    return () => clearTimeout(timer);
+  }, [editorSnapshot, hasUnsavedChanges, saveError]);
 
   /** Save current edits, then go in-app (avoids losing work on `<Link>` navigation). */
   const navigateAfterSave = async (href: string) => {
@@ -3635,6 +3658,11 @@ export function SlideEditForm({
     setExportingFull(true);
     setExportFullError(null);
     try {
+      const saved = await performSave(false);
+      if (!saved.ok) {
+        setExportFullError("Could not save your latest changes. Please retry.");
+        return;
+      }
       const res = await fetch(`/api/export/${carouselId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -5103,9 +5131,7 @@ export function SlideEditForm({
               {downloading ? <Loader2Icon className="size-4 animate-spin" /> : <DownloadIcon className="size-4" />}
             </Button>
           )}
-          {hasUnsavedChanges && (
-            <span className="text-muted-foreground text-[11px] px-1.5" aria-live="polite">Unsaved</span>
-          )}
+          <span className="text-muted-foreground text-[11px] px-1.5" aria-live="polite">{saveError ? "Save failed" : saving ? "Saving…" : hasUnsavedChanges ? "Unsaved" : "Saved"}</span>
           <Button
             variant="default"
             size="sm"

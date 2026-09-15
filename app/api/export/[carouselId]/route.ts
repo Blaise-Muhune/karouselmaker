@@ -1,7 +1,7 @@
-import { waitForFontsInPage } from "@/lib/server/browser/waitForFonts";
+import { cacheRender, getCachedRender, renderCacheKey } from "@/lib/server/export/renderCache";
+import { waitForSlideReady } from "@/lib/server/browser/waitForSlideReady";
 import { NextResponse } from "next/server";
 import { launchChromium } from "@/lib/server/browser/launchChromium";
-import { waitForImagesInPage } from "@/lib/server/browser/waitForImages";
 import { createClient } from "@/lib/supabase/server";
 import {
   getCarousel,
@@ -39,10 +39,6 @@ import { buildCarouselPdfFromPngPages } from "@/lib/server/export/buildCarouselP
 import JSZip from "jszip";
 
 const BUCKET = "carousel-assets";
-/** Delay after load before screenshot so layout/fonts/images settle. Prevents pitch-black frames. */
-const SCREENSHOT_DELAY_MS = 500;
-/** Short pause between processing slides in production to reduce browser memory pressure and "browser closed" errors. */
-const INTER_SLIDE_DELAY_MS = 150;
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -166,12 +162,11 @@ export async function POST(
 
     let lastError: unknown = null;
     for (let attempt = 1; attempt <= MAX_EXPORT_ATTEMPTS; attempt++) {
-      const browser = await launchChromium();
+      slideBuffers.length = 0;
+      let browser: Awaited<ReturnType<typeof launchChromium>> | undefined;
       try {
       for (let i = 0; i < slides.length; i++) {
-        if (i > 0) {
-          await new Promise((r) => setTimeout(r, INTER_SLIDE_DELAY_MS));
-        }
+
         const slide = slides[i];
         if (!slide) continue;
 
@@ -425,16 +420,19 @@ export async function POST(
           slideMeta
         );
 
+        const cacheKey = renderCacheKey(userId, html, rasterFormat, dimensions.w, dimensions.h);
+        const cached = getCachedRender(cacheKey);
+        if (cached) { slideBuffers.push(cached); continue; }
+        browser ??= await launchChromium();
         const page = await browser.newPage();
         try {
           await page.setViewportSize({ width: dimensions.w, height: dimensions.h });
           await page.setContent(html, { waitUntil: "load", timeout: CONTENT_TIMEOUT_MS });
           await page.waitForSelector(".slide-wrap", { state: "visible", timeout: SELECTOR_TIMEOUT_MS });
-          await waitForImagesInPage(page, CONTENT_TIMEOUT_MS).catch(() => {});
-          await waitForFontsInPage(page);
-          await new Promise((r) => setTimeout(r, SCREENSHOT_DELAY_MS));
+          await waitForSlideReady(page, CONTENT_TIMEOUT_MS);
           const buffer = await page.locator(".slide-wrap").screenshot({ type: rasterFormat, timeout: SELECTOR_TIMEOUT_MS });
           const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+          cacheRender(cacheKey, buf);
           slideBuffers.push(buf);
           await page.setContent("about:blank", { waitUntil: "domcontentloaded" });
         } finally {
@@ -495,25 +493,16 @@ export async function POST(
     // retention job can still discover and remove any partial slide files.
     await updateExport(userId, exportId, { status: "pending", storage_path: paths.slidesDir });
     const rasterContentType = rasterFormat === "jpeg" ? "image/jpeg" : "image/png";
-    for (let i = 0; i < slideBuffers.length; i++) {
-      const buf = slideBuffers[i];
-      if (buf) {
-        const storagePath = paths.slidePath(i);
-        const { error: uploadError } = await supabase.storage
-          .from(BUCKET)
-          .upload(storagePath, buf, { contentType: rasterContentType, upsert: true });
-        if (uploadError) {
-          try {
-            await updateExport(userId, exportId, { status: "failed" });
-          } catch {
-            // ignore
-          }
-          return NextResponse.json(
-            { error: `Failed to store slide image: ${uploadError.message}` },
-            { status: 500 }
-          );
-        }
-      }
+    // Three uploads at a time, preserving numbered filenames and waiting for each batch.
+    for (let offset = 0; offset < slideBuffers.length; offset += 3) {
+      const results = await Promise.allSettled(slideBuffers.slice(offset, offset + 3).map(async (buf, index) => {
+        const { error } = await supabase.storage.from(BUCKET).upload(paths.slidePath(offset + index), buf, {
+          contentType: rasterContentType, upsert: true,
+        });
+        if (error) throw new Error(error.message);
+      }));
+      const failed = results.find((result) => result.status === "rejected");
+      if (failed?.status === "rejected") throw new Error("Failed to store slide image. Please retry.");
     }
     await updateExport(userId, exportId, { status: "ready", storage_path: paths.slidesDir });
 
@@ -589,7 +578,7 @@ export async function POST(
         lastError = e;
       } finally {
         try {
-          await browser.close();
+          await browser?.close();
         } catch {
           // ignore
         }
