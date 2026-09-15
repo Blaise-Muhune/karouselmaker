@@ -1,5 +1,5 @@
-import { FONT_WEIGHT_GOOGLE_WGHT_PARAM } from "@/lib/constants/fontWeight";
-import { GOOGLE_FONT_IDS_SET } from "@/lib/constants/googleFonts";
+import { GOOGLE_FONT_IDS_SET, googleFontFamilyParam } from "@/lib/constants/googleFonts";
+import { getFontFamilyStack, getFontFamilyStackForHtmlAttr } from "@/lib/renderer/fontFamilyStack";
 import { buildSlideRenderModel, getTextScaleForDimensions, getSwipeRightXForFormat, type BrandKit, type SlideData, type TextZoneOverrides, type ChromeOverrides } from "@/lib/renderer/renderModel";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { getOverlayShapesHtml } from "@/lib/renderer/overlayShapesHtml";
@@ -102,40 +102,8 @@ function escapeHtml(s: string): string {
 }
 
 /** Safe font-family stack for template fontFamily (system, Inter, Georgia, etc.). */
-function getFontFamilyStack(fontFamily: string | undefined): string {
-  if (!fontFamily?.trim()) return "inherit";
-  const f = fontFamily.trim();
-  if (f === "system" || f === "sans-serif") return "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif";
-  if (f === "Inter") return "\"Inter\", -apple-system, BlinkMacSystemFont, sans-serif";
-  if (f === "Georgia" || f === "serif") return "Georgia, \"Times New Roman\", serif";
-  if (f === "Times New Roman") return "\"Times New Roman\", Times, serif";
-  if (f === "Roboto") return "\"Roboto\", -apple-system, BlinkMacSystemFont, sans-serif";
-  if (f === "Montserrat") return "\"Montserrat\", -apple-system, BlinkMacSystemFont, sans-serif";
-  if (f === "Open Sans") return "\"Open Sans\", -apple-system, BlinkMacSystemFont, sans-serif";
-  if (f === "Lato") return "\"Lato\", -apple-system, BlinkMacSystemFont, sans-serif";
-  if (f === "Poppins") return "\"Poppins\", -apple-system, BlinkMacSystemFont, sans-serif";
-  if (f === "Work Sans") return "\"Work Sans\", -apple-system, BlinkMacSystemFont, sans-serif";
-  if (f === "Playfair Display") return "\"Playfair Display\", Georgia, serif";
-  if (f === "Merriweather") return "\"Merriweather\", Georgia, serif";
-  if (f === "Libre Baskerville") return "\"Libre Baskerville\", Georgia, serif";
-  if (f === "Source Sans 3") return "\"Source Sans 3\", -apple-system, BlinkMacSystemFont, sans-serif";
-  if (f === "Chonburi") return "\"Chonburi\", Georgia, serif";
-  if (f === "Breaking March") return "\"Breaking March\", Georgia, serif";
-  if (f === "Orange Squash Pro") return "\"Orange Squash Pro\", Georgia, serif";
-  if (f === "Bringbold Nineties") return "\"Bringbold Nineties\", Georgia, serif";
-  if (f === "Bouselle") return "\"Bouselle\", Georgia, serif";
-  if (f === "Instrument Serif") return "\"Instrument Serif\", Georgia, serif";
-  if (f === "Bodoni Moda") return "\"Bodoni Moda\", Georgia, serif";
-  if (f === "Prata") return "\"Prata\", Georgia, serif";
-  if (f === "Arapey") return "\"Arapey\", Georgia, serif";
-  if (f === "Fraunces") return "\"Fraunces\", Georgia, serif";
-  if (f === "Abril Fatface") return "\"Abril Fatface\", Georgia, serif";
-  if (f === "Limelight") return "\"Limelight\", -apple-system, BlinkMacSystemFont, sans-serif";
-  if (f === "Syne") return "\"Syne\", -apple-system, BlinkMacSystemFont, sans-serif";
-  if (f === "Outfit") return "\"Outfit\", -apple-system, BlinkMacSystemFont, sans-serif";
-  if (f === "Urbanist") return "\"Urbanist\", -apple-system, BlinkMacSystemFont, sans-serif";
-  if (f === "Sora") return "\"Sora\", -apple-system, BlinkMacSystemFont, sans-serif";
-  return `\"${escapeHtml(f)}\", -apple-system, BlinkMacSystemFont, sans-serif`;
+function fontStackAttr(fontFamily: string | undefined): string {
+  return getFontFamilyStackForHtmlAttr(fontFamily);
 }
 
 const POSITION_TO_CSS: Record<string, string> = {
@@ -591,7 +559,7 @@ export function renderSlideHtml(
                 : (boldWeightsMerged.extra?.[block.zone.id] ?? 700);
           const fontSize = Math.round(block.zone.fontSize * effectiveTextScale);
           const lineHeight = block.zone.lineHeight;
-          const fontStack = getFontFamilyStack((block.zone as { fontFamily?: string }).fontFamily);
+          const fontStack = fontStackAttr((block.zone as { fontFamily?: string }).fontFamily);
           const textTransform =
             ((block.zone as { textTransform?: "none" | "uppercase" | "lowercase" }).textTransform ?? "none");
           const zoneAlign = block.zone.align ?? "left";
@@ -1092,16 +1060,22 @@ export function renderSlideHtml(
   ]
     .map((f) => (typeof f === "string" ? f.trim() : ""))
     .filter((f): f is string => !!f && GOOGLE_FONT_IDS_SET.has(f));
+  const zoneFontFamilies = model.textBlocks.map((b) =>
+    ((b.zone as { fontFamily?: string }).fontFamily ?? "").trim()
+  );
   const usedFontIds = new Set([
-    ...model.textBlocks
-      .map((b) => (b.zone as { fontFamily?: string }).fontFamily?.trim())
-      .filter((f): f is string => !!f && GOOGLE_FONT_IDS_SET.has(f)),
+    ...zoneFontFamilies.filter((f): f is string => !!f && GOOGLE_FONT_IDS_SET.has(f)),
     ...chromeGoogleFontCandidates,
   ]);
+  // "system" (and missing families) resolve to Inter in getFontFamilyStack — always load it for export parity.
+  usedFontIds.add("Inter");
   const fontFamilyParam = [...usedFontIds]
-    .map((id) => `family=${encodeURIComponent(id).replace(/%20/g, "+")}:wght@${FONT_WEIGHT_GOOGLE_WGHT_PARAM}`)
+    .map(googleFontFamilyParam)
     .join("&");
-  const fontLink = fontFamilyParam ? `<link href="https://fonts.googleapis.com/css2?${fontFamilyParam}&display=swap" rel="stylesheet">` : "";
+  // display=block avoids FOUT (swap) so Chromium screenshots the intended face, not a fallback.
+  const fontLink = fontFamilyParam
+    ? `<link href="https://fonts.googleapis.com/css2?${fontFamilyParam}&display=block" rel="stylesheet">`
+    : "";
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -1112,7 +1086,7 @@ export function renderSlideHtml(
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; border: none; }
     html { margin: 0; padding: 0; overflow: hidden; background-color: ${bgColorCss}; }
-    body { margin: 0; padding: 0; width: ${dimW}px; height: ${dimH}px; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: ${bgColorCss}; }
+    body { margin: 0; padding: 0; width: ${dimW}px; height: ${dimH}px; overflow: hidden; font-family: ${getFontFamilyStack("system")}; background-color: ${bgColorCss}; }
     .slide-wrap { position: absolute; left: 0; top: 0; width: ${dimW}px; height: ${dimH}px; overflow: hidden; }
     .slide { position: absolute; left: ${slideTranslateX}px; top: ${slideTranslateY}px; width: ${scaledSize}px; height: ${scaledSize}px; overflow: hidden; ${useFullCanvasBackground ? "background:transparent" : slideBackgroundStyle}; }
     .slide-inner { position: absolute; left: 0; top: 0; width: 1080px; height: 1080px; transform: scale(${scale}); transform-origin: top left; }
@@ -1220,7 +1194,7 @@ export function renderSlideHtml(
         const boxCss = zoneBoxChromeInlineCssScaled(chip, cs, { ignoreFit: true });
         const fs = (model.chrome.counterFontSize ?? 20) * cs;
         const fw = chip.fontWeight != null && Number.isFinite(Number(chip.fontWeight)) ? Math.round(Number(chip.fontWeight)) : 500;
-        const fam = getFontFamilyStack(chip.fontFamily);
+        const fam = fontStackAttr(chip.fontFamily);
         const outlinePx = (chip.outlineStroke ?? 0) * cs;
         const outlineCss = outlinePx > 0 ? `-webkit-text-stroke:${outlinePx}px #000;` : "";
         const hasPanel = boxCss.length > 0;
@@ -1254,7 +1228,7 @@ export function renderSlideHtml(
           ? `height:${(wm.fontSize ?? 20) * 2.4 * chromeScale}px;width:auto;object-fit:contain`
           : "";
     const wmBox = zoneBoxChromeInlineCssScaled(wm, chromeScale, { ignoreFit: true });
-    const wmFam = getFontFamilyStack(wm.fontFamily);
+    const wmFam = fontStackAttr(wm.fontFamily);
     const wmFw = wm.fontWeight != null && Number.isFinite(Number(wm.fontWeight)) ? Math.round(Number(wm.fontWeight)) : 500;
     const wmOutlinePx = (wm.outlineStroke ?? 0) * chromeScale;
     const wmOutlineCss = wmOutlinePx > 0 ? `-webkit-text-stroke:${wmOutlinePx}px #000;` : "";
@@ -1280,7 +1254,7 @@ export function renderSlideHtml(
     const mwColor = model.chrome.madeWithColor ?? textColor;
     const mwChip = model.chrome.madeWithChipStyle ?? {};
     const mwBoxCss = zoneBoxChromeInlineCssScaled(mwChip, chromeScale, { ignoreFit: true });
-    const mwFam = getFontFamilyStack(mwChip.fontFamily);
+    const mwFam = fontStackAttr(mwChip.fontFamily);
     const mwFw = mwChip.fontWeight != null && Number.isFinite(Number(mwChip.fontWeight)) ? Math.round(Number(mwChip.fontWeight)) : 500;
     const mwOutlinePx = (mwChip.outlineStroke ?? 0) * chromeScale;
     const mwOutlineCss = mwOutlinePx > 0 ? `-webkit-text-stroke:${mwOutlinePx}px #000;` : "";

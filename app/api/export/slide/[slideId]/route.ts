@@ -1,3 +1,4 @@
+import { waitForFontsInPage } from "@/lib/server/browser/waitForFonts";
 import { NextResponse } from "next/server";
 import { launchChromium } from "@/lib/server/browser/launchChromium";
 import { waitForImagesInPage } from "@/lib/server/browser/waitForImages";
@@ -298,6 +299,7 @@ export async function GET(
       await page.setContent(html, { waitUntil: "load", timeout: CONTENT_TIMEOUT_MS });
       await page.waitForSelector(".slide-wrap", { state: "visible", timeout: SELECTOR_TIMEOUT_MS });
       await waitForImagesInPage(page, CONTENT_TIMEOUT_MS).catch(() => {});
+          await waitForFontsInPage(page);
       await new Promise((r) => setTimeout(r, 1200));
       const buffer = await page.locator(".slide-wrap").screenshot({ type: format, timeout: SELECTOR_TIMEOUT_MS });
       const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);

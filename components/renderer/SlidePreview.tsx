@@ -149,39 +149,7 @@ function SwipeCustomIcon({
 }
 
 function zoneFontFamily(zone: { fontFamily?: string }): string {
-  const f = zone.fontFamily;
-  if (f === "Georgia") return "Georgia, serif";
-  if (f === "Times New Roman") return "\"Times New Roman\", Times, serif";
-  if (f === "Inter") return "Inter, system-ui, sans-serif";
-  if (f === "system" || f === "sans-serif") return "system-ui, -apple-system, sans-serif";
-  if (f === "Roboto") return "Roboto, system-ui, sans-serif";
-  if (f === "Montserrat") return "Montserrat, system-ui, sans-serif";
-  if (f === "Open Sans") return "\"Open Sans\", system-ui, sans-serif";
-  if (f === "Lato") return "Lato, system-ui, sans-serif";
-  if (f === "Poppins") return "Poppins, system-ui, sans-serif";
-  if (f === "Work Sans") return "\"Work Sans\", system-ui, sans-serif";
-  if (f === "Playfair Display") return "\"Playfair Display\", Georgia, serif";
-  if (f === "Merriweather") return "Merriweather, Georgia, serif";
-  if (f === "Libre Baskerville") return "\"Libre Baskerville\", Georgia, serif";
-  if (f === "Source Sans 3") return "\"Source Sans 3\", system-ui, sans-serif";
-  if (f === "Chonburi") return "\"Chonburi\", Georgia, serif";
-  if (f === "Breaking March") return "\"Breaking March\", Georgia, serif";
-  if (f === "Orange Squash Pro") return "\"Orange Squash Pro\", Georgia, serif";
-  if (f === "Bringbold Nineties") return "\"Bringbold Nineties\", Georgia, serif";
-  if (f === "Bouselle") return "\"Bouselle\", Georgia, serif";
-  if (f === "Instrument Serif") return "\"Instrument Serif\", Georgia, serif";
-  if (f === "Bodoni Moda") return "\"Bodoni Moda\", Georgia, serif";
-  if (f === "Prata") return "\"Prata\", Georgia, serif";
-  if (f === "Arapey") return "\"Arapey\", Georgia, serif";
-  if (f === "Fraunces") return "\"Fraunces\", Georgia, serif";
-  if (f === "Abril Fatface") return "\"Abril Fatface\", Georgia, serif";
-  if (f === "Limelight") return "\"Limelight\", system-ui, sans-serif";
-  if (f === "Syne") return "\"Syne\", system-ui, sans-serif";
-  if (f === "Outfit") return "\"Outfit\", system-ui, sans-serif";
-  if (f === "Urbanist") return "\"Urbanist\", system-ui, sans-serif";
-  if (f === "Sora") return "\"Sora\", system-ui, sans-serif";
-  if (f?.trim()) return `${f}, system-ui, sans-serif`;
-  return "system-ui, -apple-system, sans-serif";
+  return getFontStack(zone.fontFamily ?? "system");
 }
 
 /** Resolve style and pattern for no-image background: override wins, then template defaults. Ensures editor preview matches template picker. */
@@ -1600,6 +1568,7 @@ export function SlidePreview({
         width: 1080,
         height: canvasH,
         minWidth: 1080,
+        fontFamily: getFontStack("system"),
         minHeight: canvasH,
         transformOrigin: "top left",
         ...(rootBackground ? { backgroundColor: rootBackground } : {}),

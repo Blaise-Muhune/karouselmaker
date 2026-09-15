@@ -1,13 +1,12 @@
 "use client";
 
 import { useEffect } from "react";
-import { FONT_WEIGHT_GOOGLE_WGHT_PARAM } from "@/lib/constants/fontWeight";
-import { GOOGLE_FONT_IDS } from "@/lib/constants/googleFonts";
+import { GOOGLE_FONT_IDS, googleFontFamilyParam } from "@/lib/constants/googleFonts";
 
 const HREF =
   "https://fonts.googleapis.com/css2?" +
   GOOGLE_FONT_IDS.map(
-    (id) => `family=${encodeURIComponent(id).replace(/%20/g, "+")}:wght@${FONT_WEIGHT_GOOGLE_WGHT_PARAM}`
+    googleFontFamilyParam
   ).join("&") +
   "&display=swap";
 

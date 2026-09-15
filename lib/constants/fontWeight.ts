@@ -1,9 +1,9 @@
-/** Allowed numeric font-weight range for text zones and **bold** weight (CSS accepts 1–1000; we allow heavier for variable fonts). */
+/** Allowed numeric font-weight range for text zones and **bold** weight (CSS accepts 1–1000; values above 1000 are invalid CSS). */
 export const FONT_WEIGHT_MIN = 100;
-export const FONT_WEIGHT_MAX = 1500;
+export const FONT_WEIGHT_MAX = 1000;
 export const FONT_WEIGHT_STEP = 100;
 
-/** Preset steps for toolbar / steppers (100 … 1500). */
+/** Preset steps for toolbar / steppers (100 … 1000). */
 export const FONT_WEIGHT_PRESET_LIST: number[] = Array.from(
   { length: (FONT_WEIGHT_MAX - FONT_WEIGHT_MIN) / FONT_WEIGHT_STEP + 1 },
   (_, i) => FONT_WEIGHT_MIN + i * FONT_WEIGHT_STEP
