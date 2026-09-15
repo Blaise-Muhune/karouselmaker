@@ -3,7 +3,7 @@
 import { useRef, useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { uploadAssets } from "@/app/actions/assets/uploadAsset";
-import { importFromGoogleDrive, importFilesFromGoogleDrive } from "@/app/actions/assets/importFromGoogleDrive";
+import { importFilesFromGoogleDrive } from "@/app/actions/assets/importFromGoogleDrive";
 import { GoogleDriveFolderPicker } from "@/components/drive/GoogleDriveFolderPicker";
 import { GoogleDriveMultiFilePicker } from "@/components/drive/GoogleDriveMultiFilePicker";
 import { ImageIcon, Loader2Icon, UploadIcon } from "lucide-react";
@@ -118,18 +118,18 @@ export function LibraryImageImportBar({
           {atLimit ? "Upload (limit)" : "Upload"}
         </Button>
         <GoogleDriveFolderPicker
-          onFolderPicked={async (folderId, accessToken) => {
+          onFilesPicked={async (fileIds, accessToken) => {
             setMessage(null);
             setDriveBusy(true);
             try {
-              const result = await importFromGoogleDrive(folderId, accessToken, attachProjectId ?? undefined);
+              const result = await importFilesFromGoogleDrive(fileIds, accessToken, attachProjectId ?? undefined);
               if (result.ok && result.assets.length > 0) {
                 setMessage(`Imported ${result.assets.length} image(s) from Drive.`);
                 await onRefresh(result.assets.map((a) => a.id));
               } else if (!result.ok) {
                 setMessage(result.error);
               } else {
-                setMessage("No images imported from that folder.");
+                setMessage("No images could be imported from that folder.");
               }
             } finally {
               setDriveBusy(false);

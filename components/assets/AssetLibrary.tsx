@@ -24,7 +24,7 @@ import { LibraryImageImportBar } from "@/components/assets/LibraryImageImportBar
 import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
 import { PLAN_LIMITS } from "@/lib/constants";
 import type { Asset } from "@/lib/server/db/types";
-import { ImageIcon, Trash2Icon } from "lucide-react";
+import { ImageIcon, Loader2Icon, Trash2Icon } from "lucide-react";
 
 type AssetLibraryProps = {
   assets: Asset[];
@@ -65,10 +65,13 @@ export function AssetLibrary({
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [importBusy, setImportBusy] = useState(false);
+  const [importStatus, setImportStatus] = useState<string | null>(null);
 
   const allowBulkSelect = !(pickerMode && slideId);
 
   const atLimit = assetLimit > 0 && assetCount >= assetLimit;
+  const actionsLocked = isPending || isDeleting || importBusy;
 
   const attachProjectIdForImport =
     projectFilter !== "all" && projectFilter !== "global" ? projectFilter : null;
@@ -167,7 +170,7 @@ export function AssetLibrary({
         </p>
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:gap-4">
           <div className="flex flex-wrap items-center gap-2">
-            <Select value={projectFilter} onValueChange={setProjectFilter} disabled={isPending}>
+            <Select value={projectFilter} onValueChange={setProjectFilter} disabled={actionsLocked}>
               <SelectTrigger className="w-[180px]">
                 <SelectValue placeholder="Filter" />
               </SelectTrigger>
@@ -187,13 +190,30 @@ export function AssetLibrary({
           </div>
           <LibraryImageImportBar
             attachProjectId={attachProjectIdForImport}
-            onRefresh={() => startTransition(() => router.refresh())}
+            onRefresh={async (newAssetIds) => {
+              startTransition(() => router.refresh());
+              setImportStatus(
+                newAssetIds && newAssetIds.length > 0
+                  ? `Added ${newAssetIds.length} image${newAssetIds.length === 1 ? "" : "s"}. They're ready in your library.`
+                  : "Library updated."
+              );
+            }}
+            onBusyChange={(busy) => {
+              setImportBusy(busy);
+              if (busy) setImportStatus("Importing images… wait until they appear below.");
+            }}
             atLimit={atLimit}
             revalidatePathname="/assets"
-            disabled={isPending}
+            disabled={actionsLocked && !importBusy}
             className="min-w-0 flex-1"
           />
         </div>
+        {importBusy || importStatus ? (
+          <p className="text-muted-foreground mt-2 flex items-center gap-1.5 text-xs" role="status">
+            {importBusy ? <Loader2Icon className="size-3.5 shrink-0 animate-spin" /> : null}
+            {importBusy ? "Importing images… wait until they appear below." : importStatus}
+          </p>
+        ) : null}
         {allowBulkSelect && filteredAssets.length > 0 && (
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <Button
@@ -201,7 +221,7 @@ export function AssetLibrary({
               variant="outline"
               size="sm"
               className="h-8 text-xs"
-              disabled={isPending || isDeleting || allFilteredSelected}
+              disabled={actionsLocked || allFilteredSelected}
               onClick={selectAllFiltered}
             >
               Select all
@@ -211,7 +231,7 @@ export function AssetLibrary({
               variant="outline"
               size="sm"
               className="h-8 text-xs"
-              disabled={isPending || isDeleting || selectedCount === 0}
+              disabled={actionsLocked || selectedCount === 0}
               onClick={clearSelection}
             >
               Clear selection
@@ -221,7 +241,7 @@ export function AssetLibrary({
               variant="destructive"
               size="sm"
               className="h-8 text-xs"
-              disabled={isPending || isDeleting || selectedCount === 0}
+              disabled={actionsLocked || selectedCount === 0}
               onClick={() => {
                 setDeleteError(null);
                 setDeleteConfirmOpen(true);
@@ -241,15 +261,23 @@ export function AssetLibrary({
       {filteredAssets.length === 0 ? (
         <div className="flex min-h-[220px] flex-col items-center justify-center rounded-2xl border border-dashed border-border/60 bg-muted/20 p-8 text-center">
           <p className="text-muted-foreground text-sm mb-2">
-            No images yet. Upload your first image to use as carousel frame backgrounds.
+            {importBusy
+              ? "Importing images…"
+              : "No images yet. Upload your first image to use as carousel frame backgrounds."}
           </p>
-          <p className="text-muted-foreground text-xs mb-4 max-w-sm">
-            Pro tip: Use high-res images (1080×1080 or larger). Landscapes, textures, and solid colors work great.
-          </p>
-          <p className="text-xs text-muted-foreground/80">Use Upload or Google Drive above to add images.</p>
+          {!importBusy ? (
+            <>
+              <p className="text-muted-foreground text-xs mb-4 max-w-sm">
+                Pro tip: Use high-res images (1080×1080 or larger). Landscapes, textures, and solid colors work great.
+              </p>
+              <p className="text-xs text-muted-foreground/80">Use Upload or Google Drive above to add images.</p>
+            </>
+          ) : (
+            <Loader2Icon className="mt-2 size-6 animate-spin text-muted-foreground" />
+          )}
         </div>
       ) : (
-        <ul className="grid gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+        <ul className={`grid gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 ${importBusy ? "pointer-events-none opacity-60" : ""}`}>
           {filteredAssets.map((asset) => {
             const checked = selectedIds.has(asset.id);
             return (
@@ -260,7 +288,7 @@ export function AssetLibrary({
                       type="checkbox"
                       checked={checked}
                       onChange={() => toggleAssetSelected(asset.id)}
-                      disabled={isPending || isDeleting}
+                      disabled={actionsLocked}
                       className="size-4 rounded border-input accent-primary"
                       aria-label={`Select ${asset.file_name}`}
                     />
@@ -268,11 +296,12 @@ export function AssetLibrary({
                 )}
                 <button
                   type="button"
+                  disabled={importBusy}
                   onClick={() => {
                     setApplyError(null);
                     setSelectedAsset(asset);
                   }}
-                  className={`border-border/50 hover:border-primary/30 flex aspect-square w-full overflow-hidden rounded-lg border bg-muted/10 transition-colors hover:bg-muted/20 focus:outline-none focus:ring-2 focus:ring-primary/50 ${checked ? "ring-2 ring-primary/40" : ""}`}
+                  className={`border-border/50 hover:border-primary/30 flex aspect-square w-full overflow-hidden rounded-lg border bg-muted/10 transition-colors hover:bg-muted/20 focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:cursor-wait ${checked ? "ring-2 ring-primary/40" : ""}`}
                 >
                   {urls[asset.id] ? (
                     <img
@@ -321,8 +350,8 @@ export function AssetLibrary({
             </div>
           )}
           {pickerMode && slideId && selectedAsset && (
-            <Button onClick={handleUseAsBackground} className="w-full">
-              Use as background
+            <Button onClick={handleUseAsBackground} className="w-full" disabled={importBusy}>
+              {importBusy ? "Importing…" : "Use as background"}
             </Button>
           )}
           {applyError && (

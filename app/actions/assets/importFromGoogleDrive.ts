@@ -101,7 +101,11 @@ export async function importFromGoogleDrive(
   }
 
   if (files.length === 0) {
-    return { ok: false, error: "No images found in that folder. Try “Pick images from Drive” and select the image files directly, or add JPEG, PNG, WebP, GIF, or HEIC files to the folder." };
+    return {
+      ok: false,
+      error:
+        "Google only grants access to files you select in the picker (not everything inside a folder automatically). Use “Drive folder”, then select the images in the next step — or use “Drive files” and multi-select them.",
+    };
   }
 
   const projectIdTrimmed = projectId && String(projectId).trim() ? String(projectId).trim() : null;

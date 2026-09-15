@@ -19,7 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { BackgroundImagesPickerModal } from "@/components/carousels/BackgroundImagesPickerModal";
 import { GoogleDriveFolderPicker } from "@/components/drive/GoogleDriveFolderPicker";
 import { GoogleDriveMultiFilePicker } from "@/components/drive/GoogleDriveMultiFilePicker";
-import { importFromGoogleDrive, importFilesFromGoogleDrive } from "@/app/actions/assets/importFromGoogleDrive";
+import { importFilesFromGoogleDrive } from "@/app/actions/assets/importFromGoogleDrive";
 import { TemplateSelectCards, type TemplateOption } from "@/components/carousels/TemplateSelectCards";
 import { TemplateBundlePicker, type TemplateBundleOption } from "@/components/carousels/TemplateBundlePicker";
 import {
@@ -615,12 +615,12 @@ export function NewCarouselForm({
                       setDriveStatus(null);
                       setError(msg);
                     }}
-                    onFolderPicked={async (folderId, accessToken) => {
+                    onFilesPicked={async (fileIds, accessToken) => {
                       setError(null);
                       setDriveBusy(true);
                       setDriveStatus("Importing folder images from Drive…");
                       try {
-                        const result = await importFromGoogleDrive(folderId, accessToken, projectId);
+                        const result = await importFilesFromGoogleDrive(fileIds, accessToken, projectId);
                         if (result.ok) {
                           setBackgroundAssetIds((prev) => [
                             ...new Set([...prev, ...result.assets.map((a) => a.id)]),
@@ -628,7 +628,7 @@ export function NewCarouselForm({
                           setDriveStatus(
                             result.assets.length > 0
                               ? `Imported ${result.assets.length} image${result.assets.length === 1 ? "" : "s"}. Ready to generate.`
-                              : "No images found in that folder."
+                              : "No images could be imported from that folder."
                           );
                         } else {
                           setDriveStatus(null);

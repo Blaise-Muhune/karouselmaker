@@ -39,6 +39,8 @@ export function AssetPickerModal({
   const [assets, setAssets] = useState<Asset[]>([]);
   const [urls, setUrls] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
+  const [importBusy, setImportBusy] = useState(false);
+  const [importStatus, setImportStatus] = useState<string | null>(null);
   const [libraryScope, setLibraryScope] = useState<LibraryScope>("all");
 
   const contextProjectId = projectId?.trim() || undefined;
@@ -56,8 +58,21 @@ export function AssetPickerModal({
     }
   }, []);
 
+  const handleRefresh = useCallback(
+    async (newAssetIds?: string[]) => {
+      await loadLibrary();
+      setImportStatus(
+        newAssetIds && newAssetIds.length > 0
+          ? `Added ${newAssetIds.length} image${newAssetIds.length === 1 ? "" : "s"}. Pick one below.`
+          : "Library updated."
+      );
+    },
+    [loadLibrary]
+  );
+
   useEffect(() => {
     if (!open) return;
+    setImportStatus(null);
     void loadLibrary();
   }, [open, loadLibrary]);
 
@@ -81,7 +96,11 @@ export function AssetPickerModal({
           {contextProjectId ? (
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-muted-foreground shrink-0 text-xs">Library</span>
-              <Select value={libraryScope} onValueChange={(v) => setLibraryScope(v as LibraryScope)}>
+              <Select
+                value={libraryScope}
+                onValueChange={(v) => setLibraryScope(v as LibraryScope)}
+                disabled={importBusy}
+              >
                 <SelectTrigger className="h-8 w-[min(100%,220px)] text-xs">
                   <SelectValue />
                 </SelectTrigger>
@@ -94,33 +113,54 @@ export function AssetPickerModal({
           ) : (
             <p className="text-muted-foreground text-xs">Newest uploads first.</p>
           )}
-          <LibraryImageImportBar attachProjectId={contextProjectId ?? null} onRefresh={loadLibrary} size="sm" />
+          <LibraryImageImportBar
+            attachProjectId={contextProjectId ?? null}
+            onRefresh={handleRefresh}
+            onBusyChange={(busy) => {
+              setImportBusy(busy);
+              if (busy) setImportStatus("Importing images… wait until they appear, then pick one.");
+            }}
+            size="sm"
+          />
+          {importBusy || importStatus ? (
+            <p className="text-muted-foreground flex items-center gap-1.5 text-xs" role="status">
+              {importBusy ? <Loader2Icon className="size-3.5 shrink-0 animate-spin" /> : null}
+              {importBusy ? "Importing images… wait until they appear, then pick one." : importStatus}
+            </p>
+          ) : null}
         </div>
 
-        {loading ? (
+        {loading && !importBusy ? (
           <div className="flex min-h-[200px] items-center justify-center">
             <Loader2Icon className="size-8 animate-spin text-muted-foreground" />
           </div>
         ) : displayAssets.length === 0 ? (
-          <p className="text-muted-foreground py-6 text-center text-sm">
-            {contextProjectId && libraryScope === "project"
-              ? "No images for this project yet. Switch to “All images” or add files above."
-              : "No images yet. Use Upload or Drive above."}
-          </p>
+          <div className="flex min-h-[200px] flex-col items-center justify-center gap-2 py-6 text-center">
+            {importBusy ? <Loader2Icon className="size-8 animate-spin text-muted-foreground" /> : null}
+            <p className="text-muted-foreground text-sm">
+              {importBusy
+                ? "Importing images…"
+                : contextProjectId && libraryScope === "project"
+                  ? "No images for this project yet. Switch to “All images” or add files above."
+                  : "No images yet. Use Upload or Drive above."}
+            </p>
+          </div>
         ) : (
-          <ul className="grid max-h-[min(52vh,480px)] gap-2 overflow-y-auto sm:grid-cols-4 md:grid-cols-5">
+          <ul
+            className={`grid max-h-[min(52vh,480px)] gap-2 overflow-y-auto sm:grid-cols-4 md:grid-cols-5 ${importBusy ? "pointer-events-none opacity-60" : ""}`}
+          >
             {displayAssets.map((asset) => (
               <li key={asset.id}>
                 <button
                   type="button"
+                  disabled={importBusy || !urls[asset.id]}
                   onClick={() => {
                     const url = urls[asset.id];
-                    if (url) {
-                      onPick(asset, url);
-                      onOpenChange(false);
-                    }
+                    if (!url || importBusy) return;
+                    onPick(asset, url);
+                    onOpenChange(false);
                   }}
-                  className="border-border/50 hover:border-primary/30 flex aspect-square w-full overflow-hidden rounded-lg border bg-muted/10 transition-colors hover:bg-muted/20 focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  className="border-border/50 hover:border-primary/30 flex aspect-square w-full overflow-hidden rounded-lg border bg-muted/10 transition-colors hover:bg-muted/20 focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:cursor-wait"
                 >
                   {urls[asset.id] ? (
                     <img

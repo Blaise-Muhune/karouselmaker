@@ -6,10 +6,10 @@ import { FolderOpenIcon, Loader2Icon } from "lucide-react";
 
 const GSI_URL = "https://accounts.google.com/gsi/client";
 const GAPI_URL = "https://apis.google.com/js/api.js";
-/** drive.file = only files/folders the user opens with this app (e.g. folder picked in Picker). Avoids restricted-scope verification. */
+/** drive.file only covers items the user opens in Picker — folder pick alone cannot list children. */
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 
-type GooglePickerDoc = { id: string; name?: string };
+type GooglePickerDoc = { id: string; name?: string; mimeType?: string };
 type GooglePickerResponse = { action: string; docs?: GooglePickerDoc[] };
 
 declare global {
@@ -24,21 +24,7 @@ declare global {
           }) => { requestAccessToken: () => void };
         };
       };
-      picker?: {
-        PickerBuilder: new () => {
-          setAppId: (id: string) => unknown;
-          setOAuthToken: (token: string) => unknown;
-          setDeveloperKey: (key: string) => unknown;
-          addView: (view: unknown) => unknown;
-          setCallback: (cb: (data: GooglePickerResponse) => void) => unknown;
-          build: () => { setVisible: (visible: boolean) => void };
-        };
-        DocsView: new (viewId?: number) => {
-          setIncludeFolders: (include: boolean) => unknown;
-          setSelectFolderEnabled: (enabled: boolean) => unknown;
-        };
-        ViewId?: { DOCS: number };
-      };
+      picker?: Record<string, unknown>;
     };
     gapi?: { load: (api: string, cb: () => void) => void };
   }
@@ -64,24 +50,54 @@ function loadScript(src: string): Promise<void> {
   });
 }
 
+type PickerApi = {
+  ViewId?: { DOCS?: number; FOLDERS?: number };
+  Feature?: { MULTISELECT_ENABLED?: number; NAV_HIDDEN?: number };
+  DocsViewMode?: { LIST?: number; GRID?: number };
+  DocsView: new (viewId?: number) => {
+    setIncludeFolders: (v: boolean) => unknown;
+    setSelectFolderEnabled: (v: boolean) => unknown;
+    setParent?: (id: string) => unknown;
+    setMimeTypes?: (t: string) => unknown;
+    setMode?: (m: number) => unknown;
+  };
+  PickerBuilder: new () => {
+    setAppId: (id: string) => unknown;
+    setOAuthToken: (t: string) => unknown;
+    setDeveloperKey: (k: string) => unknown;
+    setTitle?: (t: string) => unknown;
+    enableFeature?: (f: number) => unknown;
+    addView: (v: unknown) => unknown;
+    setCallback: (cb: (d: GooglePickerResponse) => void) => unknown;
+    setMaxItems?: (n: number) => unknown;
+    build: () => { setVisible: (v: boolean) => void };
+  };
+};
+
 type GoogleDriveFolderPickerProps = {
-  onFolderPicked: (folderId: string, accessToken: string) => void | Promise<void>;
+  /**
+   * Called after the user picks a folder, then selects image files inside it.
+   * (drive.file cannot list folder children from folder id alone.)
+   */
+  onFilesPicked: (fileIds: string[], accessToken: string) => void | Promise<void>;
   onError?: (message: string) => void;
   variant?: "default" | "outline" | "ghost" | "link" | "destructive" | "secondary";
   size?: "default" | "sm" | "lg" | "icon" | "icon-sm";
   className?: string;
   children?: React.ReactNode;
   disabled?: boolean;
+  maxItems?: number;
 };
 
 export function GoogleDriveFolderPicker({
-  onFolderPicked,
+  onFilesPicked,
   onError,
   variant = "outline",
   size = "sm",
   className,
   children,
   disabled = false,
+  maxItems = 50,
 }: GoogleDriveFolderPickerProps) {
   const [pending, setPending] = useState(false);
 
@@ -113,7 +129,70 @@ export function GoogleDriveFolderPicker({
       return;
     }
 
-    const showPicker = (accessToken: string) => {
+    const showImagePickerInFolder = (accessToken: string, folderId: string, pickerApi: PickerApi) => {
+      try {
+        const docsViewId = pickerApi.ViewId?.DOCS ?? 1;
+        const docsView = new pickerApi.DocsView(docsViewId);
+        docsView.setIncludeFolders(false);
+        docsView.setSelectFolderEnabled(false);
+        docsView.setParent?.(folderId);
+        docsView.setMimeTypes?.(
+          "image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,image/jpg"
+        );
+        if (pickerApi.DocsViewMode?.GRID != null) {
+          docsView.setMode?.(pickerApi.DocsViewMode.GRID);
+        }
+
+        type Builder = {
+          setAppId: (id: string) => Builder;
+          setOAuthToken: (t: string) => Builder;
+          setDeveloperKey: (k: string) => Builder;
+          setTitle?: (t: string) => Builder;
+          enableFeature?: (f: number) => Builder;
+          addView: (v: unknown) => Builder;
+          setCallback: (cb: (d: GooglePickerResponse) => void) => Builder;
+          setMaxItems?: (n: number) => Builder;
+          build: () => { setVisible: (v: boolean) => void };
+        };
+        const BuilderCtor = pickerApi.PickerBuilder as unknown as new () => Builder;
+        let builder = new BuilderCtor()
+          .setAppId(appId)
+          .setOAuthToken(accessToken)
+          .addView(docsView)
+          .setCallback((data: GooglePickerResponse) => {
+            void (async () => {
+              if (data.action !== "picked" || !data.docs?.length) {
+                finish();
+                return;
+              }
+              const fileIds = data.docs.map((d) => d.id).filter(Boolean);
+              try {
+                if (fileIds.length) await Promise.resolve(onFilesPicked(fileIds, accessToken));
+                else onError?.("No images selected in that folder.");
+              } catch (e) {
+                onError?.(e instanceof Error ? e.message : "Drive import failed.");
+              } finally {
+                finish();
+              }
+            })();
+          });
+
+        builder = builder.setTitle?.("Select images in this folder") ?? builder;
+        if (typeof builder.enableFeature === "function" && pickerApi.Feature?.MULTISELECT_ENABLED != null) {
+          builder = builder.enableFeature(pickerApi.Feature.MULTISELECT_ENABLED);
+        }
+        if (typeof builder.setMaxItems === "function") {
+          builder = builder.setMaxItems(maxItems) ?? builder;
+        }
+        if (apiKey) builder = builder.setDeveloperKey(apiKey);
+        builder.build().setVisible(true);
+      } catch (e) {
+        onError?.(e instanceof Error ? e.message : "Failed to open folder images picker");
+        finish();
+      }
+    };
+
+    const showFolderPicker = (accessToken: string) => {
       if (!window.gapi) {
         onError?.("Picker failed to load. Refresh and try again.");
         finish();
@@ -125,64 +204,47 @@ export function GoogleDriveFolderPicker({
           finish();
           return;
         }
-type PickerApi = {
-  ViewId?: { DOCS: number };
-  DocsView: new (viewId?: number) => {
-    setIncludeFolders: (v: boolean) => unknown;
-    setSelectFolderEnabled: (v: boolean) => unknown;
-  };
-  PickerBuilder: new () => {
-    setAppId: (id: string) => unknown;
-    setOAuthToken: (t: string) => unknown;
-    setDeveloperKey: (k: string) => unknown;
-    addView: (v: unknown) => unknown;
-    setCallback: (cb: (d: GooglePickerResponse) => void) => unknown;
-    build: () => { setVisible: (v: boolean) => void };
-  };
-};
-
         try {
-          const pickerApi = window.google.picker as PickerApi;
-          const viewId = pickerApi.ViewId?.DOCS ?? 1;
-          const DocsViewCtor = pickerApi.DocsView as new (viewId?: number) => {
-            setIncludeFolders: (v: boolean) => { setSelectFolderEnabled: (v: boolean) => unknown };
-            setSelectFolderEnabled: (v: boolean) => unknown;
-          };
-          const docsView = new DocsViewCtor(viewId)
-            .setIncludeFolders(true)
-            .setSelectFolderEnabled(true);
+          const pickerApi = window.google.picker as unknown as PickerApi;
+          const folderViewId = pickerApi.ViewId?.FOLDERS ?? pickerApi.ViewId?.DOCS ?? 1;
+          const folderView = new pickerApi.DocsView(folderViewId);
+          folderView.setIncludeFolders(true);
+          folderView.setSelectFolderEnabled(true);
+          if (pickerApi.DocsViewMode?.LIST != null) {
+            folderView.setMode?.(pickerApi.DocsViewMode.LIST);
+          }
 
-          const PickerBuilderCtor = pickerApi.PickerBuilder as new () => {
-            setAppId: (id: string) => unknown;
-            setOAuthToken: (t: string) => unknown;
-            setDeveloperKey: (k: string) => unknown;
-            addView: (v: unknown) => unknown;
-            setCallback: (cb: (d: GooglePickerResponse) => void) => unknown;
+          type Builder = {
+            setAppId: (id: string) => Builder;
+            setOAuthToken: (t: string) => Builder;
+            setDeveloperKey: (k: string) => Builder;
+            setTitle?: (t: string) => Builder;
+            addView: (v: unknown) => Builder;
+            setCallback: (cb: (d: GooglePickerResponse) => void) => Builder;
             build: () => { setVisible: (v: boolean) => void };
           };
-          // @ts-expect-error - Google Picker constructor from external script
-          const builder = new PickerBuilderCtor()
+          const BuilderCtor = pickerApi.PickerBuilder as unknown as new () => Builder;
+          let builder = new BuilderCtor()
             .setAppId(appId)
             .setOAuthToken(accessToken)
-            .addView(docsView)
+            .addView(folderView)
             .setCallback((data: GooglePickerResponse) => {
-              void (async () => {
-                if (data.action !== "picked" || !data.docs?.length) {
-                  finish();
-                  return;
-                }
-                const folderId = data.docs[0]!.id;
-                try {
-                  if (folderId) await Promise.resolve(onFolderPicked(folderId, accessToken));
-                } catch (e) {
-                  onError?.(e instanceof Error ? e.message : "Drive import failed.");
-                } finally {
-                  finish();
-                }
-              })();
+              if (data.action !== "picked" || !data.docs?.length) {
+                finish();
+                return;
+              }
+              const folderId = data.docs[0]?.id;
+              if (!folderId) {
+                onError?.("Pick a folder, then select the images inside it.");
+                finish();
+                return;
+              }
+              // Second step: grant drive.file access to each image the user selects.
+              showImagePickerInFolder(accessToken, folderId, pickerApi);
             });
 
-          if (apiKey) builder.setDeveloperKey(apiKey);
+          builder = builder.setTitle?.("Choose a Drive folder") ?? builder;
+          if (apiKey) builder = builder.setDeveloperKey(apiKey);
           builder.build().setVisible(true);
         } catch (e) {
           onError?.(e instanceof Error ? e.message : "Failed to open Drive picker");
@@ -196,7 +258,7 @@ type PickerApi = {
       scope: DRIVE_SCOPE,
       callback: (res) => {
         if (res.access_token) {
-          showPicker(res.access_token);
+          showFolderPicker(res.access_token);
         } else {
           onError?.("Google sign-in was cancelled or failed.");
           finish();
@@ -204,7 +266,7 @@ type PickerApi = {
       },
     });
     tokenClient.requestAccessToken();
-  }, [onFolderPicked, onError]);
+  }, [onFilesPicked, onError, maxItems]);
 
   return (
     <Button
@@ -214,7 +276,7 @@ type PickerApi = {
       className={className}
       onClick={openPicker}
       disabled={disabled || pending}
-      title="Choose a folder from Google Drive to import images"
+      title="Choose a Drive folder, then select the images inside it"
     >
       {pending ? (
         <Loader2Icon className="size-4 animate-spin" />
