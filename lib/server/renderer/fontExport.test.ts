@@ -7,7 +7,7 @@ import { getFontFamilyStack } from "@/lib/renderer/fontFamilyStack";
 
 describe("export typography", () => {
   it("preserves saved family, size and weight overrides in exported text", () => {
-    const config = templateConfigSchema.parse(templates[0].config);
+    const config = templateConfigSchema.parse(templates[0]!.config);
     const html = renderSlideHtml(
       { headline: "Saved typography", body: null, slide_index: 1, slide_type: "hook" },
       config, {}, 3, undefined, undefined, undefined, undefined, false, false, false,

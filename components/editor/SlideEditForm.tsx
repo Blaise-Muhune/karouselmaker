@@ -1,5 +1,7 @@
 "use client";
 
+import { normalizeSlideMetaForRender } from "@/lib/server/export/normalizeSlideMetaForRender";
+
 import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { TemplateTextFields } from "@/components/templates/TemplateTextFields";
@@ -603,18 +605,7 @@ function getZoneAndFontOverridesFromTemplate(config: TemplateConfig | null): {
 } {
   if (!config?.defaults?.meta || typeof config.defaults.meta !== "object") return {};
   const meta = config.defaults.meta;
-  const headlineZone =
-    meta.headline_zone_override && typeof meta.headline_zone_override === "object" && Object.keys(meta.headline_zone_override).length > 0
-      ? meta.headline_zone_override
-      : undefined;
-  const bodyZone =
-    meta.body_zone_override && typeof meta.body_zone_override === "object" && Object.keys(meta.body_zone_override).length > 0
-      ? meta.body_zone_override
-      : undefined;
-  const zoneOverrides =
-    headlineZone || bodyZone
-      ? { headline: headlineZone as Record<string, unknown>, body: bodyZone as Record<string, unknown> }
-      : undefined;
+  const zoneOverrides = normalizeSlideMetaForRender(meta as Record<string, unknown>).zoneOverrides;
   const fontOverrides =
     meta.headline_font_size != null || meta.body_font_size != null
       ? {
@@ -1242,12 +1233,10 @@ export function SlideEditForm({
     return clampMaxLinesToZoneGeometry({ h, fontSize, lineHeight, maxLines: TEMPLATE_TEXT_ZONE_MAX_LINES });
   }, []);
   const [headlineZoneOverride, setHeadlineZoneOverride] = useState<ZoneOverride | undefined>(() => {
-    const m = slide.meta as { headline_zone_override?: ZoneOverride } | null;
-    return m?.headline_zone_override && Object.keys(m.headline_zone_override).length > 0 ? m.headline_zone_override : undefined;
+    return normalizeSlideMetaForRender(slide.meta as Record<string, unknown> | null).zoneOverrides?.headline;
   });
   const [bodyZoneOverride, setBodyZoneOverride] = useState<ZoneOverride | undefined>(() => {
-    const m = slide.meta as { body_zone_override?: ZoneOverride } | null;
-    return m?.body_zone_override && Object.keys(m.body_zone_override).length > 0 ? m.body_zone_override : undefined;
+    return normalizeSlideMetaForRender(slide.meta as Record<string, unknown> | null).zoneOverrides?.body;
   });
   const [customExtraTextZones, setCustomExtraTextZones] = useState<ExtraTextZone[]>(() => {
     const m = slide.meta as { extra_text_zones?: unknown[] } | null;

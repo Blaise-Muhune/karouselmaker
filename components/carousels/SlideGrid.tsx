@@ -1,5 +1,7 @@
 "use client";
 
+import { normalizeSlideMetaForRender } from "@/lib/server/export/normalizeSlideMetaForRender";
+
 import Link from "next/link";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { SlidePreview } from "@/components/renderer/SlidePreview";
@@ -138,18 +140,7 @@ function getZoneAndFontOverridesFromTemplate(config: TemplateConfig | null): {
 } {
   if (!config?.defaults?.meta || typeof config.defaults.meta !== "object") return {};
   const meta = config.defaults.meta;
-  const headlineZone =
-    meta.headline_zone_override && typeof meta.headline_zone_override === "object" && Object.keys(meta.headline_zone_override).length > 0
-      ? meta.headline_zone_override
-      : undefined;
-  const bodyZone =
-    meta.body_zone_override && typeof meta.body_zone_override === "object" && Object.keys(meta.body_zone_override).length > 0
-      ? meta.body_zone_override
-      : undefined;
-  const zoneOverrides =
-    headlineZone || bodyZone
-      ? { headline: headlineZone as Record<string, unknown>, body: bodyZone as Record<string, unknown> }
-      : undefined;
+  const zoneOverrides = normalizeSlideMetaForRender(meta as Record<string, unknown>).zoneOverrides;
   const fontOverrides =
     meta.headline_font_size != null || meta.body_font_size != null
       ? {
@@ -302,13 +293,7 @@ function getBoldWeights(slide: Slide): { headlineBoldWeight?: number; bodyBoldWe
 }
 
 function getZoneOverrides(slide: Slide): { headline?: Record<string, unknown>; body?: Record<string, unknown> } | undefined {
-  const m = slide.meta as SlideMeta | null;
-  if (m == null) return undefined;
-  if (!m.headline_zone_override && !m.body_zone_override) return undefined;
-  return {
-    headline: m.headline_zone_override && Object.keys(m.headline_zone_override).length > 0 ? m.headline_zone_override : undefined,
-    body: m.body_zone_override && Object.keys(m.body_zone_override).length > 0 ? m.body_zone_override : undefined,
-  };
+  return normalizeSlideMetaForRender(slide.meta as Record<string, unknown> | null).zoneOverrides;
 }
 
 const SWIPE_POSITIONS = [
