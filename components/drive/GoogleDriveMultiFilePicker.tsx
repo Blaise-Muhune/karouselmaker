@@ -1,83 +1,24 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { ImageIcon, Loader2Icon } from "lucide-react";
-
-const GSI_URL = "https://accounts.google.com/gsi/client";
-const GAPI_URL = "https://apis.google.com/js/api.js";
-const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
-const IMAGE_MIME_TYPES =
-  "image/jpeg,image/jpg,image/png,image/webp,image/gif,image/heic,image/heif";
-
-type GooglePickerDoc = { id: string; name?: string };
-type GooglePickerResponse = { action: string; docs?: GooglePickerDoc[] };
-
-function loadScript(src: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (typeof document === "undefined") {
-      reject(new Error("No document"));
-      return;
-    }
-    const existing = document.querySelector(`script[src="${src}"]`);
-    if (existing) {
-      resolve();
-      return;
-    }
-    const script = document.createElement("script");
-    script.src = src;
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error(`Failed to load ${src}`));
-    document.head.appendChild(script);
-  });
-}
-
-type Builder = {
-  setAppId: (id: string) => Builder;
-  setOAuthToken: (t: string) => Builder;
-  setDeveloperKey: (k: string) => Builder;
-  setTitle?: (t: string) => Builder;
-  enableFeature: (f: string | number) => Builder;
-  addView: (v: unknown) => Builder;
-  setCallback: (cb: (d: GooglePickerResponse) => void) => Builder;
-  setMaxItems?: (n: number) => Builder;
-  build: () => { setVisible: (v: boolean) => void };
-};
-
-/** Matches Google docs: Feature.MULTISELECT_ENABLED = "multiselectEnabled". */
-function resolveMultiselectFeature(picker: Record<string, unknown>): string | number {
-  const feature = picker.Feature as { MULTISELECT_ENABLED?: string | number } | undefined;
-  if (feature?.MULTISELECT_ENABLED != null) return feature.MULTISELECT_ENABLED;
-  return "multiselectEnabled";
-}
-
-/**
- * Build an image view the same way as Google's picker sample (`View` + mime filter).
- * Falls back to DocsView when `View` is unavailable.
- */
-function createImageDocsView(picker: Record<string, unknown>): unknown {
-  const ViewId = picker.ViewId as { DOCS?: number } | undefined;
-  const viewId = ViewId?.DOCS ?? 1;
-  const ViewCtor = picker.View as
-    | (new (viewId?: number) => { setMimeTypes?: (t: string) => unknown })
-    | undefined;
-  if (typeof ViewCtor === "function") {
-    const view = new ViewCtor(viewId);
-    view.setMimeTypes?.(IMAGE_MIME_TYPES);
-    return view;
-  }
-  const DocsViewCtor = picker.DocsView as new (viewId?: number) => {
-    setIncludeFolders?: (v: boolean) => unknown;
-    setSelectFolderEnabled?: (v: boolean) => unknown;
-    setMimeTypes?: (t: string) => unknown;
-  };
-  const docsView = new DocsViewCtor(viewId);
-  docsView.setIncludeFolders?.(false);
-  docsView.setSelectFolderEnabled?.(false);
-  docsView.setMimeTypes?.(IMAGE_MIME_TYPES);
-  return docsView;
-}
+import {
+  DRIVE_FILE_SCOPE,
+  GAPI_URL,
+  GSI_URL,
+  applyStandardPickerAuth,
+  createBrowsableImageView,
+  loadScript,
+  lockPageBehindDrivePicker,
+  resolveDrivePickerEnv,
+  resolveMultiselectFeature,
+  tokenResponseError,
+  unlockPageBehindDrivePicker,
+  type GooglePickerResponse,
+  type PickerBuilderLike,
+} from "@/components/drive/drivePickerShared";
 
 type GoogleDriveMultiFilePickerProps = {
   onFilesPicked: (fileIds: string[], accessToken: string) => void | Promise<void>;
@@ -102,13 +43,16 @@ export function GoogleDriveMultiFilePicker({
 }: GoogleDriveMultiFilePickerProps) {
   const [pending, setPending] = useState(false);
 
-  const openPicker = useCallback(async () => {
-    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-    const appId = process.env.NEXT_PUBLIC_GOOGLE_APP_ID;
-    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_API_KEY;
+  useEffect(() => {
+    if (!pending) return;
+    lockPageBehindDrivePicker();
+    return () => unlockPageBehindDrivePicker();
+  }, [pending]);
 
-    if (!clientId || !appId) {
-      onError?.("Google Drive is not configured.");
+  const openPicker = useCallback(async () => {
+    const env = resolveDrivePickerEnv();
+    if ("error" in env) {
+      onError?.(env.error);
       return;
     }
 
@@ -144,15 +88,12 @@ export function GoogleDriveMultiFilePicker({
           return;
         }
         try {
-          const BuilderCtor = picker.PickerBuilder as unknown as new () => Builder;
-          const docsView = createImageDocsView(picker);
+          const BuilderCtor = picker.PickerBuilder as unknown as new () => PickerBuilderLike;
+          const docsView = createBrowsableImageView(picker);
           const multiselect = resolveMultiselectFeature(picker);
 
-          // Order matches Google's sample: enable MULTISELECT before views/callback.
-          let builder = new BuilderCtor()
-            .enableFeature(multiselect)
-            .setAppId(appId)
-            .setOAuthToken(accessToken)
+          let builder = new BuilderCtor().enableFeature(multiselect);
+          builder = applyStandardPickerAuth(builder, env, accessToken)
             .addView(docsView)
             .setCallback((data: GooglePickerResponse) => {
               void (async () => {
@@ -160,9 +101,13 @@ export function GoogleDriveMultiFilePicker({
                   finish();
                   return;
                 }
-                const fileIds = data.docs.map((d) => d.id).filter(Boolean);
+                const fileIds = data.docs
+                  .filter((d) => !d.mimeType?.includes("folder"))
+                  .map((d) => d.id)
+                  .filter(Boolean);
                 try {
                   if (fileIds.length) await Promise.resolve(onFilesPicked(fileIds, accessToken));
+                  else onError?.("Select image files (not folders), then Select.");
                 } catch (e) {
                   onError?.(e instanceof Error ? e.message : "Drive import failed.");
                 } finally {
@@ -175,7 +120,6 @@ export function GoogleDriveMultiFilePicker({
           if (typeof builder.setMaxItems === "function") {
             builder = builder.setMaxItems(maxItems) ?? builder;
           }
-          if (apiKey) builder = builder.setDeveloperKey(apiKey);
           builder.build().setVisible(true);
         } catch (e) {
           onError?.(e instanceof Error ? e.message : "Failed to open Drive picker");
@@ -185,40 +129,55 @@ export function GoogleDriveMultiFilePicker({
     };
 
     const tokenClient = window.google.accounts.oauth2.initTokenClient({
-      client_id: clientId,
-      scope: DRIVE_SCOPE,
+      client_id: env.clientId,
+      scope: DRIVE_FILE_SCOPE,
       callback: (res) => {
-        if (res.access_token) {
-          showPicker(res.access_token);
-        } else {
-          onError?.("Google sign-in was cancelled or failed.");
+        const err = tokenResponseError(res);
+        if (err) {
+          onError?.(err);
           finish();
+          return;
         }
+        showPicker(res.access_token!);
       },
     });
     tokenClient.requestAccessToken();
   }, [onFilesPicked, onError, maxItems]);
 
   return (
-    <Button
-      type="button"
-      variant={variant}
-      size={size}
-      className={className}
-      onClick={openPicker}
-      disabled={disabled || pending}
-      title="Select multiple image files from Google Drive"
-    >
-      {pending ? (
-        <Loader2Icon className="size-4 animate-spin" />
-      ) : (
-        children ?? (
-          <>
-            <ImageIcon className="size-4" />
-            Pick images from Drive
-          </>
-        )
-      )}
-    </Button>
+    <>
+      <Button
+        type="button"
+        variant={variant}
+        size={size}
+        className={className}
+        onClick={openPicker}
+        disabled={disabled || pending}
+        title="Select multiple images from Google Drive"
+      >
+        {pending ? (
+          <Loader2Icon className="size-4 animate-spin" />
+        ) : (
+          children ?? (
+            <>
+              <ImageIcon className="size-4" />
+              Pick images from Drive
+            </>
+          )
+        )}
+      </Button>
+      {pending &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            aria-hidden
+            className="fixed inset-0 z-[900] bg-black/25"
+            style={{ touchAction: "none" }}
+            onTouchMove={(e) => e.preventDefault()}
+            onClick={(e) => e.preventDefault()}
+          />,
+          document.body
+        )}
+    </>
   );
 }

@@ -4,10 +4,13 @@ import { useRef, useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { uploadAsset } from "@/app/actions/assets/uploadAsset";
 import { importFilesFromGoogleDrive } from "@/app/actions/assets/importFromGoogleDrive";
-import { GoogleDriveFolderPicker } from "@/components/drive/GoogleDriveFolderPicker";
 import { GoogleDriveMultiFilePicker } from "@/components/drive/GoogleDriveMultiFilePicker";
 import { ImageIcon, Loader2Icon, UploadIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+/** Explicit types help mobile OS photo pickers offer multi-select from the library (no capture). */
+const IMAGE_ACCEPT =
+  "image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,.jpg,.jpeg,.png,.webp,.gif,.heic,.heif";
 
 export type LibraryImageImportBarProps = {
   /** New uploads and Drive imports are tagged with this project (omit or null = global library). */
@@ -25,8 +28,7 @@ export type LibraryImageImportBarProps = {
 };
 
 /**
- * Upload from device (multi-select) + Google Drive folder / multi-file import.
- * Reusable in asset modals and the asset library page.
+ * Upload from device (multi-select) + Google Drive multi-file import.
  */
 export function LibraryImageImportBar({
   attachProjectId,
@@ -102,8 +104,9 @@ export function LibraryImageImportBar({
         <input
           ref={inputRef}
           type="file"
-          accept="image/*"
+          accept={IMAGE_ACCEPT}
           multiple
+          // Do not set capture — that forces the camera and single-photo on phones.
           className="hidden"
           disabled={busy}
           onChange={(e) => void handleFilesSelected(e.target.files)}
@@ -123,37 +126,6 @@ export function LibraryImageImportBar({
           )}
           {atLimit ? "Upload (limit)" : "Upload"}
         </Button>
-        <GoogleDriveFolderPicker
-          onFilesPicked={async (fileIds, accessToken) => {
-            setMessage(null);
-            setDriveBusy(true);
-            try {
-              const result = await importFilesFromGoogleDrive(fileIds, accessToken, attachProjectId ?? undefined);
-              if (result.ok && result.assets.length > 0) {
-                setMessage(`Imported ${result.assets.length} image(s) from Drive.`);
-                await onRefresh(result.assets.map((a) => a.id));
-              } else if (!result.ok) {
-                setMessage(result.error);
-              } else {
-                setMessage("No images could be imported from that folder.");
-              }
-            } finally {
-              setDriveBusy(false);
-            }
-          }}
-          onError={(err) => setMessage(err)}
-          variant="outline"
-          size={btnSize}
-          className={cn(h)}
-          disabled={busy}
-        >
-          {driveBusy ? (
-            <Loader2Icon className="mr-1.5 size-3.5 animate-spin" />
-          ) : (
-            <ImageIcon className="mr-1.5 size-3.5" />
-          )}
-          Drive folder
-        </GoogleDriveFolderPicker>
         <GoogleDriveMultiFilePicker
           onFilesPicked={async (fileIds, accessToken) => {
             setMessage(null);
@@ -183,17 +155,19 @@ export function LibraryImageImportBar({
           ) : (
             <ImageIcon className="mr-1.5 size-3.5" />
           )}
-          Drive images
+          Drive
         </GoogleDriveMultiFilePicker>
       </div>
       <p className="text-[11px] text-muted-foreground">
-        Pick several files at once. In Drive, click multiple images (or Ctrl/Cmd+click), then Select.
+        Upload and Drive both support multiple images. On iPhone: Photo Library → Select → tap several → Add.
       </p>
       {message && (
         <p
           className={cn(
             "text-xs",
-            message.toLowerCase().includes("limit") || message.toLowerCase().includes("failed") || message.toLowerCase().includes("error")
+            message.toLowerCase().includes("limit") ||
+              message.toLowerCase().includes("failed") ||
+              message.toLowerCase().includes("error")
               ? "text-destructive"
               : "text-muted-foreground"
           )}

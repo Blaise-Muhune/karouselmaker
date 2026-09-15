@@ -1,8 +1,12 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { ImageIcon, Loader2Icon } from "lucide-react";
+import {
+  lockPageBehindDrivePicker,
+  unlockPageBehindDrivePicker,
+} from "@/components/drive/drivePickerShared";
 
 const GSI_URL = "https://accounts.google.com/gsi/client";
 const GAPI_URL = "https://apis.google.com/js/api.js";
@@ -53,6 +57,12 @@ export function GoogleDriveFilePicker({
   disabled = false,
 }: GoogleDriveFilePickerProps) {
   const [pending, setPending] = useState(false);
+
+  useEffect(() => {
+    if (!pending) return;
+    lockPageBehindDrivePicker();
+    return () => unlockPageBehindDrivePicker();
+  }, [pending]);
 
   const openPicker = useCallback(async () => {
     const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;

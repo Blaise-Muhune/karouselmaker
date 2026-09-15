@@ -104,7 +104,7 @@ export async function importFromGoogleDrive(
     return {
       ok: false,
       error:
-        "Google only grants access to files you select in the picker (not everything inside a folder automatically). Use “Drive folder”, then select the images in the next step — or use “Drive files” and multi-select them.",
+        "Google only grants access to files you select in the picker (not everything inside a folder automatically). Use Drive and multi-select the images you want.",
     };
   }
 
