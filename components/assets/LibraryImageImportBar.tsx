@@ -2,7 +2,7 @@
 
 import { useRef, useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { uploadAssets } from "@/app/actions/assets/uploadAsset";
+import { uploadAsset } from "@/app/actions/assets/uploadAsset";
 import { importFilesFromGoogleDrive } from "@/app/actions/assets/importFromGoogleDrive";
 import { GoogleDriveFolderPicker } from "@/components/drive/GoogleDriveFolderPicker";
 import { GoogleDriveMultiFilePicker } from "@/components/drive/GoogleDriveMultiFilePicker";
@@ -56,25 +56,31 @@ export function LibraryImageImportBar({
     setMessage(null);
     setUploading(true);
     try {
-      const fd = new FormData();
-      for (const f of Array.from(files)) {
-        if (f) fd.append("files", f);
+      // One server action per file — avoids the ~25MB body limit when picking several phone photos.
+      const list = Array.from(files).filter(Boolean).slice(0, 30);
+      const assetIds: string[] = [];
+      const errors: string[] = [];
+      for (let i = 0; i < list.length; i++) {
+        const file = list[i]!;
+        const fd = new FormData();
+        fd.set("file", file);
+        if (attachProjectId?.trim()) fd.set("project_id", attachProjectId.trim());
+        const isLast = i === list.length - 1;
+        const result = await uploadAsset(fd, isLast ? revalidatePathname : undefined);
+        if (result.ok) assetIds.push(result.assetId);
+        else errors.push(`${file.name}: ${result.error}`);
       }
-      if (attachProjectId?.trim()) fd.set("project_id", attachProjectId.trim());
-      const result = await uploadAssets(fd, revalidatePathname);
-      if (result.ok) {
+      if (assetIds.length > 0) {
         const extra =
-          result.errors.length > 0
-            ? ` ${result.errors.length} file(s) skipped: ${result.errors.map((e) => e.error).slice(0, 2).join("; ")}`
+          errors.length > 0
+            ? ` ${errors.length} file(s) skipped: ${errors.slice(0, 2).join("; ")}`
             : "";
         setMessage(
-          result.assetIds.length === 1
-            ? `Added 1 image.${extra}`
-            : `Added ${result.assetIds.length} images.${extra}`
+          assetIds.length === 1 ? `Added 1 image.${extra}` : `Added ${assetIds.length} images.${extra}`
         );
-        await onRefresh(result.assetIds);
+        await onRefresh(assetIds);
       } else {
-        setMessage(result.error);
+        setMessage(errors[0] ?? "Upload failed.");
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -177,9 +183,12 @@ export function LibraryImageImportBar({
           ) : (
             <ImageIcon className="mr-1.5 size-3.5" />
           )}
-          Drive files
+          Drive images
         </GoogleDriveMultiFilePicker>
       </div>
+      <p className="text-[11px] text-muted-foreground">
+        Pick several files at once. In Drive, click multiple images (or Ctrl/Cmd+click), then Select.
+      </p>
       {message && (
         <p
           className={cn(

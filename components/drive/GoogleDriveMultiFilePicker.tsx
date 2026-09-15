@@ -7,6 +7,8 @@ import { ImageIcon, Loader2Icon } from "lucide-react";
 const GSI_URL = "https://accounts.google.com/gsi/client";
 const GAPI_URL = "https://apis.google.com/js/api.js";
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
+const IMAGE_MIME_TYPES =
+  "image/jpeg,image/jpg,image/png,image/webp,image/gif,image/heic,image/heif";
 
 type GooglePickerDoc = { id: string; name?: string };
 type GooglePickerResponse = { action: string; docs?: GooglePickerDoc[] };
@@ -29,6 +31,52 @@ function loadScript(src: string): Promise<void> {
     script.onerror = () => reject(new Error(`Failed to load ${src}`));
     document.head.appendChild(script);
   });
+}
+
+type Builder = {
+  setAppId: (id: string) => Builder;
+  setOAuthToken: (t: string) => Builder;
+  setDeveloperKey: (k: string) => Builder;
+  setTitle?: (t: string) => Builder;
+  enableFeature: (f: string | number) => Builder;
+  addView: (v: unknown) => Builder;
+  setCallback: (cb: (d: GooglePickerResponse) => void) => Builder;
+  setMaxItems?: (n: number) => Builder;
+  build: () => { setVisible: (v: boolean) => void };
+};
+
+/** Matches Google docs: Feature.MULTISELECT_ENABLED = "multiselectEnabled". */
+function resolveMultiselectFeature(picker: Record<string, unknown>): string | number {
+  const feature = picker.Feature as { MULTISELECT_ENABLED?: string | number } | undefined;
+  if (feature?.MULTISELECT_ENABLED != null) return feature.MULTISELECT_ENABLED;
+  return "multiselectEnabled";
+}
+
+/**
+ * Build an image view the same way as Google's picker sample (`View` + mime filter).
+ * Falls back to DocsView when `View` is unavailable.
+ */
+function createImageDocsView(picker: Record<string, unknown>): unknown {
+  const ViewId = picker.ViewId as { DOCS?: number } | undefined;
+  const viewId = ViewId?.DOCS ?? 1;
+  const ViewCtor = picker.View as
+    | (new (viewId?: number) => { setMimeTypes?: (t: string) => unknown })
+    | undefined;
+  if (typeof ViewCtor === "function") {
+    const view = new ViewCtor(viewId);
+    view.setMimeTypes?.(IMAGE_MIME_TYPES);
+    return view;
+  }
+  const DocsViewCtor = picker.DocsView as new (viewId?: number) => {
+    setIncludeFolders?: (v: boolean) => unknown;
+    setSelectFolderEnabled?: (v: boolean) => unknown;
+    setMimeTypes?: (t: string) => unknown;
+  };
+  const docsView = new DocsViewCtor(viewId);
+  docsView.setIncludeFolders?.(false);
+  docsView.setSelectFolderEnabled?.(false);
+  docsView.setMimeTypes?.(IMAGE_MIME_TYPES);
+  return docsView;
 }
 
 type GoogleDriveMultiFilePickerProps = {
@@ -89,56 +137,23 @@ export function GoogleDriveMultiFilePicker({
         return;
       }
       window.gapi.load("picker", () => {
-        if (!window.google?.picker) {
+        const picker = window.google?.picker as Record<string, unknown> | undefined;
+        if (!picker) {
           onError?.("Picker failed to load. Refresh and try again.");
           finish();
           return;
         }
-        type PickerApi = {
-          ViewId?: { DOCS: number };
-          Feature?: { MULTISELECT_ENABLED: number };
-          DocsView: new (viewId?: number) => {
-            setIncludeFolders: (v: boolean) => unknown;
-            setSelectFolderEnabled: (v: boolean) => unknown;
-            setMimeTypes?: (t: string) => unknown;
-          };
-          PickerBuilder: new () => {
-            setAppId: (id: string) => unknown;
-            setOAuthToken: (t: string) => unknown;
-            setDeveloperKey: (k: string) => unknown;
-            enableFeature: (f: number) => unknown;
-            addView: (v: unknown) => unknown;
-            setCallback: (cb: (d: GooglePickerResponse) => void) => unknown;
-            setMaxItems?: (n: number) => unknown;
-            build: () => { setVisible: (v: boolean) => void };
-          };
-        };
         try {
-          const pickerApi = window.google.picker as PickerApi;
-          const viewId: number = pickerApi.ViewId?.DOCS ?? 1;
-          const DocsViewCtor = pickerApi.DocsView as new (viewId?: number) => {
-            setIncludeFolders: (v: boolean) => unknown;
-            setSelectFolderEnabled: (v: boolean) => unknown;
-          };
-          const docsView = new DocsViewCtor(viewId) as unknown as {
-            setIncludeFolders: (v: boolean) => { setSelectFolderEnabled: (v: boolean) => unknown };
-          };
-          const view = docsView.setIncludeFolders(false).setSelectFolderEnabled(false);
-          type PickerBuilderInstance = {
-            setAppId: (id: string) => PickerBuilderInstance;
-            setOAuthToken: (t: string) => PickerBuilderInstance;
-            setDeveloperKey: (k: string) => PickerBuilderInstance;
-            enableFeature?: (f: number) => PickerBuilderInstance;
-            addView: (v: unknown) => PickerBuilderInstance;
-            setCallback: (cb: (d: GooglePickerResponse) => void) => PickerBuilderInstance;
-            setMaxItems?: (n: number) => PickerBuilderInstance;
-            build: () => { setVisible: (v: boolean) => void };
-          };
-          const builderCtor = pickerApi.PickerBuilder as new () => PickerBuilderInstance;
-          let builder: PickerBuilderInstance = new builderCtor()
+          const BuilderCtor = picker.PickerBuilder as unknown as new () => Builder;
+          const docsView = createImageDocsView(picker);
+          const multiselect = resolveMultiselectFeature(picker);
+
+          // Order matches Google's sample: enable MULTISELECT before views/callback.
+          let builder = new BuilderCtor()
+            .enableFeature(multiselect)
             .setAppId(appId)
             .setOAuthToken(accessToken)
-            .addView(view)
+            .addView(docsView)
             .setCallback((data: GooglePickerResponse) => {
               void (async () => {
                 if (data.action !== "picked" || !data.docs?.length) {
@@ -155,14 +170,12 @@ export function GoogleDriveMultiFilePicker({
                 }
               })();
             });
-          const b = builder as { enableFeature?: (f: number) => unknown };
-          if (typeof b.enableFeature === "function" && pickerApi.Feature?.MULTISELECT_ENABLED != null) {
-            builder = b.enableFeature(pickerApi.Feature.MULTISELECT_ENABLED) as typeof builder;
+
+          builder = builder.setTitle?.("Select one or more images") ?? builder;
+          if (typeof builder.setMaxItems === "function") {
+            builder = builder.setMaxItems(maxItems) ?? builder;
           }
-          if (typeof (builder as { setMaxItems?: (n: number) => unknown }).setMaxItems === "function") {
-            (builder as { setMaxItems: (n: number) => unknown }).setMaxItems(maxItems);
-          }
-          if (apiKey) builder.setDeveloperKey(apiKey);
+          if (apiKey) builder = builder.setDeveloperKey(apiKey);
           builder.build().setVisible(true);
         } catch (e) {
           onError?.(e instanceof Error ? e.message : "Failed to open Drive picker");
@@ -194,7 +207,7 @@ export function GoogleDriveMultiFilePicker({
       className={className}
       onClick={openPicker}
       disabled={disabled || pending}
-      title="Select image files from Google Drive (multi-select)"
+      title="Select multiple image files from Google Drive"
     >
       {pending ? (
         <Loader2Icon className="size-4 animate-spin" />

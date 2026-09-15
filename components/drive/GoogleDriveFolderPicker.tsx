@@ -52,7 +52,7 @@ function loadScript(src: string): Promise<void> {
 
 type PickerApi = {
   ViewId?: { DOCS?: number; FOLDERS?: number };
-  Feature?: { MULTISELECT_ENABLED?: number; NAV_HIDDEN?: number };
+  Feature?: { MULTISELECT_ENABLED?: string | number; NAV_HIDDEN?: string | number };
   DocsViewMode?: { LIST?: number; GRID?: number };
   DocsView: new (viewId?: number) => {
     setIncludeFolders: (v: boolean) => unknown;
@@ -66,13 +66,19 @@ type PickerApi = {
     setOAuthToken: (t: string) => unknown;
     setDeveloperKey: (k: string) => unknown;
     setTitle?: (t: string) => unknown;
-    enableFeature?: (f: number) => unknown;
+    enableFeature?: (f: string | number) => unknown;
     addView: (v: unknown) => unknown;
     setCallback: (cb: (d: GooglePickerResponse) => void) => unknown;
     setMaxItems?: (n: number) => unknown;
     build: () => { setVisible: (v: boolean) => void };
   };
 };
+
+function resolveMultiselectFeature(picker: PickerApi | Record<string, unknown>): string | number {
+  const feature = (picker as { Feature?: { MULTISELECT_ENABLED?: string | number } }).Feature;
+  if (feature?.MULTISELECT_ENABLED != null) return feature.MULTISELECT_ENABLED;
+  return "multiselectEnabled";
+}
 
 type GoogleDriveFolderPickerProps = {
   /**
@@ -148,14 +154,17 @@ export function GoogleDriveFolderPicker({
           setOAuthToken: (t: string) => Builder;
           setDeveloperKey: (k: string) => Builder;
           setTitle?: (t: string) => Builder;
-          enableFeature?: (f: number) => Builder;
+          enableFeature: (f: string | number) => Builder;
           addView: (v: unknown) => Builder;
           setCallback: (cb: (d: GooglePickerResponse) => void) => Builder;
           setMaxItems?: (n: number) => Builder;
           build: () => { setVisible: (v: boolean) => void };
         };
         const BuilderCtor = pickerApi.PickerBuilder as unknown as new () => Builder;
+        const multiselect = resolveMultiselectFeature(pickerApi);
+        // Order matches Google sample: MULTISELECT before views/callback.
         let builder = new BuilderCtor()
+          .enableFeature(multiselect)
           .setAppId(appId)
           .setOAuthToken(accessToken)
           .addView(docsView)
@@ -177,10 +186,7 @@ export function GoogleDriveFolderPicker({
             })();
           });
 
-        builder = builder.setTitle?.("Select images in this folder") ?? builder;
-        if (typeof builder.enableFeature === "function" && pickerApi.Feature?.MULTISELECT_ENABLED != null) {
-          builder = builder.enableFeature(pickerApi.Feature.MULTISELECT_ENABLED);
-        }
+        builder = builder.setTitle?.("Select one or more images in this folder") ?? builder;
         if (typeof builder.setMaxItems === "function") {
           builder = builder.setMaxItems(maxItems) ?? builder;
         }

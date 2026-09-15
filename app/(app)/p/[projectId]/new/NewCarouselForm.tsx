@@ -606,7 +606,7 @@ export function NewCarouselForm({
                         Importing…
                       </>
                     ) : (
-                      "Drive files"
+                      "Drive images"
                     )}
                   </GoogleDriveMultiFilePicker>
                   <GoogleDriveFolderPicker
@@ -658,7 +658,11 @@ export function NewCarouselForm({
                   <p className="text-muted-foreground text-xs" role="status">
                     {driveStatus}
                   </p>
-                ) : null}
+                ) : (
+                  <p className="text-muted-foreground text-[11px]">
+                    Select multiple Drive images (click several, or Ctrl/Cmd+click), then Select.
+                  </p>
+                )}
               </div>
             )}
           </CardContent>
