@@ -18,7 +18,9 @@ The app now has an **admin-only** TikTok Photo Mode scheduling panel on each car
    CRON_SECRET=...
    ```
 
-`NEXT_PUBLIC_APP_URL` and `TIKTOK_VERIFIED_MEDIA_URL_PREFIX` must use the same HTTPS origin. The app refuses to schedule until both are configured.
+`NEXT_PUBLIC_APP_URL` and `TIKTOK_VERIFIED_MEDIA_URL_PREFIX` must use the same apex HTTPS origin (**no `www`**, not `*.vercel.app`). TikTok does not follow redirects, and Vercel Authentication can block `.vercel.app` media pulls.
+
+Photo Mode only accepts **JPEG or WebP**. The admin schedule export forces JPEG.
 
 ## Admin test flow
 

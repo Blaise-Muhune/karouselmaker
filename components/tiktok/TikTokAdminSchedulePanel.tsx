@@ -72,7 +72,7 @@ export function TikTokAdminSchedulePanel({
       const exportResponse = await fetch(`/api/export/${carouselId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image_overlay: true, format: "png", delivery: "schedule" }),
+        body: JSON.stringify({ image_overlay: true, format: "jpeg", delivery: "schedule" }),
       });
       if (!exportResponse.ok) {
         const data = (await exportResponse.json().catch(() => ({}))) as { error?: string };

@@ -21,6 +21,10 @@ export function getTikTokVerifiedMediaOrigin(): string | null {
     const appOrigin = new URL(appUrl).origin;
     const verifiedOrigin = new URL(verifiedPrefix).origin;
     if (new URL(appOrigin).protocol !== "https:" || appOrigin !== verifiedOrigin) return null;
+    // TikTok does not follow redirects. www → apex (or vercel.app auth walls) break photo pulls.
+    const host = new URL(appOrigin).hostname.toLowerCase();
+    if (host.startsWith("www.")) return null;
+    if (host.endsWith(".vercel.app")) return null;
     return appOrigin;
   } catch {
     return null;
@@ -35,6 +39,36 @@ function mediaUrls(schedule: TikTokScheduledPost): string[] {
     url.searchParams.set("token", schedule.media_token);
     return url.toString();
   });
+}
+
+/** TikTok rejects redirected URLs and unsupported image formats before/during pull. */
+async function assertMediaUrlsReachable(urls: string[]): Promise<void> {
+  for (const url of urls) {
+    const response = await fetch(url, {
+      method: "GET",
+      redirect: "manual",
+      headers: { Accept: "image/jpeg,image/webp,image/*,*/*;q=0.8" },
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (response.status >= 300 && response.status < 400) {
+      throw new Error(
+        "TikTok media URL redirected. Set NEXT_PUBLIC_APP_URL and TIKTOK_VERIFIED_MEDIA_URL_PREFIX to the apex HTTPS domain (no www), then retry."
+      );
+    }
+    if (!response.ok) {
+      throw new Error(
+        `TikTok media URL returned ${response.status}. Confirm the export finished and the verified domain can serve /api/tiktok/scheduled-media.`
+      );
+    }
+    const contentType = (response.headers.get("content-type") ?? "").split(";")[0]?.trim().toLowerCase() ?? "";
+    if (contentType && !contentType.startsWith("image/jpeg") && contentType !== "image/webp" && contentType !== "image/jpg") {
+      throw new Error(
+        `TikTok only accepts JPEG or WebP photos (got ${contentType}). Export the schedule as JPEG and retry.`
+      );
+    }
+    // Drain so the connection can close cleanly on serverless.
+    await response.arrayBuffer();
+  }
 }
 
 async function accessTokenForSchedule(schedule: TikTokScheduledPost): Promise<string> {
@@ -66,9 +100,11 @@ export async function publishScheduledTikTokPost(schedule: TikTokScheduledPost):
     let publishId = schedule.tiktok_publish_id;
 
     if (!publishId) {
+      const photoUrls = mediaUrls(schedule);
+      await assertMediaUrlsReachable(photoUrls);
       const result = await postPhotosToTikTok({
         accessToken,
-        photoUrls: mediaUrls(schedule),
+        photoUrls,
         title: schedule.title,
         description: schedule.description,
         privacyLevel: "SELF_ONLY",
