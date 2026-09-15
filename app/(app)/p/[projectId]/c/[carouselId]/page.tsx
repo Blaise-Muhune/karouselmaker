@@ -25,7 +25,7 @@ import { slugifyForFilename } from "@/lib/utils";
 import { GenerationPartialBanner } from "@/components/carousels/GenerationPartialBanner";
 import { CarouselGeneratingPage } from "@/components/carousels/CarouselGeneratingTrigger";
 import { TikTokAdminSchedulePanel } from "@/components/tiktok/TikTokAdminSchedulePanel";
-import { ArrowLeftIcon } from "lucide-react";
+import { ArrowLeftIcon, SparklesIcon } from "lucide-react";
 
 function normalizeStoragePathForBucket(path: string | undefined, bucket: string): string | undefined {
   const trimmed = path?.trim().replace(/^\/+/, "");
@@ -334,6 +334,23 @@ export default async function CarouselEditorPage({
           carouselTitle={carousel.title}
           projectName={project.name}
         />
+
+        {!isGenerating && (
+          <div className="flex flex-col gap-2 rounded-xl border border-border/80 bg-muted/20 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-foreground">Ready for the next post?</p>
+              <p className="mt-0.5 text-xs leading-snug text-muted-foreground">
+                Make another carousel for this project with a new angle.
+              </p>
+            </div>
+            <Button asChild className="shrink-0 gap-1.5">
+              <Link href={`/p/${projectId}/new?fromCarousel=${encodeURIComponent(carouselId)}`}>
+                <SparklesIcon className="size-4" aria-hidden />
+                Generate next post
+              </Link>
+            </Button>
+          </div>
+        )}
 
         {/* Caption */}
         <EditorCaptionSection
