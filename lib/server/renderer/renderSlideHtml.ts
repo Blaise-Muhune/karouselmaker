@@ -483,7 +483,7 @@ export function renderSlideHtml(
     const fillColor = seg.type === "color" && seg.color ? seg.color : zoneColor;
     const useOutline = zoneOutlineStrokePx > 0;
     const outlineSpan = (inner: string) =>
-      `<span style="color:${escapeHtml(fillColor)};-webkit-text-stroke:${zoneOutlineStrokePx}px #000;padding:0 1px;display:inline">${inner}</span>`;
+      `<span style="color:${escapeHtml(fillColor)};-webkit-text-stroke:${zoneOutlineStrokePx}px #000;paint-order:stroke fill;padding:0 1px;display:inline">${inner}</span>`;
     const renderNested = (content: string): string =>
       parseInlineFormatting(content)
         .map((nested) => {
@@ -507,7 +507,7 @@ export function renderSlideHtml(
     if (seg.type === "color" && seg.color) {
       if (zoneHighlightStyle === "background") {
         const bgStyle = useOutline
-          ? `background-color:${escapeHtml(seg.color)};padding:0.02em 0;margin:0;line-height:inherit;display:inline;border-radius:1px;box-decoration-break:clone;-webkit-box-decoration-break:clone;-webkit-text-stroke:${zoneOutlineStrokePx}px #000`
+          ? `background-color:${escapeHtml(seg.color)};padding:0.02em 0;margin:0;line-height:inherit;display:inline;border-radius:1px;box-decoration-break:clone;-webkit-box-decoration-break:clone;-webkit-text-stroke:${zoneOutlineStrokePx}px #000;paint-order:stroke fill`
           : "background-color:" + escapeHtml(seg.color) + ";padding:0.02em 0;margin:0;line-height:inherit;display:inline;border-radius:1px;box-decoration-break:clone;-webkit-box-decoration-break:clone";
         return `<span style="${bgStyle}">${renderNested(seg.text)}</span>`;
       }
@@ -1196,7 +1196,7 @@ export function renderSlideHtml(
         const fw = chip.fontWeight != null && Number.isFinite(Number(chip.fontWeight)) ? Math.round(Number(chip.fontWeight)) : 500;
         const fam = fontStackAttr(chip.fontFamily);
         const outlinePx = (chip.outlineStroke ?? 0) * cs;
-        const outlineCss = outlinePx > 0 ? `-webkit-text-stroke:${outlinePx}px #000;` : "";
+        const outlineCss = outlinePx > 0 ? `-webkit-text-stroke:${outlinePx}px #000;paint-order:stroke fill;` : "";
         const hasPanel = boxCss.length > 0;
         const pillCss = hasPanel ? "" : `background:rgba(255,255,255,0.08);border-radius:9999px;`;
         const pad = `${6 * cs}px ${12 * cs}px`;
@@ -1231,7 +1231,7 @@ export function renderSlideHtml(
     const wmFam = fontStackAttr(wm.fontFamily);
     const wmFw = wm.fontWeight != null && Number.isFinite(Number(wm.fontWeight)) ? Math.round(Number(wm.fontWeight)) : 500;
     const wmOutlinePx = (wm.outlineStroke ?? 0) * chromeScale;
-    const wmOutlineCss = wmOutlinePx > 0 ? `-webkit-text-stroke:${wmOutlinePx}px #000;` : "";
+    const wmOutlineCss = wmOutlinePx > 0 ? `-webkit-text-stroke:${wmOutlinePx}px #000;paint-order:stroke fill;` : "";
     const wmTextInner = wm.logoUrl
       ? `<img src="${escapeHtml(wm.logoUrl)}" alt="" style="${logoImgStyle}" />`
       : (() => {
@@ -1257,7 +1257,7 @@ export function renderSlideHtml(
     const mwFam = fontStackAttr(mwChip.fontFamily);
     const mwFw = mwChip.fontWeight != null && Number.isFinite(Number(mwChip.fontWeight)) ? Math.round(Number(mwChip.fontWeight)) : 500;
     const mwOutlinePx = (mwChip.outlineStroke ?? 0) * chromeScale;
-    const mwOutlineCss = mwOutlinePx > 0 ? `-webkit-text-stroke:${mwOutlinePx}px #000;` : "";
+    const mwOutlineCss = mwOutlinePx > 0 ? `-webkit-text-stroke:${mwOutlinePx}px #000;paint-order:stroke fill;` : "";
     const hasMwPanel = mwBoxCss.length > 0;
     const mwShadow = hasMwPanel ? "" : "text-shadow:0 1px 2px rgba(0,0,0,0.3);";
     const mwBoxPart = hasMwPanel ? `${mwBoxCss};` : "";

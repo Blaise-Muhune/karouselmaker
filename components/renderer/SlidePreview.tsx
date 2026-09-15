@@ -3033,6 +3033,7 @@ export function SlidePreview({
           chromeVisible;
         const outlineStyle = {
           WebkitTextStroke: `${zoneOutlineStrokePx}px #000`,
+          paintOrder: "stroke fill" as const,
           padding: "0 1px",
           display: "inline" as const,
         };
@@ -4463,7 +4464,7 @@ export function SlidePreview({
                   color: model.chrome.counterColor ?? textColor,
                   opacity: 0.85,
                   fontFamily: getFontStack(chip.fontFamily ?? "system"),
-                  ...(outlinePx > 0 ? { WebkitTextStroke: `${outlinePx}px #000` } : {}),
+                  ...(outlinePx > 0 ? { WebkitTextStroke: `${outlinePx}px #000`, paintOrder: "stroke fill" as const } : {}),
                 };
               })(),
             }}
@@ -4561,7 +4562,7 @@ export function SlidePreview({
                       fontSize: (wm.fontSize ?? 20) * chromeScale,
                       fontWeight: wm.fontWeight != null && Number.isFinite(Number(wm.fontWeight)) ? Math.round(Number(wm.fontWeight)) : 500,
                       fontFamily: getFontStack(wm.fontFamily ?? "system"),
-                      ...(outlinePx > 0 ? { WebkitTextStroke: `${outlinePx}px #000` } : {}),
+                      ...(outlinePx > 0 ? { WebkitTextStroke: `${outlinePx}px #000`, paintOrder: "stroke fill" as const } : {}),
                     };
                   })(),
                 }}
@@ -4695,7 +4696,7 @@ export function SlidePreview({
                   ...(hasPanel ? {} : { textShadow: "0 1px 2px rgba(0,0,0,0.3)" }),
                   whiteSpace: "nowrap",
                   fontFamily: getFontStack(chip.fontFamily ?? "system"),
-                  ...(outlinePx > 0 ? { WebkitTextStroke: `${outlinePx}px #000` } : {}),
+                  ...(outlinePx > 0 ? { WebkitTextStroke: `${outlinePx}px #000`, paintOrder: "stroke fill" as const } : {}),
                 };
               })(),
             }}
