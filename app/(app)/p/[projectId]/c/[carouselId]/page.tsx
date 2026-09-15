@@ -12,7 +12,6 @@ import { resolveBrandKitLogo } from "@/lib/server/brandKit";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
 import { httpsDisplayImageUrl } from "@/lib/server/storage/signedUrlUtils";
 import { Button } from "@/components/ui/button";
-import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { SlideGrid, type TemplateWithConfig } from "@/components/carousels/SlideGrid";
 import { CarouselMenuDropdown } from "@/components/carousels/CarouselMenuDropdown";
 import { ShuffleCarouselBackgroundsButton } from "@/components/carousels/ShuffleCarouselBackgroundsButton";
@@ -26,7 +25,7 @@ import { slugifyForFilename } from "@/lib/utils";
 import { GenerationPartialBanner } from "@/components/carousels/GenerationPartialBanner";
 import { CarouselGeneratingPage } from "@/components/carousels/CarouselGeneratingTrigger";
 import { TikTokAdminSchedulePanel } from "@/components/tiktok/TikTokAdminSchedulePanel";
-import { ArrowLeftIcon, SparklesIcon } from "lucide-react";
+import { ArrowLeftIcon } from "lucide-react";
 
 function normalizeStoragePathForBucket(path: string | undefined, bucket: string): string | undefined {
   const trimmed = path?.trim().replace(/^\/+/, "");
@@ -254,68 +253,32 @@ export default async function CarouselEditorPage({
         )}
 
         {/* Header */}
-        <header className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex flex-col gap-2 min-w-0">
-            <Breadcrumbs
-              items={[
-                { label: project.name, href: `/p/${projectId}` },
-                { label: carousel.title },
-              ]}
-              className="mb-0.5"
+        <header className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <Button variant="ghost" size="icon-sm" className="-ml-1 shrink-0" asChild>
+              <Link href={`/p/${projectId}`}>
+                <ArrowLeftIcon className="size-4" />
+                <span className="sr-only">Back to project</span>
+              </Link>
+            </Button>
+            <h1 className="min-w-0 truncate text-xl font-semibold tracking-tight">{carousel.title}</h1>
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            <ShuffleCarouselBackgroundsButton
+              carouselId={carouselId}
+              projectId={projectId}
+              pathname={editorPath}
+              hasShuffleableSlides={hasShuffleableSlides}
+              disabled={isGenerating || !hasFullAccess}
             />
-            <div className="flex items-center gap-2 flex-wrap">
-              <Button variant="ghost" size="icon-sm" className="-ml-1 shrink-0" asChild>
-                <Link href={`/p/${projectId}`}>
-                  <ArrowLeftIcon className="size-4" />
-                  <span className="sr-only">Back to project</span>
-                </Link>
-              </Button>
-              <div className="min-w-0">
-                <h1 className="text-xl font-semibold tracking-tight truncate">{carousel.title}</h1>
-                <p className="text-muted-foreground text-sm">
-                  {getExportSize(carousel).replace("x", "×")}
-                  <span className="mx-1.5 opacity-50">·</span>
-                  {carousel.status}
-                </p>
-              </div>
-              <ShuffleCarouselBackgroundsButton
-                carouselId={carouselId}
-                projectId={projectId}
-                pathname={editorPath}
-                hasShuffleableSlides={hasShuffleableSlides}
-                disabled={isGenerating || !hasFullAccess}
-              />
-              <CarouselMenuDropdown
-                carouselId={carouselId}
-                projectId={projectId}
-                isFavorite={!!carousel.is_favorite}
-                disabled={isGenerating}
-              />
-            </div>
+            <CarouselMenuDropdown
+              carouselId={carouselId}
+              projectId={projectId}
+              isFavorite={!!carousel.is_favorite}
+              disabled={isGenerating}
+            />
           </div>
         </header>
-
-        {/* Export */}
-        <EditorExportSection
-          carouselId={carouselId}
-          isPro={hasFullAccess}
-          disabled={isGenerating}
-          exportsUsedThisMonth={exportCount}
-          exportsLimit={limits.exportsPerMonth}
-          exportFormat={getExportFormat(carousel)}
-          exportSize={getExportSize(carousel)}
-          exportSettingsPath={`/p/${projectId}/c/${carouselId}`}
-          recentExports={recentExports.map((ex) => ({
-            id: ex.id,
-            status: ex.status,
-            storage_path: ex.storage_path,
-            created_at: ex.created_at,
-          }))}
-          captionVariants={captionVariants}
-          hashtags={hashtags}
-          carouselTitle={carousel.title}
-          projectName={project.name}
-        />
 
         {userIsAdmin && (
           <TikTokAdminSchedulePanel
@@ -351,22 +314,26 @@ export default async function CarouselEditorPage({
           />
         </section>
 
-        {!isGenerating && (
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-xl border border-border/80 bg-muted/20 px-4 py-3">
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-foreground">Ready for the next organic post?</p>
-              <p className="text-muted-foreground text-xs leading-snug mt-0.5">
-                Generate another IG/TikTok carousel in this project—same niche and offer, new angle.
-              </p>
-            </div>
-            <Button asChild className="shrink-0 gap-1.5" disabled={isGenerating}>
-              <Link href={`/p/${projectId}/new?fromCarousel=${encodeURIComponent(carouselId)}`}>
-                <SparklesIcon className="size-4" aria-hidden />
-                Generate next post
-              </Link>
-            </Button>
-          </div>
-        )}
+        <EditorExportSection
+          carouselId={carouselId}
+          isPro={hasFullAccess}
+          disabled={isGenerating}
+          exportsUsedThisMonth={exportCount}
+          exportsLimit={limits.exportsPerMonth}
+          exportFormat={getExportFormat(carousel)}
+          exportSize={getExportSize(carousel)}
+          exportSettingsPath={`/p/${projectId}/c/${carouselId}`}
+          recentExports={recentExports.map((ex) => ({
+            id: ex.id,
+            status: ex.status,
+            storage_path: ex.storage_path,
+            created_at: ex.created_at,
+          }))}
+          captionVariants={captionVariants}
+          hashtags={hashtags}
+          carouselTitle={carousel.title}
+          projectName={project.name}
+        />
 
         {/* Caption */}
         <EditorCaptionSection

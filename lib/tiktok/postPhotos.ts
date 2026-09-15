@@ -132,7 +132,7 @@ export async function fetchTikTokPublishStatus(accessToken: string, publishId: s
 function publishFailMessage(failReason: string | undefined) {
   switch (failReason) {
     case "photo_pull_failed":
-      return "TikTok could not download the slide images. Use apex HTTPS (no www), JPEG exports, and a verified domain TikTok can reach without redirects.";
+      return "TikTok could not finish downloading the slide images. The media URL must stay publicly reachable over HTTPS without redirects; retry after checking the verified media domain.";
     case "picture_size_check_failed":
       return "TikTok rejected a slide image size. Export again at the carousel size and retry.";
     case "file_format_check_failed":
