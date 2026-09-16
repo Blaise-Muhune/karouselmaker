@@ -94,6 +94,7 @@ export function NewCarouselForm({
   carouselLimit,
   regenerateCarouselId,
   initialSettingsCarriedFromCarousel,
+  initialImageSettingsRemembered,
   initialSelectedTemplateId,
   initialSelectedTemplateIds,
   initialBackgroundAssetIds,
@@ -116,6 +117,8 @@ export function NewCarouselForm({
   carouselLimit: number;
   regenerateCarouselId?: string;
   initialSettingsCarriedFromCarousel?: boolean;
+  /** The user's last generated image source/selection is prefilled for this new post. */
+  initialImageSettingsRemembered?: boolean;
   initialSelectedTemplateId?: string;
   initialSelectedTemplateIds?: string[];
   initialBackgroundAssetIds?: string[];
@@ -429,6 +432,9 @@ export function NewCarouselForm({
 
         {initialSettingsCarriedFromCarousel && (
           <p className="text-muted-foreground text-xs">Image and template settings carried from your last post.</p>
+        )}
+        {initialImageSettingsRemembered && (
+          <p className="text-muted-foreground text-xs">Your last image choice is ready to use for this post.</p>
         )}
 
         {error && (

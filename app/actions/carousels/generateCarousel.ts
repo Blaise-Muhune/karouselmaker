@@ -47,7 +47,6 @@ import {
 import { summarizeProductReferenceImages } from "@/lib/server/ai/summarizeProductReferenceImages";
 import { computeProductMustAppearForSlide } from "@/lib/server/ai/computeProductMustAppearForSlide";
 import { buildCarouselSeriesVisualConsistency } from "@/lib/server/ai/carouselSeriesVisualConsistency";
-import { matchBackgroundAssetsToSlides } from "@/lib/server/ai/matchBackgroundAssetsToSlides";
 import { mergeProjectUgcAvatarAssetIds } from "@/lib/server/ai/mergeProjectUgcAvatarAssetIds";
 import { loadUgcAvatarReferenceJpegBuffers } from "@/lib/server/ai/loadUgcAvatarReferenceBuffers";
 import { loadProductReferenceJpegBuffers } from "@/lib/server/ai/loadProductReferenceJpegBuffers";
@@ -102,6 +101,35 @@ const LOG = (step: string, detail?: string) =>
 const now = () => Date.now();
 function elapsedMs(start: number): number {
   return Math.round(Date.now() - start);
+}
+
+/**
+ * Give "My images" a fresh sequence for every run. A new shuffle is used for
+ * each round, so a carousel with fewer images than frames does not simply
+ * restart at the same first image.
+ */
+function shuffledRoundRobin<T>(items: readonly T[], count: number): T[] {
+  if (items.length === 0 || count <= 0) return [];
+  const result: T[] = [];
+  let previous: T | undefined;
+  while (result.length < count) {
+    const round = [...items];
+    for (let i = round.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [round[i], round[j]] = [round[j]!, round[i]!];
+    }
+    // Avoid placing the same picture at the end of one cycle and the start of the next.
+    if (round.length > 1 && previous === round[0]) {
+      const next = round.shift();
+      if (next !== undefined) round.push(next);
+    }
+    for (const item of round) {
+      if (result.length >= count) break;
+      result.push(item);
+      previous = item;
+    }
+  }
+  return result;
 }
 
 /** Token usage for one step (input = prompt, output = completion). */
@@ -1249,28 +1277,13 @@ export async function generateCarousel(formData: FormData): Promise<
       if (asset?.storage_path) assets.push({ id: asset.id, storage_path: asset.storage_path });
     }
     if (assets.length) {
-      const aiMatchedAssetBySlideId = await matchBackgroundAssetsToSlides({
-        userId: user.id,
-        assetIds: assets.map((a) => a.id),
-        slides: createdSlides.map((s) => ({
-          id: s.id,
-          slide_index: s.slide_index,
-          slide_type: s.slide_type,
-          headline: s.headline,
-          body: s.body,
-        })),
-        carouselTitle: validated.title?.trim(),
-        topic: data.input_value?.trim(),
-      });
       const userAssetUpdates: { slide: (typeof createdSlides)[number]; asset: { id: string; storage_path: string } }[] = [];
       const eligibleSlides = createdSlides.filter(slideCanUseImage);
+      const shuffledAssets = shuffledRoundRobin(assets, eligibleSlides.length);
       for (let i = 0; i < eligibleSlides.length; i++) {
         const slide = eligibleSlides[i];
         if (!slide) continue;
-        const matchedAssetId = aiMatchedAssetBySlideId?.get(slide.id);
-        const asset =
-          (matchedAssetId ? assets.find((a) => a.id === matchedAssetId) : undefined) ??
-          assets[i % assets.length];
+        const asset = shuffledAssets[i];
         if (!asset) continue;
         slidesWithImage.add(slide.id);
         userAssetUpdates.push({ slide, asset });

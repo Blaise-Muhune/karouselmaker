@@ -53,7 +53,7 @@ export function BackgroundImagesPickerModal({
   onConfirm,
   maxSelection = DEFAULT_MAX_IMAGES,
   dialogTitle = "Background images for carousel frames",
-  dialogDescription = "Select 1–30 images. They will be applied to frames in order (round-robin). First frame can use 1 or 2 images (full + circle).",
+  dialogDescription = "Select 1–30 images. We shuffle them across frames each time you generate, so the same set does not repeat in the same order. First frame can use 1 or 2 images (full + circle).",
   contextProjectId,
   allowEmptyConfirm = false,
   onImportBusyChange,
