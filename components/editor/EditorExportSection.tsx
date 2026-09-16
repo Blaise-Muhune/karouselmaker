@@ -17,7 +17,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { WaitingGamesDialog } from "@/components/waiting/WaitingGamesDialog";
 import { slugifyForFilename } from "@/lib/utils";
-import { triggerBlobDownload } from "@/lib/client/blobDownload";
 import { combineCaptionWithHashtags } from "@/components/editor/EditorCaptionSection";
 
 export type ExportRowDisplay = {
@@ -87,13 +86,14 @@ export function EditorExportSection({
   const [updatingExportSettings, setUpdatingExportSettings] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<"title" | "caption" | null>(null);
   const [downloaded, setDownloaded] = useState(false);
 
   const captionText = combineCaptionWithHashtags(
     (captionVariants.long || captionVariants.medium || captionVariants.short || "").trim(),
     hashtags
   );
+  const titleText = (captionVariants.title || captionVariants.short || "").trim();
 
   useEffect(() => {
     setLocalExportFormat(exportFormat === "jpeg" ? "jpeg" : "png");
@@ -117,6 +117,10 @@ export function EditorExportSection({
 
   async function handleDownload() {
     if (!canExport || disabled) return;
+    // This happens synchronously within the tap, so mobile Safari/Chrome allow
+    // the tab to receive the finished attachment after the render completes.
+    const isTouchDevice = window.matchMedia?.("(pointer: coarse)").matches ?? false;
+    const downloadWindow = isTouchDevice ? window.open("about:blank", "_blank") : null;
     setExportError(null);
     setExporting(true);
     try {
@@ -127,35 +131,46 @@ export function EditorExportSection({
           image_overlay: true,
           format: localExportFormat,
           size: localExportSize,
+          delivery: "prepare",
         }),
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(data.error || `Export failed (${res.status})`);
       }
-      const blob = await res.blob();
-      const filename = `${downloadSlug}.zip`;
-      await triggerBlobDownload(blob, filename);
+      const data = (await res.json().catch(() => ({}))) as { downloadUrl?: string; error?: string };
+      if (!data.downloadUrl) throw new Error(data.error || "Could not prepare the download");
+      if (downloadWindow) {
+        downloadWindow.location.replace(data.downloadUrl);
+      } else {
+        const link = document.createElement("a");
+        link.href = data.downloadUrl;
+        link.download = `${downloadSlug}.zip`;
+        link.style.display = "none";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      }
       setDownloaded(true);
       window.setTimeout(() => setDownloaded(false), 3000);
-      router.refresh();
     } catch (e) {
+      downloadWindow?.close();
       setExportError(e instanceof Error ? e.message : "Export failed");
     } finally {
       setExporting(false);
     }
   }
 
-  const copyCaption = useCallback(async () => {
-    if (!captionText.trim() || disabled) return;
+  const copyText = useCallback(async (text: string, kind: "title" | "caption") => {
+    if (!text.trim() || disabled) return;
     try {
-      await navigator.clipboard.writeText(captionText);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      await navigator.clipboard.writeText(text);
+      setCopied(kind);
+      setTimeout(() => setCopied(null), 1500);
     } catch {
       /* ignore */
     }
-  }, [captionText, disabled]);
+  }, [disabled]);
 
   function selectFormat(value: string) {
     const next = value === "jpeg" ? "jpeg" : "png";
@@ -170,14 +185,17 @@ export function EditorExportSection({
   }
 
   return (
-    <section className="space-y-4 rounded-2xl border border-border/70 bg-card/80 p-5 shadow-sm">
-      <div>
+    <section className="space-y-3 rounded-2xl border border-border/70 bg-card/90 p-4 shadow-sm sm:p-5">
+      <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-foreground">Download your post</p>
+          <p className="text-sm font-semibold text-foreground">Ready to publish</p>
           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            A ready-to-upload ZIP with every slide.
+            Download the slides, then copy the post text you need.
           </p>
         </div>
+        <span className="shrink-0 rounded-full border border-border/70 bg-muted/40 px-2 py-1 text-[11px] font-medium text-muted-foreground">
+          {EXPORT_FORMAT_LABELS[localExportFormat]} · {EXPORT_SIZE_LABELS[localExportSize]}
+        </span>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <Button
@@ -190,10 +208,16 @@ export function EditorExportSection({
           {exporting ? <Loader2Icon className="size-4 animate-spin" /> : downloaded ? <CheckIcon className="size-4" /> : <DownloadIcon className="size-4" />}
           {exporting ? "Building ZIP…" : downloaded ? "ZIP downloaded" : "Download ZIP"}
         </Button>
+        {titleText ? (
+          <Button type="button" variant="outline" size="lg" className="gap-2" disabled={disabled} onClick={() => void copyText(titleText, "title")}>
+            {copied === "title" ? <CheckIcon className="size-4" /> : <CopyIcon className="size-4" />}
+            {copied === "title" ? "Copied" : "Copy title"}
+          </Button>
+        ) : null}
         {captionText ? (
-          <Button type="button" variant="outline" size="lg" className="gap-2" disabled={disabled} onClick={() => void copyCaption()}>
-            {copied ? <CheckIcon className="size-4" /> : <CopyIcon className="size-4" />}
-            {copied ? "Copied" : "Copy caption"}
+          <Button type="button" variant="outline" size="lg" className="gap-2" disabled={disabled} onClick={() => void copyText(captionText, "caption")}>
+            {copied === "caption" ? <CheckIcon className="size-4" /> : <CopyIcon className="size-4" />}
+            {copied === "caption" ? "Copied" : "Copy caption"}
           </Button>
         ) : null}
         <DropdownMenu>
@@ -232,7 +256,7 @@ export function EditorExportSection({
       </div>
       {exporting && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/20 bg-primary/5 px-3 py-2.5" aria-live="polite">
-          <p className="text-xs text-muted-foreground">Rendering your slides and packaging the ZIP. Keep this tab open.</p>
+          <p className="text-xs text-muted-foreground">Rendering your slides. Your device download will open when it is ready.</p>
           <WaitingGamesDialog loadingMessage="Building your ZIP…" triggerClassName="bg-background/80" />
         </div>
       )}
@@ -242,7 +266,7 @@ export function EditorExportSection({
         </p>
       )}
       <p className="text-xs text-muted-foreground" aria-live="polite">
-        {downloaded ? "Your download has started." : `${EXPORT_FORMAT_LABELS[localExportFormat]} · ${EXPORT_SIZE_LABELS[localExportSize]}`}
+        {downloaded ? "Your download has started." : "ZIP includes every slide in posting order."}
       </p>
     </section>
   );

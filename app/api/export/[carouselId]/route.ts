@@ -54,7 +54,7 @@ type ExportRequestOptions = {
   format?: "png" | "jpeg" | "pdf";
   size?: "1080x1080" | "1080x1350" | "1080x1920";
   /** Store a fixed export for an in-app destination without sending a file to the browser. */
-  delivery?: "download" | "schedule";
+  delivery?: "download" | "prepare" | "schedule";
 };
 
 async function readExportRequestOptions(request: Request): Promise<ExportRequestOptions> {
@@ -71,7 +71,10 @@ async function readExportRequestOptions(request: Request): Promise<ExportRequest
         value.size === "1080x1080" || value.size === "1080x1350" || value.size === "1080x1920"
           ? value.size
           : undefined,
-      delivery: value.delivery === "schedule" ? "schedule" : "download",
+      delivery:
+        value.delivery === "schedule" || value.delivery === "prepare"
+          ? value.delivery
+          : "download",
     };
   } catch {
     /* empty or non-JSON body */
@@ -430,6 +433,15 @@ export async function POST(
     // Scheduling uses the same immutable raster files as a download, but does not need a ZIP.
     if (requestOptions.delivery === "schedule") {
       return NextResponse.json({ exportId });
+    }
+
+    // A direct, authenticated download URL is much more reliable on phones than
+    // asking the browser to save a large Blob created by fetch().
+    if (requestOptions.delivery === "prepare") {
+      return NextResponse.json({
+        exportId,
+        downloadUrl: `/api/export/${carouselId}/${exportId}/download`,
+      });
     }
 
     if (exportMode === "pdf") {

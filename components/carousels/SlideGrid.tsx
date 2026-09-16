@@ -38,7 +38,7 @@ import { useRouter } from "next/navigation";
 import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, DownloadIcon, GripVerticalIcon, Images, LayoutTemplateIcon, Loader2Icon, PencilIcon, PlusIcon, Shuffle, SquareIcon, Trash2Icon } from "lucide-react";
 import { FONT_WEIGHT_MAX, FONT_WEIGHT_MIN } from "@/lib/constants/fontWeight";
 
-const PREVIEW_SCALE = 0.25;
+const PREVIEW_SCALE = 0.2;
 
 function slideHasPhotoBackground(slide: Slide): boolean {
   const bg = slide.background as {
@@ -717,7 +717,7 @@ export function SlideGrid({
           {downloadError}
         </p>
       )}
-      {canEdit && (
+      {false && canEdit && (
         <div className="mb-3 flex flex-wrap items-center gap-3 pt-3 pb-2">
           {selectionCount > 0 ? (
             <>
@@ -823,7 +823,7 @@ export function SlideGrid({
           )}
         </div>
       )}
-      <ul className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+      <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {slidesOrder.map((slide, index) => {
           const templateConfigFromList = getTemplateConfig(slide, templates);
           const effectiveTemplateConfig = templateConfigFromList ?? fetchedTemplateConfigs[slide.id] ?? null;
@@ -898,7 +898,7 @@ export function SlideGrid({
                 <div className="flex-1 min-w-0 flex flex-col gap-2">
                   {canEdit ? (
                     <div className="relative" style={{ width: previewDims.w, height: previewDims.h }}>
-                      {canEdit && (
+                      {false && canEdit && (
                         <button
                           type="button"
                           onClick={(e) => {
@@ -1008,7 +1008,7 @@ export function SlideGrid({
                           </div>
                         )}
                       </Link>
-                      <Button
+                      {false && <Button
                         variant="secondary"
                         size="icon-sm"
                         className="absolute left-1 top-1/2 -translate-y-1/2 h-7 w-7 rounded-full border border-border/50 bg-background/40 hover:bg-background/90 text-muted-foreground/60 hover:text-foreground z-10 opacity-60 hover:opacity-100 transition-opacity"
@@ -1021,8 +1021,8 @@ export function SlideGrid({
                         }}
                       >
                         <ChevronLeftIcon className="size-4" />
-                      </Button>
-                      <Button
+                      </Button>}
+                      {false && <Button
                         variant="secondary"
                         size="icon-sm"
                         className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 rounded-full border border-border/50 bg-background/40 hover:bg-background/90 text-muted-foreground/60 hover:text-foreground z-10 opacity-60 hover:opacity-100 transition-opacity"
@@ -1035,7 +1035,7 @@ export function SlideGrid({
                         }}
                       >
                         <ChevronRightIcon className="size-4" />
-                      </Button>
+                      </Button>}
                     </div>
                   ) : (
                     <Link
@@ -1125,7 +1125,7 @@ export function SlideGrid({
                       )}
                     </Link>
                   )}
-                  <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
                     <Button
                       type="button"
                       variant="outline"
@@ -1150,7 +1150,7 @@ export function SlideGrid({
                         {getImageCount(slide)}
                       </span>
                     )}
-                    <Button
+                    {false && <Button
                       variant="outline"
                       size="icon-sm"
                       title="Download this frame"
@@ -1186,8 +1186,8 @@ export function SlideGrid({
                         <DownloadIcon className="size-4" />
                       )}
                       <span className="sr-only">Download this frame</span>
-                    </Button>
-                    {canEdit && slideHasShuffleableImages(slide) && (
+                    </Button>}
+                    {false && canEdit && slideHasShuffleableImages(slide) && (
                       <Button
                         variant="outline"
                         size="icon-sm"
@@ -1210,14 +1210,14 @@ export function SlideGrid({
                         <span className="sr-only">Shuffle images</span>
                       </Button>
                     )}
-                    {canEdit ? (
+                    {false && canEdit ? (
                       <Button variant="outline" size="icon-sm" asChild title="Edit frame">
                         <Link href={`/p/${projectId}/c/${carouselId}/s/${slide.id}`}>
                           <PencilIcon className="size-4" />
                         </Link>
                       </Button>
                     ) : null}
-                    {canEdit && slidesOrder.length > 1 ? (
+                    {false && canEdit && slidesOrder.length > 1 ? (
                       <Button
                         variant="outline"
                         size="icon-sm"
@@ -1248,7 +1248,7 @@ export function SlideGrid({
             </li>
           );
         })}
-        {canEdit ? (
+        {false && canEdit ? (
           <li className="flex flex-col gap-2">
             <div className="flex items-start gap-1">
               <div className="flex-1 min-w-0" style={{ width: previewDims.w }}>
