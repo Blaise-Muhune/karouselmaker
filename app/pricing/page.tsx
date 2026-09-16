@@ -27,7 +27,7 @@ const sans = Manrope({
 export const metadata: Metadata = {
   title: "Pricing",
   description:
-    "Karouselmaker pricing for AI-generated Instagram and TikTok carousels. Start with three complete post packs, then choose the plan that fits your publishing rhythm.",
+    "Karouselmaker pricing for value-first Instagram and TikTok carousels that organically promote your product or service. Start with three complete post packs.",
   openGraph: {
     title: "Pricing | Karouselmaker",
     description:

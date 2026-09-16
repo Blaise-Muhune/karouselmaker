@@ -84,10 +84,10 @@ export default async function Home() {
             Karouselmaker
           </h1>
           <p className="mt-6 max-w-[22ch] font-[family-name:var(--font-landing-display)] text-[clamp(1.5rem,3.5vw,2.25rem)] leading-[1.2] tracking-tight text-foreground/90 animate-in fade-in slide-in-from-bottom-2 duration-700 motion-reduce:animate-none sm:max-w-xl">
-            Create polished Instagram & TikTok carousels from one project brief.
+            Organically promote your product or service with Instagram & TikTok carousels that do not feel like ads.
           </p>
           <p className="mt-5 max-w-md text-[15px] leading-relaxed text-muted-foreground sm:text-base animate-in fade-in duration-700 delay-100 motion-reduce:animate-none">
-            Generate the title, slides, caption, and hashtags. Refine with templates, then publish with confidence.
+            Lead with real value. Earn the swipe. Soft-sell what you offer when it fits.
           </p>
           <div className="mt-8 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center animate-in fade-in duration-700 delay-150 motion-reduce:animate-none">
             <Button size="lg" className="h-11 gap-2 px-6 text-[15px]" asChild>
@@ -120,12 +120,12 @@ export default async function Home() {
         <div className="grid gap-10 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] lg:gap-16 lg:items-end">
           <div>
             <h2 className="font-[family-name:var(--font-landing-display)] text-3xl leading-[1.15] tracking-tight text-foreground sm:text-4xl md:text-[2.75rem]">
-              Create a complete carousel post without rebuilding the strategy every time.
+              Carousels grow accounts. Value-first posts grow the business.
             </h2>
           </div>
           <p className="text-[15px] leading-[1.7] text-muted-foreground sm:text-base">
-            A project keeps the context that makes your posts consistent. Start with a useful idea, generate a clear
-            swipe arc, select the right templates, and leave with the visuals and copy needed to publish.
+            Your audience is not looking for another ad. Start with a real problem, useful insight, or practical
+            takeaway. Karouselmaker helps you turn that value into a carousel that naturally connects back to what you sell.
           </p>
         </div>
       </section>
@@ -156,17 +156,17 @@ export default async function Home() {
       <section className="scroll-reveal [content-visibility:auto] mx-auto w-full max-w-6xl px-4 py-20 sm:px-6 sm:py-28 motion-reduce:animate-none">
         <div className="max-w-2xl">
           <h2 className="font-[family-name:var(--font-landing-display)] text-3xl tracking-tight text-foreground sm:text-4xl">
-            A complete carousel workflow, from idea to upload
+            Built to promote through content—not like an ad
           </h2>
           <ul className="mt-10 space-y-6 border-t border-border/60 pt-8">
             {[
               {
-                title: "Content with a clear point",
-                body: "Start with the audience’s pain, question, or opportunity. The generator turns it into a strong hook, useful slides, and a fitting close.",
+                title: "Organic promotion",
+                body: "Lead with the audience’s pain, question, or desire. Give them a reason to keep swiping before you introduce your product or service.",
               },
               {
-                title: "One project = one content hub",
-                body: "Niche, product, tone, templates, and every generated carousel stay together so the next post starts with context.",
+                title: "One project = one niche account",
+                body: "Niche, product or service, and tone stay locked. New posts stay relevant and avoid repeating what you already shipped.",
               },
               {
                 title: "Ready for IG & TikTok",

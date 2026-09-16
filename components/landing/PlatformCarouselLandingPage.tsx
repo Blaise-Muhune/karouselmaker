@@ -10,14 +10,14 @@ const content = {
   Instagram: {
     eyebrow: "Instagram carousel maker for product marketers",
     headline: "Make Instagram carousels that give value before they sell.",
-    intro: "Karouselmaker turns your niche and offer into a focused Instagram carousel. Each post opens with a problem your audience recognizes, earns the swipe with a useful payoff, and introduces your product only when it makes sense.",
+    intro: "Karouselmaker turns your niche and offer into a focused Instagram carousel. Each post opens with a problem your audience recognizes, earns the swipe with a useful payoff, and introduces your product or service only when it makes sense.",
     workflow: [
       ["Set the marketing context", "Add your niche, product website, or a plain-language description of what you sell."],
       ["Choose a topic worth saving", "Start with a suggested idea designed to help the audience, not an ad disguised as a post."],
       ["Refine and publish", "Choose a template collection, make any slide edits, then download a 4:5 ZIP with the title, caption, and hashtags ready to copy."],
     ],
     questions: [
-      ["Can I use this for an Instagram business account?", "Yes. It is built for people using carousels to grow awareness and softly lead viewers to a product, service, course, app, or store."],
+      ["Can I use this for an Instagram business account?", "Yes. It is built for people using carousels to grow awareness and softly lead viewers to a product, service, course, app, store, or other offer."],
       ["Do I need to design every slide?", "No. Start with built-in template collections, then adjust the copy, image, or individual template when a post needs a different treatment."],
       ["Will every carousel be promotional?", "No. The system balances useful niche content and marketing posts, so a new account can build trust before it asks for attention."],
     ],
@@ -25,7 +25,7 @@ const content = {
   TikTok: {
     eyebrow: "TikTok carousel maker for organic product marketing",
     headline: "Create TikTok photo carousels people want to swipe through.",
-    intro: "Karouselmaker helps you create TikTok carousel posts with a clear hook, a useful idea on every slide, and a natural product bridge. It is for founders and marketers who want organic reach without turning every post into a hard sell.",
+    intro: "Karouselmaker helps you create TikTok carousel posts with a clear hook, a useful idea on every slide, and a natural bridge to your product or service. It is for founders and marketers who want organic reach without turning every post into a hard sell.",
     workflow: [
       ["Give the account context", "Tell us the niche and what you promote. Paste a website and we build an editable product brief from the public page."],
       ["Build a swipeable content arc", "Generate a concise post around a problem, opinion, tip, mistake, or insight your ideal audience already cares about."],

@@ -2,11 +2,11 @@ import type { Metadata } from "next";
 import { PlatformCarouselLandingPage } from "@/components/landing/PlatformCarouselLandingPage";
 
 export const metadata: Metadata = {
-  title: "TikTok Photo Carousel Generator with Captions",
-  description: "Create scroll-stopping TikTok photo carousels from one project brief. Generate a clear title, editable slides, caption, hashtags, and a ready-to-upload ZIP.",
+  title: "TikTok Carousel Maker for Product & Service Marketing",
+  description: "Create value-first TikTok photo carousels that organically promote your product or service. Generate editable slides, captions, hashtags, and a ready-to-upload ZIP.",
   openGraph: {
-    title: "TikTok Photo Carousel Generator with Captions | Karouselmaker",
-    description: "Build editable TikTok photo carousel slides, a caption, hashtags, and an export in one workspace.",
+    title: "TikTok Carousel Maker for Product & Service Marketing | Karouselmaker",
+    description: "Build a useful TikTok photo carousel around your product or service, with editable slides, caption, hashtags, and an export.",
   },
   alternates: { canonical: "/tiktok-carousel-maker" },
 };

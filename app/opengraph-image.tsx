@@ -1,6 +1,6 @@
 import { ImageResponse } from "next/og";
 
-export const alt = "Karouselmaker AI carousel generator for Instagram and TikTok";
+export const alt = "Karouselmaker creates organic Instagram and TikTok carousels for products and services";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -25,14 +25,14 @@ export default function OpenGraphImage() {
         </div>
         <div style={{ display: "flex", flexDirection: "column", maxWidth: 900 }}>
           <div style={{ fontSize: 76, lineHeight: 1.02, fontWeight: 700, letterSpacing: -4 }}>
-            AI carousels, ready to publish.
+            Promote without sounding like an ad.
           </div>
           <div style={{ marginTop: 28, color: "#b9d4cc", fontSize: 32, lineHeight: 1.3 }}>
-            Slides, captions, hashtags, and polished exports from one brief.
+            Value-first Instagram and TikTok carousels for your product or service.
           </div>
         </div>
         <div style={{ display: "flex", color: "#75d5b4", fontSize: 24, fontWeight: 600 }}>
-          Generate · refine · download
+          Project → value → soft sell
         </div>
       </div>
     ),
