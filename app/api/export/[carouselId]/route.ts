@@ -40,7 +40,10 @@ import JSZip from "jszip";
 const BUCKET = "carousel-assets";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-export const maxDuration = 120;
+// Rendering a carousel can involve several high-resolution browser screenshots,
+// image fetches, and storage uploads. Match the generation route's production
+// budget so normal multi-slide exports do not terminate at the gateway.
+export const maxDuration = 800;
 
 function normalizeStoragePathForBucket(path: string | undefined, bucket: string): string | undefined {
   const trimmed = path?.trim().replace(/^\/+/, "");

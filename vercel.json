@@ -17,6 +17,9 @@
   "functions": {
     "app/(app)/p/[projectId]/new/page.tsx": {
       "maxDuration": 800
+    },
+    "app/api/export/[carouselId]/route.ts": {
+      "maxDuration": 800
     }
   }
 }
