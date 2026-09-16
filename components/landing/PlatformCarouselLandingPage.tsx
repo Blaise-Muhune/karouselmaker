@@ -14,11 +14,11 @@ const content = {
     workflow: [
       ["Set the marketing context", "Add your niche, product website, or a plain-language description of what you sell."],
       ["Choose a topic worth saving", "Start with a suggested idea designed to help the audience, not an ad disguised as a post."],
-      ["Export and publish", "Review the slide copy, make a light edit if needed, then download the carousel and caption."],
+      ["Refine and publish", "Choose a template collection, make any slide edits, then download a 4:5 ZIP with the title, caption, and hashtags ready to copy."],
     ],
     questions: [
       ["Can I use this for an Instagram business account?", "Yes. It is built for people using carousels to grow awareness and softly lead viewers to a product, service, course, app, or store."],
-      ["Do I need to design every slide?", "No. Karouselmaker uses a small set of templates so the work stays focused on the message, hook, and audience value."],
+      ["Do I need to design every slide?", "No. Start with built-in template collections, then adjust the copy, image, or individual template when a post needs a different treatment."],
       ["Will every carousel be promotional?", "No. The system balances useful niche content and marketing posts, so a new account can build trust before it asks for attention."],
     ],
   },
@@ -29,7 +29,7 @@ const content = {
     workflow: [
       ["Give the account context", "Tell us the niche and what you promote. Paste a website and we build an editable product brief from the public page."],
       ["Build a swipeable content arc", "Generate a concise post around a problem, opinion, tip, mistake, or insight your ideal audience already cares about."],
-      ["Post with a complete caption", "Download the slides and a caption, then publish them as a TikTok photo carousel."],
+      ["Refine and publish", "Choose a template collection, review the title, slides, caption, and hashtags, then download a posting-order ZIP for TikTok Photo Mode."],
     ],
     questions: [
       ["Is this for TikTok Photo Mode?", "Yes. Karouselmaker creates static carousel slides and captions for a photo-style post, rather than a talking-head or B-roll video script."],

@@ -1,32 +1,33 @@
 # Karouselmaker
 
-> Karouselmaker is a marketing tool for creating organic Instagram and TikTok carousel posts that promote a product without opening like an advertisement.
+> Karouselmaker is an AI carousel generator for creating publish-ready Instagram and TikTok posts from a reusable project brief.
 
 ## What it does
 
-Karouselmaker helps founders, marketers, and small businesses turn a niche and offer into swipe-ready carousel posts. A user can paste a public product website or describe an offer manually. The app creates an editable product context, suggests a sequence of organic content topics, and generates one carousel at a time.
+Karouselmaker helps founders, marketers, and small businesses turn a project brief into a polished social carousel. A project keeps the niche, offer, brand context, templates, and generated posts together. Users can paste a public product website or describe an offer manually, choose a topic, then generate an editable title, slide sequence, caption, and hashtags.
 
-Each carousel is designed around a problem-first arc: a strong hook, useful information, a clear payoff, and a fitting call to action. The system balances educational niche content with product marketing so a new account can build trust before increasing promotion.
+Each carousel is designed around a clear hook, useful information, a practical payoff, and a fitting call to action. Users can choose built-in template collections or a single template, edit slide copy and imagery, then download a ZIP with slides in posting order alongside copy ready to paste.
 
 ## Supported formats
 
 - Instagram carousel posts
 - TikTok Photo Mode / carousel posts
-- Export-ready slides and a complete caption
+- A title, caption, hashtags, and export-ready slides
+- Feed, square, and story-ready placements
 
 ## Product boundaries
 
-- Karouselmaker is not a general graphic design editor or Canva replacement.
-- It does not publish posts directly to Instagram or TikTok.
+- Karouselmaker is a focused carousel publishing workspace rather than a general graphic design editor.
+- Direct TikTok posting is currently an admin-only test feature; users download post-ready files for normal publishing.
 - It does not guarantee reach, sales, followers, or conversions.
 - Users review generated copy, images, and claims before publishing.
 
 ## Public pages
 
-- [Home](https://karouselmaker.com/): Product overview and pricing
-- [Instagram Carousel Maker](https://karouselmaker.com/instagram-carousel-maker): How Karouselmaker supports organic Instagram carousel marketing
-- [TikTok Carousel Maker](https://karouselmaker.com/tiktok-carousel-maker): How Karouselmaker supports TikTok Photo Mode carousels
-- [Pricing](https://karouselmaker.com/pricing): Free, Creator, Growth, and post-pack options
+- [Home](https://karouselmaker.com/): AI carousel generator overview and pricing
+- [Instagram Carousel Generator](https://karouselmaker.com/instagram-carousel-maker): Instagram templates, captions, and 4:5 exports
+- [TikTok Photo Carousel Generator](https://karouselmaker.com/tiktok-carousel-maker): TikTok photo carousel slides, captions, and exports
+- [Pricing](https://karouselmaker.com/pricing): Complete carousel post packs and plan options
 - [Privacy Policy](https://karouselmaker.com/privacy)
 - [Terms of Service](https://karouselmaker.com/terms)
 

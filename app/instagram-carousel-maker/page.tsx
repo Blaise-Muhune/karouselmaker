@@ -2,8 +2,12 @@ import type { Metadata } from "next";
 import { PlatformCarouselLandingPage } from "@/components/landing/PlatformCarouselLandingPage";
 
 export const metadata: Metadata = {
-  title: "Instagram Carousel Maker for Organic Product Marketing",
-  description: "Create Instagram carousels that teach first and softly promote your product. Build a focused post from your niche, offer, and audience context.",
+  title: "Instagram Carousel Generator with Templates & Captions",
+  description: "Generate polished Instagram carousel posts from one project brief. Create the title, slides, caption, hashtags, and 4:5 export in one focused workspace.",
+  openGraph: {
+    title: "Instagram Carousel Generator with Templates & Captions | Karouselmaker",
+    description: "Turn a project brief into an editable Instagram carousel, caption, hashtags, and ready-to-upload 4:5 slides.",
+  },
   alternates: { canonical: "/instagram-carousel-maker" },
 };
 
