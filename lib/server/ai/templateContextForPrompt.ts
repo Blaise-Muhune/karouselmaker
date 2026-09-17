@@ -42,7 +42,7 @@ export function buildTemplateContextForPrompt(templateConfig: Json | null | unde
   }
 
   const m = getHeadlineBodyMaxCharsFromTemplateConfig(templateConfig);
-  const extraZones = zones.filter((z) => z.id !== "headline" && z.id !== "body");
+  const extraZones = zones.filter((z) => z.id !== "headline" && z.id !== "body" && z.enabled !== false);
 
   const headlineMaxChars = m.headlineMaxChars;
   const bodyMaxChars = m.bodyMaxChars;
@@ -186,8 +186,8 @@ function slotLabelForSelection(index: number, total: number): string {
     return "last slide slot";
   }
   if (total === 2) {
-    if (index === 0) return "first slide slot";
-    return "remaining slides slot";
+    if (index === 0) return "first + last slides slot";
+    return "middle slides slot";
   }
   return "all slides slot";
 }
@@ -210,7 +210,7 @@ export function buildTemplateContextForPromptSelection(
     "- Multiple templates are selected for this generation.",
     sections.length >= 3
       ? "- Slot mapping: first slide uses slot 1 limits, middle slides use slot 2 limits, last slide uses slot 3 limits."
-      : "- Slot mapping: first slide uses slot 1 limits; every remaining slide uses slot 2 limits.",
+      : "- Slot mapping: first and last slides use slot 1 limits, middle slides use slot 2 limits.",
     "- Keep each slide's copy within the limits of the slot used by that slide index.",
     "- Follow each slot's TEXT MODE independently: headline-only stays concise, body-only carries the whole idea, and both fields complement each other. Never generate text for a hidden field. These rules also apply to every shorten_alternate.",
     "- For `slide.extra_text_values`, use **only** the extra zone ids listed in the slot section that applies to that slide (first vs middle vs last)—do not mix zone ids from a different slot.",

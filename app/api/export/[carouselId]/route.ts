@@ -1,6 +1,7 @@
+import { cacheRender, getCachedRender, renderCacheKey } from "@/lib/server/export/renderCache";
+import { waitForSlideReady } from "@/lib/server/browser/waitForSlideReady";
 import { NextResponse } from "next/server";
 import { launchChromium } from "@/lib/server/browser/launchChromium";
-import { waitForImagesInPage } from "@/lib/server/browser/waitForImages";
 import { createClient } from "@/lib/supabase/server";
 import {
   getCarousel,
@@ -18,7 +19,6 @@ import { renderSlideHtml } from "@/lib/server/renderer/renderSlideHtml";
 import { resolveBrandKitLogo } from "@/lib/server/brandKit";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
 import { createProxyImageUrl } from "@/lib/server/proxyImageUrl";
-import { formatUnsplashAttributionLine } from "@/lib/server/unsplash";
 import {
   normalizeSlideMetaForRender,
   getTemplateDefaultOverrides,
@@ -33,17 +33,17 @@ import {
 } from "@/lib/server/export/fetchImageAsDataUrl";
 import type { BrandKit } from "@/lib/renderer/renderModel";
 import { slugifyForFilename } from "@/lib/utils";
+import { buildCarouselPdfFromPngPages } from "@/lib/server/export/buildCarouselPdf";
 
 import JSZip from "jszip";
 
 const BUCKET = "carousel-assets";
-/** Delay after load before screenshot so layout/fonts/images settle. Prevents pitch-black frames. */
-const SCREENSHOT_DELAY_MS = 500;
-/** Short pause between processing slides in production to reduce browser memory pressure and "browser closed" errors. */
-const INTER_SLIDE_DELAY_MS = 150;
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-export const maxDuration = 120;
+// Rendering a carousel can involve several high-resolution browser screenshots,
+// image fetches, and storage uploads. Match the generation route's production
+// budget so normal multi-slide exports do not terminate at the gateway.
+export const maxDuration = 800;
 
 function normalizeStoragePathForBucket(path: string | undefined, bucket: string): string | undefined {
   const trimmed = path?.trim().replace(/^\/+/, "");
@@ -52,26 +52,45 @@ function normalizeStoragePathForBucket(path: string | undefined, bucket: string)
   return trimmed.startsWith(bucketPrefix) ? trimmed.slice(bucketPrefix.length) : trimmed;
 }
 
-async function readImageOverlayFromRequest(request: Request): Promise<boolean> {
+type ExportRequestOptions = {
+  imageOverlay: boolean;
+  format?: "png" | "jpeg" | "pdf";
+  size?: "1080x1080" | "1080x1350" | "1080x1920";
+  /** Store a fixed export for an in-app destination without sending a file to the browser. */
+  delivery?: "download" | "prepare" | "schedule";
+};
+
+async function readExportRequestOptions(request: Request): Promise<ExportRequestOptions> {
   try {
     const ct = request.headers.get("content-type") ?? "";
-    if (!ct.includes("application/json")) return true;
+    if (!ct.includes("application/json")) return { imageOverlay: true };
     const body: unknown = await request.json();
-    if (body && typeof body === "object" && "image_overlay" in body) {
-      const v = (body as { image_overlay?: unknown }).image_overlay;
-      if (typeof v === "boolean") return v;
-    }
+    if (!body || typeof body !== "object") return { imageOverlay: true };
+    const value = body as { image_overlay?: unknown; format?: unknown; size?: unknown; delivery?: unknown };
+    return {
+      imageOverlay: typeof value.image_overlay === "boolean" ? value.image_overlay : true,
+      format: value.format === "png" || value.format === "jpeg" || value.format === "pdf" ? value.format : undefined,
+      size:
+        value.size === "1080x1080" || value.size === "1080x1350" || value.size === "1080x1920"
+          ? value.size
+          : undefined,
+      delivery:
+        value.delivery === "schedule" || value.delivery === "prepare"
+          ? value.delivery
+          : "download",
+    };
   } catch {
     /* empty or non-JSON body */
   }
-  return true;
+  return { imageOverlay: true };
 }
 
 export async function POST(
   _request: Request,
   context: { params: Promise<{ carouselId: string }> }
 ) {
-  const imageOverlay = await readImageOverlayFromRequest(_request);
+  const requestOptions = await readExportRequestOptions(_request);
+  const imageOverlay = requestOptions.imageOverlay;
   const { carouselId } = await context.params;
   const supabase = await createClient();
   const {
@@ -88,10 +107,11 @@ export async function POST(
     return NextResponse.json({ error: "Carousel not found" }, { status: 404 });
   }
 
-  const carouselExportFormat = (carousel as { export_format?: string }).export_format ?? "png";
-  const carouselExportSize = (carousel as { export_size?: string }).export_size ?? "1080x1350";
-  const exportMode = carouselExportFormat === "jpeg" ? "jpeg" : "png";
-  const rasterFormat = exportMode;
+  const carouselExportFormat = requestOptions.format ?? (carousel as { export_format?: string }).export_format ?? "png";
+  const carouselExportSize = requestOptions.size ?? (carousel as { export_size?: string }).export_size ?? "1080x1350";
+  const exportMode = carouselExportFormat === "jpeg" || carouselExportFormat === "pdf" ? carouselExportFormat : "png";
+  // pdf-lib embeds PNG pages, so render PNG frames when assembling a PDF.
+  const rasterFormat = exportMode === "jpeg" ? "jpeg" : "png";
   const dimensions =
     carouselExportSize === "1080x1350"
       ? { w: 1080, h: 1350 }
@@ -128,31 +148,17 @@ export async function POST(
     /** Collect slide PNG/JPEG buffers in memory; we do not persist to storage. */
     const slideBuffers: Buffer[] = [];
 
-    const unsplashAttributions = new Map<
-      string,
-      { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string }
-    >();
-    const pixabayAttributions = new Map<
-      string,
-      { userName: string; userId: number; pageURL: string; photoURL: string }
-    >();
-    const pexelsAttributions = new Map<
-      string,
-      { photographer: string; photographer_url: string; photo_url: string }
-    >();
-
     const CONTENT_TIMEOUT_MS = 25000;
     const SELECTOR_TIMEOUT_MS = 30000;
     const MAX_EXPORT_ATTEMPTS = 3;
 
     let lastError: unknown = null;
     for (let attempt = 1; attempt <= MAX_EXPORT_ATTEMPTS; attempt++) {
-      const browser = await launchChromium();
+      slideBuffers.length = 0;
+      let browser: Awaited<ReturnType<typeof launchChromium>> | undefined;
       try {
       for (let i = 0; i < slides.length; i++) {
-        if (i > 0) {
-          await new Promise((r) => setTimeout(r, INTER_SLIDE_DELAY_MS));
-        }
+
         const slide = slides[i];
         if (!slide) continue;
 
@@ -276,18 +282,6 @@ export async function POST(
                   // skip this slot
                 }
               }
-              if (img.unsplash_attribution) {
-                const key = img.unsplash_attribution.photographerUsername;
-                if (!unsplashAttributions.has(key)) unsplashAttributions.set(key, img.unsplash_attribution);
-              }
-              if (img.pixabay_attribution) {
-                const key = `${img.pixabay_attribution.userName}-${img.pixabay_attribution.userId}`;
-                if (!pixabayAttributions.has(key)) pixabayAttributions.set(key, img.pixabay_attribution);
-              }
-              if (img.pexels_attribution) {
-                const key = img.pexels_attribution.photo_url;
-                if (!pexelsAttributions.has(key)) pexelsAttributions.set(key, img.pexels_attribution);
-              }
             }
             if (resolved.length === 1) backgroundImageUrl = resolved[0] ?? null;
             else if (resolved.length >= 2) backgroundImageUrls = resolved;
@@ -314,18 +308,6 @@ export async function POST(
               }
               if (!backgroundImageUrl) backgroundImageUrl = slideBg.image_url;
             }
-          }
-          if (slideBg.unsplash_attribution) {
-            const key = slideBg.unsplash_attribution.photographerUsername;
-            if (!unsplashAttributions.has(key)) unsplashAttributions.set(key, slideBg.unsplash_attribution);
-          }
-          if (slideBg.pixabay_attribution) {
-            const key = `${slideBg.pixabay_attribution.userName}-${slideBg.pixabay_attribution.userId}`;
-            if (!pixabayAttributions.has(key)) pixabayAttributions.set(key, slideBg.pixabay_attribution);
-          }
-          if (slideBg.pexels_attribution) {
-            const key = slideBg.pexels_attribution.photo_url;
-            if (!pexelsAttributions.has(key)) pexelsAttributions.set(key, slideBg.pexels_attribution);
           }
           if (slide.slide_type === "hook" && !backgroundImageUrls) {
             if (slideBg.secondary_storage_path) {
@@ -406,15 +388,19 @@ export async function POST(
           slideMeta
         );
 
+        const cacheKey = renderCacheKey(userId, html, rasterFormat, dimensions.w, dimensions.h);
+        const cached = getCachedRender(cacheKey);
+        if (cached) { slideBuffers.push(cached); continue; }
+        browser ??= await launchChromium();
         const page = await browser.newPage();
         try {
           await page.setViewportSize({ width: dimensions.w, height: dimensions.h });
           await page.setContent(html, { waitUntil: "load", timeout: CONTENT_TIMEOUT_MS });
           await page.waitForSelector(".slide-wrap", { state: "visible", timeout: SELECTOR_TIMEOUT_MS });
-          await waitForImagesInPage(page, CONTENT_TIMEOUT_MS).catch(() => {});
-          await new Promise((r) => setTimeout(r, SCREENSHOT_DELAY_MS));
+          await waitForSlideReady(page, CONTENT_TIMEOUT_MS);
           const buffer = await page.locator(".slide-wrap").screenshot({ type: rasterFormat, timeout: SELECTOR_TIMEOUT_MS });
           const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+          cacheRender(cacheKey, buf);
           slideBuffers.push(buf);
           await page.setContent("about:blank", { waitUntil: "domcontentloaded" });
         } finally {
@@ -425,74 +411,55 @@ export async function POST(
           }
         }
       }
-      const captionVariants = (carousel.caption_variants ?? {}) as {
-      title?: string;
-      medium?: string;
-      long?: string;
-      short?: string;
-      spicy?: string;
-    };
-    const hashtags = (carousel.hashtags ?? []) as string[];
-    const hashtagLine =
-      hashtags.length > 0
-        ? hashtags.map((h) => (h.startsWith("#") ? h : `#${h}`)).join(" ")
-        : "";
-    const creditsLines: string[] = [];
-    if (unsplashAttributions.size > 0) {
-      creditsLines.push("Image credits (Unsplash):", ...Array.from(unsplashAttributions.values()).map(formatUnsplashAttributionLine));
-    }
-    if (pixabayAttributions.size > 0) {
-      creditsLines.push(
-        "Image credits (Pixabay):",
-        ...Array.from(pixabayAttributions.values()).map(
-          (a) => `Image by ${a.userName} on Pixabay — ${a.photoURL}`
-        )
-      );
-    }
-    if (pexelsAttributions.size > 0) {
-      creditsLines.push(
-        "Image credits (Pexels):",
-        ...Array.from(pexelsAttributions.values()).map(
-          (a) => `Photo by ${a.photographer} on Pexels — ${a.photo_url}`
-        )
-      );
-    }
-    const titleBlock = (captionVariants?.title ?? captionVariants?.short)?.trim();
-    const longBlock = (captionVariants?.long ?? captionVariants?.spicy ?? captionVariants?.medium)?.trim();
-    const captionWithTags = [longBlock, hashtagLine].filter(Boolean).join(longBlock && hashtagLine ? "\n\n" : "");
-    const captionSections: string[] = [];
-    if (titleBlock) captionSections.push(`--- Title (SEO) ---\n${titleBlock}`);
-    if (captionWithTags) captionSections.push(`--- Caption ---\n${captionWithTags}`);
-    captionSections.push(...creditsLines);
-    const captionText = captionSections.filter(Boolean).join("\n\n");
-
     const assetSlug =
       slugifyForFilename([project.name, carousel.title].filter(Boolean).join(" - ")) || "carousel";
 
     // Store slide images so Post to Facebook/Instagram can use them (same for PNG/JPEG/PDF).
     const paths = getExportStoragePaths(userId, carouselId, exportId);
+    // Record the prefix before uploading. If a render fails partway through, the daily
+    // retention job can still discover and remove any partial slide files.
+    await updateExport(userId, exportId, { status: "pending", storage_path: paths.slidesDir });
     const rasterContentType = rasterFormat === "jpeg" ? "image/jpeg" : "image/png";
-    for (let i = 0; i < slideBuffers.length; i++) {
-      const buf = slideBuffers[i];
-      if (buf) {
-        const storagePath = paths.slidePath(i);
-        const { error: uploadError } = await supabase.storage
-          .from(BUCKET)
-          .upload(storagePath, buf, { contentType: rasterContentType, upsert: true });
-        if (uploadError) {
-          try {
-            await updateExport(userId, exportId, { status: "failed" });
-          } catch {
-            // ignore
-          }
-          return NextResponse.json(
-            { error: `Failed to store slide image: ${uploadError.message}` },
-            { status: 500 }
-          );
-        }
-      }
+    // Three uploads at a time, preserving numbered filenames and waiting for each batch.
+    for (let offset = 0; offset < slideBuffers.length; offset += 3) {
+      const results = await Promise.allSettled(slideBuffers.slice(offset, offset + 3).map(async (buf, index) => {
+        const { error } = await supabase.storage.from(BUCKET).upload(paths.slidePath(offset + index), buf, {
+          contentType: rasterContentType, upsert: true,
+        });
+        if (error) throw new Error(error.message);
+      }));
+      const failed = results.find((result) => result.status === "rejected");
+      if (failed?.status === "rejected") throw new Error("Failed to store slide image. Please retry.");
     }
     await updateExport(userId, exportId, { status: "ready", storage_path: paths.slidesDir });
+
+    // Scheduling uses the same immutable raster files as a download, but does not need a ZIP.
+    if (requestOptions.delivery === "schedule") {
+      return NextResponse.json({ exportId });
+    }
+
+    // A direct, authenticated download URL is much more reliable on phones than
+    // asking the browser to save a large Blob created by fetch().
+    if (requestOptions.delivery === "prepare") {
+      return NextResponse.json({
+        exportId,
+        downloadUrl: `/api/export/${carouselId}/${exportId}/download`,
+      });
+    }
+
+    if (exportMode === "pdf") {
+      const pdf = await buildCarouselPdfFromPngPages(slideBuffers, dimensions.w, dimensions.h);
+      const pdfFilename = `${assetSlug}.pdf`;
+      return new NextResponse(new Uint8Array(pdf), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `attachment; filename="${pdfFilename}"`,
+          "X-Suggested-Filename": pdfFilename,
+          "X-Export-Id": exportId,
+        },
+      });
+    }
 
     const zip = new JSZip();
     for (let i = 0; i < slideBuffers.length; i++) {
@@ -502,35 +469,6 @@ export async function POST(
         zip.file(filename, buf);
       }
     }
-    if (captionText.trim()) zip.file("caption.txt", captionText.trim());
-    const hasAnyCredits = unsplashAttributions.size > 0 || pixabayAttributions.size > 0 || pexelsAttributions.size > 0;
-    if (hasAnyCredits) {
-      const creditsFileLines: string[] = [
-        "IMAGE CREDITS",
-        "-------------",
-        "When publishing or distributing your carousel, you are responsible for providing proper attribution.",
-        "",
-      ];
-      if (unsplashAttributions.size > 0) {
-        creditsFileLines.push("Unsplash:", ...Array.from(unsplashAttributions.values()).map(formatUnsplashAttributionLine), "");
-      }
-      if (pixabayAttributions.size > 0) {
-        creditsFileLines.push(
-          "Pixabay:",
-          ...Array.from(pixabayAttributions.values()).map((a) => `Image by ${a.userName} — ${a.photoURL}`),
-          ""
-        );
-      }
-      if (pexelsAttributions.size > 0) {
-        creditsFileLines.push(
-          "Pexels:",
-          ...Array.from(pexelsAttributions.values()).map((a) => `Photo by ${a.photographer} — ${a.photo_url}`),
-          ""
-        );
-      }
-      zip.file("CREDITS.txt", creditsFileLines.join("\n").trim());
-    }
-
     const zipBuffer = await zip.generateAsync({ type: "nodebuffer" });
     const zipFilename = `${assetSlug}.zip`;
 
@@ -547,7 +485,7 @@ export async function POST(
         lastError = e;
       } finally {
         try {
-          await browser.close();
+          await browser?.close();
         } catch {
           // ignore
         }

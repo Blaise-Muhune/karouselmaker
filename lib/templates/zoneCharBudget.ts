@@ -110,9 +110,9 @@ export function getEffectiveTextZonesFromTemplateConfig(config: unknown): TextZo
       const raw = meta[key];
       if (raw && typeof raw === "object" && !Array.isArray(raw)) {
         const o = raw as Record<string, unknown>;
-          merged = {
-            ...merged,
-            ...(typeof o.enabled === "boolean" ? { enabled: o.enabled } : {}),
+        merged = {
+          ...merged,
+          ...(typeof o.enabled === "boolean" ? { enabled: o.enabled } : {}),
           ...(Number.isFinite(Number(o.x)) ? { x: Math.round(Number(o.x)) } : {}),
           ...(Number.isFinite(Number(o.y)) ? { y: Math.round(Number(o.y)) } : {}),
           ...(Number.isFinite(Number(o.w)) ? { w: Math.round(Number(o.w)) } : {}),
@@ -241,7 +241,7 @@ export function getHeadlineBodyMaxCharsFromTemplateConfig(templateConfig: unknow
 
   const headlineMaxChars = headlineZone
     ? Math.min(
-        ABSOLUTE_MAX_HEADLINE_CHARS,
+        hasBody ? ABSOLUTE_MAX_HEADLINE_CHARS : 120,
         maxCharsForZone({
           w: Number(headlineZone.w) || DESIGN_WIDTH,
           fontSize: Number(headlineZone.fontSize) || 48,

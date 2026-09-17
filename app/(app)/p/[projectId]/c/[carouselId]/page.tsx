@@ -11,9 +11,7 @@ import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { resolveBrandKitLogo } from "@/lib/server/brandKit";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
 import { httpsDisplayImageUrl } from "@/lib/server/storage/signedUrlUtils";
-import { resolveTemplatePreviewImageUrls } from "@/lib/server/templates/resolveTemplatePreviewImageUrls";
 import { Button } from "@/components/ui/button";
-import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { SlideGrid, type TemplateWithConfig } from "@/components/carousels/SlideGrid";
 import { CarouselMenuDropdown } from "@/components/carousels/CarouselMenuDropdown";
 import { ShuffleCarouselBackgroundsButton } from "@/components/carousels/ShuffleCarouselBackgroundsButton";
@@ -65,7 +63,7 @@ export default async function CarouselEditorPage({
       getCarousel(user.id, carouselId),
       getProject(user.id, projectId),
       listSlides(user.id, carouselId),
-      // Keep hidden configurations for existing slides; TemplateSelectCards keeps them out of non-admin pickers.
+      // Include hidden configs so existing slides keep their design; the picker filters them for non-admins.
       listTemplatesForUser(user.id, { includeSystem: true, includeHidden: true }),
       listExportsByCarousel(user.id, carouselId, 3),
       getSubscription(user.id, user.email),
@@ -91,20 +89,12 @@ export default async function CarouselEditorPage({
   }
 
   const favoriteIdSet = new Set(favoriteIds);
-  const parsedTemplates = templatesRaw.flatMap((t) => {
+  const templates: TemplateWithConfig[] = [];
+  for (const t of templatesRaw) {
     const parsed = templateConfigSchema.safeParse(t.config);
-    return parsed.success ? [{ template: t, config: parsed.data }] : [];
-  });
-  const templatePreviewUrls = await Promise.all(
-    parsedTemplates.map(({ config }) => resolveTemplatePreviewImageUrls(user.id, config))
-  );
-  const templates: TemplateWithConfig[] = parsedTemplates.map(({ template: t, config }, index) => ({
-    ...t,
-    parsedConfig: config,
-    isFavorite: favoriteIdSet.has(t.id),
-    is_hidden: t.is_hidden === true,
-    previewImageUrls: templatePreviewUrls[index],
-  }));
+    if (!parsed.success) continue;
+    templates.push({ ...t, parsedConfig: parsed.data, isFavorite: favoriteIdSet.has(t.id) });
+  }
 
   const brandKit: BrandKit = await resolveBrandKitLogo(project.brand_kit as Record<string, unknown> | null);
 
@@ -263,44 +253,30 @@ export default async function CarouselEditorPage({
         )}
 
         {/* Header */}
-        <header className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex flex-col gap-2 min-w-0">
-            <Breadcrumbs
-              items={[
-                { label: project.name, href: `/p/${projectId}` },
-                { label: carousel.title },
-              ]}
-              className="mb-0.5"
+        <header className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <Button variant="ghost" size="icon-sm" className="-ml-1 shrink-0" asChild>
+              <Link href={`/p/${projectId}`}>
+                <ArrowLeftIcon className="size-4" />
+                <span className="sr-only">Back to project</span>
+              </Link>
+            </Button>
+            <h1 className="min-w-0 truncate text-xl font-semibold tracking-tight">{carousel.title}</h1>
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            <ShuffleCarouselBackgroundsButton
+              carouselId={carouselId}
+              projectId={projectId}
+              pathname={editorPath}
+              hasShuffleableSlides={hasShuffleableSlides}
+              disabled={isGenerating || !hasFullAccess}
             />
-            <div className="flex items-center gap-2 flex-wrap">
-              <Button variant="ghost" size="icon-sm" className="-ml-1 shrink-0" asChild>
-                <Link href={`/p/${projectId}`}>
-                  <ArrowLeftIcon className="size-4" />
-                  <span className="sr-only">Back to project</span>
-                </Link>
-              </Button>
-              <div className="min-w-0">
-                <h1 className="text-xl font-semibold tracking-tight truncate">{carousel.title}</h1>
-                <p className="text-muted-foreground text-sm">
-                  {getExportSize(carousel).replace("x", "×")}
-                  <span className="mx-1.5 opacity-50">·</span>
-                  {carousel.status}
-                </p>
-              </div>
-              <ShuffleCarouselBackgroundsButton
-                carouselId={carouselId}
-                projectId={projectId}
-                pathname={editorPath}
-                hasShuffleableSlides={hasShuffleableSlides}
-                disabled={isGenerating || !hasFullAccess}
-              />
-              <CarouselMenuDropdown
-                carouselId={carouselId}
-                projectId={projectId}
-                isFavorite={!!carousel.is_favorite}
-                disabled={isGenerating}
-              />
-            </div>
+            <CarouselMenuDropdown
+              carouselId={carouselId}
+              projectId={projectId}
+              isFavorite={!!carousel.is_favorite}
+              disabled={isGenerating}
+            />
           </div>
         </header>
 
@@ -310,40 +286,10 @@ export default async function CarouselEditorPage({
             pathname={editorPath}
             connectedAccount={tiktokConnection?.platform_username ?? (tiktokConnection ? "Connected" : null)}
             initialTitle={carousel.title}
-            initialDescription={[
-              captionVariants.long ?? captionVariants.medium ?? "",
-              hashtags.map((tag) => (tag.startsWith("#") ? tag : `#${tag}`)).join(" "),
-            ].filter(Boolean).join("\n\n")}
-            schedules={tiktokSchedules.map((schedule) => ({
-              id: schedule.id,
-              scheduledFor: schedule.scheduled_for,
-              status: schedule.status,
-              lastError: schedule.last_error,
-            }))}
+            initialDescription={[captionVariants.long ?? captionVariants.medium ?? "", hashtags.map((tag) => tag.startsWith("#") ? tag : `#${tag}`).join(" ")].filter(Boolean).join("\n\n")}
+            schedules={tiktokSchedules.map((schedule) => ({ id: schedule.id, scheduledFor: schedule.scheduled_for, status: schedule.status, lastError: schedule.last_error }))}
           />
         )}
-
-        {/* Export */}
-        <EditorExportSection
-          carouselId={carouselId}
-          isPro={hasFullAccess}
-          disabled={isGenerating}
-          exportsUsedThisMonth={exportCount}
-          exportsLimit={limits.exportsPerMonth}
-          exportFormat={getExportFormat(carousel)}
-          exportSize={getExportSize(carousel)}
-          exportSettingsPath={`/p/${projectId}/c/${carouselId}`}
-          recentExports={recentExports.map((ex) => ({
-            id: ex.id,
-            status: ex.status,
-            storage_path: ex.storage_path,
-            created_at: ex.created_at,
-          }))}
-          captionVariants={captionVariants}
-          hashtags={hashtags}
-          carouselTitle={carousel.title}
-          projectName={project.name}
-        />
 
         {/* Frames */}
         <section className={isGenerating ? "pointer-events-none opacity-70" : ""} aria-disabled={isGenerating}>
@@ -368,15 +314,36 @@ export default async function CarouselEditorPage({
           />
         </section>
 
+        <EditorExportSection
+          carouselId={carouselId}
+          isPro={hasFullAccess}
+          disabled={isGenerating}
+          exportsUsedThisMonth={exportCount}
+          exportsLimit={limits.exportsPerMonth}
+          exportFormat={getExportFormat(carousel)}
+          exportSize={getExportSize(carousel)}
+          exportSettingsPath={`/p/${projectId}/c/${carouselId}`}
+          recentExports={recentExports.map((ex) => ({
+            id: ex.id,
+            status: ex.status,
+            storage_path: ex.storage_path,
+            created_at: ex.created_at,
+          }))}
+          captionVariants={captionVariants}
+          hashtags={hashtags}
+          carouselTitle={carousel.title}
+          projectName={project.name}
+        />
+
         {!isGenerating && (
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-xl border border-border/80 bg-muted/20 px-4 py-3">
+          <div className="flex flex-col gap-2 rounded-xl border border-border/80 bg-muted/20 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
-              <p className="text-sm font-medium text-foreground">Ready for the next organic post?</p>
-              <p className="text-muted-foreground text-xs leading-snug mt-0.5">
-                Generate another IG/TikTok carousel in this project—same niche and offer, new angle.
+              <p className="text-sm font-medium text-foreground">Ready for the next post?</p>
+              <p className="mt-0.5 text-xs leading-snug text-muted-foreground">
+                Make another carousel for this project with a new angle.
               </p>
             </div>
-            <Button asChild className="shrink-0 gap-1.5" disabled={isGenerating}>
+            <Button asChild className="shrink-0 gap-1.5">
               <Link href={`/p/${projectId}/new?fromCarousel=${encodeURIComponent(carouselId)}`}>
                 <SparklesIcon className="size-4" aria-hidden />
                 Generate next post

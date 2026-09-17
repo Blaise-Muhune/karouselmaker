@@ -83,7 +83,7 @@ export interface TemplateBundle {
   id: string;
   user_id: string | null;
   name: string;
-  /** One = every slide; two = first + remaining slides; three = first/middle/last. */
+  /** One = every slide; two = first/last + middle; three = first/middle/last. */
   template_ids: string[];
   is_locked: boolean;
   is_hidden: boolean;

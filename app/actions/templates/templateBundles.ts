@@ -8,7 +8,6 @@ import {
   deleteTemplateBundle,
   getTemplate,
   getTemplateBundle,
-  makeTemplateBundleAvailableToEveryone,
   updateTemplateBundle,
 } from "@/lib/server/db";
 import { templateBundleInputSchema } from "@/lib/validations/templateBundle";
@@ -20,14 +19,6 @@ async function validateTemplateAccess(userId: string, templateIds: string[], adm
   if (templates.some((template) => !template)) return "One of the templates is unavailable.";
   if (!admin && templates.some((template) => template?.is_hidden)) {
     return "One of the templates is no longer available.";
-  }
-  return null;
-}
-
-async function validateTemplatesForEveryone(userId: string, templateIds: string[]) {
-  const templates = await Promise.all(templateIds.map((id) => getTemplate(userId, id)));
-  if (templates.some((template) => template?.user_id !== null)) {
-    return "Make each template available to everyone before sharing this bundle.";
   }
   return null;
 }
@@ -53,10 +44,6 @@ export async function saveTemplateBundleAction(
 
   const asSystemBundle = parsed.data.as_system_bundle === true;
   if (asSystemBundle && !admin) return { ok: false, error: "Only admins can create built-in bundles." };
-  if (asSystemBundle) {
-    const shareError = await validateTemplatesForEveryone(user.id, parsed.data.template_ids);
-    if (shareError) return { ok: false, error: shareError };
-  }
 
   if (bundleId) {
     const existing = await getTemplateBundle(user.id, bundleId);
@@ -64,10 +51,6 @@ export async function saveTemplateBundleAction(
     if (existing.user_id === null && !admin) return { ok: false, error: "Only admins can edit built-in bundles." };
     const result = await updateTemplateBundle(existing.user_id, bundleId, parsed.data);
     if (!result.ok) return { ok: false, error: result.error ?? "Unable to save bundle." };
-    if (asSystemBundle && existing.user_id !== null) {
-      const publish = await makeTemplateBundleAvailableToEveryone(user.id, bundleId);
-      if (!publish.ok) return { ok: false, error: publish.error ?? "Unable to share bundle." };
-    }
     if (revalidatePathname) revalidatePath(revalidatePathname);
     return { ok: true, bundleId };
   }

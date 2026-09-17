@@ -88,8 +88,6 @@ export type SetSlideTemplateOptions = {
    * Use when those shapes were merged into `template.overlayShapes` (e.g. Save as template) so they are not drawn twice.
    */
   clearSlideOverlayShapes?: boolean;
-  /** Keep an already-selected image, including multi-image slots, instead of restoring template sample photos. */
-  preserveExistingImage?: boolean;
 };
 
 /** Remove per-slide overlay shapes from DB (e.g. after Update template baked them into template.overlayShapes). */
@@ -273,7 +271,7 @@ export async function setSlideTemplate(
           ...(templateBgPattern != null && { pattern: templateBgPattern }),
           overlay: mergedOverlay,
         } as Json;
-      } else if (templateHasStoredImageBg && templateBgFromDefaults && !options?.preserveExistingImage) {
+      } else if (templateHasStoredImageBg && templateBgFromDefaults) {
         // Template embeds saved image(s) from "Save as template" (incl. multi-slot shuffle / PiP).
         patch.background = {
           ...templateBgFromDefaults,
@@ -290,7 +288,7 @@ export async function setSlideTemplate(
           ...(hasImageDisplay && { image_display: resolvedImageDisplay }),
         } as Json;
       }
-    } else if (templateHasStoredImageBg && templateBgFromDefaults && !options?.preserveExistingImage) {
+    } else if (templateHasStoredImageBg && templateBgFromDefaults) {
       patch.background = {
         ...templateBgFromDefaults,
         ...(hasOverlayOrTint && { overlay: mergedOverlay }),

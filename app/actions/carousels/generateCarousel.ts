@@ -6,7 +6,6 @@ import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { getSubscription, getEffectivePlanLimits, hasFullProFeatureAccess } from "@/lib/server/subscription";
 import { getProject, updateProject } from "@/lib/server/db/projects";
 import { getDefaultTemplateForNewCarousel, getDefaultTemplateForNewCarouselImage, getDefaultLinkedInTemplate, getTemplate } from "@/lib/server/db/templates";
-import { templateForSlide } from "@/lib/templates/templateSlot";
 import { createCarousel, getCarousel, updateCarousel, countCarouselsThisMonth, countCarouselsLifetime, countAiGenerateCarouselsThisMonth } from "@/lib/server/db/carousels";
 import { replaceSlides, updateSlide, getSlide } from "@/lib/server/db/slides";
 import type { Json } from "@/lib/server/db/types";
@@ -48,8 +47,6 @@ import {
 import { summarizeProductReferenceImages } from "@/lib/server/ai/summarizeProductReferenceImages";
 import { computeProductMustAppearForSlide } from "@/lib/server/ai/computeProductMustAppearForSlide";
 import { buildCarouselSeriesVisualConsistency } from "@/lib/server/ai/carouselSeriesVisualConsistency";
-import { matchBackgroundAssetsToSlides } from "@/lib/server/ai/matchBackgroundAssetsToSlides";
-import { selectImageAssetsForSlots } from "@/lib/server/ai/selectImageAssetsForSlots";
 import { mergeProjectUgcAvatarAssetIds } from "@/lib/server/ai/mergeProjectUgcAvatarAssetIds";
 import { loadUgcAvatarReferenceJpegBuffers } from "@/lib/server/ai/loadUgcAvatarReferenceBuffers";
 import { loadProductReferenceJpegBuffers } from "@/lib/server/ai/loadProductReferenceJpegBuffers";
@@ -70,6 +67,7 @@ import {
 } from "@/lib/constants";
 import { buildBodyRewriteVariants } from "@/lib/renderer/bodyRewriteVariants";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
+import { templateForSlide } from "@/lib/templates/templateSlot";
 import { parseProjectRulesJson } from "@/lib/validations/project";
 import { formatPriorPostsForPrompt, loadPriorPostsForProject } from "@/lib/server/ai/priorPostsMemory";
 import {
@@ -88,7 +86,6 @@ import {
   type TemplateCharLimits,
 } from "@/lib/server/ai/carouselQualityControl";
 import { getHeadlineBodyMaxCharsFromTemplateConfig } from "@/lib/templates/zoneCharBudget";
-import { getTemplateIntendedBackgroundImageSlotCount } from "@/lib/renderer/templatePreviewImages";
 
 const MAX_RETRIES = 2;
 /** Max concurrent AI image generations to cut total time without hitting rate limits. */
@@ -104,6 +101,35 @@ const LOG = (step: string, detail?: string) =>
 const now = () => Date.now();
 function elapsedMs(start: number): number {
   return Math.round(Date.now() - start);
+}
+
+/**
+ * Give "My images" a fresh sequence for every run. A new shuffle is used for
+ * each round, so a carousel with fewer images than frames does not simply
+ * restart at the same first image.
+ */
+function shuffledRoundRobin<T>(items: readonly T[], count: number): T[] {
+  if (items.length === 0 || count <= 0) return [];
+  const result: T[] = [];
+  let previous: T | undefined;
+  while (result.length < count) {
+    const round = [...items];
+    for (let i = round.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [round[i], round[j]] = [round[j]!, round[i]!];
+    }
+    // Avoid placing the same picture at the end of one cycle and the start of the next.
+    if (round.length > 1 && previous === round[0]) {
+      const next = round.shift();
+      if (next !== undefined) round.push(next);
+    }
+    for (const item of round) {
+      if (result.length >= count) break;
+      result.push(item);
+      previous = item;
+    }
+  }
+  return result;
 }
 
 /** Token usage for one step (input = prompt, output = completion). */
@@ -144,17 +170,6 @@ function logTokenSummary(steps: StepUsage[], imageCostTrack?: ImageCostTrack) {
   const grandTotal = llmCost + imageCostUsd;
   console.log(`[carousel-gen]   GRAND TOTAL (LLM + images): $${grandTotal.toFixed(4)}`);
   LOG("-------------------", "");
-}
-
-/** Heuristic: true when input looks like news or time-sensitive so we auto-enable web search for current facts. */
-function looksLikeNewsOrTimeSensitive(inputValue: string, inputType: string): boolean {
-  const lower = inputValue.trim().toLowerCase();
-  if (!lower) return false;
-  const newsKeywords =
-    /\b(news|breaking|headlines?|today|recent|latest|current|election|update|announcement|just in|this week|this month|2024|2025)\b/;
-  if (newsKeywords.test(lower)) return true;
-  if (inputType === "url") return true;
-  return false;
 }
 
 /** Ensure list items in headline/body each have a newline (e.g. "1. A 2. B" -> "1. A\n2. B"). */
@@ -425,6 +440,7 @@ export async function generateCarousel(formData: FormData): Promise<
     use_stock_photos: formData.get("use_stock_photos") ?? undefined,
     use_ai_generate: formData.get("use_ai_generate") ?? undefined,
     use_web_search: formData.get("use_web_search") ?? undefined,
+    generation_speed: (formData.get("generation_speed") as string | null)?.trim() || undefined,
     use_saved_ugc_character: formData.get("use_saved_ugc_character") ?? undefined,
     images_related_to_topic: formData.get("images_related_to_topic") ?? undefined,
     notes: ((formData.get("notes") as string | null) ?? "").trim() || undefined,
@@ -553,13 +569,13 @@ export async function generateCarousel(formData: FormData): Promise<
   const brandKit = project.brand_kit as { watermark_text?: string; primary_color?: string; secondary_color?: string } | null;
   const creatorHandle = brandKit?.watermark_text?.trim() || undefined;
 
-  const carouselFor: "instagram" | "linkedin" = "instagram";
+  let carouselFor: "instagram" | "linkedin" = "instagram";
   const useStockPhotosRaw = !!parsed.data.use_stock_photos;
   /** AI image generation removed from product — always false. */
   const requestedAiGenerate = false;
   const userIsAdmin = isAdmin(user.email ?? null);
   const fullProFeatures = await hasFullProFeatureAccess(user.id, user.email);
-  const useAiGenerate = false;
+  let useAiGenerate = false;
   const requestedUseAiBackgrounds = !!data.use_ai_backgrounds;
   const imagesRelatedToTopic = data.images_related_to_topic !== false;
   const previousGenOpts = (carousel.generation_options ?? {}) as {
@@ -604,11 +620,14 @@ export async function generateCarousel(formData: FormData): Promise<
   }
   /** Free users without Web-image access who pick "Web images" are served stock instead. */
   const requestedBravePath = !useStockPhotosRaw && !useAiGenerate;
-  const effectiveUseStockPhotos =
+  let effectiveUseStockPhotos =
     useStockPhotosRaw || (requestedBravePath && !canUseWebImages);
+  const generationSpeed = parsed.data.generation_speed === "quality" ? "quality" : "fast";
   const userAskedWebSearch = !!data.use_web_search;
-  const autoNewsWebSearch = hasFullAccess && looksLikeNewsOrTimeSensitive(data.input_value, data.input_type);
-  const useWebSearch = hasFullAccess && (userAskedWebSearch || autoNewsWebSearch);
+  // Current facts are valuable when explicitly requested. Do not silently add a
+  // slower research pass to the normal creator workflow just because a topic
+  // contains a date-like word.
+  const useWebSearch = generationSpeed === "quality" && hasFullAccess && userAskedWebSearch;
   const projectLanguage = (project as { language?: string }).language?.trim() || undefined;
 
   /** Recurring character refs + brief: all content styles when this run uses AI images. */
@@ -634,6 +653,9 @@ export async function generateCarousel(formData: FormData): Promise<
   const selectedTemplatesForPrompt = (
     await Promise.all(orderedRequestedTemplateIds.map((templateId) => getTemplate(user.id, templateId)))
   ).filter((template): template is NonNullable<typeof template> => Boolean(template));
+  if (!isAdmin(user.email) && selectedTemplatesForPrompt.some((template) => template.is_hidden)) {
+    return { error: "One of the selected templates is no longer available." };
+  }
 
   if (selectedTemplatesForPrompt.length === 0) {
     const defaultForPrompt = await getDefaultTemplateForNewCarousel(user.id);
@@ -658,17 +680,15 @@ export async function generateCarousel(formData: FormData): Promise<
   const pendingOpenLoop = projectRulesParsed.pending_open_loop;
   const open_loop_block = formatOpenLoopForPrompt(pendingOpenLoop);
 
-  const templateCharLimits: TemplateCharLimits | null = (() => {
-    const cfg = selectedTemplatesForPrompt[0]?.config;
-    if (!cfg) return null;
-    const m = getHeadlineBodyMaxCharsFromTemplateConfig(cfg);
+  const templateCharLimits: TemplateCharLimits[] = selectedTemplatesForPrompt.map((template) => {
+    const m = getHeadlineBodyMaxCharsFromTemplateConfig(template.config);
     return {
       headlineMaxChars: m.headlineMaxChars,
       bodyMaxChars: m.bodyMaxChars,
       hasHeadline: m.hasHeadline,
       hasBody: m.hasBody,
     };
-  })();
+  });
 
   const ctx = {
     tone_preset: project.tone_preset,
@@ -826,9 +846,10 @@ export async function generateCarousel(formData: FormData): Promise<
     // content, and deterministic defects. Early educational posts that clear
     // the hard checks can ship their first strong draft immediately.
     const shouldRunQcJudge =
-      qcHardIssues.length > 0 ||
-      Boolean(pendingOpenLoop?.trim()) ||
-      (includeMarketing && projectRulesParsed.organic_marketing_progress >= 4);
+      generationSpeed === "quality" &&
+      (qcHardIssues.length > 0 ||
+        Boolean(pendingOpenLoop?.trim()) ||
+        (includeMarketing && projectRulesParsed.organic_marketing_progress >= 4));
 
     if (shouldRunQcJudge) {
       const judgePrompts = buildQcJudgePrompts({
@@ -891,7 +912,7 @@ export async function generateCarousel(formData: FormData): Promise<
         hardIssues: qcHardIssues,
         judge: judgeForRewrite,
         includeMarketing,
-        templateLimits: templateCharLimits,
+        templateContext: template_context,
         openLoop: pendingOpenLoop,
       });
       try {
@@ -1055,6 +1076,7 @@ export async function generateCarousel(formData: FormData): Promise<
     }
   }
 
+  const writingDurationMs = elapsedMs(totalStart);
   const resolvedTitle =
     (validated.title?.trim() && validated.title.trim() !== "Generating…")
       ? validated.title.trim()
@@ -1064,6 +1086,7 @@ export async function generateCarousel(formData: FormData): Promise<
   const prevGenOpts = (carousel.generation_options ?? {}) as Record<string, unknown>;
   const finalGenerationOptions: Record<string, unknown> = {
     ...prevGenOpts,
+    generation_speed: generationSpeed,
     use_ai_backgrounds: requestedUseAiBackgrounds,
     use_stock_photos: effectiveUseStockPhotos,
     use_ai_generate: useAiGenerate,
@@ -1071,6 +1094,7 @@ export async function generateCarousel(formData: FormData): Promise<
     use_saved_ugc_character: parsed.data.use_saved_ugc_character !== false,
     ugc_used_project_avatar_refs: ugcUsedProjectAvatarRefs,
     generation_started: false,
+    generation_phase: "assembling",
     ...(carouselFor && { carousel_for: carouselFor }),
     images_related_to_topic: data.images_related_to_topic !== false,
     ...(data.notes?.trim() && { notes: data.notes.trim() }),
@@ -1140,17 +1164,19 @@ export async function generateCarousel(formData: FormData): Promise<
 
   const slideRows = validated.slides.map((s, idx) => {
     const templateIdForSlide = chooseTemplateIdForSlideIndex(idx + 1, totalSlideCount);
-    const rawHeadline = s.slide_index === 1 ? stripLinksFromText(validated.title) : stripLinksFromText(s.headline);
-    const rawBody = s.body ? stripLinksFromText(s.body) : "";
+    const slideTemplate = templateIdForSlide ? resolvedTemplates.get(templateIdForSlide) : selectedTemplate;
+    const fields = getHeadlineBodyMaxCharsFromTemplateConfig(slideTemplate?.config);
+    // Keep the fitted, slot-specific hook. The carousel title is metadata, not visible copy.
+    const rawHeadline = fields.hasHeadline ? stripLinksFromText(s.headline) : "";
+    const rawBody = fields.hasBody && s.body ? stripLinksFromText(s.body) : "";
     const fullHeadline = ensureListNewlines(rawHeadline);
     const fullBody = ensureListNewlines(rawBody);
     const mainHeadlineWords = sanitizeHighlightWordsForText(fullHeadline, s.headline_highlight_words);
     const mainBodyWords = sanitizeHighlightWordsForText(fullBody, s.body_highlight_words);
     const alternates = (s as { shorten_alternates?: { headline: string; body?: string; headline_highlight_words?: string[]; body_highlight_words?: string[] }[] }).shorten_alternates;
-    const slideTemplate = templateIdForSlide ? resolvedTemplates.get(templateIdForSlide) : selectedTemplate;
     const templateConfigParsed = slideTemplate ? templateConfigSchema.safeParse(slideTemplate.config) : null;
     const bodyZoneForRewrite =
-      templateConfigParsed?.success ? templateConfigParsed.data.textZones.find((z) => z.id === "body") : undefined;
+      fields.hasBody && templateConfigParsed?.success ? templateConfigParsed.data.textZones.find((z) => z.id === "body") : undefined;
 
     let body_rewrite_variants: [string, string, string] = ["", "", ""];
     if (bodyZoneForRewrite && fullBody.trim()) {
@@ -1201,6 +1227,9 @@ export async function generateCarousel(formData: FormData): Promise<
   });
 
   const createdSlides = await replaceSlides(user.id, carousel.id, slideRows);
+  await updateCarousel(user.id, carousel.id, {
+    generation_options: { ...finalGenerationOptions, generation_phase: "visuals" },
+  });
   const createdSlidesOrdered = [...createdSlides].sort((a, b) => a.slide_index - b.slide_index);
   const templateIdBySlideId = new Map<string, string>();
   for (let i = 0; i < createdSlidesOrdered.length; i++) {
@@ -1208,26 +1237,14 @@ export async function generateCarousel(formData: FormData): Promise<
     if (templateId) templateIdBySlideId.set(createdSlidesOrdered[i]!.id, templateId);
   }
   const templateAllowsImageById = new Map<string, boolean>();
-  const templateImageSlotCountById = new Map<string, number>();
   for (const [templateId, template] of resolvedTemplates.entries()) {
     const parsedConfig = templateConfigSchema.safeParse(template.config);
-    const allowsImage = parsedConfig.success ? parsedConfig.data.backgroundRules.allowImage !== false : true;
-    templateAllowsImageById.set(templateId, allowsImage);
-    templateImageSlotCountById.set(
-      templateId,
-      allowsImage && parsedConfig.success
-        ? Math.max(1, getTemplateIntendedBackgroundImageSlotCount(parsedConfig.data))
-        : 0
-    );
+    templateAllowsImageById.set(templateId, parsedConfig.success ? parsedConfig.data.backgroundRules.allowImage !== false : true);
   }
   const slideCanUseImage = (slide: (typeof createdSlides)[number]) => {
     const assignedTemplateId = templateIdBySlideId.get(slide.id);
     if (!assignedTemplateId) return true;
     return templateAllowsImageById.get(assignedTemplateId) !== false;
-  };
-  const requiredImageSlotsForSlide = (slide: (typeof createdSlides)[number]) => {
-    const assignedTemplateId = templateIdBySlideId.get(slide.id);
-    return assignedTemplateId ? templateImageSlotCountById.get(assignedTemplateId) ?? 1 : 1;
   };
 
   const overlayColor = "#0a0a0a"; // neutral overlay (template/default); do not use brand logo color
@@ -1260,50 +1277,26 @@ export async function generateCarousel(formData: FormData): Promise<
       if (asset?.storage_path) assets.push({ id: asset.id, storage_path: asset.storage_path });
     }
     if (assets.length) {
-      const aiMatchedAssetBySlideId = await matchBackgroundAssetsToSlides({
-        userId: user.id,
-        assetIds: assets.map((a) => a.id),
-        slides: createdSlides.map((s) => ({
-          id: s.id,
-          slide_index: s.slide_index,
-          slide_type: s.slide_type,
-          headline: s.headline,
-          body: s.body,
-        })),
-        carouselTitle: validated.title?.trim(),
-        topic: data.input_value?.trim(),
-      });
-      const userAssetUpdates: { slide: (typeof createdSlides)[number]; assets: { id: string; storage_path: string }[] }[] = [];
+      const userAssetUpdates: { slide: (typeof createdSlides)[number]; asset: { id: string; storage_path: string } }[] = [];
       const eligibleSlides = createdSlides.filter(slideCanUseImage);
+      const shuffledAssets = shuffledRoundRobin(assets, eligibleSlides.length);
       for (let i = 0; i < eligibleSlides.length; i++) {
         const slide = eligibleSlides[i];
         if (!slide) continue;
-        const matchedAssetId = aiMatchedAssetBySlideId?.get(slide.id);
-        const asset =
-          (matchedAssetId ? assets.find((a) => a.id === matchedAssetId) : undefined) ??
-          assets[i % assets.length];
+        const asset = shuffledAssets[i];
         if (!asset) continue;
-        const slotCount = requiredImageSlotsForSlide(slide);
-        const selectedAssets =
-          slotCount > 1 ? selectImageAssetsForSlots(assets, slotCount) : [asset];
         slidesWithImage.add(slide.id);
-        userAssetUpdates.push({ slide, assets: selectedAssets });
+        userAssetUpdates.push({ slide, asset });
       }
       for (let i = 0; i < userAssetUpdates.length; i += UPDATE_SLIDE_BATCH_SIZE) {
         const chunk = userAssetUpdates.slice(i, i + UPDATE_SLIDE_BATCH_SIZE);
         await Promise.all(
-          chunk.map(({ slide, assets: selectedAssets }) =>
+          chunk.map(({ slide, asset }) =>
             updateSlide(user.id, slide.id, {
               background: {
                 mode: "image",
-                asset_id: selectedAssets[0]?.id,
-                storage_path: selectedAssets[0]?.storage_path,
-                ...(selectedAssets.length > 1 && {
-                  images: selectedAssets.map((asset) => ({
-                    asset_id: asset.id,
-                    storage_path: asset.storage_path,
-                  })),
-                }),
+                asset_id: asset.id,
+                storage_path: asset.storage_path,
                 fit: "cover",
                 overlay: overlayForImageSlide,
               },
@@ -1327,7 +1320,7 @@ export async function generateCarousel(formData: FormData): Promise<
       const curBg = await getCarousel(user.id, carousel.id);
       const po = (curBg?.generation_options ?? {}) as Record<string, unknown>;
       await updateCarousel(user.id, carousel.id, {
-        generation_options: { ...po, ai_backgrounds_pending: true },
+        generation_options: { ...po, ai_backgrounds_pending: true, generation_phase: "visuals" },
       });
     }
 
@@ -1989,16 +1982,28 @@ export async function generateCarousel(formData: FormData): Promise<
         };
         const tryQueryWithFallback = async (query: string, preferred: StockProvider): Promise<ImageResult | null> => {
           const order = [preferred, ...providers.filter((p) => p !== preferred)];
-          for (const p of order) {
-            const r = await tryProvider(query, p);
-            if (r) return r;
-          }
-          return null;
+          // A provider can be slow or unavailable. Start fallbacks together and
+          // take the first usable result instead of waiting through three 15s
+          // timeouts for every slide.
+          return new Promise<ImageResult | null>((resolve) => {
+            let remaining = order.length;
+            for (const provider of order) {
+              void tryProvider(query, provider).catch(() => null).then((result) => {
+                if (result) {
+                  resolve(result);
+                  return;
+                }
+                remaining -= 1;
+                if (remaining === 0) resolve(null);
+              });
+            }
+          });
         };
         const processOneSearchSlide = async (job: { slide: (typeof createdSlides)[number]; queries: string[]; image_provider: StockProvider }) => {
           const { slide, queries, image_provider } = job;
           let imageResults: ImageResult[] = [];
-          for (const q of queries.slice(0, 4)) {
+          const queriesToTry = generationSpeed === "fast" ? queries.slice(0, 1) : queries.slice(0, 4);
+          for (const q of queriesToTry) {
             const r = await tryQueryWithFallback(q, image_provider);
             if (r) {
               imageResults = [r];
@@ -2099,12 +2104,15 @@ export async function generateCarousel(formData: FormData): Promise<
   // Apply full template defaults per slide (overlay, defaults.meta, image_display, etc.) to match editor behavior.
   if (defaultTemplateId || templateIdsForRun.length > 0) {
     LOG("backgrounds", "applying template defaults to slides");
+    const current = await getCarousel(user.id, carousel.id);
+    const opts = (current?.generation_options ?? {}) as Record<string, unknown>;
+    await updateCarousel(user.id, carousel.id, {
+      generation_options: { ...opts, generation_phase: "finishing" },
+    });
     for (const slide of createdSlides) {
       const templateIdForSlide = templateIdBySlideId.get(slide.id) ?? defaultTemplateId;
       if (!templateIdForSlide) continue;
-      const result = await setSlideTemplate(slide.id, templateIdForSlide, undefined, {
-        preserveExistingImage: slidesWithImage.has(slide.id),
-      });
+      const result = await setSlideTemplate(slide.id, templateIdForSlide);
       if (!result.ok) LOG("backgrounds", `setSlideTemplate failed for ${slide.id}: ${result.error}`);
     }
   }
@@ -2113,7 +2121,13 @@ export async function generateCarousel(formData: FormData): Promise<
   const generationOptionsForDb: Record<string, unknown> = {
     ...finalGenerationOptions,
     generation_complete: true,
+    generation_phase: "complete",
     ai_backgrounds_pending: false,
+    generation_timing_ms: {
+      total: elapsedMs(totalStart),
+      writing: writingDurationMs,
+      visuals: elapsedMs(backgroundsStart),
+    },
     ugc_single_character_mode: ugcSingleCharacterModeForCarousel,
     ugc_recurring_entity_mode: ugcRecurringEntityModeForCarousel,
     ...(ugcSeriesCharacterBriefForCarousel
@@ -2140,6 +2154,7 @@ export async function generateCarousel(formData: FormData): Promise<
         generation_options: {
           generation_started: false,
           generation_complete: true,
+          generation_phase: "complete",
           ai_backgrounds_pending: false,
         },
       });
@@ -2213,6 +2228,7 @@ export async function generateCarousel(formData: FormData): Promise<
           ...finalGenerationOptions,
           generation_started: false,
           generation_complete: true,
+          generation_phase: "complete",
           ai_backgrounds_pending: false,
           generation_error_recovery: true,
         };
@@ -2235,6 +2251,7 @@ export async function generateCarousel(formData: FormData): Promise<
               generation_options: {
                 generation_started: false,
                 generation_complete: true,
+                generation_phase: "complete",
                 ai_backgrounds_pending: false,
                 generation_error_recovery: true,
               },
@@ -2320,6 +2337,7 @@ export async function startCarouselGeneration(formData: FormData): Promise<
     use_stock_photos: formData.get("use_stock_photos") ?? undefined,
     use_ai_generate: formData.get("use_ai_generate") ?? undefined,
     use_web_search: formData.get("use_web_search") ?? undefined,
+    generation_speed: (formData.get("generation_speed") as string | null)?.trim() || undefined,
     use_saved_ugc_character: formData.get("use_saved_ugc_character") ?? undefined,
     images_related_to_topic: formData.get("images_related_to_topic") ?? undefined,
     notes: ((formData.get("notes") as string | null) ?? "").trim() || undefined,
@@ -2459,6 +2477,7 @@ export async function startCarouselGeneration(formData: FormData): Promise<
     use_web_search: hasFullAccess && !!data.use_web_search,
     use_saved_ugc_character: parsed.data.use_saved_ugc_character !== false,
     generation_started: false,
+    generation_phase: "queued",
     number_of_slides: data.number_of_slides,
     notes: data.notes,
     images_related_to_topic: data.images_related_to_topic !== false,
