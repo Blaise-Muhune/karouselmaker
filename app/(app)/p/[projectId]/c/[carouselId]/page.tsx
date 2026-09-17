@@ -11,6 +11,7 @@ import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { resolveBrandKitLogo } from "@/lib/server/brandKit";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
 import { httpsDisplayImageUrl } from "@/lib/server/storage/signedUrlUtils";
+import { resolveTemplatePreviewImageUrls } from "@/lib/server/templates/resolveTemplatePreviewImageUrls";
 import { Button } from "@/components/ui/button";
 import { SlideGrid, type TemplateWithConfig } from "@/components/carousels/SlideGrid";
 import { CarouselMenuDropdown } from "@/components/carousels/CarouselMenuDropdown";
@@ -89,12 +90,20 @@ export default async function CarouselEditorPage({
   }
 
   const favoriteIdSet = new Set(favoriteIds);
-  const templates: TemplateWithConfig[] = [];
-  for (const t of templatesRaw) {
+  const parsedTemplates = templatesRaw.flatMap((t) => {
     const parsed = templateConfigSchema.safeParse(t.config);
-    if (!parsed.success) continue;
-    templates.push({ ...t, parsedConfig: parsed.data, isFavorite: favoriteIdSet.has(t.id) });
-  }
+    return parsed.success ? [{ template: t, config: parsed.data }] : [];
+  });
+  const templatePreviewUrls = await Promise.all(
+    parsedTemplates.map(({ config }) => resolveTemplatePreviewImageUrls(user.id, config))
+  );
+  const templates: TemplateWithConfig[] = parsedTemplates.map(({ template: t, config }, index) => ({
+    ...t,
+    parsedConfig: config,
+    isFavorite: favoriteIdSet.has(t.id),
+    is_hidden: t.is_hidden === true,
+    previewImageUrls: templatePreviewUrls[index],
+  }));
 
   const brandKit: BrandKit = await resolveBrandKitLogo(project.brand_kit as Record<string, unknown> | null);
 

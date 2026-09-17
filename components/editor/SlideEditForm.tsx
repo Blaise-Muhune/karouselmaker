@@ -528,6 +528,7 @@ const SECTION_INFO: Record<string, { title: string; body: string }> = {
 export type TemplateWithConfig = Template & {
   parsedConfig: TemplateConfig;
   isFavorite?: boolean;
+  previewImageUrls?: string[];
 };
 
 const EXPORT_SIZE_LABELS: Record<ExportSize, string> = {

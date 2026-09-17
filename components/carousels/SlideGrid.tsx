@@ -76,6 +76,7 @@ function getPreviewDimensions(exportSize: string): { w: number; h: number; conte
 export type TemplateWithConfig = Template & {
   parsedConfig: TemplateConfig;
   isFavorite?: boolean;
+  previewImageUrls?: string[];
 };
 
 type SlideGridProps = {
@@ -584,6 +585,7 @@ export function SlideGrid({
       isSystemTemplate: t.user_id == null,
       isFavorite: t.isFavorite === true,
       isHidden: t.is_hidden === true,
+    previewImageUrls: t.previewImageUrls,
   }));
   const favoriteRevalidatePath = `/p/${projectId}/c/${carouselId}`;
 

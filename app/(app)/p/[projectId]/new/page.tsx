@@ -15,6 +15,7 @@ import {
   getDefaultTemplateForNewCarousel,
 } from "@/lib/server/db";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
+import { resolveTemplatePreviewImageUrls } from "@/lib/server/templates/resolveTemplatePreviewImageUrls";
 import { CAROUSEL_SLIDES_MAX, CAROUSEL_SLIDES_MIN, FREE_FULL_ACCESS_GENERATIONS } from "@/lib/constants";
 import { NewCarouselForm } from "./NewCarouselForm";
 import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
@@ -73,21 +74,23 @@ export default async function NewCarouselPage({
   if (regenerateCarouselId && (!regenerateCarousel || regenerateCarousel.project_id !== projectId)) notFound();
 
   const favoriteIdSet = new Set(favoriteIds);
-  const templateOptions: TemplateOption[] = [];
-  for (const t of templatesRaw) {
+  const parsedTemplates = templatesRaw.flatMap((t) => {
     const parsed = templateConfigSchema.safeParse(t.config);
-    if (parsed.success) {
-      templateOptions.push({
-        id: t.id,
-        name: t.name,
-        parsedConfig: parsed.data,
-        category: t.category,
-        isSystemTemplate: t.user_id == null,
-        isFavorite: favoriteIdSet.has(t.id),
-        isHidden: t.is_hidden === true,
-      });
-    }
-  }
+    return parsed.success ? [{ template: t, config: parsed.data }] : [];
+  });
+  const resolvedPreviewUrls = await Promise.all(
+    parsedTemplates.map(({ config }) => resolveTemplatePreviewImageUrls(user.id, config))
+  );
+  const templateOptions: TemplateOption[] = parsedTemplates.map(({ template: t, config }, index) => ({
+    id: t.id,
+    name: t.name,
+    parsedConfig: config,
+    category: t.category,
+    isSystemTemplate: t.user_id == null,
+    isFavorite: favoriteIdSet.has(t.id),
+    isHidden: t.is_hidden === true,
+    previewImageUrls: resolvedPreviewUrls[index],
+  }));
   const defaultTemplateId = defaultTemplate?.templateId ?? null;
   const availableTemplateIds = new Set(templateOptions.map((template) => template.id));
   const templateBundles: TemplateBundleOption[] = bundlesRaw
