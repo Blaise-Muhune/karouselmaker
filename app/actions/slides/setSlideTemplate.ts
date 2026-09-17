@@ -4,8 +4,9 @@ import { revalidatePath } from "next/cache";
 import { getUser } from "@/lib/server/auth/getUser";
 import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { requirePro } from "@/lib/server/subscription";
-import { getTemplate, getSlide, updateSlide } from "@/lib/server/db";
+import { getAsset, getCarousel, getTemplate, getSlide, updateSlide } from "@/lib/server/db";
 import { templateConfigSchema, type TemplateConfig } from "@/lib/server/renderer/templateSchema";
+import { getTemplateIntendedBackgroundImageSlotCount } from "@/lib/renderer/templatePreviewImages";
 import type { Json } from "@/lib/server/db/types";
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
 import { reconcileExtraTextZonesForTemplateChange } from "@/lib/editor/reconcileExtraTextZonesForTemplateChange";
@@ -125,6 +126,29 @@ function backgroundHasImage(bg: Record<string, unknown> | null | undefined): boo
   return Array.isArray(images) && images.length > 0;
 }
 
+function shuffledAssets<T>(assets: readonly T[], count: number): T[] {
+  if (assets.length === 0 || count < 1) return [];
+  const result: T[] = [];
+  let previous: T | undefined;
+  while (result.length < count) {
+    const round = [...assets];
+    for (let index = round.length - 1; index > 0; index--) {
+      const swapIndex = Math.floor(Math.random() * (index + 1));
+      [round[index], round[swapIndex]] = [round[swapIndex]!, round[index]!];
+    }
+    if (round.length > 1 && round[0] === previous) {
+      const first = round.shift();
+      if (first !== undefined) round.push(first);
+    }
+    for (const asset of round) {
+      if (result.length >= count) break;
+      result.push(asset);
+      previous = asset;
+    }
+  }
+  return result;
+}
+
 /** Set template on a single slide. Clears font-size overrides so the template's text zone font sizes apply. */
 export async function setSlideTemplate(
   slideId: string,
@@ -164,7 +188,7 @@ export async function setSlideTemplate(
     };
 
     // Apply template overlay (e.g. purple), gradient on/off, image overlay blend (tint), and image_display so the slide matches the template and persists after refresh.
-    const existingBg = slide.background as Record<string, unknown> | null | undefined;
+    let existingBg = slide.background as Record<string, unknown> | null | undefined;
     const defaultsMeta = parsed.data?.defaults?.meta as Record<string, unknown> | undefined;
     // Use template's overlay_tint_opacity when defined (including 0). When template has defaults but no overlay_tint_opacity, use 0 so "no blend" templates don't keep the previous slide's blend.
     const overlayTintOpacity =
@@ -218,6 +242,36 @@ export async function setSlideTemplate(
       templateBgFromDefaults != null &&
       templateBgFromDefaults.mode === "image" &&
       backgroundHasImage(templateBgFromDefaults);
+
+    // A My Images carousel can be switched to a layout with multiple image slots.
+    // Fill every required slot from that same selected image pool, even for an
+    // already-created slide that previously held only one image.
+    const requiredImageSlots =
+      templateAllowsImage && parsed.success && !templateHasStoredImageBg
+        ? Math.max(1, getTemplateIntendedBackgroundImageSlotCount(parsed.data))
+        : 0;
+    if (requiredImageSlots > 1) {
+      const carousel = await getCarousel(user.id, slide.carousel_id);
+      const selectedAssetIds = Array.isArray((carousel?.generation_options as { background_asset_ids?: unknown } | null)?.background_asset_ids)
+        ? ((carousel!.generation_options as { background_asset_ids: unknown[] }).background_asset_ids)
+            .filter((id): id is string => typeof id === "string" && id.length > 0)
+        : [];
+      if (selectedAssetIds.length > 0) {
+        const selectedAssets = (await Promise.all(selectedAssetIds.map((id) => getAsset(user.id, id))))
+          .flatMap((asset) => asset?.storage_path ? [{ id: asset.id, storage_path: asset.storage_path }] : []);
+        const assignedAssets = shuffledAssets(selectedAssets, requiredImageSlots);
+        if (assignedAssets.length === requiredImageSlots) {
+          const primary = assignedAssets[0]!;
+          existingBg = {
+            ...(existingBg ?? {}),
+            mode: "image",
+            asset_id: primary.id,
+            storage_path: primary.storage_path,
+            images: assignedAssets.map((asset) => ({ asset_id: asset.id, storage_path: asset.storage_path })),
+          };
+        }
+      }
+    }
 
     // Resolve template background color/style/pattern so they persist after reload (editor reads slide.background.color).
     const defaultsBg = templateBgFromDefaults as { color?: string; style?: string; pattern?: string } | undefined;
