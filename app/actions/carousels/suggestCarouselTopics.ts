@@ -161,7 +161,7 @@ Primary goal — organic reach first, progressive soft-sell second:
 - Never invent product features, guarantees, or stats.
 
 Rules:
-- Each topic string: short (max ~12 words), plain phrase the creator would type.
+- Each topic string: short (max ~12 words), plain-language, informative, and attractive. Name the real subject plus a useful angle, outcome, audience, or timeframe where it helps. It should sound valuable enough to become a strong carousel title, never vague, overly academic, or a generic "tips for X" filler.
 - Language: match project language (${language}).
 - Mix formats: how-to, mistakes/myths, checklist, story, contrarian — plus share/save hooks.
 - Respect the project's content style line.

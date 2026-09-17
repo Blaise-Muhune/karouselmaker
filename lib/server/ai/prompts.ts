@@ -117,7 +117,7 @@ When use_ai_backgrounds is on (stock, web search, or AI generate): image_queries
 CRITICAL (every response must satisfy—these are non-negotiable):
 - Output STRICT JSON only, matching the schema at the end of this prompt—no markdown fences, no commentary.
 - Be accurate: do not invent facts, stats, names, or quotes; use web search when available for verifiable claims.
-- slide_index 1 = hook. Top-level "title" is a concise, search-clear carousel label. When the topic supplies a useful keyword phrase, role, product category, or year, preserve it naturally in the title (for example, "Best Tech Certifications for IT Careers in 2026"). The hook can use a sharper consequence, contradiction, or uncomfortable truth instead of repeating the title word-for-word; for body-only slide 1, keep title separate and headline empty. Maximum 7 slides.
+- slide_index 1 = hook. Top-level "title" is a concise, search-clear carousel label. Make it informative and attractive: name the real topic plus a useful angle, outcome, audience, or timeframe when relevant (for example, "Best Tech Certifications for IT Careers in 2026"). It should promise real value in plain language, not be vague, overly clever, academic, or a generic list title. The hook can use a sharper consequence, contradiction, or uncomfortable truth instead of repeating the title word-for-word; for body-only slide 1, keep title separate and headline empty. Maximum 7 slides.
 - No URLs, links, or domain citations in headline or body.
 - Include top-level similar_ideas: exactly 5–6 strings (follow-up carousel topics)—see SIMILAR IDEAS rule below.
 ${hasProductContext && ctx.product_reference_summary?.trim()
