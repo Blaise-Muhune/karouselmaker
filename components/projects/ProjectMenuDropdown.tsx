@@ -27,13 +27,18 @@ type ProjectMenuDropdownProps = {
 export function ProjectMenuDropdown({ projectId, projectName }: ProjectMenuDropdownProps) {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   async function handleDeleteConfirm(e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
     setDeleting(true);
+    setDeleteError(null);
     try {
-      await deleteProject(projectId);
+      const result = await deleteProject(projectId);
+      if (!result.ok) setDeleteError(result.error);
+    } catch {
+      setDeleteError("Could not delete this project. Please try again.");
     } finally {
       setDeleting(false);
     }
@@ -76,12 +81,14 @@ export function ProjectMenuDropdown({ projectId, projectName }: ProjectMenuDropd
             <DialogDescription>
               This will permanently delete &quot;{projectName}&quot; and all its carousels. This action cannot be undone.
             </DialogDescription>
+            {deleteError ? <p className="text-sm text-destructive" role="alert">{deleteError}</p> : null}
           </DialogHeader>
           <DialogFooter showCloseButton={false}>
             <Button
               variant="outline"
               onClick={(e) => {
                 e.preventDefault();
+                setDeleteError(null);
                 setDeleteOpen(false);
               }}
               disabled={deleting}
