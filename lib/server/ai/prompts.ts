@@ -151,6 +151,14 @@ ${hasProductContext && ctx.content_focus === "ugc"
 Prefer when compatible (quality bar):
 - 5–8 slides for typical topics; punchy human tone; avoid AI buzzwords listed below.
 
+COPY STYLE (highest priority for slide writing):
+- Write like a sharp creator talking to one person, never like an article, lesson plan, or consultant.
+- Give each slide one clear thought. Use everyday words, concrete examples, and short spoken sentences.
+- Keep the headline clean and direct. Keep the body to one short sentence or two short lines when the template has room. Cut setup, qualifiers, repeated explanations, and theory.
+- Prefer direct phrasing such as "Here's the trap", "Do this first", or "That changes the answer" over abstract wording.
+- Build a lively rhythm across the carousel: tension, simple truth, useful example, takeaway. Do not make every slide a dense explanation.
+- If a line feels formal, academic, generic, or needs rereading, rewrite it in simpler language a creator would naturally say aloud.
+
 DECISION-GRADE EDUCATIONAL CAROUSELS (use this progression when the topic helps someone choose a career path, tool, credential, purchase, strategy, or next step):
 1. Open with a real cost, risk, or frustrating consequence of choosing badly. Make the reader feel the problem before explaining it.
 2. Reframe the false universal answer. Replace "the best X" with the criterion that actually decides the answer.

@@ -406,7 +406,7 @@ Rules:
 - Keep slide count unless padding is the problem (then trim empty/redundant middle slides; stay 3–7).
 - Preserve image_queries / unsplash_queries / image_context / shorten_alternates structure when possible; refresh shorten_alternates to match new main copy (short/normal/long).
 - Preserve similar_ideas; if CTA opens a loop, put that promise first.
-- Plain human voice; contractions OK; no em dashes; no URLs; no format words (swipe/scroll/slide/carousel).
+- Plain, lively human voice; contractions OK. Keep one clear thought per slide, use short spoken sentences, and cut theory, qualifiers, and lecture-like explanations. No em dashes, URLs, or format words (swipe/scroll/slide/carousel).
 - Marketing mode: ${input.includeMarketing ? "soft product only late, never on slide 1" : "NO product name or pitch anywhere"}.
 - ${limits}
 - Fix every hard issue and judge fail. Score must become ≥8.`;
