@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, type ComponentProps, type MouseEvent } from "react";
 import { SlidePreview, type SlideBackgroundOverride } from "@/components/renderer/SlidePreview";
 import { DeleteTemplateButton } from "@/components/templates/DeleteTemplateButton";
+import { TemplateVisibilityButton } from "@/components/templates/TemplateVisibilityButton";
 import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { getTemplatePreviewBackgroundOverride, getLinkedInPreviewOverlayOverride, getTemplatePreviewOverlayOverride } from "@/lib/renderer/getTemplatePreviewBackground";
 import {
@@ -78,6 +79,8 @@ export type TemplateOption = {
   isSystemTemplate?: boolean;
   /** When true, current user has favorited this template. */
   isFavorite?: boolean;
+  /** Admin-hidden templates remain editable on existing slides but leave the public picker. */
+  isHidden?: boolean;
   /** Fresh server-resolved URLs for images that were saved into this template. */
   previewImageUrls?: string[];
 };
@@ -114,6 +117,8 @@ export type TemplateSelectCardsProps = {
   emphasizeLoadMoreButton?: boolean;
   /** Path to revalidate after starring (e.g. `/p/{projectId}/new`). */
   favoriteRevalidatePath?: string;
+  /** Path to revalidate after an admin hides or shows a template. */
+  visibilityRevalidatePath?: string;
 };
 
 export function TemplateSelectCards({
@@ -136,6 +141,7 @@ export function TemplateSelectCards({
   initialVisibleCount,
   emphasizeLoadMoreButton = false,
   favoriteRevalidatePath,
+  visibilityRevalidatePath,
 }: TemplateSelectCardsProps) {
   const { w: PREVIEW_W, h: PREVIEW_H, scale: SCALE } = usePreviewSize();
   const brandKit = { primary_color: primaryColor };
@@ -244,7 +250,11 @@ export function TemplateSelectCards({
     defaultTemplateBgUrl = merged[0];
   }
 
-  const myTemplates = useMemo(() => templates.filter((t) => !t.isSystemTemplate), [templates]);
+  const visibleTemplates = useMemo(
+    () => (isAdmin ? templates : templates.filter((template) => !template.isHidden)),
+    [templates, isAdmin]
+  );
+  const myTemplates = useMemo(() => visibleTemplates.filter((t) => !t.isSystemTemplate), [visibleTemplates]);
   const hasMyTemplates = showMyTemplatesSection && myTemplates.length > 0;
 
   const myTemplatesFiltered = useMemo(() => {
@@ -257,13 +267,13 @@ export function TemplateSelectCards({
   }, [myTemplates, layoutFilter, favoriteIds]);
 
   const catalogFiltered = useMemo(() => {
-    const list = filterByLayout(templates, layoutFilter);
+    const list = filterByLayout(visibleTemplates, layoutFilter);
     return [...list].sort((a, b) => {
       const af = favoriteIds.has(a.id) ? 0 : 1;
       const bf = favoriteIds.has(b.id) ? 0 : 1;
       return af - bf;
     });
-  }, [templates, layoutFilter, favoriteIds]);
+  }, [visibleTemplates, layoutFilter, favoriteIds]);
 
   const displayList = paginateInternally ? catalogFiltered.slice(0, visibleCount) : catalogFiltered;
   const hasMore = paginateInternally && catalogFiltered.length > visibleCount;
@@ -364,6 +374,17 @@ export function TemplateSelectCards({
               isAdmin={isAdmin}
               isSystemTemplate={isSystem}
               onDeleted={onTemplateDeleted}
+            />
+          </div>
+        )}
+        {isAdmin && isSystem && (
+          <div className="absolute right-2 top-11 z-10">
+            <TemplateVisibilityButton
+              templateId={t.id}
+              templateName={t.name}
+              isHidden={t.isHidden === true}
+              revalidatePath={visibilityRevalidatePath}
+              onChanged={onTemplateDeleted}
             />
           </div>
         )}

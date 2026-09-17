@@ -733,7 +733,10 @@ export function NewCarouselForm({
               showMyTemplatesSection={false}
               initialVisibleCount={CHOOSE_TEMPLATE_MODAL_INITIAL_VISIBLE_COUNT}
               paginateInternally
+              isAdmin={isAdmin}
+              isPro={isPro}
               favoriteRevalidatePath={`/p/${projectId}/new`}
+              visibilityRevalidatePath={`/p/${projectId}/new`}
             />
             </div>
           </ChooseTemplateModalLayout>

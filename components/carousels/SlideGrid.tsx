@@ -599,8 +599,11 @@ export function SlideGrid({
     category: t.category ?? undefined,
     isSystemTemplate: t.user_id == null,
     isFavorite: t.isFavorite === true,
+    isHidden: t.is_hidden === true,
     previewImageUrls: t.previewImageUrls,
   }));
+  const defaultTemplateOption =
+    templateOptions.find((template) => !template.isHidden || isAdmin) ?? templateOptions[0];
   const favoriteRevalidatePath = `/p/${projectId}/c/${carouselId}`;
 
   useEffect(() => {
@@ -1345,20 +1348,21 @@ export function SlideGrid({
                 <TemplateSelectCards
                   key={`bulk-${ids.join("-")}`}
                   templates={templateOptions}
-                  defaultTemplateId={templates[0]?.id ?? null}
-                  defaultTemplateConfig={templates[0]?.parsedConfig ?? null}
-                  defaultTemplateCategory={templates[0]?.category ?? undefined}
+                  defaultTemplateId={defaultTemplateOption?.id ?? null}
+                  defaultTemplateConfig={defaultTemplateOption?.parsedConfig ?? null}
+                  defaultTemplateCategory={defaultTemplateOption?.category ?? undefined}
                   showLayoutFilter
                   value={null}
                   previewImageUrls={previewImageUrlsForBulk}
                   isAdmin={isAdmin}
                   isPro={isPro}
                   favoriteRevalidatePath={favoriteRevalidatePath}
+                  visibilityRevalidatePath={favoriteRevalidatePath}
                   onTemplateDeleted={() => {
                     router.refresh();
                   }}
                   onChange={async (id) => {
-                    const templateId = id === null ? templates[0]?.id ?? null : id;
+                    const templateId = id === null ? defaultTemplateOption?.id ?? null : id;
                     if (!templateId) return;
                     setBulkActionPending(true);
                     setBulkTemplateProgress({ done: 0, total: ids.length });
@@ -1404,7 +1408,7 @@ export function SlideGrid({
           })()}
           {templateModalSlideId != null && !isBulkTemplateOpen && (() => {
             const slideForModal = slidesOrder.find((s) => s.id === templateModalSlideId);
-            const currentTemplateIdForModal = slideForModal?.template_id ?? templates[0]?.id ?? null;
+            const currentTemplateIdForModal = slideForModal?.template_id ?? defaultTemplateOption?.id ?? null;
             if (!slideForModal) return null;
             const slideBgImages = slideBackgroundImageUrls[slideForModal.id];
             const previewImageUrlsForModal =
@@ -1417,21 +1421,22 @@ export function SlideGrid({
                 <TemplateSelectCards
                   key={templateModalSlideId}
                   templates={templateOptions}
-                  defaultTemplateId={templates[0]?.id ?? null}
-                  defaultTemplateConfig={templates[0]?.parsedConfig ?? null}
-                  defaultTemplateCategory={templates[0]?.category ?? undefined}
+                  defaultTemplateId={defaultTemplateOption?.id ?? null}
+                  defaultTemplateConfig={defaultTemplateOption?.parsedConfig ?? null}
+                  defaultTemplateCategory={defaultTemplateOption?.category ?? undefined}
                   showLayoutFilter
-                  value={currentTemplateIdForModal === templates[0]?.id ? null : currentTemplateIdForModal}
+                  value={currentTemplateIdForModal === defaultTemplateOption?.id ? null : currentTemplateIdForModal}
                   previewImageUrls={previewImageUrlsForModal}
                   isAdmin={isAdmin}
                   isPro={isPro}
                   favoriteRevalidatePath={favoriteRevalidatePath}
+                  visibilityRevalidatePath={favoriteRevalidatePath}
                   onTemplateDeleted={() => {
                     setTemplateModalSlideId(null);
                     router.refresh();
                   }}
                   onChange={async (id) => {
-                    const templateId = id === null ? templates[0]?.id ?? null : id;
+                    const templateId = id === null ? defaultTemplateOption?.id ?? null : id;
                     if (!templateId || templateId === slideForModal.template_id) {
                       setTemplateModalSlideId(null);
                       return;

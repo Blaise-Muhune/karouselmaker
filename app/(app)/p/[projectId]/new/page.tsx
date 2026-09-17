@@ -37,6 +37,7 @@ export default async function NewCarouselPage({
   }>;
 }>) {
   const { user } = await getUser();
+  const userIsAdmin = isAdmin(user.email);
   const { projectId } = await params;
   const sp = await searchParams;
   const regenerateCarouselIdRaw = sp.regenerate;
@@ -61,7 +62,7 @@ export default async function NewCarouselPage({
       countCarouselsThisMonth(user.id),
       countCarouselsLifetime(user.id),
       regenerateCarouselId ? getCarousel(user.id, regenerateCarouselId) : Promise.resolve(null),
-      listTemplatesForUser(user.id, { includeSystem: true }),
+      listTemplatesForUser(user.id, { includeSystem: true, includeHidden: userIsAdmin }),
       listTemplateBundlesForUser(user.id, { includeSystem: true }),
       getDefaultTemplateForNewCarousel(user.id),
       listFavoriteTemplateIds(user.id),
@@ -85,6 +86,7 @@ export default async function NewCarouselPage({
     category: t.category,
     isSystemTemplate: t.user_id == null,
     isFavorite: favoriteIdSet.has(t.id),
+    isHidden: t.is_hidden === true,
     previewImageUrls: resolvedPreviewUrls[index],
   }));
   const defaultTemplateId = defaultTemplate?.templateId ?? null;
@@ -200,7 +202,7 @@ export default async function NewCarouselPage({
           initialNotes={regenerateCarousel ? genOpts?.notes : carrySettingsCarousel ? "" : undefined}
           templateOptions={templateOptions}
           templateBundles={templateBundles}
-          isAdmin={isAdmin(user.email)}
+          isAdmin={userIsAdmin}
           defaultTemplateId={defaultTemplateId}
           defaultTemplateConfig={defaultTemplateConfig}
           primaryColor={primaryColor}

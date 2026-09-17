@@ -5,18 +5,19 @@ import type { Template, TemplateInsert } from "./types";
 
 export async function listTemplatesForUser(
   userId: string,
-  options: { includeSystem?: boolean } = {}
+  options: { includeSystem?: boolean; includeHidden?: boolean } = {}
 ): Promise<Template[]> {
+  const hiddenFilter = options.includeHidden ? "" : " and coalesce(is_hidden, false) = false";
   if (options.includeSystem) {
     return queryMany<Template>(
       `select * from templates
-       where user_id = $1 or user_id is null
+       where (user_id = $1 or user_id is null)${hiddenFilter}
        order by name asc`,
       [userId]
     );
   }
   return queryMany<Template>(
-    `select * from templates where user_id = $1 order by name asc`,
+    `select * from templates where user_id = $1${hiddenFilter} order by name asc`,
     [userId]
   );
 }

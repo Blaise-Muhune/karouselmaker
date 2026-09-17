@@ -2262,7 +2262,8 @@ export function SlideEditForm({
           onMadeWithYChange: (v: number) => setMadeWithZoneOverride((o) => ({ ...(o ?? {}), y: v })),
         }
       : undefined;
-  const restTemplates = templates.slice(1);
+  const visibleTemplates = templates.filter((template) => !template.is_hidden || isAdmin);
+  const restTemplates = visibleTemplates.slice(1);
   const sortedTemplatesForModal = [...restTemplates].sort((a, b) => {
     const aLinkedIn = (a.category ?? "").toLowerCase() === "linkedin";
     const bLinkedIn = (b.category ?? "").toLowerCase() === "linkedin";
@@ -2277,9 +2278,10 @@ export function SlideEditForm({
       name: override?.name ?? t.name,
       parsedConfig: override?.parsedConfig ?? t.parsedConfig,
       category: t.category,
-      isSystemTemplate: t.user_id == null,
-      isFavorite: t.isFavorite === true,
-      previewImageUrls: t.previewImageUrls,
+        isSystemTemplate: t.user_id == null,
+        isFavorite: t.isFavorite === true,
+        isHidden: t.is_hidden === true,
+        previewImageUrls: t.previewImageUrls,
     };
   });
   const templateOptionsForModal = [
@@ -2294,7 +2296,7 @@ export function SlideEditForm({
     ...baseModalOptions.filter((t) => !recentlyCreatedTemplates.some((r) => r.id === t.id)),
   ];
   const favoriteRevalidatePath = editorPath;
-  const firstTemplate = templates[0];
+  const firstTemplate = visibleTemplates[0] ?? templates[0];
   useEffect(() => {
     setOverrideTemplateConfig(null);
     setLastHeadlineHighlightAction("manual");
@@ -5834,12 +5836,13 @@ export function SlideEditForm({
               isAdmin={isAdmin}
               isPro={isPro}
               favoriteRevalidatePath={favoriteRevalidatePath}
+              visibilityRevalidatePath={favoriteRevalidatePath}
               onTemplateDeleted={() => {
                 setTemplateModalOpen(false);
                 router.refresh();
               }}
               onChange={async (id) => {
-                const resolvedId = id === null ? (templates[0]?.id ?? null) : id;
+                const resolvedId = id === null ? (firstTemplate?.id ?? null) : id;
                 setApplyingTemplate(true);
                 await new Promise((r) => setTimeout(r, 0));
                 if (resolvedId) {
