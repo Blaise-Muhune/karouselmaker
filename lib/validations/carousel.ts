@@ -35,8 +35,6 @@ export const generateCarouselInputSchema = z.object({
   /** @deprecated Always treated as false. */
   use_ai_generate: checkboxBoolSchema,
   use_web_search: checkboxBoolSchema,
-  /** Fast is the normal creator workflow: one writing pass without automatic web research. */
-  generation_speed: z.enum(["fast", "quality"]).optional(),
   use_saved_ugc_character: checkboxBoolSchema,
   images_related_to_topic: z
     .union([z.literal("true"), z.literal("false"), z.literal(true), z.literal(false), z.literal("on")])

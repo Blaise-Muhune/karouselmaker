@@ -56,7 +56,7 @@ export async function POST(
 
   LOG("mark generation_started");
   await updateCarousel(userId, carouselId, {
-    generation_options: { ...opts, generation_started: true, generation_phase: "writing" },
+    generation_options: { ...opts, generation_started: true },
   });
 
   const formData = new FormData();

@@ -208,7 +208,6 @@ const chromeChipStyleFieldsSchema = z.object({
 });
 
 export const textZoneOverrideSchema = z.object({
-  enabled: z.boolean().optional(),
   x: z.number().int().min(0).max(1080).optional(),
   y: z.number().int().min(0).max(1080).optional(),
   w: z.number().int().min(1).max(1080).optional(),

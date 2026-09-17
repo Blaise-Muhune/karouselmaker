@@ -1,20 +1,20 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getUser } from "@/lib/server/auth/getUser";
-import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { getSubscription, getEffectivePlanLimits } from "@/lib/server/subscription";
 import {
   getProject,
   getCarousel,
-  getLatestCarouselWithImageSettings,
   countCarouselsThisMonth,
   countCarouselsLifetime,
-  listTemplatesForUser,
   listTemplateBundlesForUser,
+  listTemplatesForUser,
   listFavoriteTemplateIds,
   getDefaultTemplateForNewCarousel,
 } from "@/lib/server/db";
+import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
+import { resolveTemplatePreviewImageUrls } from "@/lib/server/templates/resolveTemplatePreviewImageUrls";
 import { CAROUSEL_SLIDES_MAX, CAROUSEL_SLIDES_MIN, FREE_FULL_ACCESS_GENERATIONS } from "@/lib/constants";
 import { NewCarouselForm } from "./NewCarouselForm";
 import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
@@ -37,7 +37,6 @@ export default async function NewCarouselPage({
   }>;
 }>) {
   const { user } = await getUser();
-  const userIsAdmin = isAdmin(user.email);
   const { projectId } = await params;
   const sp = await searchParams;
   const regenerateCarouselIdRaw = sp.regenerate;
@@ -54,7 +53,7 @@ export default async function NewCarouselPage({
   const fromCarouselId =
     typeof fromRaw === "string" ? fromRaw.trim() : Array.isArray(fromRaw) ? fromRaw[0]?.trim() ?? "" : "";
 
-  const [project, subscription, limits, carouselCount, lifetimeCarouselCount, regenerateCarousel, templatesRaw, bundlesRaw, defaultTemplate, favoriteIds, latestImageSettingsCarousel] =
+  const [project, subscription, limits, carouselCount, lifetimeCarouselCount, regenerateCarousel, templatesRaw, templateBundlesRaw, defaultTemplate, favoriteIds] =
     await Promise.all([
       getProject(user.id, projectId),
       getSubscription(user.id, user.email),
@@ -62,47 +61,47 @@ export default async function NewCarouselPage({
       countCarouselsThisMonth(user.id),
       countCarouselsLifetime(user.id),
       regenerateCarouselId ? getCarousel(user.id, regenerateCarouselId) : Promise.resolve(null),
-      listTemplatesForUser(user.id, { includeSystem: true, includeHidden: userIsAdmin }),
-      listTemplateBundlesForUser(user.id, { includeSystem: true, includeHidden: userIsAdmin }),
+      listTemplatesForUser(user.id, { includeSystem: true }),
+      listTemplateBundlesForUser(user.id, { includeSystem: true }),
       getDefaultTemplateForNewCarousel(user.id),
       listFavoriteTemplateIds(user.id),
-      getLatestCarouselWithImageSettings(user.id),
     ]);
 
   if (!project) notFound();
   if (regenerateCarouselId && (!regenerateCarousel || regenerateCarousel.project_id !== projectId)) notFound();
 
   const favoriteIdSet = new Set(favoriteIds);
-  const templateOptions: TemplateOption[] = [];
-  for (const t of templatesRaw) {
+  const parsedTemplates = templatesRaw.flatMap((t) => {
     const parsed = templateConfigSchema.safeParse(t.config);
-    if (parsed.success) {
-      templateOptions.push({
-        id: t.id,
-        name: t.name,
-        parsedConfig: parsed.data,
-        category: t.category,
-        isSystemTemplate: t.user_id == null,
-        isFavorite: favoriteIdSet.has(t.id),
-        isHidden: t.is_hidden === true,
-      });
-    }
-  }
+    return parsed.success ? [{ template: t, config: parsed.data }] : [];
+  });
+  const resolvedPreviewUrls = await Promise.all(
+    parsedTemplates.map(({ config }) => resolveTemplatePreviewImageUrls(user.id, config))
+  );
+  const templateOptions: TemplateOption[] = parsedTemplates.map(({ template: t, config }, index) => ({
+    id: t.id,
+    name: t.name,
+    parsedConfig: config,
+    category: t.category,
+    isSystemTemplate: t.user_id == null,
+    isFavorite: favoriteIdSet.has(t.id),
+    previewImageUrls: resolvedPreviewUrls[index],
+  }));
   const defaultTemplateId = defaultTemplate?.templateId ?? null;
-  const availableTemplateIds = new Set(templateOptions.map((template) => template.id));
-  const templateBundles: TemplateBundleOption[] = bundlesRaw
-    .filter((bundle) => bundle.template_ids.every((templateId) => availableTemplateIds.has(templateId)))
-    .map((bundle) => ({
-      id: bundle.id,
-      name: bundle.name,
-      templateIds: bundle.template_ids,
-      isSystemBundle: bundle.user_id == null,
-      isHidden: bundle.is_hidden,
-    }));
   const defaultTemplateConfig =
     defaultTemplateId != null
       ? templateOptions.find((o) => o.id === defaultTemplateId)?.parsedConfig ?? null
       : templateOptions[0]?.parsedConfig ?? null;
+  const templateIds = new Set(templateOptions.map((template) => template.id));
+  const templateBundles: TemplateBundleOption[] = templateBundlesRaw
+    .filter((bundle) => bundle.template_ids.every((templateId) => templateIds.has(templateId)))
+    .map((bundle) => ({
+      id: bundle.id,
+      name: bundle.name,
+      templateIds: bundle.template_ids,
+      isSystemBundle: bundle.user_id === null,
+      isHidden: bundle.is_hidden,
+    }));
 
   let carrySettingsCarousel: Awaited<ReturnType<typeof getCarousel>> = null;
   if (!regenerateCarouselId && fromCarouselId) {
@@ -111,8 +110,6 @@ export default async function NewCarouselPage({
   }
 
   const settingsSourceCarousel = regenerateCarousel ?? carrySettingsCarousel;
-  /** A new post inherits only the user's last image choice; templates and notes remain project-specific. */
-  const imageSettingsSourceCarousel = settingsSourceCarousel ?? latestImageSettingsCarousel;
   type GenOpts = {
     use_stock_photos?: boolean;
     notes?: string;
@@ -123,15 +120,14 @@ export default async function NewCarouselPage({
     use_ai_backgrounds?: boolean;
   };
   const genOpts = (settingsSourceCarousel?.generation_options ?? undefined) as GenOpts | undefined;
-  const imageGenOpts = (imageSettingsSourceCarousel?.generation_options ?? undefined) as GenOpts | undefined;
   const initialUseStockPhotosFromOpts =
-    imageGenOpts == null ? undefined : imageGenOpts.use_stock_photos;
+    genOpts == null ? undefined : genOpts.use_stock_photos;
   const templateIdFromOpts = typeof genOpts?.template_id === "string" ? genOpts.template_id.trim() : "";
   const templateIdsFromOpts = Array.isArray(genOpts?.template_ids)
-    ? (genOpts.template_ids as unknown[]).filter((id): id is string => typeof id === "string" && availableTemplateIds.has(id)).slice(0, 3)
-    : undefined;
-  const backgroundIdsFromOpts = Array.isArray(imageGenOpts?.background_asset_ids)
-    ? (imageGenOpts!.background_asset_ids as unknown[]).filter((id): id is string => typeof id === "string" && id.length > 0)
+    ? (genOpts.template_ids as unknown[]).filter((id): id is string => typeof id === "string" && templateIds.has(id))
+    : [];
+  const backgroundIdsFromOpts = Array.isArray(genOpts?.background_asset_ids)
+    ? (genOpts!.background_asset_ids as unknown[]).filter((id): id is string => typeof id === "string" && id.length > 0)
     : undefined;
   const rawNumSlides = genOpts?.number_of_slides;
   const parsedNumSlides =
@@ -195,21 +191,19 @@ export default async function NewCarouselPage({
           carouselLimit={carouselLimit}
           regenerateCarouselId={regenerateCarousel?.id}
           initialSettingsCarriedFromCarousel={!!carrySettingsCarousel && !regenerateCarousel}
-          initialSelectedTemplateId={templateIdFromOpts || undefined}
-          initialSelectedTemplateIds={templateIdsFromOpts}
+          initialSelectedTemplateIds={templateIdsFromOpts.length > 0 ? templateIdsFromOpts : templateIdFromOpts || undefined}
           initialBackgroundAssetIds={backgroundIdsFromOpts}
           initialNumberOfSlides={initialNumberOfSlides}
           initialInputValue={regenerateCarousel?.input_value ?? (topicPrefill || undefined)}
-          initialUseAiBackgrounds={imageSettingsSourceCarousel?.generation_options?.use_ai_backgrounds}
+          initialUseAiBackgrounds={settingsSourceCarousel?.generation_options?.use_ai_backgrounds}
           initialUseStockPhotos={initialUseStockPhotosFromOpts}
-          initialImageSettingsRemembered={!settingsSourceCarousel && !!latestImageSettingsCarousel}
           initialNotes={regenerateCarousel ? genOpts?.notes : carrySettingsCarousel ? "" : undefined}
           templateOptions={templateOptions}
           templateBundles={templateBundles}
+          isAdmin={isAdmin(user.email)}
           defaultTemplateId={defaultTemplateId}
           defaultTemplateConfig={defaultTemplateConfig}
           primaryColor={primaryColor}
-          isAdmin={userIsAdmin}
         />
       </div>
     </div>

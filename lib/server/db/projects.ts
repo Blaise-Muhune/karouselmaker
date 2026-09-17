@@ -3,14 +3,6 @@
 import { query, queryMany, queryOne } from "./pg";
 import type { Project, ProjectInsert, ProjectUpdate } from "./types";
 
-export type WorkspaceProject = Project & {
-  carousel_count: number;
-  latest_carousel_id: string | null;
-  latest_carousel_title: string | null;
-  latest_carousel_status: string | null;
-  latest_carousel_updated_at: string | null;
-};
-
 export async function countProjects(userId: string): Promise<number> {
   const row = await queryOne<{ count: string }>(
     `select count(*)::text as count from projects where user_id = $1`,
@@ -35,40 +27,6 @@ export async function listProjects(
   return queryMany<Project>(
     `select * from projects where user_id = $1 order by updated_at desc`,
     [userId]
-  );
-}
-
-/** Projects enriched for the creator workspace without N+1 carousel queries. */
-export async function listWorkspaceProjects(
-  userId: string,
-  options?: { limit?: number; offset?: number }
-): Promise<WorkspaceProject[]> {
-  const limit = options?.limit ?? 15;
-  const offset = options?.offset ?? 0;
-  return queryMany<WorkspaceProject>(
-    `select p.*,
-       coalesce(stats.carousel_count, 0)::int as carousel_count,
-       latest.id as latest_carousel_id,
-       latest.title as latest_carousel_title,
-       latest.status as latest_carousel_status,
-       latest.updated_at as latest_carousel_updated_at
-     from projects p
-     left join lateral (
-       select count(*)::int as carousel_count
-       from carousels c
-       where c.project_id = p.id
-     ) stats on true
-     left join lateral (
-       select c.id, c.title, c.status, c.updated_at
-       from carousels c
-       where c.project_id = p.id
-       order by c.updated_at desc, c.created_at desc
-       limit 1
-     ) latest on true
-     where p.user_id = $1
-     order by coalesce(latest.updated_at, p.updated_at) desc, p.created_at desc
-     limit $2 offset $3`,
-    [userId, limit, offset]
   );
 }
 

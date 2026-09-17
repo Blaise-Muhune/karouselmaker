@@ -55,7 +55,6 @@ export function GenerateNextPostButton({
       formData.set("input_type", "topic");
       formData.set("input_value", topic);
       formData.set("carousel_for", "instagram");
-      formData.set("generation_speed", "fast");
       formData.set("use_ai_backgrounds", "true");
       formData.set("use_stock_photos", "true");
       formData.set("images_related_to_topic", "true");

@@ -7,6 +7,7 @@ import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { resolveBrandKitLogo } from "@/lib/server/brandKit";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
 import { httpsDisplayImageUrl } from "@/lib/server/storage/signedUrlUtils";
+import { resolveTemplatePreviewImageUrls } from "@/lib/server/templates/resolveTemplatePreviewImageUrls";
 import { SlideEditForm, type TemplateWithConfig } from "@/components/editor/SlideEditForm";
 import { isAiGeneratedSlideStoragePath } from "@/lib/server/slides/regenerateSlideAiBackground";
 import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
@@ -36,7 +37,6 @@ export default async function EditSlidePage({
   searchParams: Promise<{ tab?: string }>;
 }>) {
   const { user } = await getUser();
-  const userIsAdmin = isAdmin(user.email);
   const { projectId, carouselId, slideId } = await params;
   const { tab: tabParam } = await searchParams;
   const initialTab = parseTab(tabParam ?? null);
@@ -52,8 +52,7 @@ export default async function EditSlidePage({
     getCarousel(user.id, carouselId),
     getProject(user.id, projectId),
     listSlides(user.id, carouselId),
-    // Include hidden configs so this slide stays renderable; the picker filters them for non-admins.
-    listTemplatesForUser(user.id, { includeSystem: true, includeHidden: true }),
+    listTemplatesForUser(user.id, { includeSystem: true }),
     listFavoriteTemplateIds(user.id),
   ]);
 
@@ -67,12 +66,19 @@ export default async function EditSlidePage({
   if (!project) notFound();
 
   const favoriteIdSet = new Set(favoriteIds);
-  const templates: TemplateWithConfig[] = [];
-  for (const t of templatesRaw) {
+  const parsedTemplates = templatesRaw.flatMap((t) => {
     const parsed = templateConfigSchema.safeParse(t.config);
-    if (!parsed.success) continue;
-    templates.push({ ...t, parsedConfig: parsed.data, isFavorite: favoriteIdSet.has(t.id) });
-  }
+    return parsed.success ? [{ template: t, config: parsed.data }] : [];
+  });
+  const templatePreviewUrls = await Promise.all(
+    parsedTemplates.map(({ config }) => resolveTemplatePreviewImageUrls(user.id, config))
+  );
+  const templates: TemplateWithConfig[] = parsedTemplates.map(({ template: t, config }, index) => ({
+    ...t,
+    parsedConfig: config,
+    isFavorite: favoriteIdSet.has(t.id),
+    previewImageUrls: templatePreviewUrls[index],
+  }));
 
   const brandKit: BrandKit = await resolveBrandKitLogo(project.brand_kit as Record<string, unknown> | null);
   const backHref = `/p/${projectId}/c/${carouselId}`;
@@ -235,7 +241,7 @@ export default async function EditSlidePage({
           initialImageSources={initialImageSources}
           initialSecondaryBackgroundImageUrl={initialSecondaryBackgroundImageUrl}
           initialMadeWithText={defaultMadeWithSuffix}
-          isAdmin={userIsAdmin}
+          isAdmin={isAdmin(user.email)}
           allowRegenerateAiBackground={allowRegenerateAiBackground}
         />
       </div>

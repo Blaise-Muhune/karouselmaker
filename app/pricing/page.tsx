@@ -27,11 +27,11 @@ const sans = Manrope({
 export const metadata: Metadata = {
   title: "Pricing",
   description:
-    "Karouselmaker pricing for value-first Instagram and TikTok carousels that organically promote your product or service. Start with three complete post packs.",
+    "Karouselmaker plans for organic Instagram & TikTok carousel marketing. Try three posts free, then choose Creator or Growth. Monthly pricing in USD.",
   openGraph: {
     title: "Pricing | Karouselmaker",
     description:
-      "Start with three complete carousel post packs, then choose a plan for your publishing rhythm.",
+      "Three free posts, then Creator or Growth for organic IG & TikTok carousel marketing.",
   },
   alternates: { canonical: "/pricing" },
 };

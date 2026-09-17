@@ -6,9 +6,9 @@ describe("templateForSlide", () => {
     expect([1, 2, 3, 4].map((i) => templateForSlide(["all"], i, 4))).toEqual(["all", "all", "all", "all"]);
   });
 
-  it("uses two templates for first/last and middle slides", () => {
+  it("uses two templates for the first slide and the remaining slides", () => {
     expect([1, 2, 3, 4, 5].map((i) => templateForSlide(["edge", "middle"], i, 5))).toEqual([
-      "edge", "middle", "middle", "middle", "edge",
+      "edge", "middle", "middle", "middle", "middle",
     ]);
   });
 

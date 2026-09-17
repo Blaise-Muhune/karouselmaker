@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "Karouselmaker",
     short_name: "Karousel",
     description:
-      "Create value-first Instagram and TikTok carousels that organically promote your product or service.",
+      "Organic Instagram & TikTok carousels that market your product—without sounding like ads.",
     start_url: "/",
     display: "standalone",
     orientation: "portrait-primary",

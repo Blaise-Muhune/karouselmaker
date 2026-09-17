@@ -98,16 +98,21 @@ export function EditorCaptionSection({
 
   return (
     <>
-      <section className="rounded-xl border border-border/70 bg-card/50 px-4 py-3">
+      <section>
         <div className="flex items-center justify-between gap-4">
-          <details className="group min-w-0 flex-1">
-            <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium text-foreground marker:content-none">
-              Caption & hashtags
-              <span className="truncate text-xs font-normal text-muted-foreground">
-                {captionWithHashtags ? "Ready to copy" : captionHydrating ? "Finishing…" : "Not ready yet"}
-              </span>
-            </summary>
-            <div className="mt-3 space-y-4">
+          <p className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
+            Caption & hashtags
+          </p>
+          <Button variant="ghost" size="sm" className="text-muted-foreground -mr-1 h-8" onClick={() => setEditOpen(true)} disabled={disabled}>
+            Edit
+          </Button>
+        </div>
+        <div className="mt-3 space-y-4">
+          {!isLinkedIn && (
+            <p className="text-muted-foreground text-sm rounded-md border border-border bg-muted/40 px-3 py-2">
+              Copy caption + hashtags when you post this carousel on Instagram or TikTok.
+            </p>
+          )}
           {isLinkedIn && (
             <p className="text-muted-foreground text-sm rounded-md border border-border bg-muted/40 px-3 py-2">
               <strong className="text-foreground">LinkedIn:</strong> Paste the document carousel first, then this caption. The{" "}
@@ -226,11 +231,6 @@ export function EditorCaptionSection({
               </Button>
             </div>
           )}
-            </div>
-          </details>
-          <Button variant="ghost" size="sm" className="text-muted-foreground -mr-1 h-8 shrink-0" onClick={() => setEditOpen(true)} disabled={disabled}>
-            Edit
-          </Button>
         </div>
       </section>
 

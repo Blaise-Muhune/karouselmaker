@@ -26,23 +26,23 @@ const sans = Manrope({
 
 const STEPS = [
   {
-    title: "Set up the project",
-    body: "One workspace keeps your niche, offer, brand context, and every generated carousel together.",
+    title: "Lock the brief",
+    body: "One project holds niche, offer, and tone—the marketing context for every post.",
   },
   {
-    title: "Generate the post",
-    body: "Create the title, problem-first slide arc, caption, and hashtags from one focused topic.",
+    title: "Generate the arc",
+    body: "Problem-first slides that earn the swipe, then soft-bridge to what you sell.",
   },
   {
-    title: "Refine and publish",
-    body: "Pick a template collection, adjust a slide if needed, and download a ready-to-upload ZIP with copy ready to paste.",
+    title: "Export and post",
+    body: "Tweak copy or photo if needed. Download a ZIP + captions for Instagram or TikTok.",
   },
 ] as const;
 
 const FAQS = [
   {
     q: "Is this a design tool?",
-    a: "It is a focused carousel publishing workspace. AI creates the content; template collections keep the design polished while you make only the edits that matter.",
+    a: "No. It’s a marketing system for organic Instagram and TikTok carousels. Templates handle layout so you stay on message—not dragging boxes.",
   },
   {
     q: "What does organic mean here?",
@@ -50,7 +50,7 @@ const FAQS = [
   },
   {
     q: "Instagram and TikTok?",
-    a: "Yes. Generate one post, choose its placement, then download slides in posting order with the title, caption, and hashtags ready to copy.",
+    a: "Yes. Export the sizes and captions you need, then post on either platform.",
   },
   {
     q: "What’s free?",
@@ -84,10 +84,10 @@ export default async function Home() {
             Karouselmaker
           </h1>
           <p className="mt-6 max-w-[22ch] font-[family-name:var(--font-landing-display)] text-[clamp(1.5rem,3.5vw,2.25rem)] leading-[1.2] tracking-tight text-foreground/90 animate-in fade-in slide-in-from-bottom-2 duration-700 motion-reduce:animate-none sm:max-w-xl">
-            Organically promote your product or service with Instagram & TikTok carousels that do not feel like ads.
+            Organic Instagram & TikTok carousels that market your product—without sounding like ads.
           </p>
           <p className="mt-5 max-w-md text-[15px] leading-relaxed text-muted-foreground sm:text-base animate-in fade-in duration-700 delay-100 motion-reduce:animate-none">
-            Lead with real value. Earn the swipe. Soft-sell what you offer when it fits.
+            Niche + offer in. Problem-first swipe content out. Soft-sell while people discover you.
           </p>
           <div className="mt-8 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center animate-in fade-in duration-700 delay-150 motion-reduce:animate-none">
             <Button size="lg" className="h-11 gap-2 px-6 text-[15px]" asChild>
@@ -120,12 +120,13 @@ export default async function Home() {
         <div className="grid gap-10 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] lg:gap-16 lg:items-end">
           <div>
             <h2 className="font-[family-name:var(--font-landing-display)] text-3xl leading-[1.15] tracking-tight text-foreground sm:text-4xl md:text-[2.75rem]">
-              Carousels grow accounts. Value-first posts grow the business.
+              Carousels grow accounts. Random tips don’t grow the business.
             </h2>
           </div>
           <p className="text-[15px] leading-[1.7] text-muted-foreground sm:text-base">
-            Your audience is not looking for another ad. Start with a real problem, useful insight, or practical
-            takeaway. Karouselmaker helps you turn that value into a carousel that naturally connects back to what you sell.
+            If you have something to sell, Instagram and TikTok carousels are high-leverage—when every post teaches,
+            relates, and eventually points to the offer. Most people either go quiet, or ship pretty slides that never
+            mention what they sell. Hard opens get scrolled past. Inconsistent posting kills momentum.
           </p>
         </div>
       </section>
@@ -156,21 +157,21 @@ export default async function Home() {
       <section className="scroll-reveal [content-visibility:auto] mx-auto w-full max-w-6xl px-4 py-20 sm:px-6 sm:py-28 motion-reduce:animate-none">
         <div className="max-w-2xl">
           <h2 className="font-[family-name:var(--font-landing-display)] text-3xl tracking-tight text-foreground sm:text-4xl">
-            Built to promote through content—not like an ad
+            Built to market through content—not to be another design studio
           </h2>
           <ul className="mt-10 space-y-6 border-t border-border/60 pt-8">
             {[
               {
-                title: "Organic promotion",
-                body: "Lead with the audience’s pain, question, or desire. Give them a reason to keep swiping before you introduce your product or service.",
+                title: "Organic product marketing",
+                body: "Lead with the audience’s pain or desire, then soft-bridge to what you sell—for first-time viewers, not only existing fans.",
               },
               {
                 title: "One project = one niche account",
-                body: "Niche, product or service, and tone stay locked. New posts stay relevant and avoid repeating what you already shipped.",
+                body: "Niche, product, and tone stay locked. New posts stay on-brand and avoid repeating what you already shipped.",
               },
               {
-                title: "Ready for IG & TikTok",
-                body: "Generate a clear title, hook → value → CTA slides, a caption, and hashtags. Export a ZIP sized for the feed you are posting to.",
+                title: "Swipe-ready for IG & TikTok",
+                body: "Hook → value → soft CTA, sized for feed. Export ZIP and captions—post where carousels win.",
               },
             ].map((item) => (
               <li key={item.title} className="grid gap-1 sm:grid-cols-[minmax(0,11rem)_1fr] sm:gap-8">
@@ -204,10 +205,10 @@ export default async function Home() {
         <div className="mx-auto flex max-w-6xl flex-col items-start gap-6 px-4 py-20 sm:flex-row sm:items-end sm:justify-between sm:px-6 sm:py-24">
           <div className="max-w-lg">
             <h2 className="font-[family-name:var(--font-landing-display)] text-3xl tracking-tight text-foreground sm:text-4xl">
-              Create the next carousel today
+              Ship the next organic carousel today
             </h2>
             <p className="mt-3 text-sm leading-relaxed text-muted-foreground sm:text-[15px]">
-              Set up the project. Generate. Refine. Download slides and copy for Instagram or TikTok.
+              Set the niche and offer. Generate. Export. Post on Instagram or TikTok.
             </p>
           </div>
           <Button size="lg" className="h-11 shrink-0 gap-2 px-6" asChild>

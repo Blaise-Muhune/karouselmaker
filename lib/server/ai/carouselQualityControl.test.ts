@@ -75,40 +75,6 @@ describe("runHardCarouselCopyChecks", () => {
 });
 
 describe("applyTemplateLengthFit", () => {
-  it.each([2, 3])("uses %s template slots independently, including alternates", (count) => {
-    const draft = carousel([1, 2, 3, 4].map((i) => ({
-      ...slide(i, `Headline ${i}`, `Complete body idea ${i}`),
-      shorten_alternates: [{ headline: "Alternate", body: "Alternate body" }],
-    })));
-    const headlineOnly = { hasHeadline: true, hasBody: false, headlineMaxChars: 120, bodyMaxChars: 0 };
-    const bodyOnly = { hasHeadline: false, hasBody: true, headlineMaxChars: 0, bodyMaxChars: 400 };
-    const both = { ...headlineOnly, hasBody: true, bodyMaxChars: 400 };
-    const out = applyTemplateLengthFit(draft, [headlineOnly, bodyOnly, ...(count === 3 ? [both] : [])]);
-    expect(out.issues).toEqual([]);
-    expect(out.carousel.slides[0]).toMatchObject({ headline: "Headline 1", body: "" });
-    for (const s of out.carousel.slides.slice(1, 3)) {
-      expect(s.headline).toBe("");
-      expect(s.body).toContain("Complete body idea");
-      expect(s.shorten_alternates?.[0]).toMatchObject({ headline: "", body: "Alternate body" });
-    }
-    expect(out.carousel.slides[3]?.body).toBe(count === 3 ? "Complete body idea 4" : "");
-  });
-
-  it("keeps a body-only hook empty in headline while retaining the carousel title", () => {
-    const out = applyTemplateLengthFit(carousel([slide(1, "Hidden headline", "Complete hook", "hook")]), {
-      hasHeadline: false, hasBody: true, headlineMaxChars: 0, bodyMaxChars: 400,
-    });
-    expect(out.carousel.title).toBe("Test");
-    expect(out.carousel.slides[0]).toMatchObject({ headline: "", body: "Complete hook" });
-  });
-
-  it("requests a rewrite when a body-only slide has no visible idea", () => {
-    const out = applyTemplateLengthFit(carousel([slide(1, "Idea in wrong field", "", "hook")]), {
-      hasHeadline: false, hasBody: true, headlineMaxChars: 0, bodyMaxChars: 400,
-    });
-    expect(out.issues.some((issue) => issue.code === "missing_visible_text")).toBe(true);
-  });
-
   it("prefers short alternate when headline overflows", () => {
     const out = applyTemplateLengthFit(
       {

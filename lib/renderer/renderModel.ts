@@ -168,7 +168,6 @@ export function normalizeZoneOverrideSingle(
 ): Partial<TextZone> | undefined {
   if (!raw || typeof raw !== "object") return undefined;
   const out: Record<string, unknown> = {};
-  if (typeof raw.enabled === "boolean") out.enabled = raw.enabled;
   for (const key of ZONE_NUMERIC_KEYS) {
     const v = raw[key];
     if (v === null || v === undefined) continue;
@@ -323,7 +322,6 @@ export function buildSlideRenderModel(
   for (const zone of templateConfig.textZones) {
     const overrides = zoneOverrides?.[zone.id as "headline" | "body"];
     const mergedZone = overrides ? { ...zone, ...overrides } : zone;
-    if (mergedZone.enabled === false) continue;
     // Preserve template align when override omits it so preview and export match
     if (mergedZone.align === undefined) {
       mergedZone.align = ((zone as { align?: string }).align ?? "left") as "left" | "center" | "right" | "justify";

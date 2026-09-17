@@ -115,26 +115,6 @@ export async function listCarousels(
 }
 
 /**
- * The newest carousel with saved image settings. New-post forms use this to
- * keep a creator's last image choice (stock or selected library images) across
- * projects and devices.
- */
-export async function getLatestCarouselWithImageSettings(userId: string): Promise<Carousel | null> {
-  return queryOne<Carousel>(
-    `select * from carousels
-     where user_id = $1
-       and generation_options is not null
-       and (
-         generation_options ? 'use_stock_photos'
-         or generation_options ? 'background_asset_ids'
-       )
-     order by updated_at desc, created_at desc
-     limit 1`,
-    [userId]
-  );
-}
-
-/**
  * Deep copy: new carousel row + cloned slides (new IDs). Strips in-flight generation flags.
  * Does not copy exports.
  */

@@ -5,13 +5,12 @@ import type { Template, TemplateInsert } from "./types";
 
 export async function listTemplatesForUser(
   userId: string,
-  options: { includeSystem?: boolean; includeHidden?: boolean } = {}
+  options: { includeSystem?: boolean } = {}
 ): Promise<Template[]> {
   if (options.includeSystem) {
-    const hiddenFilter = options.includeHidden ? "" : " and coalesce(is_hidden, false) = false";
     return queryMany<Template>(
       `select * from templates
-       where user_id = $1 or (user_id is null${hiddenFilter})
+       where user_id = $1 or user_id is null
        order by name asc`,
       [userId]
     );
@@ -78,7 +77,6 @@ export async function listFavoriteTemplatesForUser(userId: string): Promise<Temp
      join templates t on t.id = f.template_id
      where f.user_id = $1
        and (t.user_id = $1 or t.user_id is null)
-       and coalesce(t.is_hidden, false) = false
      order by f.created_at desc`,
     [userId]
   );
@@ -111,23 +109,6 @@ export async function getTemplate(
      where id = $1 and (user_id = $2 or user_id is null)`,
     [templateId, userId]
   );
-}
-
-/** Admin-only catalog setting. A hidden template remains attached to existing slides. */
-export async function setTemplateHidden(
-  templateId: string,
-  isHidden: boolean
-): Promise<{ ok: boolean; error?: string }> {
-  try {
-    const res = await query(
-      `update templates set is_hidden = $2, updated_at = now() where id = $1 and user_id is null`,
-      [templateId, isHidden]
-    );
-    if (res.rowCount === 0) return { ok: false, error: "Template not found" };
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Update failed" };
-  }
 }
 
 /**
@@ -342,4 +323,18 @@ export async function deleteTemplateAsAdmin(
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Delete failed" };
   }
+}
+
+/** Admin-only callers use this to hide or restore a system template in the picker. */
+export async function setTemplateHidden(
+  templateId: string,
+  isHidden: boolean
+): Promise<{ ok: boolean; error?: string }> {
+  const result = await query(
+    `update templates set is_hidden = $2, updated_at = now() where id = $1`,
+    [templateId, isHidden]
+  );
+  return (result.rowCount ?? 0) > 0
+    ? { ok: true }
+    : { ok: false, error: "Template not found" };
 }

@@ -1,7 +1,6 @@
 import { z } from "zod";
 import type { CarouselOutput } from "@/lib/server/ai/carouselSchema";
 import { clampOrganicMarketingProgress } from "@/lib/organicMarketingProgress";
-import { templateForSlide } from "@/lib/templates/templateSlot";
 
 export type HardQcIssue = {
   code: string;
@@ -188,18 +187,14 @@ export function runHardCarouselCopyChecks(
  */
 export function applyTemplateLengthFit(
   carousel: CarouselOutput,
-  templateLimits: TemplateCharLimits | readonly TemplateCharLimits[] | null | undefined
+  limits: TemplateCharLimits | null | undefined
 ): { carousel: CarouselOutput; issues: HardQcIssue[] } {
-  if (!templateLimits) return { carousel, issues: [] };
+  if (!limits) return { carousel, issues: [] };
+  const headlineMax = Math.max(8, limits.headlineMaxChars || 0);
+  const bodyMax = Math.max(0, limits.bodyMaxChars || 0);
   const issues: HardQcIssue[] = [];
 
-  const slots: readonly TemplateCharLimits[] = Array.isArray(templateLimits)
-    ? templateLimits : [templateLimits as TemplateCharLimits];
-  const slides = carousel.slides.map((s, index) => {
-    const limits = templateForSlide(slots, index + 1, carousel.slides.length);
-    if (!limits) return s;
-    const headlineMax = Math.max(8, limits.headlineMaxChars || 0);
-    const bodyMax = Math.max(0, limits.bodyMaxChars || 0);
+  const slides = carousel.slides.map((s) => {
     let headline = s.headline ?? "";
     let body = s.body ?? "";
     let changed = false;
@@ -258,26 +253,7 @@ export function applyTemplateLengthFit(
       changed = true;
     }
 
-    if ((limits.hasHeadline && !headline.trim()) || (limits.hasBody && !body.trim() && !limits.hasHeadline)) {
-      issues.push({
-        code: "missing_visible_text",
-        message: `Slide ${s.slide_index} must express its idea in its enabled ${limits.hasHeadline ? "headline" : "body"} field. Rewrite the idea for that field; hidden fields must stay empty.`,
-        slide_index: s.slide_index,
-      });
-    }
-    return {
-      ...s,
-      ...(changed ? { headline, body } : {}),
-      ...(!limits.hasHeadline ? { headline: "", headline_highlight_words: [] } : {}),
-      ...(!limits.hasBody ? { body: "", body_highlight_words: [] } : {}),
-      ...(s.shorten_alternates ? {
-        shorten_alternates: s.shorten_alternates.map((alt) => ({
-          ...alt,
-          ...(!limits.hasHeadline ? { headline: "", headline_highlight_words: [] } : {}),
-          ...(!limits.hasBody ? { body: "", body_highlight_words: [] } : {}),
-        })),
-      } : {}),
-    };
+    return changed ? { ...s, headline, body } : s;
   });
 
   return { carousel: { ...carousel, slides }, issues };
@@ -355,9 +331,7 @@ Rubric (total /10):
 - Useful and satisfying payoff: /2
 - Strength and relevance of CTA: /1
 
-For educational, career, decision, or advice posts, also require: a clear decision criterion, concrete examples matched to a situation, one meaningful caveat or proof step, and a practical next action. Do not pass generic advice that could apply to any niche.
-
-Auto-fail (list in fails, set pass=false) if: generic brand-agnostic copy; slide 1 needs prior context; middle slides repeat; product pitched too early; empty "Follow for more" CTA; payoff weaker than hook; format/UI words; invented stats vibe; advice without a concrete criterion, example, caveat, or proof step when the topic is a decision.
+Auto-fail (list in fails, set pass=false) if: generic brand-agnostic copy; slide 1 needs prior context; middle slides repeat; product pitched too early; empty "Follow for more" CTA; payoff weaker than hook; format/UI words; invented stats vibe.
 
 Marketing mode for this post: ${input.includeMarketing ? "ON (soft-sell allowed late only)" : "OFF (no product pitch)"}.
 
@@ -387,7 +361,6 @@ export function buildQcRewritePrompts(input: {
   judge: QcJudgeResult;
   includeMarketing: boolean;
   templateLimits?: TemplateCharLimits | null;
-  templateContext?: string;
   openLoop?: string | null;
 }): { system: string; user: string } {
   const hard =
@@ -396,9 +369,9 @@ export function buildQcRewritePrompts(input: {
       : "- (none)";
   const fails =
     input.judge.fails.length > 0 ? input.judge.fails.map((f) => `- ${f}`).join("\n") : "- (none)";
-  const limits = input.templateContext || (input.templateLimits
+  const limits = input.templateLimits
     ? `Headline max ~${input.templateLimits.hasHeadline ? input.templateLimits.headlineMaxChars : 0} chars; body max ~${input.templateLimits.hasBody ? input.templateLimits.bodyMaxChars : 0} chars.`
-    : "Respect prior template limits if present in the draft.");
+    : "Respect prior template limits if present in the draft.";
 
   const system = `You rewrite Instagram/TikTok carousel JSON to fix quality failures.
 Return the FULL corrected carousel JSON only (same schema as input). No markdown.

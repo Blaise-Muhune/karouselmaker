@@ -7,14 +7,10 @@ const base = {
   input_value: "How creators turn one useful idea into a carousel",
 };
 
-describe("carousel generation speed", () => {
-  it("accepts fast and quality profiles while keeping the default compatible", () => {
-    expect(generateCarouselInputSchema.parse(base).generation_speed).toBeUndefined();
-    expect(generateCarouselInputSchema.parse({ ...base, generation_speed: "fast" }).generation_speed).toBe("fast");
-    expect(generateCarouselInputSchema.parse({ ...base, generation_speed: "quality" }).generation_speed).toBe("quality");
-  });
-
-  it("rejects unknown generation profiles", () => {
-    expect(() => generateCarouselInputSchema.parse({ ...base, generation_speed: "slow" })).toThrow();
+describe("carousel generation input", () => {
+  it("ignores retired speed hints while keeping the default compatible", () => {
+    const parsedBase = generateCarouselInputSchema.parse(base);
+    expect(generateCarouselInputSchema.parse({ ...base, generation_speed: "fast" })).toEqual(parsedBase);
+    expect(generateCarouselInputSchema.parse({ ...base, generation_speed: "quality" })).toEqual(parsedBase);
   });
 });

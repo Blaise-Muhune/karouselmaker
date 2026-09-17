@@ -25,7 +25,6 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
 import type { Project } from "@/lib/server/db/types";
 import { LogoutButtonWithOverlay } from "@/components/auth/LogoutButtonWithOverlay";
-import { WeeklyCreatorNotePreference } from "@/components/email/WeeklyCreatorNotePreference";
 import { ChevronDownIcon, CreditCardIcon, Gem, Loader2Icon, MenuIcon, PlusCircleIcon, ShieldIcon, UserIcon } from "lucide-react";
 import { ADMIN_EMAILS } from "@/lib/server/auth/isAdmin";
 
@@ -290,7 +289,6 @@ export function AppShell({
                     <ManageSubscriptionButton />
                   </DropdownMenuItem>
                 )}
-                <WeeklyCreatorNotePreference />
                 <DropdownMenuItem asChild>
                   <form action={signOut}>
                     <LogoutButtonWithOverlay />

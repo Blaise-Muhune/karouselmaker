@@ -2,7 +2,6 @@
 
 import { useState, useCallback, useMemo, type ComponentProps } from "react";
 import { cn } from "@/lib/utils";
-import { TemplateTextFields } from "@/components/templates/TemplateTextFields";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -134,7 +133,6 @@ function getImageDisplayFromConfig(config: TemplateConfig): ComponentProps<typeo
 type BaseOption = { template: Template; config: TemplateConfig };
 
 type TemplateBuilderFormProps = {
-  isAdmin?: boolean;
   mode: "create" | "edit";
   initialName?: string;
   initialCategory?: string;
@@ -148,7 +146,6 @@ type TemplateBuilderFormProps = {
 };
 
 export function TemplateBuilderForm({
-  isAdmin = false,
   mode,
   initialName = "",
   initialCategory = "generic",
@@ -854,13 +851,6 @@ export function TemplateBuilderForm({
             )}
             {templateTab === "text" && (
           <section className="space-y-4" aria-label="Text">
-        {isAdmin && <TemplateTextFields
-          headline={!!headlineZone && headlineZone.enabled !== false}
-          body={!!bodyZone && bodyZone.enabled !== false}
-          hasHeadline={!!headlineZone}
-          hasBody={!!bodyZone}
-          onChange={(field, enabled) => updateTextZone(field, { enabled })}
-        />}
         {headlineZone && (
           <div className="rounded-lg border border-border/50 bg-muted/5 p-3">
             <h3 className="text-xs font-semibold text-foreground mb-2">Headline zone</h3>

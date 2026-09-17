@@ -1,4 +1,4 @@
--- Saved template bundles: one applies to every slide; two map to first/last + middle;
+-- Saved template bundles: one applies to every slide; two map to first + remaining slides;
 -- three map to first + middle + last. System bundles are editable by admins.
 begin;
 

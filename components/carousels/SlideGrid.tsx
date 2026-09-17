@@ -1,7 +1,5 @@
 "use client";
 
-import { normalizeSlideMetaForRender, getTemplateDefaultOverrides, mergeWithTemplateDefaults } from "@/lib/server/export/normalizeSlideMetaForRender";
-
 import Link from "next/link";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { SlidePreview } from "@/components/renderer/SlidePreview";
@@ -38,7 +36,7 @@ import { useRouter } from "next/navigation";
 import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, DownloadIcon, GripVerticalIcon, Images, LayoutTemplateIcon, Loader2Icon, PencilIcon, PlusIcon, Shuffle, SquareIcon, Trash2Icon } from "lucide-react";
 import { FONT_WEIGHT_MAX, FONT_WEIGHT_MIN } from "@/lib/constants/fontWeight";
 
-const PREVIEW_SCALE = 0.2;
+const PREVIEW_SCALE = 0.25;
 
 function slideHasPhotoBackground(slide: Slide): boolean {
   const bg = slide.background as {
@@ -76,6 +74,7 @@ function getPreviewDimensions(exportSize: string): { w: number; h: number; conte
 export type TemplateWithConfig = Template & {
   parsedConfig: TemplateConfig;
   isFavorite?: boolean;
+  previewImageUrls?: string[];
 };
 
 type SlideGridProps = {
@@ -140,7 +139,18 @@ function getZoneAndFontOverridesFromTemplate(config: TemplateConfig | null): {
 } {
   if (!config?.defaults?.meta || typeof config.defaults.meta !== "object") return {};
   const meta = config.defaults.meta;
-  const zoneOverrides = normalizeSlideMetaForRender(meta as Record<string, unknown>).zoneOverrides;
+  const headlineZone =
+    meta.headline_zone_override && typeof meta.headline_zone_override === "object" && Object.keys(meta.headline_zone_override).length > 0
+      ? meta.headline_zone_override
+      : undefined;
+  const bodyZone =
+    meta.body_zone_override && typeof meta.body_zone_override === "object" && Object.keys(meta.body_zone_override).length > 0
+      ? meta.body_zone_override
+      : undefined;
+  const zoneOverrides =
+    headlineZone || bodyZone
+      ? { headline: headlineZone as Record<string, unknown>, body: bodyZone as Record<string, unknown> }
+      : undefined;
   const fontOverrides =
     meta.headline_font_size != null || meta.body_font_size != null
       ? {
@@ -293,7 +303,13 @@ function getBoldWeights(slide: Slide): { headlineBoldWeight?: number; bodyBoldWe
 }
 
 function getZoneOverrides(slide: Slide): { headline?: Record<string, unknown>; body?: Record<string, unknown> } | undefined {
-  return normalizeSlideMetaForRender(slide.meta as Record<string, unknown> | null).zoneOverrides;
+  const m = slide.meta as SlideMeta | null;
+  if (m == null) return undefined;
+  if (!m.headline_zone_override && !m.body_zone_override) return undefined;
+  return {
+    headline: m.headline_zone_override && Object.keys(m.headline_zone_override).length > 0 ? m.headline_zone_override : undefined,
+    body: m.body_zone_override && Object.keys(m.body_zone_override).length > 0 ? m.body_zone_override : undefined,
+  };
 }
 
 const SWIPE_POSITIONS = [
@@ -401,12 +417,14 @@ function getHighlightStyles(slide: Slide): { headline: "text" | "background"; bo
   };
 }
 
-function getOutlineStrokes(slide: Slide, config: TemplateConfig | null): { headline: number; body: number } {
-  const merged = mergeWithTemplateDefaults(
-    normalizeSlideMetaForRender(slide.meta as Record<string, unknown> | null),
-    getTemplateDefaultOverrides(config)
-  );
-  return { headline: merged.outlineStrokes?.headline ?? 0, body: merged.outlineStrokes?.body ?? 0 };
+function getOutlineStrokes(slide: Slide): { headline: number; body: number } {
+  const m = slide.meta as SlideMeta | null;
+  const h = m?.headline_outline_stroke;
+  const b = m?.body_outline_stroke;
+  return {
+    headline: typeof h === "number" && h >= 0 && h <= 8 ? h : 0,
+    body: typeof b === "number" && b >= 0 && b <= 8 ? b : 0,
+  };
 }
 
 function getHighlightSpans(slide: Slide): { headline_highlights?: SlideMeta["headline_highlights"]; body_highlights?: SlideMeta["body_highlights"] } {
@@ -524,7 +542,6 @@ export function SlideGrid({
   const [reorderPending, setReorderPending] = useState(false);
   const [shufflingSlideId, setShufflingSlideId] = useState<string | null>(null);
   const [downloadingSlideId, setDownloadingSlideId] = useState<string | null>(null);
-  const [downloadError, setDownloadError] = useState<string | null>(null);
   const [deletingSlideId, setDeletingSlideId] = useState<string | null>(null);
   const [addingSlide, setAddingSlide] = useState(false);
   const router = useRouter();
@@ -575,15 +592,14 @@ export function SlideGrid({
   const isApplyingTemplate =
     applyingSingleTemplate || bulkTemplateProgress != null;
 
-  const selectableTemplates = templates.filter((t) => !t.is_hidden || isAdmin);
-  const templateOptions: TemplateOption[] = selectableTemplates.map((t) => ({
+  const templateOptions: TemplateOption[] = templates.map((t) => ({
     id: t.id,
     name: t.name,
     parsedConfig: t.parsedConfig,
     category: t.category ?? undefined,
-      isSystemTemplate: t.user_id == null,
-      isFavorite: t.isFavorite === true,
-      isHidden: t.is_hidden === true,
+    isSystemTemplate: t.user_id == null,
+    isFavorite: t.isFavorite === true,
+    previewImageUrls: t.previewImageUrls,
   }));
   const favoriteRevalidatePath = `/p/${projectId}/c/${carouselId}`;
 
@@ -712,12 +728,7 @@ export function SlideGrid({
 
   return (
     <>
-      {downloadError && (
-        <p className="mb-3 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">
-          {downloadError}
-        </p>
-      )}
-      {false && canEdit && (
+      {canEdit && (
         <div className="mb-3 flex flex-wrap items-center gap-3 pt-3 pb-2">
           {selectionCount > 0 ? (
             <>
@@ -823,7 +834,7 @@ export function SlideGrid({
           )}
         </div>
       )}
-      <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <ul className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {slidesOrder.map((slide, index) => {
           const templateConfigFromList = getTemplateConfig(slide, templates);
           const effectiveTemplateConfig = templateConfigFromList ?? fetchedTemplateConfigs[slide.id] ?? null;
@@ -851,7 +862,7 @@ export function SlideGrid({
             effectiveTemplateConfig,
             templateDefaults.chromeOverrides
           );
-          const currentTemplateId = slide.template_id ?? selectableTemplates[0]?.id;
+          const currentTemplateId = slide.template_id ?? templates[0]?.id;
           const fromSlide = getBackgroundOverride(slide, effectiveTemplateConfig);
           const hasBackgroundImage =
             (typeof bgUrls === "string" && bgUrls.length > 0) ||
@@ -898,7 +909,7 @@ export function SlideGrid({
                 <div className="flex-1 min-w-0 flex flex-col gap-2">
                   {canEdit ? (
                     <div className="relative" style={{ width: previewDims.w, height: previewDims.h }}>
-                      {false && canEdit && (
+                      {canEdit && (
                         <button
                           type="button"
                           onClick={(e) => {
@@ -973,8 +984,8 @@ export function SlideGrid({
                             chromeOverrides={previewChromeOverrides}
                             headlineHighlightStyle={getHighlightStyles(slide).headline}
                             bodyHighlightStyle={getHighlightStyles(slide).body}
-                            headlineOutlineStroke={getOutlineStrokes(slide, effectiveTemplateConfig).headline}
-                            bodyOutlineStroke={getOutlineStrokes(slide, effectiveTemplateConfig).body}
+                            headlineOutlineStroke={getOutlineStrokes(slide).headline}
+                            bodyOutlineStroke={getOutlineStrokes(slide).body}
                             headline_highlights={getHighlightSpans(slide).headline_highlights}
                             body_highlights={getHighlightSpans(slide).body_highlights}
                             borderedFrame={hasBackgroundImage}
@@ -1008,7 +1019,7 @@ export function SlideGrid({
                           </div>
                         )}
                       </Link>
-                      {false && <Button
+                      <Button
                         variant="secondary"
                         size="icon-sm"
                         className="absolute left-1 top-1/2 -translate-y-1/2 h-7 w-7 rounded-full border border-border/50 bg-background/40 hover:bg-background/90 text-muted-foreground/60 hover:text-foreground z-10 opacity-60 hover:opacity-100 transition-opacity"
@@ -1021,8 +1032,8 @@ export function SlideGrid({
                         }}
                       >
                         <ChevronLeftIcon className="size-4" />
-                      </Button>}
-                      {false && <Button
+                      </Button>
+                      <Button
                         variant="secondary"
                         size="icon-sm"
                         className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 rounded-full border border-border/50 bg-background/40 hover:bg-background/90 text-muted-foreground/60 hover:text-foreground z-10 opacity-60 hover:opacity-100 transition-opacity"
@@ -1035,7 +1046,7 @@ export function SlideGrid({
                         }}
                       >
                         <ChevronRightIcon className="size-4" />
-                      </Button>}
+                      </Button>
                     </div>
                   ) : (
                     <Link
@@ -1089,8 +1100,8 @@ export function SlideGrid({
                             chromeOverrides={previewChromeOverrides}
                             headlineHighlightStyle={getHighlightStyles(slide).headline}
                             bodyHighlightStyle={getHighlightStyles(slide).body}
-                            headlineOutlineStroke={getOutlineStrokes(slide, effectiveTemplateConfig).headline}
-                            bodyOutlineStroke={getOutlineStrokes(slide, effectiveTemplateConfig).body}
+                            headlineOutlineStroke={getOutlineStrokes(slide).headline}
+                            bodyOutlineStroke={getOutlineStrokes(slide).body}
                             headline_highlights={getHighlightSpans(slide).headline_highlights}
                             body_highlights={getHighlightSpans(slide).body_highlights}
                             borderedFrame={hasBackgroundImage}
@@ -1125,7 +1136,7 @@ export function SlideGrid({
                       )}
                     </Link>
                   )}
-                  <div className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <Button
                       type="button"
                       variant="outline"
@@ -1150,7 +1161,7 @@ export function SlideGrid({
                         {getImageCount(slide)}
                       </span>
                     )}
-                    {false && <Button
+                    <Button
                       variant="outline"
                       size="icon-sm"
                       title="Download this frame"
@@ -1158,7 +1169,6 @@ export function SlideGrid({
                       onClick={async () => {
                         if (downloadingSlideId) return;
                         setDownloadingSlideId(slide.id);
-                        setDownloadError(null);
                         const rasterFormat = exportFormat === "pdf" ? "png" : exportFormat;
                         const url = `/api/export/slide/${slide.id}?format=${rasterFormat}&size=${exportSize ?? "1080x1350"}`;
                         const ext = rasterFormat === "jpeg" ? "jpg" : "png";
@@ -1167,14 +1177,9 @@ export function SlideGrid({
                           : `slide-${slide.slide_index}.${ext}`;
                         try {
                           const res = await fetch(url);
-                          if (!res.ok) {
-                            const data = (await res.json().catch(() => ({}))) as { error?: string };
-                            throw new Error(data.error || "Couldn’t download this frame. Try again.");
-                          }
+                          if (!res.ok) throw new Error("Download failed");
                           const blob = await res.blob();
                           triggerBlobDownload(blob, filename);
-                        } catch (error) {
-                          setDownloadError(error instanceof Error ? error.message : "Couldn’t download this frame. Try again.");
                         } finally {
                           setDownloadingSlideId(null);
                         }
@@ -1186,8 +1191,8 @@ export function SlideGrid({
                         <DownloadIcon className="size-4" />
                       )}
                       <span className="sr-only">Download this frame</span>
-                    </Button>}
-                    {false && canEdit && slideHasShuffleableImages(slide) && (
+                    </Button>
+                    {canEdit && slideHasShuffleableImages(slide) && (
                       <Button
                         variant="outline"
                         size="icon-sm"
@@ -1210,14 +1215,14 @@ export function SlideGrid({
                         <span className="sr-only">Shuffle images</span>
                       </Button>
                     )}
-                    {false && canEdit ? (
+                    {canEdit ? (
                       <Button variant="outline" size="icon-sm" asChild title="Edit frame">
                         <Link href={`/p/${projectId}/c/${carouselId}/s/${slide.id}`}>
                           <PencilIcon className="size-4" />
                         </Link>
                       </Button>
                     ) : null}
-                    {false && canEdit && slidesOrder.length > 1 ? (
+                    {canEdit && slidesOrder.length > 1 ? (
                       <Button
                         variant="outline"
                         size="icon-sm"
@@ -1248,7 +1253,7 @@ export function SlideGrid({
             </li>
           );
         })}
-        {false && canEdit ? (
+        {canEdit ? (
           <li className="flex flex-col gap-2">
             <div className="flex items-start gap-1">
               <div className="flex-1 min-w-0" style={{ width: previewDims.w }}>
@@ -1260,7 +1265,7 @@ export function SlideGrid({
                     startTransition(async () => {
                       const result = await createSlideAction(carouselId, {
                         revalidatePathname: editorPath,
-                        defaultTemplateId: selectableTemplates[0]?.id ?? null,
+                        defaultTemplateId: templates[0]?.id ?? null,
                       });
                       setAddingSlide(false);
                       if (result.ok) router.refresh();
@@ -1340,21 +1345,20 @@ export function SlideGrid({
                 <TemplateSelectCards
                   key={`bulk-${ids.join("-")}`}
                   templates={templateOptions}
-                  defaultTemplateId={selectableTemplates[0]?.id ?? null}
-                  defaultTemplateConfig={selectableTemplates[0]?.parsedConfig ?? null}
-                  defaultTemplateCategory={selectableTemplates[0]?.category ?? undefined}
+                  defaultTemplateId={templates[0]?.id ?? null}
+                  defaultTemplateConfig={templates[0]?.parsedConfig ?? null}
+                  defaultTemplateCategory={templates[0]?.category ?? undefined}
                   showLayoutFilter
                   value={null}
                   previewImageUrls={previewImageUrlsForBulk}
                   isAdmin={isAdmin}
                   isPro={isPro}
-                    favoriteRevalidatePath={favoriteRevalidatePath}
-                    visibilityRevalidatePath={favoriteRevalidatePath}
+                  favoriteRevalidatePath={favoriteRevalidatePath}
                   onTemplateDeleted={() => {
                     router.refresh();
                   }}
                   onChange={async (id) => {
-                    const templateId = id === null ? selectableTemplates[0]?.id ?? null : id;
+                    const templateId = id === null ? templates[0]?.id ?? null : id;
                     if (!templateId) return;
                     setBulkActionPending(true);
                     setBulkTemplateProgress({ done: 0, total: ids.length });
@@ -1400,7 +1404,7 @@ export function SlideGrid({
           })()}
           {templateModalSlideId != null && !isBulkTemplateOpen && (() => {
             const slideForModal = slidesOrder.find((s) => s.id === templateModalSlideId);
-            const currentTemplateIdForModal = slideForModal?.template_id ?? selectableTemplates[0]?.id ?? null;
+            const currentTemplateIdForModal = slideForModal?.template_id ?? templates[0]?.id ?? null;
             if (!slideForModal) return null;
             const slideBgImages = slideBackgroundImageUrls[slideForModal.id];
             const previewImageUrlsForModal =
@@ -1413,22 +1417,21 @@ export function SlideGrid({
                 <TemplateSelectCards
                   key={templateModalSlideId}
                   templates={templateOptions}
-                  defaultTemplateId={selectableTemplates[0]?.id ?? null}
-                  defaultTemplateConfig={selectableTemplates[0]?.parsedConfig ?? null}
-                  defaultTemplateCategory={selectableTemplates[0]?.category ?? undefined}
+                  defaultTemplateId={templates[0]?.id ?? null}
+                  defaultTemplateConfig={templates[0]?.parsedConfig ?? null}
+                  defaultTemplateCategory={templates[0]?.category ?? undefined}
                   showLayoutFilter
-                  value={currentTemplateIdForModal === selectableTemplates[0]?.id ? null : currentTemplateIdForModal}
+                  value={currentTemplateIdForModal === templates[0]?.id ? null : currentTemplateIdForModal}
                   previewImageUrls={previewImageUrlsForModal}
                   isAdmin={isAdmin}
                   isPro={isPro}
-                    favoriteRevalidatePath={favoriteRevalidatePath}
-                    visibilityRevalidatePath={favoriteRevalidatePath}
+                  favoriteRevalidatePath={favoriteRevalidatePath}
                   onTemplateDeleted={() => {
                     setTemplateModalSlideId(null);
                     router.refresh();
                   }}
                   onChange={async (id) => {
-                    const templateId = id === null ? selectableTemplates[0]?.id ?? null : id;
+                    const templateId = id === null ? templates[0]?.id ?? null : id;
                     if (!templateId || templateId === slideForModal.template_id) {
                       setTemplateModalSlideId(null);
                       return;
