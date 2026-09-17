@@ -4181,7 +4181,13 @@ export function SlideEditForm({
         const idx = base.findIndex((b) => b.id === zoneId);
         if (idx < 0 || !effectiveBase) return;
         const merged = { ...effectiveBase, ...(ovr ?? {}) } as TextZone;
-        base[idx] = { ...merged, maxLines: clampMaxLinesToZoneGeometry(merged) };
+        // Saving an empty field creates a template that does not generate or preview that field.
+        const text = zoneId === "headline" ? headline : body;
+        base[idx] = {
+          ...merged,
+          enabled: merged.enabled !== false && text.trim().length > 0,
+          maxLines: clampMaxLinesToZoneGeometry(merged),
+        };
       };
       mergeHb("headline", effectiveHeadlineZoneBase, headlineZoneOverride);
       mergeHb("body", effectiveBodyZoneBase, bodyZoneOverride);

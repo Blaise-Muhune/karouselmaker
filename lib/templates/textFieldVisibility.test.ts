@@ -5,7 +5,10 @@ import { normalizeTemplateTextZoneMaxLines } from "@/lib/server/renderer/normali
 import { textZoneOverrideSchema } from "@/lib/validations/slide";
 import { buildSlideRenderModel, normalizeZoneOverrideSingle } from "@/lib/renderer/renderModel";
 import { renderSlideHtml } from "@/lib/server/renderer/renderSlideHtml";
-import { getHeadlineBodyMaxCharsFromTemplateConfig } from "@/lib/templates/zoneCharBudget";
+import {
+  getHeadlineBodyMaxCharsFromTemplateConfig,
+  getSampleSlideCopyForTemplatePreview,
+} from "@/lib/templates/zoneCharBudget";
 import { buildTemplateContextForPrompt, buildTemplateContextForPromptSelection } from "@/lib/server/ai/templateContextForPrompt";
 import type { Json } from "@/lib/server/db/types";
 
@@ -34,6 +37,9 @@ describe("template text field visibility", () => {
       expect(html.includes("UniqueHeadline")).toBe(headline);
       expect(html.includes("UniqueBody")).toBe(body);
       expect(getHeadlineBodyMaxCharsFromTemplateConfig(saved)).toMatchObject({ hasHeadline: headline, hasBody: body });
+      const pickerSample = getSampleSlideCopyForTemplatePreview(saved);
+      expect(pickerSample.headline.length > 0).toBe(headline);
+      expect(pickerSample.body.length > 0).toBe(body);
       expect(saved.textZones).toHaveLength(2);
     },
   );

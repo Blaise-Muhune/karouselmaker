@@ -9,6 +9,7 @@ export const DESIGN_HEIGHT = 1920;
 
 export type TextZoneLike = {
   id: string;
+  enabled?: boolean;
   x?: number;
   y?: number;
   w?: number;
@@ -109,8 +110,9 @@ export function getEffectiveTextZonesFromTemplateConfig(config: unknown): TextZo
       const raw = meta[key];
       if (raw && typeof raw === "object" && !Array.isArray(raw)) {
         const o = raw as Record<string, unknown>;
-        merged = {
-          ...merged,
+          merged = {
+            ...merged,
+            ...(typeof o.enabled === "boolean" ? { enabled: o.enabled } : {}),
           ...(Number.isFinite(Number(o.x)) ? { x: Math.round(Number(o.x)) } : {}),
           ...(Number.isFinite(Number(o.y)) ? { y: Math.round(Number(o.y)) } : {}),
           ...(Number.isFinite(Number(o.w)) ? { w: Math.round(Number(o.w)) } : {}),
@@ -215,8 +217,8 @@ export function getHeadlineBodyMaxCharsFromTemplateConfig(templateConfig: unknow
     };
   }
 
-  const headlineZone = zones.find((z) => z.id === "headline");
-  const bodyZone = zones.find((z) => z.id === "body");
+  const headlineZone = zones.find((z) => z.id === "headline" && z.enabled !== false);
+  const bodyZone = zones.find((z) => z.id === "body" && z.enabled !== false);
   const hasHeadline = !!headlineZone;
   const hasBody = !!bodyZone;
 
