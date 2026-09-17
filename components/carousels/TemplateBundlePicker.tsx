@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
-import { deleteTemplateBundleAction, saveTemplateBundleAction } from "@/app/actions/templates/templateBundles";
+import { deleteTemplateBundleAction, promoteTemplateBundleAction, saveTemplateBundleAction } from "@/app/actions/templates/templateBundles";
 import type { TemplateOption } from "@/components/carousels/TemplateSelectCards";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -150,6 +150,24 @@ export function TemplateBundlePicker({
     }
   }
 
+  async function makeBuiltIn() {
+    if (!editingBundle || editingBundle.isSystemBundle) return;
+    setSaving(true);
+    setMessage(null);
+    try {
+      const result = await promoteTemplateBundleAction(editingBundle.id, revalidatePathname);
+      if (!result.ok) {
+        setMessage(result.error);
+        return;
+      }
+      setEditingBundle((bundle) => bundle ? { ...bundle, isSystemBundle: true } : bundle);
+      setMessage("Bundle is now available to everyone.");
+      router.refresh();
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div className="space-y-5">
       <div className="space-y-2">
@@ -233,6 +251,9 @@ export function TemplateBundlePicker({
         {message && <p className="text-xs text-destructive">{message}</p>}
         <div className="flex flex-wrap gap-2">
           <Button type="button" size="sm" onClick={() => void save(false)} disabled={saving}>{editingBundle ? "Save changes" : "Save my bundle"}</Button>
+          {isAdmin && editingBundle && !editingBundle.isSystemBundle && (
+            <Button type="button" size="sm" variant="outline" onClick={() => void makeBuiltIn()} disabled={saving}>Make built-in</Button>
+          )}
           {isAdmin && !editingBundle && <Button type="button" size="sm" variant="outline" onClick={() => void save(true)} disabled={saving}>Save as built-in</Button>}
         </div>
       </div>

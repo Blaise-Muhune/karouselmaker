@@ -60,6 +60,22 @@ export async function updateTemplateBundle(
   }
 }
 
+/** Promote an admin-owned personal bundle so every creator can use it. */
+export async function promoteTemplateBundle(
+  userId: string,
+  bundleId: string
+): Promise<{ ok: boolean; error?: string }> {
+  const result = await query(
+    `update template_bundles
+     set user_id = null, updated_at = now()
+     where id = $1 and user_id = $2`,
+    [bundleId, userId]
+  );
+  return (result.rowCount ?? 0) > 0
+    ? { ok: true }
+    : { ok: false, error: "Bundle not found or is already built-in." };
+}
+
 export async function deleteTemplateBundle(
   userId: string | null,
   bundleId: string

@@ -8,6 +8,7 @@ import {
   deleteTemplateBundle,
   getTemplate,
   getTemplateBundle,
+  promoteTemplateBundle,
   updateTemplateBundle,
 } from "@/lib/server/db";
 import { templateBundleInputSchema } from "@/lib/validations/templateBundle";
@@ -72,6 +73,23 @@ export async function deleteTemplateBundleAction(
   }
   const result = await deleteTemplateBundle(bundle.user_id, bundleId);
   if (!result.ok) return { ok: false, error: result.error ?? "Unable to delete bundle." };
+  if (revalidatePathname) revalidatePath(revalidatePathname);
+  return { ok: true };
+}
+
+export async function promoteTemplateBundleAction(
+  bundleId: string,
+  revalidatePathname?: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { user } = await getUser();
+  if (!isAdmin(user.email)) return { ok: false, error: "Only admins can make a bundle available to everyone." };
+  const bundle = await getTemplateBundle(user.id, bundleId);
+  if (!bundle) return { ok: false, error: "Bundle not found." };
+  if (bundle.user_id === null) return { ok: true };
+  if (bundle.user_id !== user.id) return { ok: false, error: "You can only promote your own bundle." };
+
+  const result = await promoteTemplateBundle(user.id, bundleId);
+  if (!result.ok) return { ok: false, error: result.error ?? "Could not make the bundle available to everyone." };
   if (revalidatePathname) revalidatePath(revalidatePathname);
   return { ok: true };
 }

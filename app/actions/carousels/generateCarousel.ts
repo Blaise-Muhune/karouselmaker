@@ -68,6 +68,7 @@ import {
 import { buildBodyRewriteVariants } from "@/lib/renderer/bodyRewriteVariants";
 import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { templateForSlide } from "@/lib/templates/templateSlot";
+import { getTemplateIntendedBackgroundImageSlotCount } from "@/lib/renderer/templatePreviewImages";
 import { parseProjectRulesJson } from "@/lib/validations/project";
 import { formatPriorPostsForPrompt, loadPriorPostsForProject } from "@/lib/server/ai/priorPostsMemory";
 import {
@@ -1237,14 +1238,26 @@ export async function generateCarousel(formData: FormData): Promise<
     if (templateId) templateIdBySlideId.set(createdSlidesOrdered[i]!.id, templateId);
   }
   const templateAllowsImageById = new Map<string, boolean>();
+  const templateImageSlotCountById = new Map<string, number>();
   for (const [templateId, template] of resolvedTemplates.entries()) {
     const parsedConfig = templateConfigSchema.safeParse(template.config);
-    templateAllowsImageById.set(templateId, parsedConfig.success ? parsedConfig.data.backgroundRules.allowImage !== false : true);
+    const allowsImage = parsedConfig.success ? parsedConfig.data.backgroundRules.allowImage !== false : true;
+    templateAllowsImageById.set(templateId, allowsImage);
+    templateImageSlotCountById.set(
+      templateId,
+      allowsImage && parsedConfig.success
+        ? Math.max(1, getTemplateIntendedBackgroundImageSlotCount(parsedConfig.data))
+        : 0
+    );
   }
   const slideCanUseImage = (slide: (typeof createdSlides)[number]) => {
     const assignedTemplateId = templateIdBySlideId.get(slide.id);
     if (!assignedTemplateId) return true;
     return templateAllowsImageById.get(assignedTemplateId) !== false;
+  };
+  const imageSlotCountForSlide = (slide: (typeof createdSlides)[number]) => {
+    const assignedTemplateId = templateIdBySlideId.get(slide.id);
+    return assignedTemplateId ? (templateImageSlotCountById.get(assignedTemplateId) ?? 1) : 1;
   };
 
   const overlayColor = "#0a0a0a"; // neutral overlay (template/default); do not use brand logo color
@@ -1277,31 +1290,39 @@ export async function generateCarousel(formData: FormData): Promise<
       if (asset?.storage_path) assets.push({ id: asset.id, storage_path: asset.storage_path });
     }
     if (assets.length) {
-      const userAssetUpdates: { slide: (typeof createdSlides)[number]; asset: { id: string; storage_path: string } }[] = [];
+      const userAssetUpdates: { slide: (typeof createdSlides)[number]; assets: { id: string; storage_path: string }[] }[] = [];
       const eligibleSlides = createdSlides.filter(slideCanUseImage);
-      const shuffledAssets = shuffledRoundRobin(assets, eligibleSlides.length);
-      for (let i = 0; i < eligibleSlides.length; i++) {
-        const slide = eligibleSlides[i];
+      const totalImageSlots = eligibleSlides.reduce((total, slide) => total + imageSlotCountForSlide(slide), 0);
+      const shuffledAssets = shuffledRoundRobin(assets, totalImageSlots);
+      let assetIndex = 0;
+      for (const slide of eligibleSlides) {
         if (!slide) continue;
-        const asset = shuffledAssets[i];
-        if (!asset) continue;
+        const slotCount = imageSlotCountForSlide(slide);
+        const slideAssets = shuffledAssets.slice(assetIndex, assetIndex + slotCount);
+        assetIndex += slotCount;
+        if (!slideAssets.length) continue;
         slidesWithImage.add(slide.id);
-        userAssetUpdates.push({ slide, asset });
+        userAssetUpdates.push({ slide, assets: slideAssets });
       }
       for (let i = 0; i < userAssetUpdates.length; i += UPDATE_SLIDE_BATCH_SIZE) {
         const chunk = userAssetUpdates.slice(i, i + UPDATE_SLIDE_BATCH_SIZE);
         await Promise.all(
-          chunk.map(({ slide, asset }) =>
-            updateSlide(user.id, slide.id, {
+          chunk.map(({ slide, assets: assignedAssets }) => {
+            const primaryAsset = assignedAssets[0]!;
+            return updateSlide(user.id, slide.id, {
               background: {
                 mode: "image",
-                asset_id: asset.id,
-                storage_path: asset.storage_path,
+                asset_id: primaryAsset.id,
+                storage_path: primaryAsset.storage_path,
+                images: assignedAssets.map((asset) => ({
+                  asset_id: asset.id,
+                  storage_path: asset.storage_path,
+                })),
                 fit: "cover",
                 overlay: overlayForImageSlide,
               },
             })
-          )
+          })
         );
       }
     }
