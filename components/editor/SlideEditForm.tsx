@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
+import { TemplateTextFields } from "@/components/templates/TemplateTextFields";
 import { usePathname, useRouter } from "next/navigation";
 import { SlidePreview, PREVIEW_FONTS, type SlideBackgroundOverride } from "@/components/renderer/SlidePreview";
 import { FontPickerModal, getFontStack } from "@/components/FontPickerModal";
@@ -1210,6 +1211,7 @@ export function SlideEditForm({
     return typeof v === "number" ? clampFontWeight(v) : 700;
   });
   type ZoneOverride = {
+    enabled?: boolean;
     x?: number;
     y?: number;
     w?: number;
@@ -2050,11 +2052,15 @@ export function SlideEditForm({
     bodyZoneFromTemplate && templateDefaultsOverrides.zoneOverrides?.body
       ? ({ ...bodyZoneFromTemplate, ...templateDefaultsOverrides.zoneOverrides.body } as TextZone)
       : bodyZoneFromTemplate;
+  const headlineEnabled = !!effectiveHeadlineZoneBase &&
+    (headlineZoneOverride?.enabled ?? effectiveHeadlineZoneBase.enabled) !== false;
+  const bodyEnabled = !!effectiveBodyZoneBase &&
+    (bodyZoneOverride?.enabled ?? effectiveBodyZoneBase.enabled) !== false;
 
   /** Merged body zone for deterministic main / short / long body rewrites (headline-independent). */
   const bodyZoneForRewrite = useMemo((): TextZone | null => {
     const base = effectiveBodyZoneBase ?? bodyZoneFromTemplate;
-    if (!base) return null;
+    if (!base || (bodyZoneOverride?.enabled ?? base.enabled) === false) return null;
     return { ...base, ...bodyZoneOverride } as TextZone;
   }, [effectiveBodyZoneBase, bodyZoneFromTemplate, bodyZoneOverride]);
 
@@ -7666,6 +7672,16 @@ export function SlideEditForm({
             </div>
             )}
             <div className="relative min-h-0 space-y-3">
+            {showAdvancedEditor && <TemplateTextFields
+              headline={headlineEnabled}
+              body={bodyEnabled}
+              hasHeadline={!!effectiveHeadlineZoneBase}
+              hasBody={!!effectiveBodyZoneBase}
+              onChange={(field, enabled) => {
+                if (field === "headline") setHeadlineZoneOverride((prev) => ({ ...prev, enabled }));
+                else setBodyZoneOverride((prev) => ({ ...prev, enabled }));
+              }}
+            />}
             {/* Headline: collapsible */}
             <div className={`rounded-lg border transition-colors ${activeEditZone === "headline" ? "border-primary/60 ring-1 ring-primary/30" : "border-border/50"} bg-muted/5 overflow-hidden`}>
               <button
@@ -7692,6 +7708,7 @@ export function SlideEditForm({
               <Textarea
                 ref={headlineRef}
                 id="headline"
+                disabled={!headlineEnabled}
                 value={headline}
                 onChange={(e) => setHeadline(e.target.value)}
                 onFocus={() => {
@@ -8395,6 +8412,7 @@ export function SlideEditForm({
               <Textarea
                 ref={bodyRef}
                 id="body"
+                disabled={!bodyEnabled}
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
                 onFocus={() => {
