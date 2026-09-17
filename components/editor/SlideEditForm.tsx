@@ -878,7 +878,6 @@ export function SlideEditForm({
   };
   const [imageUrls, setImageUrls] = useState<ImageUrlItem[]>(() => {
     const bg = slide.background as { asset_id?: string; storage_path?: string; image_url?: string; image_source?: string; unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string }; pixabay_attribution?: { userName: string; userId: number; pageURL: string; photoURL: string }; pexels_attribution?: { photographer: string; photographer_url: string; photo_url: string }; images?: { image_url?: string; asset_id?: string; storage_path?: string; source?: "brave" | "google" | "unsplash" | "pixabay" | "pexels"; unsplash_attribution?: { photographerName: string; photographerUsername: string; profileUrl: string; unsplashUrl: string }; pixabay_attribution?: { userName: string; userId: number; pageURL: string; photoURL: string }; pexels_attribution?: { photographer: string; photographer_url: string; photo_url: string }; alternates?: string[] }[] } | null;
-    if (bg?.asset_id) return [{ url: "", source: undefined }];
     // Prefer slide.background.images so we show one input per slot (e.g. 2 pics → 2 rows). Shuffle cycles that slot’s alternates only.
     if (bg?.images?.length) {
       const images = bg.images;
@@ -946,6 +945,7 @@ export function SlideEditForm({
         };
       });
     }
+    if (bg?.asset_id) return [{ url: "", source: undefined }];
     if (initialBackgroundImageUrls?.length) {
       const urls = initialBackgroundImageUrls;
       // Page passed flat URL list (no bg.images): one slot with rest as alternates so Shuffle works.
