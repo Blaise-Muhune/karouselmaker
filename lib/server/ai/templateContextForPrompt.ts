@@ -50,7 +50,7 @@ export function buildTemplateContextForPrompt(templateConfig: Json | null | unde
   const bodyVisualLines = m.bodyVisualLines;
 
   const lines: string[] = [];
-  lines.push("TEMPLATE TEXT LIMITS (strict—never exceed; text must fit the visible container):");
+  lines.push("TEMPLATE TEXT LIMITS (strict—decide each slide's writing mode from this before writing; text must fit the visible container):");
   if (m.hasHeadline && m.hasBody) {
     lines.push("TEXT MODE: HEADLINE + BODY. Headline states the main idea clearly; body explains it with useful context, specifics, or action. They must complement each other, not repeat the same sentence.");
   } else if (m.hasBody) {
@@ -154,7 +154,7 @@ export function buildTemplateContextForPrompt(templateConfig: Json | null | unde
     "**SCALE TO THE ZONE:** Match **main** slide headline, body, **and each extra text zone** density to the numbers above—**large limits = richer, more concrete copy** that still fits; **tiny limits = telegraphic**. Do not default to generic short copy when the template allows much more. shorten_alternates can still vary short / normal / long."
   );
   lines.push(
-    "Do not exceed these character counts. HEADLINE ONLY stays concise regardless of capacity. BODY ONLY must remain self-contained in all short / normal / long variants. Hidden fields stay empty in every variant."
+    "Do not exceed these character counts. HEADLINE ONLY stays concise regardless of capacity and must still make sense on its own. BODY ONLY must remain self-contained in all short / normal / long variants and must never rely on an unseen headline. Hidden fields stay empty in every variant."
   );
 
   return {
@@ -212,7 +212,7 @@ export function buildTemplateContextForPromptSelection(
       ? "- Slot mapping: first slide uses slot 1 limits, middle slides use slot 2 limits, last slide uses slot 3 limits."
       : "- Slot mapping: first and last slides use slot 1 limits, middle slides use slot 2 limits.",
     "- Keep each slide's copy within the limits of the slot used by that slide index.",
-    "- Follow each slot's TEXT MODE independently: headline-only stays concise, body-only carries the whole idea, and both fields complement each other. Never generate text for a hidden field. These rules also apply to every shorten_alternate.",
+    "- Before writing each slide, determine its slot and follow that slot's TEXT MODE independently: headline-only is a clean, self-contained takeaway; body-only carries the complete idea and context; both fields divide the idea without repeating it. Never generate text for a hidden field. These rules also apply to every shorten_alternate.",
     "- For `slide.extra_text_values`, use **only** the extra zone ids listed in the slot section that applies to that slide (first vs middle vs last)—do not mix zone ids from a different slot.",
   ];
 
