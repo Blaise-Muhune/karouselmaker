@@ -48,6 +48,7 @@ export function TemplateBundlePicker({
   const [draftName, setDraftName] = useState("");
   const [draftTemplateIds, setDraftTemplateIds] = useState<string[]>(value.length ? value : [templates[0]?.id ?? ""]);
   const [editingBundle, setEditingBundle] = useState<TemplateBundleOption | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -55,6 +56,15 @@ export function TemplateBundlePicker({
     setDraftName("");
     setDraftTemplateIds(value.length ? value : [templates[0]?.id ?? ""]);
     setEditingBundle(null);
+    setEditorOpen(false);
+    setMessage(null);
+  };
+
+  const startNewBundle = () => {
+    setDraftName("");
+    setDraftTemplateIds(value.length ? value : [templates[0]?.id ?? ""]);
+    setEditingBundle(null);
+    setEditorOpen(true);
     setMessage(null);
   };
 
@@ -62,6 +72,7 @@ export function TemplateBundlePicker({
     setEditingBundle(bundle);
     setDraftName(bundle.name);
     setDraftTemplateIds(bundle.templateIds);
+    setEditorOpen(true);
     setMessage(null);
     onChange(bundle.templateIds);
   };
@@ -71,6 +82,7 @@ export function TemplateBundlePicker({
       setEditingBundle(null);
       setDraftName("");
       setDraftTemplateIds(bundle.templateIds);
+      setEditorOpen(false);
       setMessage(null);
       onChange(bundle.templateIds);
       return;
@@ -172,9 +184,14 @@ export function TemplateBundlePicker({
     <div className="space-y-5">
       <div className="space-y-2">
         <div>
-          <h3 className="text-sm font-semibold">Use a saved bundle</h3>
-          <p className="text-xs text-muted-foreground">One template can cover every slide, or mix first, middle, and last.</p>
+          <h3 className="text-sm font-semibold">Saved flows</h3>
+          <p className="text-xs text-muted-foreground">A flow chooses the design for the first, middle, and final slide.</p>
         </div>
+        {bundles.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-border/70 px-3 py-4 text-xs text-muted-foreground">
+            No saved flows yet. Create one when you want different opening, middle, and closing designs.
+          </p>
+        ) : (
         <div className="grid gap-2 sm:grid-cols-2">
           {bundles.map((bundle) => {
             const active = bundle.templateIds.join(":") === value.join(":");
@@ -200,8 +217,22 @@ export function TemplateBundlePicker({
             );
           })}
         </div>
+        )}
       </div>
 
+      {!editorOpen ? (
+        <div className="rounded-lg border border-border/70 bg-muted/20 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium">Need a custom flow?</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">Use one template for all slides, or create a first / middle / last flow.</p>
+            </div>
+            <Button type="button" size="sm" variant="outline" onClick={startNewBundle}>
+              <PlusIcon className="mr-1.5 size-3.5" /> Create flow
+            </Button>
+          </div>
+        </div>
+      ) : (
       <div className="space-y-3 rounded-lg border border-border/70 bg-muted/20 p-3">
         <div className="flex items-center justify-between gap-2">
           <div>
@@ -211,7 +242,7 @@ export function TemplateBundlePicker({
           {editingBundle ? (
             <Button type="button" variant="ghost" size="sm" onClick={resetDraft}>New bundle</Button>
           ) : (
-            <PlusIcon className="size-4 text-muted-foreground" />
+            <Button type="button" variant="ghost" size="sm" onClick={resetDraft}>Cancel</Button>
           )}
         </div>
         <div className="space-y-1.5">
@@ -257,6 +288,7 @@ export function TemplateBundlePicker({
           {isAdmin && !editingBundle && <Button type="button" size="sm" variant="outline" onClick={() => void save(true)} disabled={saving}>Save as built-in</Button>}
         </div>
       </div>
+      )}
     </div>
   );
 }
