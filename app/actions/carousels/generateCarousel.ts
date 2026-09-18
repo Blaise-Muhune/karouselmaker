@@ -672,9 +672,8 @@ export async function generateCarousel(formData: FormData): Promise<
     undefined;
 
   const priorPosts = await loadPriorPostsForProject(user.id, data.project_id, {
-    // Enough history to avoid repetition without adding a large prompt or a
-    // database waterfall before every generation.
-    limit: 8,
+    // Fast mode keeps less history in the prompt and fewer DB reads.
+    limit: generationSpeed === "fast" ? 5 : 8,
     excludeCarouselId: carousel.id,
   });
   const prior_posts_block = formatPriorPostsForPrompt(priorPosts);
@@ -917,8 +916,10 @@ export async function generateCarousel(formData: FormData): Promise<
         openLoop: pendingOpenLoop,
       });
       try {
+        // Prefer the cheaper/faster model for rewrite; only escalate for quality mode.
+        const rewriteModel = generationSpeed === "quality" ? "gpt-5-mini" : "gpt-4o-mini";
         const rewriteCompletion = await openai.chat.completions.create({
-          model: "gpt-5-mini",
+          model: rewriteModel,
           messages: [
             { role: "system", content: rewritePrompts.system },
             { role: "user", content: rewritePrompts.user },
@@ -928,7 +929,7 @@ export async function generateCarousel(formData: FormData): Promise<
         const rewriteRaw = rewriteCompletion.choices[0]?.message?.content ?? "";
         const ru = rewriteCompletion.usage;
         tokenUsageSteps.push({
-          step: "QC rewrite",
+          step: `QC rewrite (${rewriteModel})`,
           inputTokens: ru?.prompt_tokens ?? 0,
           outputTokens: ru?.completion_tokens ?? 0,
         });
@@ -1140,17 +1141,22 @@ export async function generateCarousel(formData: FormData): Promise<
         : await getDefaultTemplateForNewCarousel(user.id);
   let defaultTemplateId: string | null = defaultTemplate?.templateId ?? null;
   const resolvedTemplates = new Map<string, NonNullable<Awaited<ReturnType<typeof getTemplate>>>>();
-  for (const templateId of orderedRequestedTemplateIds) {
-    const tpl = await getTemplate(user.id, templateId);
-    if (tpl) resolvedTemplates.set(templateId, tpl);
+  const templatesToResolve = [...new Set([...orderedRequestedTemplateIds, defaultTemplateId].filter(Boolean))] as string[];
+  const resolvedTemplateRows = await Promise.all(
+    templatesToResolve.map(async (templateId) => {
+      const tpl = await getTemplate(user.id, templateId);
+      return tpl ? ([templateId, tpl] as const) : null;
+    })
+  );
+  for (const row of resolvedTemplateRows) {
+    if (row) resolvedTemplates.set(row[0], row[1]);
   }
   let selectedTemplate: Awaited<ReturnType<typeof getTemplate>> =
     orderedRequestedTemplateIds[0] ? (resolvedTemplates.get(orderedRequestedTemplateIds[0]) ?? null) : null;
   if (selectedTemplate) {
     defaultTemplateId = selectedTemplate.id;
   } else if (defaultTemplateId) {
-    selectedTemplate = await getTemplate(user.id, defaultTemplateId);
-    if (selectedTemplate) resolvedTemplates.set(selectedTemplate.id, selectedTemplate);
+    selectedTemplate = resolvedTemplates.get(defaultTemplateId) ?? null;
   }
   const templateIdsForRun = (() => {
     const requestedResolved = orderedRequestedTemplateIds.filter((id) => resolvedTemplates.has(id));
@@ -1284,11 +1290,10 @@ export async function generateCarousel(formData: FormData): Promise<
   try {
   if (parsed.data.background_asset_ids?.length && createdSlides.length) {
     const assetIds = parsed.data.background_asset_ids;
-    const assets: { id: string; storage_path: string }[] = [];
-    for (const id of assetIds) {
-      const asset = await getAsset(user.id, id);
-      if (asset?.storage_path) assets.push({ id: asset.id, storage_path: asset.storage_path });
-    }
+    const loadedAssets = await Promise.all(assetIds.map((id) => getAsset(user.id, id)));
+    const assets: { id: string; storage_path: string }[] = loadedAssets
+      .filter((asset): asset is NonNullable<typeof asset> & { storage_path: string } => !!asset?.storage_path)
+      .map((asset) => ({ id: asset.id, storage_path: asset.storage_path }));
     if (assets.length) {
       const userAssetUpdates: { slide: (typeof createdSlides)[number]; assets: { id: string; storage_path: string }[] }[] = [];
       const eligibleSlides = createdSlides.filter(slideCanUseImage);
@@ -2002,21 +2007,25 @@ export async function generateCarousel(formData: FormData): Promise<
           return { url: primary.url, source: "pixabay" as const, pixabayAttribution: primary.attribution, alternates: rest.map((r) => r.url) };
         };
         const tryQueryWithFallback = async (query: string, preferred: StockProvider): Promise<ImageResult | null> => {
-          const order = [preferred, ...providers.filter((p) => p !== preferred)];
-          // A provider can be slow or unavailable. Start fallbacks together and
-          // take the first usable result instead of waiting through three 15s
-          // timeouts for every slide.
+          // Preferred first (usual happy path = one round-trip). Only race the
+          // other providers when preferred returns nothing.
+          const primary = await tryProvider(query, preferred).catch(() => null);
+          if (primary) return primary;
+          const fallbacks = providers.filter((p) => p !== preferred);
+          if (fallbacks.length === 0) return null;
           return new Promise<ImageResult | null>((resolve) => {
-            let remaining = order.length;
-            for (const provider of order) {
-              void tryProvider(query, provider).catch(() => null).then((result) => {
-                if (result) {
-                  resolve(result);
-                  return;
-                }
-                remaining -= 1;
-                if (remaining === 0) resolve(null);
-              });
+            let remaining = fallbacks.length;
+            for (const provider of fallbacks) {
+              void tryProvider(query, provider)
+                .catch(() => null)
+                .then((result) => {
+                  if (result) {
+                    resolve(result);
+                    return;
+                  }
+                  remaining -= 1;
+                  if (remaining === 0) resolve(null);
+                });
             }
           });
         };
@@ -2047,16 +2056,20 @@ export async function generateCarousel(formData: FormData): Promise<
         // Query variants are retries to find a good hit — not extra visible slots.
         /** Dedupe across the whole carousel: same normalized query + cache often yields identical top hits. */
         const usedBraveImageUrls = new Set<string>();
-        const MAX_VARIANTS_PER_SLIDE = 10;
+        const MAX_VARIANTS_PER_SLIDE = generationSpeed === "fast" ? 3 : 10;
         for (const job of searchJobs) {
           const { slide, queries } = job;
           const aiSlide = aiSlideByIndex.get(slide.slide_index);
           const trimmedQueries = queries.map((q) => q.trim()).filter(Boolean);
           /** 1 by default; 2 for comparison; notes can raise to 3–4 (“3 images”, collage, etc.). */
-          const desiredSlots = resolveDesiredImageSlots(trimmedQueries.length, data.notes);
+          const desiredSlots =
+            generationSpeed === "fast"
+              ? Math.min(1, resolveDesiredImageSlots(trimmedQueries.length, data.notes))
+              : resolveDesiredImageSlots(trimmedQueries.length, data.notes);
           const seenNormQueries = new Set<string>();
           const orderedQueries: string[] = [];
-          for (const q of trimmedQueries.slice(0, 4)) {
+          const querySeedLimit = generationSpeed === "fast" ? 1 : 4;
+          for (const q of trimmedQueries.slice(0, querySeedLimit)) {
             for (const v of buildWebSearchQueryVariants(q, {
               headline: aiSlide?.headline,
               body: typeof aiSlide?.body === "string" ? aiSlide.body : undefined,
@@ -2130,12 +2143,15 @@ export async function generateCarousel(formData: FormData): Promise<
     await updateCarousel(user.id, carousel.id, {
       generation_options: { ...opts, generation_phase: "finishing" },
     });
-    for (const slide of createdSlides) {
-      const templateIdForSlide = templateIdBySlideId.get(slide.id) ?? defaultTemplateId;
-      if (!templateIdForSlide) continue;
-      const result = await setSlideTemplate(slide.id, templateIdForSlide);
-      if (!result.ok) LOG("backgrounds", `setSlideTemplate failed for ${slide.id}: ${result.error}`);
-    }
+    // Template application is independent per slide — run in parallel.
+    await Promise.all(
+      createdSlides.map(async (slide) => {
+        const templateIdForSlide = templateIdBySlideId.get(slide.id) ?? defaultTemplateId;
+        if (!templateIdForSlide) return;
+        const result = await setSlideTemplate(slide.id, templateIdForSlide);
+        if (!result.ok) LOG("backgrounds", `setSlideTemplate failed for ${slide.id}: ${result.error}`);
+      })
+    );
   }
 
   /** Only mark generated after slides + backgrounds + template—otherwise polling shows the editor with empty frames. */
@@ -2188,48 +2204,51 @@ export async function generateCarousel(formData: FormData): Promise<
   LOG("done", `carousel ${carousel.id} ready (total ${elapsedMs(totalStart) / 1000}s)`);
   logTokenSummary(tokenUsageSteps, imageCostTrack);
 
-  // Persist open-loop memory + auto-advance marketing maturity after a successful run.
-  try {
-    const existingRules =
-      project.project_rules && typeof project.project_rules === "object"
-        ? { ...(project.project_rules as Record<string, unknown>) }
-        : {};
-    const progressUpdate = advanceOrganicMarketingProgress({
-      currentProgress: projectRulesParsed.organic_marketing_progress,
-      marketingCarouselsCompleted: projectRulesParsed.marketing_carousels_completed,
-      includeMarketing,
-    });
-    const fulfilled = topicLikelyFulfillsOpenLoop(data.input_value, pendingOpenLoop);
-    const nextOpenLoop = extractOpenLoopPromise(validated);
-    const nextRules: Record<string, unknown> = {
-      ...existingRules,
-      organic_marketing_progress: progressUpdate.progress,
-      marketing_carousels_completed: progressUpdate.marketingCarouselsCompleted,
-    };
-    if (fulfilled) {
-      if (nextOpenLoop) nextRules.pending_open_loop = nextOpenLoop;
-      else delete nextRules.pending_open_loop;
-    } else if (nextOpenLoop) {
-      nextRules.pending_open_loop = nextOpenLoop;
-    } else if (pendingOpenLoop) {
-      nextRules.pending_open_loop = pendingOpenLoop;
-    }
-    await updateProject(user.id, data.project_id, {
-      project_rules: nextRules as Json,
-    });
-    if (progressUpdate.bumped) {
-      LOG(
-        "QC",
-        `organic marketing progress bumped to ${progressUpdate.progress}/10 after ${progressUpdate.marketingCarouselsCompleted} marketing gens`
+  // Persist open-loop / marketing progress after the carousel is already marked
+  // ready — do not make the client wait on this non-critical write.
+  void (async () => {
+    try {
+      const existingRules =
+        project.project_rules && typeof project.project_rules === "object"
+          ? { ...(project.project_rules as Record<string, unknown>) }
+          : {};
+      const progressUpdate = advanceOrganicMarketingProgress({
+        currentProgress: projectRulesParsed.organic_marketing_progress,
+        marketingCarouselsCompleted: projectRulesParsed.marketing_carousels_completed,
+        includeMarketing,
+      });
+      const fulfilled = topicLikelyFulfillsOpenLoop(data.input_value, pendingOpenLoop);
+      const nextOpenLoop = extractOpenLoopPromise(validated);
+      const nextRules: Record<string, unknown> = {
+        ...existingRules,
+        organic_marketing_progress: progressUpdate.progress,
+        marketing_carousels_completed: progressUpdate.marketingCarouselsCompleted,
+      };
+      if (fulfilled) {
+        if (nextOpenLoop) nextRules.pending_open_loop = nextOpenLoop;
+        else delete nextRules.pending_open_loop;
+      } else if (nextOpenLoop) {
+        nextRules.pending_open_loop = nextOpenLoop;
+      } else if (pendingOpenLoop) {
+        nextRules.pending_open_loop = pendingOpenLoop;
+      }
+      await updateProject(user.id, data.project_id, {
+        project_rules: nextRules as Json,
+      });
+      if (progressUpdate.bumped) {
+        LOG(
+          "QC",
+          `organic marketing progress bumped to ${progressUpdate.progress}/10 after ${progressUpdate.marketingCarouselsCompleted} marketing gens`
+        );
+      }
+      if (nextOpenLoop) LOG("QC", `pending open loop stored: ${nextOpenLoop.slice(0, 80)}`);
+    } catch (e) {
+      console.warn(
+        "[carousel-gen] could not update project QC memory:",
+        e instanceof Error ? e.message : e
       );
     }
-    if (nextOpenLoop) LOG("QC", `pending open loop stored: ${nextOpenLoop.slice(0, 80)}`);
-  } catch (e) {
-    console.warn(
-      "[carousel-gen] could not update project QC memory:",
-      e instanceof Error ? e.message : e
-    );
-  }
+  })();
 
   return { carouselId: carousel.id };
   } catch (err) {
