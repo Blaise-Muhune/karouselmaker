@@ -151,9 +151,12 @@ export async function cloneCarousel(
   const slides = await listSlides(userId, sourceCarouselId);
   const goRaw = { ...((source.generation_options ?? {}) as Record<string, unknown>) };
   delete goRaw.generation_started;
+  delete goRaw.generation_started_at;
   delete goRaw.generation_complete;
   delete goRaw.ai_backgrounds_pending;
+  delete goRaw.generation_error;
   delete goRaw.generation_error_recovery;
+  delete goRaw.generation_phase;
 
   const status =
     source.status === "generating"

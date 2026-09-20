@@ -7,11 +7,7 @@ import { startCarouselGeneration } from "@/app/actions/carousels/generateCarouse
 import { consumeProjectTopicSuggestion, ensureProjectTopicLineup } from "@/app/actions/carousels/projectTopicSuggestions";
 import { Button } from "@/components/ui/button";
 import { UpgradePlansDialog } from "@/components/subscription/UpgradePlansDialog";
-import { WaitingGamesDialog } from "@/components/waiting/WaitingGamesDialog";
-import { GenerationProgressRing } from "@/components/carousels/GenerationProgressRing";
 import { PlusCircleIcon, SparklesIcon } from "lucide-react";
-
-const OVERLAY_MS = 5 * 60 * 1000;
 
 /**
  * One-click generate from project hub using the next queued topic + silent defaults.
@@ -85,20 +81,6 @@ export function GenerateNextPostButton({
 
   return (
     <>
-      {isPending && (
-        <div
-          className="fixed inset-0 z-100 flex min-h-dvh flex-col items-center justify-center bg-background/98 backdrop-blur-md"
-          aria-live="polite"
-          aria-busy="true"
-        >
-          <div className="mx-auto max-w-sm space-y-6 px-6 text-center">
-            <GenerationProgressRing durationMs={OVERLAY_MS} />
-            <p className="text-sm font-medium text-foreground">Generating your post…</p>
-            <WaitingGamesDialog loadingMessage="Your carousel is still generating…" triggerClassName="bg-background/80" />
-          </div>
-        </div>
-      )}
-
       <div className="space-y-3 rounded-2xl border border-border/70 bg-card/80 p-4 shadow-sm">
         <div className="min-w-0 space-y-1">
           <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Next post</p>

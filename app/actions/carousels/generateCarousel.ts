@@ -58,6 +58,7 @@ import { downloadStorageImageBuffer } from "@/lib/server/export/fetchImageAsData
 import { getContrastingTextColor } from "@/lib/editor/colorUtils";
 import { setSlideTemplate } from "@/app/actions/slides/setSlideTemplate";
 import { generateCarouselInputSchema } from "@/lib/validations/carousel";
+import { markCarouselGenerationFailed } from "@/lib/server/carousels/generationStatus";
 import {
   CAROUSEL_SLIDES_MAX,
   CAROUSEL_SLIDES_MIN,
@@ -559,6 +560,7 @@ export async function generateCarousel(formData: FormData): Promise<
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     LOG("config", "OPENAI_API_KEY missing");
+    await markCarouselGenerationFailed(user.id, carousel.id, "OPENAI_API_KEY is not configured");
     return { error: "OPENAI_API_KEY is not configured" };
   }
 
@@ -655,6 +657,11 @@ export async function generateCarousel(formData: FormData): Promise<
     await Promise.all(orderedRequestedTemplateIds.map((templateId) => getTemplate(user.id, templateId)))
   ).filter((template): template is NonNullable<typeof template> => Boolean(template));
   if (!isAdmin(user.email) && selectedTemplatesForPrompt.some((template) => template.is_hidden)) {
+    await markCarouselGenerationFailed(
+      user.id,
+      carousel.id,
+      "One of the selected templates is no longer available."
+    );
     return { error: "One of the selected templates is no longer available." };
   }
 
@@ -773,6 +780,7 @@ export async function generateCarousel(formData: FormData): Promise<
 
     if (!content?.trim()) {
       LOG("AI", "empty response");
+      await markCarouselGenerationFailed(user.id, carousel.id, "No response from AI");
       return { error: "No response from AI" };
     }
 
@@ -783,8 +791,9 @@ export async function generateCarousel(formData: FormData): Promise<
       lastError = result.error;
       LOG("AI validation", result.error);
       if (attempt < MAX_RETRIES) continue;
-      await updateCarousel(user.id, carousel.id, { status: "draft" });
-      return { error: `Generation failed after retries: ${result.error}` };
+      const failMsg = `Generation failed after retries: ${result.error}`;
+      await markCarouselGenerationFailed(user.id, carousel.id, failMsg);
+      return { error: failMsg };
     }
 
     validated = postProcessAiGeneratedImageQueries(result, useAiGenerate);
@@ -793,7 +802,7 @@ export async function generateCarousel(formData: FormData): Promise<
   }
 
   if (!validated || "error" in validated) {
-    await updateCarousel(user.id, carousel.id, { status: "draft" });
+    await markCarouselGenerationFailed(user.id, carousel.id, "Generation failed");
     return { error: "Generation failed" };
   }
 
@@ -1096,7 +1105,9 @@ export async function generateCarousel(formData: FormData): Promise<
     use_saved_ugc_character: parsed.data.use_saved_ugc_character !== false,
     ugc_used_project_avatar_refs: ugcUsedProjectAvatarRefs,
     generation_started: false,
+    generation_started_at: null,
     generation_phase: "assembling",
+    generation_error: null,
     ...(carouselFor && { carousel_for: carouselFor }),
     images_related_to_topic: data.images_related_to_topic !== false,
     ...(data.notes?.trim() && { notes: data.notes.trim() }),
@@ -2298,6 +2309,15 @@ export async function generateCarousel(formData: FormData): Promise<
             });
           }
         }
+      } else if (current?.status === "generating") {
+        await markCarouselGenerationFailed(
+          user.id,
+          carousel.id,
+          isTimeout
+            ? "Generation was interrupted (server timeout). Retry to try again."
+            : msg || "Generation failed"
+        );
+        return { error: msg || "Generation failed" };
       }
     } catch {
       // ignore; avoid hiding original error
@@ -2510,14 +2530,18 @@ export async function startCarouselGeneration(formData: FormData): Promise<
     useAiGenStored = true;
     useStockStored = false;
   }
+  const generationSpeedStored = data.generation_speed === "quality" ? "quality" : "fast";
   const generationOptions: Record<string, unknown> = {
     use_ai_backgrounds: useAiBg,
     use_stock_photos: useStockStored,
     use_ai_generate: useAiGenStored,
     use_web_search: hasFullAccess && !!data.use_web_search,
     use_saved_ugc_character: parsed.data.use_saved_ugc_character !== false,
+    generation_speed: generationSpeedStored,
     generation_started: false,
+    generation_started_at: null,
     generation_phase: "queued",
+    generation_error: null,
     number_of_slides: data.number_of_slides,
     notes: data.notes,
     images_related_to_topic: data.images_related_to_topic !== false,

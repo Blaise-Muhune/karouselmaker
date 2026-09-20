@@ -11,6 +11,7 @@ import {
 } from "@/lib/server/db/carousels";
 import { listStoredExportsByCarousel } from "@/lib/server/db/exports";
 import { removeStoredExportFiles } from "@/lib/server/storage/exportRetention";
+import { clearCarouselGenerationLock } from "@/lib/server/carousels/generationStatus";
 import { startCarouselGeneration } from "./generateCarousel";
 
 export type CarouselActionResult = { ok: true } | { ok: false; error: string };
@@ -24,6 +25,7 @@ export async function getCarouselGenerationSnapshot(carouselId: string): Promise
       generation_started: boolean;
       generation_complete: boolean;
       generation_phase: string;
+      generation_error: string | null;
       use_ai_backgrounds: boolean;
       use_ai_generate: boolean;
       /** True while server is still running AI/stock image pipeline for slides. */
@@ -40,10 +42,86 @@ export async function getCarouselGenerationSnapshot(carouselId: string): Promise
     generation_started: o.generation_started === true,
     generation_complete: o.generation_complete === true,
     generation_phase: typeof o.generation_phase === "string" ? o.generation_phase : "queued",
+    generation_error:
+      typeof o.generation_error === "string" && o.generation_error.trim()
+        ? o.generation_error.trim()
+        : null,
     use_ai_backgrounds: o.use_ai_backgrounds === true,
     use_ai_generate: o.use_ai_generate === true,
     ai_backgrounds_pending: o.ai_backgrounds_pending === true,
   };
+}
+
+/**
+ * After a failed generate (draft + generation_error), reset lock and re-queue generation.
+ */
+export async function retryCarouselGeneration(
+  carouselId: string,
+  projectId: string
+): Promise<{ ok: true; carouselId: string } | { ok: false; error: string }> {
+  const { user } = await getUser();
+  const carousel = await getCarousel(user.id, carouselId);
+  if (!carousel || carousel.project_id !== projectId) {
+    return { ok: false, error: "Carousel not found" };
+  }
+  const opts = (carousel.generation_options ?? {}) as Record<string, unknown>;
+  if (carousel.status === "generated" && opts.generation_error == null) {
+    return { ok: false, error: "Carousel already generated" };
+  }
+
+  const formData = new FormData();
+  formData.set("project_id", projectId);
+  formData.set("carousel_id", carouselId);
+  formData.set("input_type", carousel.input_type);
+  formData.set("input_value", carousel.input_value);
+  formData.set("title", carousel.title === "Generating…" ? "" : carousel.title);
+
+  if (opts.number_of_slides != null) formData.set("number_of_slides", String(opts.number_of_slides));
+  if (Array.isArray(opts.background_asset_ids))
+    formData.set("background_asset_ids", JSON.stringify(opts.background_asset_ids));
+  if (Array.isArray(opts.ai_style_reference_asset_ids))
+    formData.set("ai_style_reference_asset_ids", JSON.stringify(opts.ai_style_reference_asset_ids));
+  if (Array.isArray(opts.ugc_character_reference_asset_ids))
+    formData.set(
+      "ugc_character_reference_asset_ids",
+      JSON.stringify(opts.ugc_character_reference_asset_ids)
+    );
+  if (Array.isArray(opts.product_reference_asset_ids))
+    formData.set("product_reference_asset_ids", JSON.stringify(opts.product_reference_asset_ids));
+  if (opts.use_ai_backgrounds) formData.set("use_ai_backgrounds", "true");
+  if (opts.use_stock_photos) formData.set("use_stock_photos", "true");
+  if (opts.use_ai_generate) formData.set("use_ai_generate", "true");
+  if (opts.use_web_search) formData.set("use_web_search", "true");
+  if (opts.use_saved_ugc_character === false) formData.set("use_saved_ugc_character", "false");
+  if (typeof opts.notes === "string" && opts.notes.trim()) formData.set("notes", opts.notes.trim());
+  if (opts.images_related_to_topic === false) formData.set("images_related_to_topic", "false");
+  else formData.set("images_related_to_topic", "true");
+  if (typeof opts.template_id === "string" && opts.template_id.trim())
+    formData.set("template_id", opts.template_id);
+  if (Array.isArray(opts.template_ids)) formData.set("template_ids", JSON.stringify(opts.template_ids));
+  if (opts.viral_shorts_style) formData.set("viral_shorts_style", "true");
+  if (opts.carousel_for === "linkedin" || opts.carousel_for === "instagram")
+    formData.set("carousel_for", opts.carousel_for);
+  if (opts.include_marketing === true) formData.set("include_marketing", "true");
+  else formData.set("include_marketing", "false");
+  if (typeof opts.product_service_input === "string" && opts.product_service_input.trim())
+    formData.set("product_service_input", opts.product_service_input.trim());
+  formData.set("generation_speed", opts.generation_speed === "quality" ? "quality" : "fast");
+
+  // Ensure a stuck lock cannot block the restarted run.
+  if (carousel.status === "generating" && opts.generation_started === true) {
+    await clearCarouselGenerationLock(user.id, carouselId);
+  }
+
+  const result = await startCarouselGeneration(formData);
+  if (!("carouselId" in result) || typeof result.carouselId !== "string") {
+    return {
+      ok: false,
+      error: "error" in result && typeof result.error === "string" ? result.error : "Retry failed",
+    };
+  }
+  revalidatePath(`/p/${projectId}/c/${result.carouselId}`);
+  return { ok: true, carouselId: result.carouselId };
 }
 
 export async function deleteCarousel(
@@ -114,24 +192,39 @@ export async function regenerateCarousel(
   formData.set("input_type", carousel.input_type);
   formData.set("input_value", carousel.input_value);
   formData.set("use_ai_backgrounds", "true");
-  const opts = carousel.generation_options as {
-    use_stock_photos?: boolean;
-    use_unsplash_only?: boolean;
-    use_pixabay_only?: boolean;
-    use_pexels_only?: boolean;
-    use_ai_generate?: boolean;
-    carousel_for?: "instagram" | "linkedin";
-    notes?: string;
-    ai_style_reference_asset_ids?: string[];
-    ugc_character_reference_asset_ids?: string[];
-  } | undefined;
-  if (opts?.use_stock_photos || opts?.use_unsplash_only || opts?.use_pixabay_only || opts?.use_pexels_only) formData.set("use_stock_photos", "true");
+  const opts = carousel.generation_options as
+    | {
+        use_stock_photos?: boolean;
+        use_unsplash_only?: boolean;
+        use_pixabay_only?: boolean;
+        use_pexels_only?: boolean;
+        use_ai_generate?: boolean;
+        carousel_for?: "instagram" | "linkedin";
+        notes?: string;
+        ai_style_reference_asset_ids?: string[];
+        ugc_character_reference_asset_ids?: string[];
+        generation_speed?: "fast" | "quality";
+      }
+    | undefined;
+  if (
+    opts?.use_stock_photos ||
+    opts?.use_unsplash_only ||
+    opts?.use_pixabay_only ||
+    opts?.use_pexels_only
+  )
+    formData.set("use_stock_photos", "true");
   if (opts?.use_ai_generate) formData.set("use_ai_generate", "true");
-  if (opts?.carousel_for === "linkedin" || opts?.carousel_for === "instagram") formData.set("carousel_for", opts.carousel_for);
-  if (opts?.notes && typeof opts.notes === "string" && opts.notes.trim()) formData.set("notes", opts.notes.trim());
+  if (opts?.carousel_for === "linkedin" || opts?.carousel_for === "instagram")
+    formData.set("carousel_for", opts.carousel_for);
+  if (opts?.notes && typeof opts.notes === "string" && opts.notes.trim())
+    formData.set("notes", opts.notes.trim());
   if (opts?.ai_style_reference_asset_ids?.length)
     formData.set("ai_style_reference_asset_ids", JSON.stringify(opts.ai_style_reference_asset_ids));
   if (opts?.ugc_character_reference_asset_ids?.length)
-    formData.set("ugc_character_reference_asset_ids", JSON.stringify(opts.ugc_character_reference_asset_ids));
+    formData.set(
+      "ugc_character_reference_asset_ids",
+      JSON.stringify(opts.ugc_character_reference_asset_ids)
+    );
+  formData.set("generation_speed", opts?.generation_speed === "quality" ? "quality" : "fast");
   return startCarouselGeneration(formData);
 }

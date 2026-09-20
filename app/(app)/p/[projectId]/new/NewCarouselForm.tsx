@@ -30,8 +30,6 @@ import type { TemplateConfig } from "@/lib/server/renderer/templateSchema";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { UpgradePlansDialog } from "@/components/subscription/UpgradePlansDialog";
-import { WaitingGamesDialog } from "@/components/waiting/WaitingGamesDialog";
-import { GenerationProgressRing } from "@/components/carousels/GenerationProgressRing";
 import {
   Gem,
   ImageIcon,
@@ -49,8 +47,6 @@ import {
   CAROUSEL_SLIDES_MAX,
   CAROUSEL_SLIDES_MIN,
 } from "@/lib/constants";
-
-const CAROUSEL_GENERATION_OVERLAY_REFRESH_MS = 5 * 60 * 1000;
 
 type ImageSource = "stock" | "library";
 
@@ -406,22 +402,6 @@ export function NewCarouselForm({
 
   return (
     <>
-      {isPending && (
-        <div
-          className="fixed inset-0 z-100 flex min-h-dvh flex-col items-center justify-center bg-background/98 backdrop-blur-md"
-          aria-live="polite"
-          aria-busy="true"
-        >
-          <div className="mx-auto max-w-sm space-y-6 px-6 text-center">
-            <GenerationProgressRing durationMs={CAROUSEL_GENERATION_OVERLAY_REFRESH_MS} />
-            <p className="text-sm font-medium text-foreground">
-              {regenerateCarouselId ? "Regenerating your post…" : "Generating your post…"}
-            </p>
-            <WaitingGamesDialog loadingMessage="Your carousel is still generating…" triggerClassName="bg-background/80" />
-          </div>
-        </div>
-      )}
-
       <form ref={formRef} onSubmit={handleSubmit} className="space-y-6">
         {regenerateCarouselId && (
           <div className="rounded-lg border border-border/60 bg-muted/20 px-4 py-3">

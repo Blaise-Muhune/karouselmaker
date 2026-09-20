@@ -24,7 +24,10 @@ import type { ExportFormat, ExportSize } from "@/lib/server/db/types";
 import { FREE_FULL_ACCESS_GENERATIONS } from "@/lib/constants";
 import { slugifyForFilename } from "@/lib/utils";
 import { GenerationPartialBanner } from "@/components/carousels/GenerationPartialBanner";
-import { CarouselGeneratingPage } from "@/components/carousels/CarouselGeneratingTrigger";
+import {
+  CarouselGeneratingPage,
+  CarouselGenerationFailedPage,
+} from "@/components/carousels/CarouselGeneratingTrigger";
 import { TikTokAdminSchedulePanel } from "@/components/tiktok/TikTokAdminSchedulePanel";
 import { ArrowLeftIcon, SparklesIcon } from "lucide-react";
 
@@ -86,7 +89,23 @@ export default async function CarouselEditorPage({
 
   // Show loading immediately when generating; skip heavy work so refresh gets fresh status.
   if (carousel.status === "generating") {
-    return <CarouselGeneratingPage carouselId={carouselId} />;
+    return <CarouselGeneratingPage carouselId={carouselId} projectId={projectId} />;
+  }
+
+  const generationErrorEarly = (() => {
+    const o = (carousel.generation_options ?? {}) as Record<string, unknown>;
+    return typeof o.generation_error === "string" && o.generation_error.trim()
+      ? o.generation_error.trim()
+      : null;
+  })();
+  if (carousel.status === "draft" && generationErrorEarly) {
+    return (
+      <CarouselGenerationFailedPage
+        projectId={projectId}
+        carouselId={carouselId}
+        error={generationErrorEarly}
+      />
+    );
   }
 
   const favoriteIdSet = new Set(favoriteIds);

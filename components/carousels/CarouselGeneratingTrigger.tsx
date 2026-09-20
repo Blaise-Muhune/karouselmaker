@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader2Icon } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -11,8 +12,12 @@ import {
   generationPhaseCopy,
   type GenerationPhase,
 } from "@/components/carousels/GenerationProgressRing";
-import { getCarouselGenerationSnapshot } from "@/app/actions/carousels/carouselActions";
+import {
+  getCarouselGenerationSnapshot,
+  retryCarouselGeneration,
+} from "@/app/actions/carousels/carouselActions";
 
+const POLL_INTERVAL_MS = 750;
 const POLL_STUCK_MS = 120_000;
 const POLL_AI_BACKGROUNDS_MAX_MS = 600_000;
 
@@ -21,6 +26,7 @@ function isGenerationPollComplete(
     status: string;
     generation_started: boolean;
     generation_complete: boolean;
+    generation_error: string | null;
     use_ai_backgrounds: boolean;
     ai_backgrounds_pending: boolean;
   },
@@ -80,6 +86,7 @@ export function CarouselGeneratingTrigger({
     const tick = async () => {
       const snap = await getCarouselGenerationSnapshot(carouselId);
       if (!snap.ok) return;
+      if (snap.generation_error) setError(snap.generation_error);
       if (isGenerationPollComplete(snap, startedAt)) {
         if (pollRef.current) {
           clearInterval(pollRef.current);
@@ -89,7 +96,7 @@ export function CarouselGeneratingTrigger({
       }
     };
     void tick();
-    pollRef.current = setInterval(() => void tick(), 1500);
+    pollRef.current = setInterval(() => void tick(), POLL_INTERVAL_MS);
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
@@ -113,7 +120,7 @@ export function CarouselGeneratingBanner() {
     <div className="flex items-center gap-3 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 text-sm">
       <Loader2Icon className="size-5 shrink-0 animate-spin text-primary" aria-hidden />
       <p className="font-medium">Generating your carousel…</p>
-      <p className="text-muted-foreground">Usually a minute or two. Safe to switch tabs.</p>
+      <p className="text-muted-foreground">Usually about 15–25 seconds with stock images. Safe to switch tabs.</p>
     </div>
   );
 }
@@ -133,6 +140,55 @@ function formatElapsed(seconds: number) {
   return `${Math.floor(seconds / 60)}m ${seconds % 60}s elapsed`;
 }
 
+function GenerationFailedPanel({
+  projectId,
+  carouselId,
+  error,
+}: {
+  projectId: string;
+  carouselId: string;
+  error: string;
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [retryError, setRetryError] = useState<string | null>(null);
+
+  function handleRetry() {
+    setRetryError(null);
+    startTransition(async () => {
+      const result = await retryCarouselGeneration(carouselId, projectId);
+      if (!result.ok) {
+        setRetryError(result.error);
+        return;
+      }
+      router.refresh();
+    });
+  }
+
+  return (
+    <div className="fixed inset-0 z-[100] flex min-h-screen min-h-[100dvh] flex-col items-center justify-center bg-background/98 backdrop-blur-md p-6">
+      <div className="mx-auto max-w-sm space-y-6 px-6 text-center">
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-foreground">Generation failed</p>
+          <p className="text-sm text-destructive">{error}</p>
+          {retryError ? <p className="text-xs text-destructive">{retryError}</p> : null}
+        </div>
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <Button onClick={handleRetry} loading={pending} disabled={pending}>
+            Retry
+          </Button>
+          <Button variant="outline" asChild>
+            <Link href={`/p/${projectId}/new`}>Edit settings</Link>
+          </Button>
+          <Button variant="ghost" asChild>
+            <Link href={`/p/${projectId}`}>Back to project</Link>
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Full-page loading state when user lands on carousel page while status is still "generating".
  * Kicks off generation (POST) and polls until status is no longer "generating". The server only
@@ -142,8 +198,10 @@ function formatElapsed(seconds: number) {
  */
 export function CarouselGeneratingPage({
   carouselId,
+  projectId,
 }: {
   carouselId: string;
+  projectId: string;
 }) {
   const router = useRouter();
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -203,6 +261,9 @@ export function CarouselGeneratingPage({
       if (!snap.ok) return;
       setPhase(generationPhaseFromSnapshot(snap.generation_phase));
       setUsesAiImages(snap.use_ai_generate);
+      if (snap.generation_error) {
+        setError(snap.generation_error);
+      }
       if (isGenerationPollComplete(snap, startedAt)) {
         try {
           window.sessionStorage.removeItem(reloadMarker);
@@ -213,27 +274,19 @@ export function CarouselGeneratingPage({
           clearInterval(pollRef.current);
           pollRef.current = null;
         }
+        // Failed runs land on draft + generation_error; refresh so the page shows Retry.
         router.refresh();
       }
     };
     void tick();
-    pollRef.current = setInterval(() => void tick(), 1500);
+    pollRef.current = setInterval(() => void tick(), POLL_INTERVAL_MS);
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, [carouselId, hasReloadedAfterTimeout, reloadMarker, router]);
 
   if (error) {
-    return (
-      <div className="fixed inset-0 z-[100] flex min-h-screen min-h-[100dvh] flex-col items-center justify-center bg-background/98 backdrop-blur-md p-6">
-        <div className="mx-auto max-w-sm space-y-6 px-6 text-center">
-          <p className="text-sm font-medium text-destructive">{error}</p>
-          <Button variant="outline" onClick={() => router.refresh()}>
-            Try again
-          </Button>
-        </div>
-      </div>
-    );
+    return <GenerationFailedPanel projectId={projectId} carouselId={carouselId} error={error} />;
   }
 
   return (
@@ -252,7 +305,7 @@ export function CarouselGeneratingPage({
         <p className="text-xs text-muted-foreground">
           {usesAiImages
             ? "AI visuals can take a few minutes. You can safely switch tabs while this finishes."
-            : "We’ll open your carousel as soon as the final step is done. You can safely switch tabs."}
+            : "Usually about 15–25 seconds with stock images. You can safely switch tabs."}
         </p>
         {hasReloadedAfterTimeout && (
           <p className="text-xs text-muted-foreground">
@@ -268,4 +321,17 @@ export function CarouselGeneratingPage({
       </div>
     </div>
   );
+}
+
+/** Full-page fail state when the carousel left generating as draft with generation_error. */
+export function CarouselGenerationFailedPage({
+  projectId,
+  carouselId,
+  error,
+}: {
+  projectId: string;
+  carouselId: string;
+  error: string;
+}) {
+  return <GenerationFailedPanel projectId={projectId} carouselId={carouselId} error={error} />;
 }
