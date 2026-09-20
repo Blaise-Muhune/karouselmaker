@@ -37,8 +37,29 @@ import type { Slide, Template } from "@/lib/server/db/types";
 import { useRouter } from "next/navigation";
 import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, DownloadIcon, GripVerticalIcon, Images, LayoutTemplateIcon, Loader2Icon, PencilIcon, PlusIcon, Shuffle, SquareIcon, Trash2Icon } from "lucide-react";
 import { FONT_WEIGHT_MAX, FONT_WEIGHT_MIN } from "@/lib/constants/fontWeight";
+import {
+  InstagramMicroIcon,
+  TikTokMicroIcon,
+} from "@/components/carousels/BackgroundSourcePlatformHints";
 
-const PREVIEW_SCALE = 0.2;
+const PREVIEW_SCALE = 0.22;
+
+function templatePlatformIcon(template: { name?: string | null; category?: string | null } | undefined) {
+  const cat = (template?.category ?? "").toLowerCase();
+  const name = (template?.name ?? "").trim();
+  if (cat.includes("tiktok") || /^tt\d*\b/i.test(name) || /tiktok/i.test(name)) {
+    return <TikTokMicroIcon className="size-3.5 opacity-100" />;
+  }
+  if (cat.includes("instagram") || /^ig\d*\b/i.test(name) || /instagram/i.test(name)) {
+    return <InstagramMicroIcon className="size-3.5 opacity-100" />;
+  }
+  return <LayoutTemplateIcon className="size-3.5 shrink-0 text-muted-foreground" />;
+}
+
+function templateChipLabel(template: { name?: string | null } | undefined) {
+  const name = template?.name?.trim();
+  return name && name.length > 0 ? name : "Template";
+}
 
 function slideHasPhotoBackground(slide: Slide): boolean {
   const bg = slide.background as {
@@ -825,7 +846,16 @@ export function SlideGrid({
           )}
         </div>
       )}
-      <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <ul
+        className={cn(
+          "grid justify-items-center gap-5 sm:gap-6",
+          exportSize === "1080x1920"
+            ? "grid-cols-1 sm:grid-cols-2 xl:grid-cols-3"
+            : exportSize === "1080x1080"
+              ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4"
+              : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+        )}
+      >
         {slidesOrder.map((slide, index) => {
           const templateConfigFromList = getTemplateConfig(slide, templates);
           const effectiveTemplateConfig = templateConfigFromList ?? fetchedTemplateConfigs[slide.id] ?? null;
@@ -881,23 +911,54 @@ export function SlideGrid({
               onDragLeave={canEdit ? handleDragLeave : undefined}
               onDrop={canEdit ? (e) => handleDrop(e, slide.id) : undefined}
               onDragEnd={canEdit ? handleDragEnd : undefined}
-              className={`flex flex-col gap-2 transition-opacity ${isDragging ? "opacity-50" : ""} ${isDragOver ? "ring-2 ring-primary rounded-lg" : ""} ${canEdit ? "pl-0 pt-0" : ""}`}
+              className={cn(
+                "group/slide w-full max-w-[280px] transition-opacity",
+                isDragging && "opacity-50",
+                isDragOver && "ring-2 ring-primary/70 ring-offset-2 ring-offset-background rounded-2xl"
+              )}
             >
-              <div className={cn("flex items-start", canEdit ? "gap-2" : "")}>
-                {canEdit && (
-                  <div
-                    className="cursor-grab active:cursor-grabbing mt-2 p-1.5 rounded text-muted-foreground hover:text-foreground touch-none shrink-0"
-                    draggable
-                    onDragStart={(e) => {
-                      e.stopPropagation();
-                      handleDragStart(e, slide.id);
-                    }}
-                    aria-label="Drag to reorder"
-                  >
-                    <GripVerticalIcon className="size-4" />
-                  </div>
+              <div
+                className={cn(
+                  "relative flex flex-col overflow-hidden rounded-2xl border border-border/70 bg-card/40 shadow-sm",
+                  "ring-1 ring-black/[0.03] dark:ring-white/[0.04]",
+                  "transition-[border-color,box-shadow] duration-200",
+                  "hover:border-border hover:shadow-md"
                 )}
-                <div className="flex-1 min-w-0 flex flex-col gap-2">
+              >
+                <div className="flex items-center justify-between gap-2 border-b border-border/50 px-2.5 py-1.5">
+                  <div className="flex min-w-0 items-center gap-1">
+                    {canEdit ? (
+                      <button
+                        type="button"
+                        className="cursor-grab touch-none rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground active:cursor-grabbing"
+                        draggable
+                        onDragStart={(e) => {
+                          e.stopPropagation();
+                          handleDragStart(e, slide.id);
+                        }}
+                        aria-label={`Reorder slide ${index + 1}`}
+                        title="Drag to reorder"
+                      >
+                        <GripVerticalIcon className="size-3.5" />
+                      </button>
+                    ) : null}
+                    <span className="tabular-nums text-[11px] font-medium text-muted-foreground">
+                      {String(index + 1).padStart(2, "0")}
+                      <span className="text-muted-foreground/50"> / {String(slidesOrder.length).padStart(2, "0")}</span>
+                    </span>
+                  </div>
+                  {getImageCount(slide) > 1 ? (
+                    <span
+                      className="inline-flex items-center gap-1 rounded-md bg-muted/80 px-1.5 py-0.5 text-[10px] text-muted-foreground"
+                      title={`${getImageCount(slide)} images`}
+                    >
+                      <Images className="size-3" />
+                      {getImageCount(slide)}
+                    </span>
+                  ) : null}
+                </div>
+
+                <div className="flex justify-center bg-muted/20 p-2.5 sm:p-3">
                   {canEdit ? (
                     <div className="relative" style={{ width: previewDims.w, height: previewDims.h }}>
                       {false && canEdit && (
@@ -926,13 +987,13 @@ export function SlideGrid({
                       )}
                       <Link
                         href={`/p/${projectId}/c/${carouselId}/s/${slide.id}`}
-                        className="relative rounded-lg border border-border bg-muted/30 text-left transition-colors hover:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/50 block z-0"
+                        className="relative z-0 block overflow-hidden rounded-xl border border-border/60 bg-muted/30 text-left shadow-sm transition-[border-color,transform] duration-200 hover:border-primary/40 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 active:scale-[0.99]"
                         style={{
                           width: previewDims.w,
                           height: previewDims.h,
-                          overflow: "visible",
-                          clipPath: "inset(0 round 8px)",
+                          clipPath: "inset(0 round 12px)",
                         }}
+                        title="Edit slide"
                       >
                         {effectiveTemplateConfig ? (
                         <div
@@ -1042,13 +1103,13 @@ export function SlideGrid({
                   ) : (
                     <Link
                       href={`/p/${projectId}/c/${carouselId}/s/${slide.id}`}
-                      className="relative rounded-lg border border-border bg-muted/30 text-left block transition-colors hover:border-primary/30 focus:outline-none focus:ring-2 focus:ring-primary/50"
+                      className="relative z-0 block overflow-hidden rounded-xl border border-border/60 bg-muted/30 text-left shadow-sm transition-[border-color] duration-200 hover:border-primary/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
                       style={{
                         width: previewDims.w,
                         height: previewDims.h,
-                        overflow: "visible",
-                        clipPath: "inset(0 round 8px)",
+                        clipPath: "inset(0 round 12px)",
                       }}
+                      title="Edit slide"
                     >
                       {effectiveTemplateConfig ? (
                         <div
@@ -1127,32 +1188,25 @@ export function SlideGrid({
                       )}
                     </Link>
                   )}
-                  <div className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                </div>
+
+                <div className="border-t border-border/50 px-2.5 py-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-full justify-start gap-2 px-2 text-xs font-medium text-foreground/90 hover:bg-muted/70"
+                    disabled={!canEdit || isPending || reorderPending || templates.length === 0}
+                    onClick={() => setTemplateModalSlideId(slide.id)}
+                    title="Change template"
+                  >
+                    {templatePlatformIcon(templates.find((t) => t.id === currentTemplateId))}
+                    <span className="truncate">
+                      {templateChipLabel(templates.find((t) => t.id === currentTemplateId))}
+                    </span>
+                  </Button>
+                  {false && (
                     <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="text-xs justify-start min-w-0 max-w-[180px]"
-                      disabled={!canEdit || isPending || reorderPending || templates.length === 0}
-                      onClick={() => setTemplateModalSlideId(slide.id)}
-                      title="Change template"
-                    >
-                      <LayoutTemplateIcon className="size-3.5 shrink-0 mr-1.5 text-muted-foreground" />
-                      <span className="truncate">
-                        {templates.find((t) => t.id === currentTemplateId)?.name ?? "Template"}
-                        {templates.find((t) => t.id === currentTemplateId)?.user_id == null ? " (system)" : ""}
-                      </span>
-                    </Button>
-                    {getImageCount(slide) > 1 && (
-                      <span
-                        className="inline-flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
-                        title={`${getImageCount(slide)} images`}
-                      >
-                        <Images className="size-3.5" />
-                        {getImageCount(slide)}
-                      </span>
-                    )}
-                    {false && <Button
                       variant="outline"
                       size="icon-sm"
                       title="Download this frame"
@@ -1188,63 +1242,63 @@ export function SlideGrid({
                         <DownloadIcon className="size-4" />
                       )}
                       <span className="sr-only">Download this frame</span>
-                    </Button>}
-                    {false && canEdit && slideHasShuffleableImages(slide) && (
-                      <Button
-                        variant="outline"
-                        size="icon-sm"
-                        title="Shuffle background images for this frame"
-                        disabled={shufflingSlideId === slide.id}
-                        onClick={() => {
-                          setShufflingSlideId(slide.id);
-                          startTransition(async () => {
-                            const result = await shuffleSlideBackgrounds(slide.id, editorPath);
-                            setShufflingSlideId(null);
-                            if (result.ok) router.refresh();
-                          });
-                        }}
-                      >
-                        {shufflingSlideId === slide.id ? (
-                          <Loader2Icon className="size-4 animate-spin" aria-hidden />
-                        ) : (
-                          <Shuffle className="size-4" />
-                        )}
-                        <span className="sr-only">Shuffle images</span>
-                      </Button>
-                    )}
-                    {false && canEdit ? (
-                      <Button variant="outline" size="icon-sm" asChild title="Edit frame">
-                        <Link href={`/p/${projectId}/c/${carouselId}/s/${slide.id}`}>
-                          <PencilIcon className="size-4" />
-                        </Link>
-                      </Button>
-                    ) : null}
-                    {false && canEdit && slidesOrder.length > 1 ? (
-                      <Button
-                        variant="outline"
-                        size="icon-sm"
-                        title="Delete this frame"
-                        disabled={deletingSlideId === slide.id || isPending || reorderPending}
-                        onClick={() => {
-                          if (deletingSlideId) return;
-                          if (!confirm("Delete this frame? This cannot be undone.")) return;
-                          setDeletingSlideId(slide.id);
-                          startTransition(async () => {
-                            const result = await deleteSlideAction(slide.id, editorPath);
-                            setDeletingSlideId(null);
-                            if (result.ok) router.refresh();
-                          });
-                        }}
-                      >
-                        {deletingSlideId === slide.id ? (
-                          <Loader2Icon className="size-4 animate-spin" aria-hidden />
-                        ) : (
-                          <Trash2Icon className="size-4" />
-                        )}
-                        <span className="sr-only">Delete this frame</span>
-                      </Button>
-                    ) : null}
-                  </div>
+                    </Button>
+                  )}
+                  {false && canEdit && slideHasShuffleableImages(slide) && (
+                    <Button
+                      variant="outline"
+                      size="icon-sm"
+                      title="Shuffle background images for this frame"
+                      disabled={shufflingSlideId === slide.id}
+                      onClick={() => {
+                        setShufflingSlideId(slide.id);
+                        startTransition(async () => {
+                          const result = await shuffleSlideBackgrounds(slide.id, editorPath);
+                          setShufflingSlideId(null);
+                          if (result.ok) router.refresh();
+                        });
+                      }}
+                    >
+                      {shufflingSlideId === slide.id ? (
+                        <Loader2Icon className="size-4 animate-spin" aria-hidden />
+                      ) : (
+                        <Shuffle className="size-4" />
+                      )}
+                      <span className="sr-only">Shuffle images</span>
+                    </Button>
+                  )}
+                  {false && canEdit ? (
+                    <Button variant="outline" size="icon-sm" asChild title="Edit frame">
+                      <Link href={`/p/${projectId}/c/${carouselId}/s/${slide.id}`}>
+                        <PencilIcon className="size-4" />
+                      </Link>
+                    </Button>
+                  ) : null}
+                  {false && canEdit && slidesOrder.length > 1 ? (
+                    <Button
+                      variant="outline"
+                      size="icon-sm"
+                      title="Delete this frame"
+                      disabled={deletingSlideId === slide.id || isPending || reorderPending}
+                      onClick={() => {
+                        if (deletingSlideId) return;
+                        if (!confirm("Delete this frame? This cannot be undone.")) return;
+                        setDeletingSlideId(slide.id);
+                        startTransition(async () => {
+                          const result = await deleteSlideAction(slide.id, editorPath);
+                          setDeletingSlideId(null);
+                          if (result.ok) router.refresh();
+                        });
+                      }}
+                    >
+                      {deletingSlideId === slide.id ? (
+                        <Loader2Icon className="size-4 animate-spin" aria-hidden />
+                      ) : (
+                        <Trash2Icon className="size-4" />
+                      )}
+                      <span className="sr-only">Delete this frame</span>
+                    </Button>
+                  ) : null}
                 </div>
               </div>
             </li>

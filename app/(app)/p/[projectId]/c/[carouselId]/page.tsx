@@ -22,7 +22,7 @@ import { UpgradeBanner } from "@/components/subscription/UpgradeBanner";
 import type { BrandKit } from "@/lib/renderer/renderModel";
 import type { ExportFormat, ExportSize } from "@/lib/server/db/types";
 import { FREE_FULL_ACCESS_GENERATIONS } from "@/lib/constants";
-import { slugifyForFilename } from "@/lib/utils";
+import { cn, slugifyForFilename } from "@/lib/utils";
 import { GenerationPartialBanner } from "@/components/carousels/GenerationPartialBanner";
 import {
   CarouselGeneratingPage,
@@ -267,21 +267,20 @@ export default async function CarouselEditorPage({
   const isGenerating = carousel.status === "generating"; // always false here (we early-return above)
 
   return (
-    <div className="min-h-[calc(100vh-8rem)] p-6 md:p-8">
-      <div className="mx-auto max-w-4xl space-y-6">
+    <div className="min-h-[calc(100vh-8rem)] px-4 py-5 sm:px-6 sm:py-7 lg:px-8">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 sm:gap-6">
         {showGenerationPartial && <GenerationPartialBanner />}
         {!subscription.isPro && (
           hasFullAccess ? (
-            <p className="text-sm text-muted-foreground">
-              <strong>{freeGenerationsLeft}</strong> of {FREE_FULL_ACCESS_GENERATIONS} free posts left.
+            <p className="text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">{freeGenerationsLeft}</span> free posts left
             </p>
           ) : (
             <UpgradeBanner message="Your 3 free posts are used. This post is still yours to edit and download." />
           )
         )}
 
-        {/* Header */}
-        <header className="flex flex-wrap items-center justify-between gap-3">
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 pb-4">
           <div className="flex min-w-0 items-center gap-2">
             <Button variant="ghost" size="icon-sm" className="-ml-1 shrink-0" asChild>
               <Link href={`/p/${projectId}`}>
@@ -289,7 +288,14 @@ export default async function CarouselEditorPage({
                 <span className="sr-only">Back to project</span>
               </Link>
             </Button>
-            <h1 className="min-w-0 truncate text-xl font-semibold tracking-tight">{carousel.title}</h1>
+            <div className="min-w-0">
+              <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                {slides.length} slides
+              </p>
+              <h1 className="min-w-0 truncate text-lg font-semibold tracking-tight sm:text-xl">
+                {carousel.title}
+              </h1>
+            </div>
           </div>
           <div className="flex shrink-0 items-center gap-1">
             <ShuffleCarouselBackgroundsButton
@@ -319,11 +325,14 @@ export default async function CarouselEditorPage({
           />
         )}
 
-        {/* Frames */}
-        <section className={isGenerating ? "pointer-events-none opacity-70" : ""} aria-disabled={isGenerating}>
-          <p className="text-muted-foreground mb-2 text-xs">
-            {isGenerating ? "Generating…" : "Click to edit, drag to reorder"}
-          </p>
+        <section
+          className={cn(
+            "rounded-2xl border border-border/60 bg-muted/15 p-3 sm:p-5",
+            isGenerating && "pointer-events-none opacity-70"
+          )}
+          aria-disabled={isGenerating}
+          aria-label="Carousel slides"
+        >
           <SlideGrid
             slides={slides}
             templates={templates}
@@ -364,23 +373,17 @@ export default async function CarouselEditorPage({
         />
 
         {!isGenerating && (
-          <div className="flex flex-col gap-2 rounded-xl border border-border/80 bg-muted/20 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-foreground">Ready for the next post?</p>
-              <p className="mt-0.5 text-xs leading-snug text-muted-foreground">
-                Make another carousel for this project with a new angle.
-              </p>
-            </div>
-            <Button asChild className="shrink-0 gap-1.5">
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-card/40 px-3 py-2.5 sm:px-4">
+            <p className="text-sm text-muted-foreground">Next post</p>
+            <Button asChild size="sm" className="shrink-0 gap-1.5">
               <Link href={`/p/${projectId}/new?fromCarousel=${encodeURIComponent(carouselId)}`}>
-                <SparklesIcon className="size-4" aria-hidden />
-                Generate next post
+                <SparklesIcon className="size-3.5" aria-hidden />
+                Generate
               </Link>
             </Button>
           </div>
         )}
 
-        {/* Caption */}
         <EditorCaptionSection
           carouselId={carouselId}
           captionVariants={captionVariants}

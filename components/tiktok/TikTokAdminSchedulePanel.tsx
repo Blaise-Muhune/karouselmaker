@@ -2,13 +2,15 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarClockIcon, CheckCircle2Icon, ExternalLinkIcon, UnplugIcon } from "lucide-react";
+import { CalendarClockIcon, ExternalLinkIcon, UnplugIcon } from "lucide-react";
 import { disconnectTikTokAction } from "@/app/actions/tiktok/disconnectTikTok";
 import { scheduleTikTokPhotoPostAction } from "@/app/actions/tiktok/schedulePhotoPost";
+import { TikTokMicroIcon } from "@/components/carousels/BackgroundSourcePlatformHints";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 
 type ScheduledPost = {
   id: string;
@@ -45,6 +47,7 @@ export function TikTokAdminSchedulePanel({
   const [pending, setPending] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(Boolean(connectedAccount));
   const connectedLabel = useMemo(() => connectedAccount || "Not connected", [connectedAccount]);
   const oauthUrl = `/api/oauth/tiktok?return_to=${encodeURIComponent(pathname)}`;
 
@@ -57,7 +60,8 @@ export function TikTokAdminSchedulePanel({
         setMessage(result.error);
         return;
       }
-      setMessage("TikTok disconnected. Connect a different private test account.");
+      setMessage("Disconnected.");
+      setExpanded(false);
       router.refresh();
     } finally {
       setDisconnecting(false);
@@ -76,12 +80,12 @@ export function TikTokAdminSchedulePanel({
       });
       if (!exportResponse.ok) {
         const data = (await exportResponse.json().catch(() => ({}))) as { error?: string };
-        setMessage(data.error ?? "Could not prepare the current slides for TikTok.");
+        setMessage(data.error ?? "Could not prepare slides.");
         return;
       }
       const exported = (await exportResponse.json()) as { exportId?: string };
       if (!exported.exportId) {
-        setMessage("Could not prepare the current slides for TikTok.");
+        setMessage("Could not prepare slides.");
         return;
       }
       const result = await scheduleTikTokPhotoPostAction({
@@ -96,7 +100,7 @@ export function TikTokAdminSchedulePanel({
         setMessage(result.error);
         return;
       }
-      setMessage("Current slides saved and private TikTok test scheduled.");
+      setMessage("Scheduled (private test).");
       router.refresh();
     } finally {
       setPending(false);
@@ -104,64 +108,157 @@ export function TikTokAdminSchedulePanel({
   }
 
   return (
-    <section className="space-y-4 rounded-2xl border border-violet-500/30 bg-violet-500/5 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold">TikTok Photo Mode, admin test</p>
-          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            Saves the current slides as a fixed export, then schedules them as a private Only you post. Until TikTok audits Direct Post, the connected account must be Private. Successful posts will not appear on your public profile; open TikTok logged into that account and check your profile as yourself.
-          </p>
+    <section
+      className={cn(
+        "overflow-hidden rounded-2xl border border-border/70 bg-card/60 shadow-sm",
+        "ring-1 ring-black/5 dark:ring-white/5"
+      )}
+    >
+      <div className="flex flex-wrap items-center gap-3 border-b border-border/60 px-4 py-3 sm:px-5">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-foreground text-background">
+            <TikTokMicroIcon className="size-4 opacity-100" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold tracking-tight text-foreground">TikTok</p>
+            <p className="truncate text-xs text-muted-foreground">
+              {connectedAccount ? `@${connectedAccount.replace(/^@/, "")}` : "Private test post"}
+            </p>
+          </div>
         </div>
-        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-violet-500/30 bg-background px-2.5 py-1 text-xs font-medium">
-          <CheckCircle2Icon className="size-3.5 text-violet-600" /> {connectedLabel}
+        <span
+          className={cn(
+            "inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium",
+            connectedAccount
+              ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+              : "bg-muted text-muted-foreground"
+          )}
+        >
+          <span
+            className={cn(
+              "size-1.5 rounded-full",
+              connectedAccount ? "bg-emerald-500" : "bg-muted-foreground/50"
+            )}
+          />
+          {connectedLabel}
         </span>
+        {!connectedAccount ? (
+          <Button type="button" size="sm" className="shrink-0" onClick={() => window.location.assign(oauthUrl)}>
+            <ExternalLinkIcon className="mr-1.5 size-3.5" />
+            Connect
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            size="sm"
+            variant={expanded ? "secondary" : "default"}
+            className="shrink-0"
+            onClick={() => setExpanded((v) => !v)}
+          >
+            {expanded ? "Hide" : "Schedule"}
+          </Button>
+        )}
       </div>
 
-      {!connectedAccount ? (
-        <Button type="button" size="sm" onClick={() => window.location.assign(oauthUrl)}>
-          <ExternalLinkIcon className="mr-2 size-4" /> Connect TikTok test account
-        </Button>
-      ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="flex flex-wrap gap-2 sm:col-span-2">
-            <Button type="button" size="sm" variant="outline" disabled={disconnecting || pending} onClick={() => void disconnect()}>
-              <UnplugIcon className="mr-2 size-4" /> {disconnecting ? "Disconnecting…" : "Disconnect"}
+      {connectedAccount && expanded ? (
+        <div className="space-y-4 px-4 py-4 sm:px-5">
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            Exports slides, then schedules a private Only you post. Account must stay Private until Direct Post is audited.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={disconnecting || pending}
+              onClick={() => void disconnect()}
+            >
+              <UnplugIcon className="mr-1.5 size-3.5" />
+              {disconnecting ? "…" : "Disconnect"}
             </Button>
-            <Button type="button" size="sm" variant="ghost" disabled={disconnecting || pending} onClick={() => window.location.assign(oauthUrl)}>
-              <ExternalLinkIcon className="mr-2 size-4" /> Switch account
-            </Button>
-          </div>
-          <div className="space-y-1.5 sm:col-span-2">
-            <Label htmlFor="tiktok-schedule-title">TikTok title</Label>
-            <Input id="tiktok-schedule-title" value={title} onChange={(event) => setTitle(event.target.value)} maxLength={90} />
-          </div>
-          <div className="space-y-1.5 sm:col-span-2">
-            <Label htmlFor="tiktok-schedule-caption">Description</Label>
-            <Textarea id="tiktok-schedule-caption" value={description} onChange={(event) => setDescription(event.target.value)} maxLength={4000} className="min-h-24" />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="tiktok-schedule-time">Publish time</Label>
-            <Input id="tiktok-schedule-time" type="datetime-local" value={scheduledFor} min={initialDateTime()} onChange={(event) => setScheduledFor(event.target.value)} />
-          </div>
-          <div className="flex items-end">
-            <Button type="button" className="w-full" disabled={pending || disconnecting} onClick={() => void schedule()}>
-              <CalendarClockIcon className="mr-2 size-4" /> {pending ? "Saving and scheduling…" : "Schedule private test"}
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={disconnecting || pending}
+              onClick={() => window.location.assign(oauthUrl)}
+            >
+              <ExternalLinkIcon className="mr-1.5 size-3.5" />
+              Switch
             </Button>
           </div>
-        </div>
-      )}
-      {message && <p className="text-xs text-muted-foreground" role="status">{message}</p>}
-      {schedules.length > 0 && (
-        <div className="border-t border-violet-500/20 pt-3 text-xs text-muted-foreground">
-          {schedules.slice(0, 3).map((schedule) => (
-            <p key={schedule.id}>
-              {new Date(schedule.scheduledFor).toLocaleString()} · {schedule.status}
-              {schedule.status === "published" ? " · Only you (not public)" : ""}
-              {schedule.lastError ? ` · ${schedule.lastError}` : ""}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label htmlFor="tiktok-schedule-title" className="text-xs">
+                Title
+              </Label>
+              <Input
+                id="tiktok-schedule-title"
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+                maxLength={90}
+              />
+            </div>
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label htmlFor="tiktok-schedule-caption" className="text-xs">
+                Caption
+              </Label>
+              <Textarea
+                id="tiktok-schedule-caption"
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                maxLength={4000}
+                className="min-h-20"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="tiktok-schedule-time" className="text-xs">
+                When
+              </Label>
+              <Input
+                id="tiktok-schedule-time"
+                type="datetime-local"
+                value={scheduledFor}
+                min={initialDateTime()}
+                onChange={(event) => setScheduledFor(event.target.value)}
+              />
+            </div>
+            <div className="flex items-end">
+              <Button
+                type="button"
+                className="w-full"
+                disabled={pending || disconnecting}
+                onClick={() => void schedule()}
+              >
+                <CalendarClockIcon className="mr-2 size-4" />
+                {pending ? "Scheduling…" : "Schedule"}
+              </Button>
+            </div>
+          </div>
+          {message ? (
+            <p className="text-xs text-muted-foreground" role="status">
+              {message}
             </p>
-          ))}
+          ) : null}
+          {schedules.length > 0 ? (
+            <ul className="space-y-1 border-t border-border/60 pt-3 text-[11px] text-muted-foreground">
+              {schedules.slice(0, 3).map((schedule) => (
+                <li key={schedule.id} className="flex flex-wrap gap-x-2">
+                  <span>{new Date(schedule.scheduledFor).toLocaleString()}</span>
+                  <span className="text-foreground/80">{schedule.status}</span>
+                  {schedule.lastError ? <span className="text-destructive">{schedule.lastError}</span> : null}
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </div>
-      )}
+      ) : null}
+
+      {!connectedAccount && message ? (
+        <p className="px-4 pb-3 text-xs text-muted-foreground sm:px-5" role="status">
+          {message}
+        </p>
+      ) : null}
     </section>
   );
 }
