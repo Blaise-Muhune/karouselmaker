@@ -79,6 +79,7 @@ export async function updateProject(projectId: string, formData: FormData) {
     product_brief: product.product_brief,
     pending_open_loop: previous.pending_open_loop,
     marketing_carousels_completed: previous.marketing_carousels_completed,
+    digilaine_product_id: previous.digilaine_product_id,
   });
 
   await dbUpdateProject(user.id, projectId, payload as ProjectUpdate);

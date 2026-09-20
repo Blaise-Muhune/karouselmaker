@@ -41,6 +41,8 @@ export type ParsedProjectRules = {
   pending_open_loop: string | null;
   /** Count of completed marketing-mode carousel generations (for auto progress). */
   marketing_carousels_completed: number;
+  /** Digilaine product UUID when this project was created from Promo studio. */
+  digilaine_product_id: string | null;
 };
 
 export const slideStructureSchema = z.object({
@@ -94,6 +96,7 @@ export function parseProjectRulesJson(projectRules: unknown): ParsedProjectRules
         organic_marketing_progress?: unknown;
         pending_open_loop?: unknown;
         marketing_carousels_completed?: unknown;
+        digilaine_product_id?: unknown;
         do_rules?: string;
         dont_rules?: string;
       }
@@ -116,6 +119,10 @@ export function parseProjectRulesJson(projectRules: unknown): ParsedProjectRules
       : typeof marketingCompletedRaw === "string" && Number.isFinite(Number(marketingCompletedRaw))
         ? Math.max(0, Math.floor(Number(marketingCompletedRaw)))
         : 0;
+  const digilaineProductId =
+    typeof json?.digilaine_product_id === "string" && json.digilaine_product_id.trim()
+      ? json.digilaine_product_id.trim()
+      : null;
   return {
     rules: rulesValue,
     product_to_promote: typeof json?.product_to_promote === "string" ? json.product_to_promote : "",
@@ -124,6 +131,7 @@ export function parseProjectRulesJson(projectRules: unknown): ParsedProjectRules
     organic_marketing_progress: clampOrganicMarketingProgress(json?.organic_marketing_progress),
     pending_open_loop: pending,
     marketing_carousels_completed: marketingCompleted,
+    digilaine_product_id: digilaineProductId,
   };
 }
 
@@ -135,6 +143,7 @@ export function projectFormToDbPayload(
     /** Preserve QC memory fields not edited in the form. */
     pending_open_loop?: string | null;
     marketing_carousels_completed?: number;
+    digilaine_product_id?: string | null;
   }
 ): {
   name: string;
@@ -164,6 +173,9 @@ export function projectFormToDbPayload(
         : {}),
       ...(typeof productContext?.marketing_carousels_completed === "number"
         ? { marketing_carousels_completed: productContext.marketing_carousels_completed }
+        : {}),
+      ...(productContext?.digilaine_product_id
+        ? { digilaine_product_id: productContext.digilaine_product_id }
         : {}),
     },
     slide_structure: {

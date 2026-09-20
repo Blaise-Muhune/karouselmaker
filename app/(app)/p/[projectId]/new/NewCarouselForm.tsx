@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { startCarouselGeneration } from "@/app/actions/carousels/generateCarousel";
+import { clearDigilaineGenCookie } from "@/app/actions/handoff/clearDigilaineGenCookie";
 import {
   getProjectTopicSuggestions,
   refreshProjectTopicSuggestions,
@@ -103,6 +104,8 @@ export function NewCarouselForm({
   initialUseAiBackgrounds,
   initialUseStockPhotos,
   initialNotes,
+  initialIncludeMarketing,
+  consumeDigilaineHandoff = false,
   templateOptions,
   templateBundles,
   defaultTemplateId,
@@ -127,6 +130,10 @@ export function NewCarouselForm({
   initialUseAiBackgrounds?: boolean;
   initialUseStockPhotos?: boolean;
   initialNotes?: string;
+  /** When set from Digilaine, lock Product vs Tip to match the idea. */
+  initialIncludeMarketing?: boolean;
+  /** Clear the one-time Digilaine prefill cookie after the form mounts. */
+  consumeDigilaineHandoff?: boolean;
   templateOptions: TemplateOption[];
   templateBundles: TemplateBundleOption[];
   defaultTemplateId: string | null;
@@ -179,7 +186,7 @@ export function NewCarouselForm({
   const [topicSuggestList, setTopicSuggestList] = useState<TopicSuggestionItem[]>([]);
   const [topicSuggestError, setTopicSuggestError] = useState<string | null>(null);
   /** Local opt-in for custom topics (or before cache updates). Once true, stays true. */
-  const [includeMarketingLocked, setIncludeMarketingLocked] = useState(false);
+  const [includeMarketingLocked, setIncludeMarketingLocked] = useState(!!initialIncludeMarketing);
   const [topicQueueLoading, setTopicQueueLoading] = useState(
     !regenerateCarouselId && !(initialInputValue && initialInputValue.trim())
   );
@@ -188,6 +195,11 @@ export function NewCarouselForm({
   );
   const userEditedTopicRef = useRef(userEditedTopic);
   userEditedTopicRef.current = userEditedTopic;
+
+  useEffect(() => {
+    if (!consumeDigilaineHandoff) return;
+    void clearDigilaineGenCookie();
+  }, [consumeDigilaineHandoff]);
 
   const instagramTemplates = templateOptions.filter(
     (t) => (t.category ?? "").toLowerCase() !== "linkedin" && (!t.isHidden || isAdmin)

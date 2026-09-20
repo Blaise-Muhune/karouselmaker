@@ -24,6 +24,7 @@ import { PremiumCard } from "@/components/subscription/PremiumCard";
 function LoginForm() {
   const searchParams = useSearchParams();
   const urlError = searchParams.get("error");
+  const next = searchParams.get("next") ?? "";
   const [state, formAction] = useActionState(
     async (_: unknown, formData: FormData) => {
       return signIn(formData);
@@ -47,6 +48,7 @@ function LoginForm() {
         </div>
         <Form {...form}>
           <form action={formAction} className="space-y-4">
+            <input type="hidden" name="next" value={next} />
             {(state?.error || urlError) && (
               <p className="bg-destructive/10 text-destructive rounded-md px-3 py-2 text-sm">
                 {state?.error ?? urlError}
@@ -99,6 +101,7 @@ function LoginForm() {
             </div>
           </div>
           <form action={signInWithGoogle}>
+            <input type="hidden" name="next" value={next} />
             <FormSubmitButton type="submit" variant="outline" className="w-full" size="lg" loadingText="Connecting…">
               <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
                 <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -112,7 +115,7 @@ function LoginForm() {
         </Form>
         <p className="text-center text-muted-foreground text-sm lg:text-left">
           No account?{" "}
-          <Link href="/signup" className="text-primary underline-offset-4 hover:underline">
+          <Link href={next ? `/signup?next=${encodeURIComponent(next)}` : "/signup"} className="text-primary underline-offset-4 hover:underline">
             Sign up
           </Link>
         </p>

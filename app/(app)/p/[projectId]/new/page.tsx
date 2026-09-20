@@ -23,6 +23,8 @@ import { Button } from "@/components/ui/button";
 import type { TemplateOption } from "@/components/carousels/TemplateSelectCards";
 import type { TemplateBundleOption } from "@/components/carousels/TemplateBundlePicker";
 import { ArrowLeftIcon } from "lucide-react";
+import { readDigilaineGenCookie } from "@/lib/handoff/cookies";
+import { parseDigilaineGenCookie } from "@/lib/handoff/digilaineHandoff";
 
 export const maxDuration = 800;
 
@@ -41,6 +43,7 @@ export default async function NewCarouselPage({
   const userIsAdmin = isAdmin(user.email);
   const { projectId } = await params;
   const sp = await searchParams;
+  const handoffPrefill = parseDigilaineGenCookie(await readDigilaineGenCookie());
   const regenerateCarouselIdRaw = sp.regenerate;
   const regenerateCarouselId =
     typeof regenerateCarouselIdRaw === "string"
@@ -190,7 +193,7 @@ export default async function NewCarouselPage({
           </span>
         </div>
         <NewCarouselForm
-          key={`${regenerateCarousel?.id ?? "new"}:${topicPrefill}:${fromCarouselId}`}
+          key={`${regenerateCarousel?.id ?? "new"}:${topicPrefill}:${fromCarouselId}:${handoffPrefill?.topic ?? ""}`}
           projectId={projectId}
           isPro={subscription.isPro}
           hasFullAccess={hasFullAccess}
@@ -202,11 +205,23 @@ export default async function NewCarouselPage({
           initialSelectedTemplateIds={templateIdsFromOpts}
           initialBackgroundAssetIds={backgroundIdsFromOpts}
           initialNumberOfSlides={initialNumberOfSlides}
-          initialInputValue={regenerateCarousel?.input_value ?? (topicPrefill || undefined)}
+          initialInputValue={
+            regenerateCarousel?.input_value ?? (topicPrefill || handoffPrefill?.topic || undefined)
+          }
           initialUseAiBackgrounds={imageSettingsSourceCarousel?.generation_options?.use_ai_backgrounds}
           initialUseStockPhotos={initialUseStockPhotosFromOpts}
           initialImageSettingsRemembered={!settingsSourceCarousel && !!latestImageSettingsCarousel}
-          initialNotes={regenerateCarousel ? genOpts?.notes : carrySettingsCarousel ? "" : undefined}
+          initialNotes={
+            regenerateCarousel
+              ? genOpts?.notes
+              : carrySettingsCarousel
+                ? ""
+                : handoffPrefill?.angle
+                  ? `Keep this angle. Do not copy it as on-screen slide text: ${handoffPrefill.angle}`
+                  : undefined
+          }
+          initialIncludeMarketing={handoffPrefill?.is_marketing}
+          consumeDigilaineHandoff={!!handoffPrefill}
           templateOptions={templateOptions}
           templateBundles={templateBundles}
           defaultTemplateId={defaultTemplateId}

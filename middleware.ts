@@ -9,6 +9,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  request.headers.set("x-pathname", request.nextUrl.pathname);
   let response = NextResponse.next({
     request,
   });

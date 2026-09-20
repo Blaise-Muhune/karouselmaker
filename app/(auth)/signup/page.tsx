@@ -1,8 +1,10 @@
 "use client";
 
+import { Suspense } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useActionState } from "react";
 import { signUp, signInWithGoogle } from "@/app/actions/auth";
 import { signupSchema, type SignupInput } from "@/lib/validations/auth";
@@ -30,6 +32,16 @@ const HOW_FOUND_US_OPTIONS = [
 ] as const;
 
 export default function SignupPage() {
+  return (
+    <Suspense fallback={<div className="space-y-6 animate-pulse rounded-lg bg-muted/30 p-8" />}>
+      <SignupForm />
+    </Suspense>
+  );
+}
+
+function SignupForm() {
+  const searchParams = useSearchParams();
+  const next = searchParams.get("next") ?? "";
   const [state, formAction] = useActionState(
     async (_: unknown, formData: FormData) => {
       return signUp(formData);
@@ -53,6 +65,7 @@ export default function SignupPage() {
         </div>
         <Form {...form}>
           <form action={formAction} className="space-y-4">
+            <input type="hidden" name="next" value={next} />
             {state?.error && (
               <p className="bg-destructive/10 text-destructive rounded-md px-3 py-2 text-sm">
                 {state.error}
@@ -149,6 +162,7 @@ export default function SignupPage() {
             </div>
           </div>
           <form action={signInWithGoogle}>
+            <input type="hidden" name="next" value={next} />
             <FormSubmitButton type="submit" variant="outline" className="w-full" size="lg" loadingText="Connecting…">
               <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
                 <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -162,7 +176,7 @@ export default function SignupPage() {
         </Form>
         <p className="text-center text-muted-foreground text-sm lg:text-left">
           Already have an account?{" "}
-          <Link href="/login" className="text-primary underline-offset-4 hover:underline">
+          <Link href={next ? `/login?next=${encodeURIComponent(next)}` : "/login"} className="text-primary underline-offset-4 hover:underline">
             Log in
           </Link>
         </p>

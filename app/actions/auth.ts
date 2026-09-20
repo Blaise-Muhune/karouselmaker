@@ -4,8 +4,17 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { signupSchema } from "@/lib/validations/auth";
 import { upsertProfileAsAdmin } from "@/lib/server/db/profiles";
+import { safeAuthNext } from "@/lib/auth/safeNext";
+import { setAuthNextCookie } from "@/lib/handoff/cookies";
 
-export async function signInWithGoogle() {
+function destinationFromForm(formData: FormData | undefined): string {
+  return safeAuthNext(formData?.get("next")) ?? "/projects";
+}
+
+export async function signInWithGoogle(formData?: FormData) {
+  const next = safeAuthNext(formData?.get("next"));
+  if (next) await setAuthNextCookie(next);
+
   const supabase = await createClient();
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
   const redirectTo = `${baseUrl.replace(/\/$/, "")}/auth/callback`;
@@ -60,7 +69,9 @@ export async function signUp(formData: FormData) {
     }
   }
 
-  redirect("/projects");
+  const next = destinationFromForm(formData);
+  if (next !== "/projects") await setAuthNextCookie(next);
+  redirect(next);
 }
 
 export async function signIn(formData: FormData) {
@@ -78,7 +89,7 @@ export async function signIn(formData: FormData) {
     return { error: error.message };
   }
 
-  redirect("/projects");
+  redirect(destinationFromForm(formData));
 }
 
 export async function signOut() {

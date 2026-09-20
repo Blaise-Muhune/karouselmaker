@@ -1,8 +1,22 @@
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import type { User } from "@supabase/supabase-js";
 import { isAuthSessionMissingError } from "@supabase/supabase-js";
 import { cache } from "react";
+import { safeAuthNext } from "@/lib/auth/safeNext";
+
+async function loginRedirectHref(): Promise<string> {
+  try {
+    const headerList = await headers();
+    const pathname = headerList.get("x-pathname") ?? headerList.get("next-url") ?? "";
+    const next = safeAuthNext(pathname);
+    if (!next) return "/login";
+    return `/login?next=${encodeURIComponent(next)}`;
+  } catch {
+    return "/login";
+  }
+}
 
 // React cache is scoped to the render/request, never shared between users.
 const getVerifiedUser = cache(async (): Promise<{ user: User | null }> => {
@@ -28,7 +42,7 @@ export async function getUser(): Promise<{ user: User }> {
   const { user } = await getVerifiedUser();
 
   if (!user) {
-    redirect("/login");
+    redirect(await loginRedirectHref());
   }
 
   return { user };

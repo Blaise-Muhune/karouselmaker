@@ -1,13 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthApiError, AuthRetryableFetchError, AuthSessionMissingError } from "@supabase/supabase-js";
 
-const mocks = vi.hoisted(() => ({ getUser: vi.fn(), redirect: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  getUser: vi.fn(),
+  redirect: vi.fn(),
+  pathname: null as string | null,
+}));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ auth: { getUser: mocks.getUser } }) }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
+vi.mock("next/headers", () => ({
+  headers: async () => ({
+    get: (name: string) => (name === "x-pathname" || name === "next-url" ? mocks.pathname : null),
+  }),
+}));
 import { getUser, getOptionalUser } from "./getUser";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.pathname = null;
   mocks.redirect.mockImplementation(() => { throw new Error("LOGIN_REDIRECT"); });
 });
 
@@ -27,6 +37,20 @@ describe("verified session handling", () => {
     await expect(getUser()).rejects.toThrow("LOGIN_REDIRECT");
     expect(mocks.redirect).toHaveBeenCalledWith("/login");
     await expect(getOptionalUser()).resolves.toEqual({ user: null });
+  });
+
+  it("preserves a safe Digilaine next path on login redirect", async () => {
+    mocks.pathname = "/from/digilaine/continue";
+    mocks.getUser.mockResolvedValue({ data: { user: null }, error: new AuthSessionMissingError() });
+    await expect(getUser()).rejects.toThrow("LOGIN_REDIRECT");
+    expect(mocks.redirect).toHaveBeenCalledWith("/login?next=%2Ffrom%2Fdigilaine%2Fcontinue");
+  });
+
+  it("does not pass an unsafe next path", async () => {
+    mocks.pathname = "/projects";
+    mocks.getUser.mockResolvedValue({ data: { user: null }, error: new AuthSessionMissingError() });
+    await expect(getUser()).rejects.toThrow("LOGIN_REDIRECT");
+    expect(mocks.redirect).toHaveBeenCalledWith("/login");
   });
 
   it.each([
