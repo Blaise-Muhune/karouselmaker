@@ -10,7 +10,7 @@ export function LandingMarketingHeader({ highlightPlans }: { highlightPlans?: bo
           href="/"
           className="flex items-center gap-2.5 text-[15px] font-medium tracking-tight text-foreground transition-opacity hover:opacity-70"
         >
-          <img src="/logo.svg" alt="" className="h-5 w-5" />
+          <img src="/logo.png" alt="" className="h-7 w-7 rounded-md object-contain" />
           <span className="font-[family-name:var(--font-landing-display)] text-lg tracking-tight">
             Karouselmaker
           </span>

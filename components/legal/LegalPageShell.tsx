@@ -16,7 +16,10 @@ export function LegalPageShell({ title, updated, children }: LegalPageShellProps
     <main className="min-h-screen flex flex-col bg-background">
       <header className="sticky top-0 z-10 border-b bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/80">
         <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4 sm:px-6">
-          <Link href="/" className="text-lg font-semibold transition-opacity hover:opacity-80">Karouselmaker</Link>
+          <Link href="/" className="inline-flex items-center gap-2 text-lg font-semibold transition-opacity hover:opacity-80">
+            <img src="/logo.png" alt="" className="h-7 w-7 rounded-md object-contain" />
+            Karouselmaker
+          </Link>
           <nav className="flex items-center gap-1 sm:gap-2" aria-label="Account navigation">
             <ThemeToggle />
             <Button variant="ghost" size="sm" className="hidden sm:inline-flex" asChild><Link href="/login">Sign in</Link></Button>

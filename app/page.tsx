@@ -80,6 +80,11 @@ export default async function Home() {
         />
 
         <div className="relative mx-auto max-w-6xl px-4 pt-14 sm:px-6 sm:pt-20 md:pt-24">
+          <img
+            src="/logo.png"
+            alt=""
+            className="mb-6 h-16 w-16 rounded-2xl object-contain animate-in fade-in duration-500 motion-reduce:animate-none sm:mb-8 sm:h-20 sm:w-20"
+          />
           <h1 className="font-[family-name:var(--font-landing-display)] text-[clamp(2.75rem,8vw,5.5rem)] leading-[0.95] tracking-tight text-foreground animate-in fade-in duration-500 motion-reduce:animate-none">
             Karouselmaker
           </h1>

@@ -246,7 +246,7 @@ export function AppShell({
                 <SheetHeader>
                   <SheetTitle>
                     <Link href="/projects" className="flex items-center gap-2 font-semibold tracking-tight" onClick={() => setSheetOpen(false)}>
-                      <img src="/logo.svg" alt="" className="h-5 w-5" />
+                      <img src="/logo.png" alt="" className="h-7 w-7 rounded-md object-contain" />
                       Karouselmaker
                     </Link>
                   </SheetTitle>
@@ -262,7 +262,7 @@ export function AppShell({
               </SheetContent>
             </Sheet>
             <Link href="/projects" className="flex items-center gap-2 truncate font-semibold tracking-tight transition-opacity hover:opacity-80">
-              <img src="/logo.svg" alt="" className="h-5 w-5 shrink-0" />
+              <img src="/logo.png" alt="" className="h-7 w-7 shrink-0 rounded-md object-contain" />
               <span>Karouselmaker</span>
             </Link>
           </div>
