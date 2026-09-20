@@ -29,7 +29,7 @@ function errorMessage(response: TikTokApiResponse, fallback: string) {
     return "TikTok requires the connected account to be private until Direct Post is audited. Set the TikTok account to Private, keep posts as Only you, then try again.";
   }
   if (code === "url_ownership_unverified") {
-    return "TikTok has not verified this app’s media URL prefix. Verify the domain in TikTok for Developers, then match TIKTOK_VERIFIED_MEDIA_URL_PREFIX.";
+    return "TikTok has not verified this app’s media URL. Verify your domain (NEXT_PUBLIC_APP_URL) in TikTok for Developers → URL properties.";
   }
   if (code === "privacy_level_option_mismatch") {
     return "TikTok rejected the privacy setting for this account. Reconnect TikTok and confirm Only you / SELF_ONLY is still allowed.";
@@ -132,7 +132,7 @@ export async function fetchTikTokPublishStatus(accessToken: string, publishId: s
 function publishFailMessage(failReason: string | undefined) {
   switch (failReason) {
     case "photo_pull_failed":
-      return "TikTok could not finish downloading the slide images. The media URL must stay publicly reachable over HTTPS without redirects; retry after checking the verified media domain.";
+      return "TikTok could not download the slide images (photo_pull_failed). In TikTok for Developers → your app → URL properties, verify https://karouselmaker.com (exact apex, no www). URLs must stay public HTTPS with no redirects. Then schedule a new test (do not reuse a failed job).";
     case "picture_size_check_failed":
       return "TikTok rejected a slide image size. Export again at the carousel size and retry.";
     case "file_format_check_failed":

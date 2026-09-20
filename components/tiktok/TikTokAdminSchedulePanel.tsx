@@ -163,7 +163,7 @@ export function TikTokAdminSchedulePanel({
       {connectedAccount && expanded ? (
         <div className="space-y-4 px-4 py-4 sm:px-5">
           <p className="text-[11px] leading-relaxed text-muted-foreground">
-            Exports slides, then schedules a private Only you post. Account must stay Private until Direct Post is audited.
+            Private Only you post. Verify <span className="font-medium text-foreground/80">https://karouselmaker.com</span> under TikTok Developer URL properties, then schedule. Posts won’t appear on a public profile.
           </p>
           <div className="flex flex-wrap gap-2">
             <Button
@@ -241,12 +241,26 @@ export function TikTokAdminSchedulePanel({
             </p>
           ) : null}
           {schedules.length > 0 ? (
-            <ul className="space-y-1 border-t border-border/60 pt-3 text-[11px] text-muted-foreground">
+            <ul className="space-y-2 border-t border-border/60 pt-3 text-[11px] text-muted-foreground">
               {schedules.slice(0, 3).map((schedule) => (
-                <li key={schedule.id} className="flex flex-wrap gap-x-2">
-                  <span>{new Date(schedule.scheduledFor).toLocaleString()}</span>
-                  <span className="text-foreground/80">{schedule.status}</span>
-                  {schedule.lastError ? <span className="text-destructive">{schedule.lastError}</span> : null}
+                <li key={schedule.id} className="space-y-0.5">
+                  <div className="flex flex-wrap gap-x-2">
+                    <span>{new Date(schedule.scheduledFor).toLocaleString()}</span>
+                    <span
+                      className={
+                        schedule.status === "failed"
+                          ? "font-medium text-destructive"
+                          : schedule.status === "published"
+                            ? "font-medium text-emerald-600 dark:text-emerald-400"
+                            : "text-foreground/80"
+                      }
+                    >
+                      {schedule.status}
+                    </span>
+                  </div>
+                  {schedule.lastError ? (
+                    <p className="text-destructive/90 leading-snug">{schedule.lastError}</p>
+                  ) : null}
                 </li>
               ))}
             </ul>

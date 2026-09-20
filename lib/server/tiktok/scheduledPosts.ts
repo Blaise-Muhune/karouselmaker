@@ -13,19 +13,24 @@ import {
   waitForTikTokPublishComplete,
 } from "@/lib/tiktok/postPhotos";
 
+/**
+ * Public HTTPS origin TikTok pulls slide images from.
+ * Uses NEXT_PUBLIC_APP_URL (must match a domain verified in TikTok URL properties).
+ * Optional TIKTOK_VERIFIED_MEDIA_URL_PREFIX still wins if set, for rare overrides.
+ */
 export function getTikTokVerifiedMediaOrigin(): string | null {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, "");
-  const verifiedPrefix = process.env.TIKTOK_VERIFIED_MEDIA_URL_PREFIX?.trim().replace(/\/$/, "");
-  if (!appUrl || !verifiedPrefix) return null;
+  const override = process.env.TIKTOK_VERIFIED_MEDIA_URL_PREFIX?.trim().replace(/\/$/, "");
+  const candidate = override || appUrl;
+  if (!candidate) return null;
   try {
-    const appOrigin = new URL(appUrl).origin;
-    const verifiedOrigin = new URL(verifiedPrefix).origin;
-    if (new URL(appOrigin).protocol !== "https:" || appOrigin !== verifiedOrigin) return null;
+    const origin = new URL(candidate).origin;
+    if (new URL(origin).protocol !== "https:") return null;
     // TikTok does not follow redirects. www → apex (or vercel.app auth walls) break photo pulls.
-    const host = new URL(appOrigin).hostname.toLowerCase();
+    const host = new URL(origin).hostname.toLowerCase();
     if (host.startsWith("www.")) return null;
     if (host.endsWith(".vercel.app")) return null;
-    return appOrigin;
+    return origin;
   } catch {
     return null;
   }
@@ -52,7 +57,7 @@ async function assertMediaUrlsReachable(urls: string[]): Promise<void> {
     });
     if (response.status >= 300 && response.status < 400) {
       throw new Error(
-        "TikTok media URL redirected. Set NEXT_PUBLIC_APP_URL and TIKTOK_VERIFIED_MEDIA_URL_PREFIX to the apex HTTPS domain (no www), then retry."
+        "TikTok media URL redirected. Set NEXT_PUBLIC_APP_URL to the apex HTTPS domain (no www), then retry."
       );
     }
     if (!response.ok) {

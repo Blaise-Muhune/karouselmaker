@@ -27,7 +27,7 @@ export async function scheduleTikTokPhotoPostAction(input: z.input<typeof schedu
     return {
       ok: false as const,
       error:
-        "Set NEXT_PUBLIC_APP_URL and TIKTOK_VERIFIED_MEDIA_URL_PREFIX to the same apex HTTPS domain (no www, not *.vercel.app). TikTok will not follow redirects.",
+        "Set NEXT_PUBLIC_APP_URL to your apex HTTPS domain (no www, not *.vercel.app). TikTok will not follow redirects.",
     };
   }
   const parsed = scheduleSchema.safeParse(input);

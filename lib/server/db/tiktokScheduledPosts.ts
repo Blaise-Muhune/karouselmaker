@@ -43,8 +43,9 @@ export async function getTikTokScheduledPostForMedia(
   scheduleId: string,
   mediaToken: string
 ): Promise<TikTokScheduledPost | null> {
-  // TikTok pulls images after content/init. Keep URLs live through publishing and briefly after
-  // publish so delayed downloads/retries do not 404.
+  // TikTok pulls images after content/init and may retry for up to ~1 hour.
+  // Keep URLs live through publishing, briefly after publish, and briefly after
+  // failure so delayed downloads / retries do not 404.
   return queryOne<TikTokScheduledPost>(
     `select * from tiktok_scheduled_posts
      where id = $1
@@ -52,6 +53,7 @@ export async function getTikTokScheduledPostForMedia(
        and (
          status in ('scheduled', 'publishing')
          or (status = 'published' and published_at > now() - interval '2 hours')
+         or (status = 'failed' and updated_at > now() - interval '2 hours')
        )`,
     [scheduleId, mediaToken]
   );

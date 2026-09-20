@@ -14,11 +14,10 @@ The app now has an **admin-only** TikTok Photo Mode scheduling panel on each car
    NEXT_PUBLIC_APP_URL=https://your-domain.com
    TIKTOK_CLIENT_KEY=...
    TIKTOK_CLIENT_SECRET=...
-   TIKTOK_VERIFIED_MEDIA_URL_PREFIX=https://your-domain.com
    CRON_SECRET=...
    ```
 
-`NEXT_PUBLIC_APP_URL` and `TIKTOK_VERIFIED_MEDIA_URL_PREFIX` must use the same apex HTTPS origin (**no `www`**, not `*.vercel.app`). TikTok does not follow redirects, and Vercel Authentication can block `.vercel.app` media pulls.
+`NEXT_PUBLIC_APP_URL` must be the apex HTTPS origin (**no `www`**, not `*.vercel.app`) and must match a domain verified under TikTok URL properties. TikTok does not follow redirects, and Vercel Authentication can block `.vercel.app` media pulls. An optional `TIKTOK_VERIFIED_MEDIA_URL_PREFIX` can override the media origin if needed.
 
 Photo Mode only accepts **JPEG or WebP**. The admin schedule export forces JPEG.
 
