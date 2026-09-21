@@ -1,98 +1,112 @@
-/**
- * Instagram Graph API: create and publish a carousel post.
- * Requires ig_account_id and page_access_token (from connection meta).
- * @see https://developers.facebook.com/docs/instagram-platform/instagram-graph-api/reference/ig-user/media
- */
+type GraphError = { error?: { message?: string; code?: number } };
 
-const GRAPH_BASE = "https://graph.facebook.com/v21.0";
+async function graphJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(url, init);
+  const body = (await response.json().catch(() => ({}))) as T & GraphError;
+  if (!response.ok || body.error) {
+    throw new Error(body.error?.message || `Instagram Graph API failed (${response.status}).`);
+  }
+  return body;
+}
 
-/**
- * Create an image container for use as a carousel item.
- */
-async function createImageContainer(
-  igUserId: string,
-  pageAccessToken: string,
-  imageUrl: string
-): Promise<string> {
-  const params = new URLSearchParams();
-  params.set("image_url", imageUrl);
-  params.set("is_carousel_item", "true");
-  params.set("access_token", pageAccessToken);
-
-  const res = await fetch(`${GRAPH_BASE}/${igUserId}/media`, {
-    method: "POST",
-    body: params,
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-  });
-
-  const data = (await res.json()) as { id?: string; error?: { message?: string } };
-  if (data.error) throw new Error(data.error.message ?? "Instagram API error");
-  if (!data.id) throw new Error("Instagram did not return a container ID");
-  return data.id;
+async function waitForContainerReady(containerId: string, accessToken: string): Promise<void> {
+  const deadline = Date.now() + 90_000;
+  while (Date.now() < deadline) {
+    const status = await graphJson<{ status_code?: string }>(
+      `https://graph.facebook.com/v21.0/${encodeURIComponent(containerId)}?fields=status_code&access_token=${encodeURIComponent(accessToken)}`
+    );
+    if (status.status_code === "FINISHED") return;
+    if (status.status_code === "ERROR") {
+      throw new Error("Instagram failed while processing an image. Try exporting again.");
+    }
+    await new Promise((r) => setTimeout(r, 2_000));
+  }
+  throw new Error("Instagram is still processing images. Wait a moment and try again.");
 }
 
 /**
- * Create carousel container and publish it.
- * Returns the permalink to the published post.
+ * Create and publish an Instagram feed post (single image or carousel)
+ * from publicly reachable image URLs.
  */
-export async function postCarouselToInstagram(
-  igUserId: string,
-  pageAccessToken: string,
-  imageUrls: string[],
-  caption?: string
-): Promise<{ media_id: string; permalink?: string }> {
-  if (imageUrls.length === 0) throw new Error("At least one image required");
-  if (imageUrls.length > 10) throw new Error("Instagram carousels support up to 10 items");
-
-  const containerIds: string[] = [];
-  for (const url of imageUrls) {
-    const id = await createImageContainer(igUserId, pageAccessToken, url);
-    containerIds.push(id);
+export async function postCarouselToInstagram(input: {
+  accessToken: string;
+  igUserId: string;
+  imageUrls: string[];
+  caption: string;
+}): Promise<{ mediaId: string }> {
+  if (input.imageUrls.length < 1 || input.imageUrls.length > 10) {
+    throw new Error("Instagram posts need between 1 and 10 images.");
   }
 
-  const params = new URLSearchParams();
-  params.set("media_type", "CAROUSEL");
-  params.set("children", containerIds.join(","));
-  if (caption?.trim()) params.set("caption", caption.trim());
-  params.set("access_token", pageAccessToken);
+  const caption = input.caption.slice(0, 2200);
+  let creationId: string;
 
-  const createRes = await fetch(`${GRAPH_BASE}/${igUserId}/media`, {
-    method: "POST",
-    body: params,
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-  });
-
-  const createData = (await createRes.json()) as { id?: string; error?: { message?: string } };
-  if (createData.error) throw new Error(createData.error.message ?? "Instagram API error");
-  if (!createData.id) throw new Error("Instagram did not return carousel container ID");
-
-  const publishParams = new URLSearchParams();
-  publishParams.set("creation_id", createData.id);
-  publishParams.set("access_token", pageAccessToken);
-
-  const publishRes = await fetch(`${GRAPH_BASE}/${igUserId}/media_publish`, {
-    method: "POST",
-    body: publishParams,
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-  });
-
-  const publishData = (await publishRes.json()) as {
-    id?: string;
-    error?: { message?: string };
-  };
-  if (publishData.error) throw new Error(publishData.error.message ?? "Instagram publish error");
-  if (!publishData.id) throw new Error("Instagram did not return media ID");
-
-  let permalink: string | undefined;
-  try {
-    const permRes = await fetch(
-      `${GRAPH_BASE}/${publishData.id}?fields=permalink&access_token=${encodeURIComponent(pageAccessToken)}`
+  if (input.imageUrls.length === 1) {
+    const imageUrl = input.imageUrls[0]!;
+    const created = await graphJson<{ id: string }>(
+      `https://graph.facebook.com/v21.0/${encodeURIComponent(input.igUserId)}/media`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          image_url: imageUrl,
+          caption,
+          access_token: input.accessToken,
+        }),
+      }
     );
-    const permData = (await permRes.json()) as { permalink?: string };
-    permalink = permData.permalink;
-  } catch {
-    // optional
+    creationId = created.id;
+    await waitForContainerReady(creationId, input.accessToken);
+  } else {
+    const childIds: string[] = [];
+    for (const imageUrl of input.imageUrls) {
+      const created = await graphJson<{ id: string }>(
+        `https://graph.facebook.com/v21.0/${encodeURIComponent(input.igUserId)}/media`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            image_url: imageUrl,
+            is_carousel_item: "true",
+            access_token: input.accessToken,
+          }),
+        }
+      );
+      childIds.push(created.id);
+    }
+
+    for (const childId of childIds) {
+      await waitForContainerReady(childId, input.accessToken);
+    }
+
+    const carousel = await graphJson<{ id: string }>(
+      `https://graph.facebook.com/v21.0/${encodeURIComponent(input.igUserId)}/media`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          media_type: "CAROUSEL",
+          children: childIds.join(","),
+          caption,
+          access_token: input.accessToken,
+        }),
+      }
+    );
+    creationId = carousel.id;
+    await waitForContainerReady(creationId, input.accessToken);
   }
 
-  return { media_id: publishData.id, permalink };
+  const published = await graphJson<{ id: string }>(
+    `https://graph.facebook.com/v21.0/${encodeURIComponent(input.igUserId)}/media_publish`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        creation_id: creationId,
+        access_token: input.accessToken,
+      }),
+    }
+  );
+
+  return { mediaId: published.id };
 }

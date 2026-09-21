@@ -16,6 +16,11 @@ import {
 } from "lucide-react";
 import { disconnectTikTokAction } from "@/app/actions/tiktok/disconnectTikTok";
 import { getTikTokCreatorInfoAction } from "@/app/actions/tiktok/getCreatorInfo";
+import {
+  cancelTikTokScheduleAction,
+  listTikTokSchedulesPollAction,
+  rescheduleTikTokScheduleAction,
+} from "@/app/actions/tiktok/manageSchedule";
 import { scheduleTikTokPhotoPostAction } from "@/app/actions/tiktok/schedulePhotoPost";
 import { TikTokMicroIcon } from "@/components/carousels/BackgroundSourcePlatformHints";
 import { Button } from "@/components/ui/button";
@@ -182,6 +187,7 @@ export function PostToTikTokPanel({
   const [allowComment, setAllowComment] = useState(false);
   const [brandOrganic, setBrandOrganic] = useState(false);
   const [brandContent, setBrandContent] = useState(false);
+  const [commercialDisclosure, setCommercialDisclosure] = useState(false);
   const [musicConfirmed, setMusicConfirmed] = useState(false);
   const [creator, setCreator] = useState<TikTokCreatorInfo | null>(null);
   const [creatorLoading, setCreatorLoading] = useState(false);
@@ -192,12 +198,48 @@ export function PostToTikTokPanel({
   const [prefsApplied, setPrefsApplied] = useState(false);
   const [hasSavedPrefs, setHasSavedPrefs] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [liveSchedules, setLiveSchedules] = useState(schedules);
+  const [scheduleBusyId, setScheduleBusyId] = useState<string | null>(null);
+  const [rescheduleId, setRescheduleId] = useState<string | null>(null);
+  const [rescheduleValue, setRescheduleValue] = useState("");
   const hydratedCarouselId = useRef<string | null>(null);
   const connectedLabel = useMemo(() => connectedAccount || "Not connected", [connectedAccount]);
   const oauthUrl = `/api/oauth/tiktok?return_to=${encodeURIComponent(pathname)}`;
 
-  const commercialOn = brandOrganic || brandContent;
+  useEffect(() => {
+    setLiveSchedules(schedules);
+  }, [schedules]);
+
+  const needsSchedulePoll = useMemo(
+    () => liveSchedules.some((s) => s.status === "scheduled" || s.status === "publishing"),
+    [liveSchedules]
+  );
+
+  useEffect(() => {
+    if (!needsSchedulePoll) return;
+    const tick = async () => {
+      const result = await listTikTokSchedulesPollAction({ carouselId });
+      if (!result.ok) return;
+      setLiveSchedules(
+        result.schedules.map((s) => ({
+          id: s.id,
+          scheduledFor: s.scheduledFor,
+          status: s.status,
+          lastError: s.lastError,
+        }))
+      );
+      router.refresh();
+    };
+    const id = window.setInterval(() => void tick(), 20_000);
+    return () => window.clearInterval(id);
+  }, [needsSchedulePoll, carouselId, router]);
+
   const brandedContentBlocked = brandContent && privacyLevel === "SELF_ONLY";
+  const commercialIncomplete = commercialDisclosure && !brandOrganic && !brandContent;
+  const musicConfirmCopy =
+    brandContent
+      ? "By posting, you agree to TikTok’s Branded Content Policy and Music Usage Confirmation."
+      : "By posting, you agree to TikTok’s Music Usage Confirmation.";
 
   // Restore this carousel's TikTok settings on open/refresh (not schedule time or music confirm).
   useEffect(() => {
@@ -211,11 +253,13 @@ export function PostToTikTokPanel({
       setAllowComment(prefs.allowComment);
       setBrandOrganic(prefs.brandOrganic);
       setBrandContent(prefs.brandContent);
+      setCommercialDisclosure(prefs.brandOrganic || prefs.brandContent);
     } else {
       setPrivacyLevel("");
       setAllowComment(false);
       setBrandOrganic(false);
       setBrandContent(false);
+      setCommercialDisclosure(false);
     }
     setScheduledFor(initialDateTime());
     setMusicConfirmed(false);
@@ -313,6 +357,10 @@ export function PostToTikTokPanel({
         setMessage("Branded content cannot use Only you visibility.");
         return;
       }
+      if (commercialIncomplete) {
+        setMessage("Choose Your brand, Branded content, or both.");
+        return;
+      }
       if (when === "schedule") {
         const date = new Date(scheduledFor);
         if (!Number.isFinite(date.getTime()) || date.getTime() < Date.now() + 60_000) {
@@ -362,11 +410,11 @@ export function PostToTikTokPanel({
       if (result.mode === "now") {
         setMessage(
           result.status === "published"
-            ? "Posted to TikTok."
-            : "Sent to TikTok. Publishing may take a minute while images upload."
+            ? "Posted to TikTok. It may take a few minutes to appear on your profile."
+            : "Sent to TikTok. It may take a few minutes to process and become visible on your profile."
         );
       } else {
-        setMessage("Scheduled. TikTok will receive the post near the selected time.");
+        setMessage("Scheduled. TikTok will receive the post near the selected time; visibility can take a few minutes after publish.");
       }
       setMusicConfirmed(false);
       router.refresh();
@@ -379,6 +427,7 @@ export function PostToTikTokPanel({
     Boolean(privacyLevel) &&
     musicConfirmed &&
     !brandedContentBlocked &&
+    !commercialIncomplete &&
     !pending &&
     !disconnecting &&
     !creatorLoading &&
@@ -534,18 +583,22 @@ export function PostToTikTokPanel({
               >
                 {(creator?.privacyLevels ?? []).map((level) => {
                   const selected = privacyLevel === level;
+                  const disabled = brandContent && level === "SELF_ONLY";
                   return (
                     <button
                       key={level}
                       type="button"
                       role="radio"
                       aria-checked={selected}
+                      disabled={disabled}
+                      title={disabled ? "Branded content visibility cannot be set to private." : undefined}
                       onClick={() => setPrivacyLevel(level)}
                       className={cn(
                         "rounded-xl border px-3 py-2.5 text-center text-xs font-semibold transition",
                         selected
                           ? "border-foreground bg-foreground text-background shadow-sm"
-                          : "border-border bg-card text-foreground hover:border-foreground/40 hover:bg-muted/50"
+                          : "border-border bg-card text-foreground hover:border-foreground/40 hover:bg-muted/50",
+                        disabled && "cursor-not-allowed opacity-40 hover:border-border hover:bg-card"
                       )}
                     >
                       {privacyLevelLabel(level)}
@@ -599,35 +652,51 @@ export function PostToTikTokPanel({
             </div>
 
             <div className="space-y-2 pt-1">
-              <p className="text-[11px] font-medium text-muted-foreground">Commercial content</p>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <OptionToggle
-                  id="tiktok-brand-organic"
-                  checked={brandOrganic}
-                  onChange={setBrandOrganic}
-                  label="Your brand"
-                  description="Promoting yourself or your business."
-                />
-                <OptionToggle
-                  id="tiktok-brand-content"
-                  checked={brandContent}
-                  onChange={setBrandContent}
-                  label="Branded content"
-                  description="Promoting another brand. Not for Only you."
-                />
-              </div>
-              {commercialOn ? (
+              <p className="text-[11px] font-medium text-muted-foreground">Commercial content disclosure</p>
+              <OptionToggle
+                id="tiktok-commercial"
+                checked={commercialDisclosure}
+                onChange={(next) => {
+                  setCommercialDisclosure(next);
+                  if (!next) {
+                    setBrandOrganic(false);
+                    setBrandContent(false);
+                  }
+                }}
+                label="This post promotes a brand, product, or service"
+                description="Off by default. Turn on to disclose Your brand and/or Branded content."
+              />
+              {commercialDisclosure ? (
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <OptionToggle
+                    id="tiktok-brand-organic"
+                    checked={brandOrganic}
+                    onChange={setBrandOrganic}
+                    label="Your brand"
+                    description="Your photo will be labeled as ‘Promotional content’."
+                  />
+                  <OptionToggle
+                    id="tiktok-brand-content"
+                    checked={brandContent}
+                    onChange={setBrandContent}
+                    label="Branded content"
+                    description="Your photo will be labeled as ‘Paid partnership’. Not for Only you."
+                  />
+                </div>
+              ) : null}
+              {commercialIncomplete ? (
+                <p className="text-xs text-destructive" role="alert">
+                  You need to indicate if your content promotes yourself, a third party, or both.
+                </p>
+              ) : null}
+              {brandOrganic && brandContent ? (
                 <p className="text-[11px] leading-snug text-muted-foreground">
-                  {brandOrganic && brandContent
-                    ? "Labeled Brand Organic + Branded Content."
-                    : brandContent
-                      ? "Labeled Branded Content."
-                      : "Labeled Brand Organic."}
+                  Your photo will be labeled as ‘Paid partnership’.
                 </p>
               ) : null}
               {brandedContentBlocked ? (
                 <p className="text-xs text-destructive" role="alert">
-                  Choose a public visibility for branded content, or turn it off.
+                  Branded content visibility cannot be set to Only you.
                 </p>
               ) : null}
             </div>
@@ -638,8 +707,8 @@ export function PostToTikTokPanel({
             checked={musicConfirmed}
             onChange={setMusicConfirmed}
             icon={Music2Icon}
-            label="Music Usage Confirmation"
-            description="Required each time. Confirms TikTok’s music terms for this photo post."
+            label="Confirm before posting"
+            description={musicConfirmCopy}
           />
 
           <div className="flex flex-wrap items-center gap-2 border-t border-border/50 pt-4">
@@ -681,11 +750,11 @@ export function PostToTikTokPanel({
             </p>
           ) : null}
 
-          {schedules.length > 0 ? (
+          {liveSchedules.length > 0 ? (
             <ul className="space-y-2 border-t border-border/50 pt-3 text-[11px] text-muted-foreground">
-              {schedules.slice(0, 5).map((scheduleItem) => (
-                <li key={scheduleItem.id} className="space-y-0.5">
-                  <div className="flex flex-wrap gap-x-2">
+              {liveSchedules.slice(0, 5).map((scheduleItem) => (
+                <li key={scheduleItem.id} className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     <span>{new Date(scheduleItem.scheduledFor).toLocaleString()}</span>
                     <span
                       className={
@@ -696,9 +765,116 @@ export function PostToTikTokPanel({
                             : "text-foreground/80"
                       }
                     >
-                      {scheduleItem.status}
+                      {scheduleItem.status === "scheduled"
+                        ? "Queued"
+                        : scheduleItem.status === "publishing"
+                          ? "Sending"
+                          : scheduleItem.status === "published"
+                            ? "Live"
+                            : scheduleItem.status}
                     </span>
+                    {scheduleItem.status === "scheduled" ? (
+                      <span className="ml-auto flex gap-2">
+                        <button
+                          type="button"
+                          className="underline-offset-2 hover:underline disabled:opacity-50"
+                          disabled={scheduleBusyId === scheduleItem.id}
+                          onClick={() => {
+                            setRescheduleId(scheduleItem.id);
+                            setRescheduleValue(
+                              new Date(
+                                new Date(scheduleItem.scheduledFor).getTime() -
+                                  new Date().getTimezoneOffset() * 60_000
+                              )
+                                .toISOString()
+                                .slice(0, 16)
+                            );
+                          }}
+                        >
+                          Reschedule
+                        </button>
+                        <button
+                          type="button"
+                          className="text-destructive underline-offset-2 hover:underline disabled:opacity-50"
+                          disabled={scheduleBusyId === scheduleItem.id}
+                          onClick={async () => {
+                            setScheduleBusyId(scheduleItem.id);
+                            try {
+                              const result = await cancelTikTokScheduleAction({
+                                scheduleId: scheduleItem.id,
+                                pathname,
+                              });
+                              if (!result.ok) {
+                                setMessage(result.error);
+                                return;
+                              }
+                              setLiveSchedules((prev) =>
+                                prev.map((s) =>
+                                  s.id === scheduleItem.id ? { ...s, status: "cancelled" } : s
+                                )
+                              );
+                              router.refresh();
+                            } finally {
+                              setScheduleBusyId(null);
+                            }
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </span>
+                    ) : null}
                   </div>
+                  {rescheduleId === scheduleItem.id ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Input
+                        type="datetime-local"
+                        value={rescheduleValue}
+                        onChange={(e) => setRescheduleValue(e.target.value)}
+                        className="h-8 max-w-[11rem] rounded-lg text-xs"
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-8 rounded-lg text-xs"
+                        disabled={!rescheduleValue || scheduleBusyId === scheduleItem.id}
+                        onClick={async () => {
+                          setScheduleBusyId(scheduleItem.id);
+                          try {
+                            const result = await rescheduleTikTokScheduleAction({
+                              scheduleId: scheduleItem.id,
+                              scheduledFor: new Date(rescheduleValue).toISOString(),
+                              pathname,
+                            });
+                            if (!result.ok) {
+                              setMessage(result.error);
+                              return;
+                            }
+                            setLiveSchedules((prev) =>
+                              prev.map((s) =>
+                                s.id === scheduleItem.id
+                                  ? { ...s, scheduledFor: new Date(rescheduleValue).toISOString() }
+                                  : s
+                              )
+                            );
+                            setRescheduleId(null);
+                            router.refresh();
+                          } finally {
+                            setScheduleBusyId(null);
+                          }
+                        }}
+                      >
+                        Save
+                      </Button>
+                      <button
+                        type="button"
+                        className="text-xs underline-offset-2 hover:underline"
+                        onClick={() => setRescheduleId(null)}
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  ) : null}
                   {scheduleItem.lastError ? (
                     <p className="leading-snug text-destructive/90">{scheduleItem.lastError}</p>
                   ) : null}

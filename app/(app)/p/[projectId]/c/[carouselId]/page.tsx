@@ -28,6 +28,7 @@ import {
   CarouselGeneratingPage,
   CarouselGenerationFailedPage,
 } from "@/components/carousels/CarouselGeneratingTrigger";
+import { PostToInstagramPanel } from "@/components/instagram/PostToInstagramPanel";
 import { PostToTikTokPanel } from "@/components/tiktok/PostToTikTokPanel";
 import { ArrowLeftIcon, SparklesIcon } from "lucide-react";
 
@@ -62,7 +63,7 @@ export default async function CarouselEditorPage({
   const resolvedSearchParams = await searchParams;
   const showGenerationPartial = resolvedSearchParams?.generation === "partial";
 
-  const [carousel, project, slides, templatesRaw, recentExports, subscription, exportCount, lifetimeCarouselCount, limits, favoriteIds, tiktokConnection, tiktokSchedules] =
+  const [carousel, project, slides, templatesRaw, recentExports, subscription, exportCount, lifetimeCarouselCount, limits, favoriteIds, tiktokConnection, instagramConnection, tiktokSchedules] =
     await Promise.all([
       getCarousel(user.id, carouselId),
       getProject(user.id, projectId),
@@ -76,6 +77,7 @@ export default async function CarouselEditorPage({
       getEffectivePlanLimits(user.id, user.email),
       listFavoriteTemplateIds(user.id),
       getPlatformConnection(user.id, "tiktok"),
+      getPlatformConnection(user.id, "instagram"),
       listTikTokScheduledPosts(user.id, carouselId),
     ]);
 
@@ -314,15 +316,25 @@ export default async function CarouselEditorPage({
           </div>
         </header>
 
-        <PostToTikTokPanel
-          carouselId={carouselId}
-          pathname={editorPath}
-          connectedAccount={tiktokConnection?.platform_username ?? (tiktokConnection ? "Connected" : null)}
-          slideCount={slides.length}
-          initialTitle={carousel.title}
-          initialDescription={[captionVariants.long ?? captionVariants.medium ?? "", hashtags.map((tag) => tag.startsWith("#") ? tag : `#${tag}`).join(" ")].filter(Boolean).join("\n\n")}
-          schedules={tiktokSchedules.map((schedule) => ({ id: schedule.id, scheduledFor: schedule.scheduled_for, status: schedule.status, lastError: schedule.last_error }))}
-        />
+        <div className="space-y-3">
+          <PostToTikTokPanel
+            carouselId={carouselId}
+            pathname={editorPath}
+            connectedAccount={tiktokConnection?.platform_username ?? (tiktokConnection ? "Connected" : null)}
+            slideCount={slides.length}
+            initialTitle={carousel.title}
+            initialDescription={[captionVariants.long ?? captionVariants.medium ?? "", hashtags.map((tag) => tag.startsWith("#") ? tag : `#${tag}`).join(" ")].filter(Boolean).join("\n\n")}
+            schedules={tiktokSchedules.map((schedule) => ({ id: schedule.id, scheduledFor: schedule.scheduled_for, status: schedule.status, lastError: schedule.last_error }))}
+          />
+          <PostToInstagramPanel
+            carouselId={carouselId}
+            pathname={editorPath}
+            connectedAccount={instagramConnection?.platform_username ?? (instagramConnection ? "Connected" : null)}
+            slideCount={slides.length}
+            initialCaption={[captionVariants.long ?? captionVariants.medium ?? "", hashtags.map((tag) => tag.startsWith("#") ? tag : `#${tag}`).join(" ")].filter(Boolean).join("\n\n")}
+            configured={Boolean(process.env.FACEBOOK_APP_ID && process.env.FACEBOOK_APP_SECRET)}
+          />
+        </div>
 
         <section
           className={cn(

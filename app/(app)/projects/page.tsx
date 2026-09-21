@@ -2,9 +2,8 @@ import Link from "next/link";
 import { Suspense } from "react";
 import {
   ArrowRightIcon,
-  CalendarClockIcon,
-  CheckCircle2Icon,
   Clock3Icon,
+  ExternalLinkIcon,
   FolderPlusIcon,
   Layers3Icon,
   PlusCircleIcon,
@@ -14,7 +13,9 @@ import { Button } from "@/components/ui/button";
 import { SubscriptionStatusBanner } from "@/components/subscription/SubscriptionStatusBanner";
 import { GoProBar } from "@/components/subscription/GoProBar";
 import { ProjectMenuDropdown } from "@/components/projects/ProjectMenuDropdown";
+import { WorkspaceOnboarding } from "@/components/onboarding/WorkspaceOnboarding";
 import { TikTokScheduledPostsSection } from "@/components/tiktok/TikTokScheduledPostsSection";
+import { TikTokMicroIcon } from "@/components/carousels/BackgroundSourcePlatformHints";
 import { PaginationNav } from "@/components/ui/pagination-nav";
 import { getSubscription, getEffectivePlanLimits, hasFullProFeatureAccess } from "@/lib/server/subscription";
 import { getUser } from "@/lib/server/auth/getUser";
@@ -23,11 +24,13 @@ import {
   countCarouselsLifetime,
   countCarouselsThisMonth,
   countProjects,
-  countUpcomingTikTokScheduledPosts,
+  getPlatformConnection,
+  getTikTokWorkspaceStats,
   listTikTokScheduledPostsForUser,
   listWorkspaceProjects,
   type WorkspaceProject,
 } from "@/lib/server/db";
+import { cn } from "@/lib/utils";
 
 const PROJECTS_PAGE_SIZE = 15;
 const PROJECT_ACCENTS = [
@@ -59,13 +62,32 @@ function postState(project: WorkspaceProject) {
 
 function MetricCard({ icon: Icon, label, value, detail }: { icon: typeof Layers3Icon; label: string; value: string | number; detail: string }) {
   return (
-    <div className="rounded-2xl border border-border/70 bg-card px-4 py-4 shadow-sm sm:px-5">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-medium text-muted-foreground">{label}</p>
-        <span className="grid size-8 place-items-center rounded-lg bg-primary/10 text-primary"><Icon className="size-4" /></span>
+    <div className="rounded-xl border border-border/70 bg-card px-3.5 py-3 shadow-sm sm:px-4">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-medium text-muted-foreground">{label}</p>
+        <span className="grid size-7 place-items-center rounded-md bg-primary/10 text-primary"><Icon className="size-3.5" /></span>
       </div>
-      <p className="mt-3 text-2xl font-semibold tracking-tight">{value}</p>
-      <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
+      <p className="mt-2 text-xl font-semibold tracking-tight sm:text-2xl">{value}</p>
+      <p className="mt-0.5 text-[11px] text-muted-foreground">{detail}</p>
+    </div>
+  );
+}
+
+function TikTokStat({ label, value, tone }: { label: string; value: number; tone?: "default" | "ok" | "warn" | "bad" }) {
+  return (
+    <div className="min-w-0">
+      <p
+        className={cn(
+          "text-lg font-semibold tracking-tight tabular-nums",
+          tone === "ok" && "text-emerald-600 dark:text-emerald-400",
+          tone === "warn" && "text-amber-700 dark:text-amber-400",
+          tone === "bad" && "text-destructive",
+          (!tone || tone === "default") && "text-foreground"
+        )}
+      >
+        {value}
+      </p>
+      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
     </div>
   );
 }
@@ -109,20 +131,28 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   const params = await searchParams;
   const page = Math.max(1, parseInt(params.page ?? "1", 10) || 1);
   const offset = (page - 1) * PROJECTS_PAGE_SIZE;
-  const [projects, total, subscription, fullAccess, limits, carouselCount, monthlyCount, profile, upcomingTikTok, tiktokSchedules] = await Promise.all([
-    listWorkspaceProjects(user.id, { limit: PROJECTS_PAGE_SIZE, offset }),
-    countProjects(user.id),
-    getSubscription(user.id, user.email),
-    hasFullProFeatureAccess(user.id, user.email),
-    getEffectivePlanLimits(user.id, user.email),
-    countCarouselsLifetime(user.id),
-    countCarouselsThisMonth(user.id),
-    getProfile(user.id),
-    countUpcomingTikTokScheduledPosts(user.id),
-    listTikTokScheduledPostsForUser(user.id, { limit: 6 }),
-  ]);
+  const [projects, total, subscription, fullAccess, limits, carouselCount, monthlyCount, profile, tiktokConnection] =
+    await Promise.all([
+      listWorkspaceProjects(user.id, { limit: PROJECTS_PAGE_SIZE, offset }),
+      countProjects(user.id),
+      getSubscription(user.id, user.email),
+      hasFullProFeatureAccess(user.id, user.email),
+      getEffectivePlanLimits(user.id, user.email),
+      countCarouselsLifetime(user.id),
+      countCarouselsThisMonth(user.id),
+      getProfile(user.id),
+      getPlatformConnection(user.id, "tiktok"),
+    ]);
+  const tiktokConnected = Boolean(tiktokConnection);
+  const [tiktokStats, tiktokSchedules] = tiktokConnected
+    ? await Promise.all([
+        getTikTokWorkspaceStats(user.id),
+        listTikTokScheduledPostsForUser(user.id, { limit: 6 }),
+      ])
+    : [null, [] as Awaited<ReturnType<typeof listTikTokScheduledPostsForUser>>];
   const totalPages = Math.max(1, Math.ceil(total / PROJECTS_PAGE_SIZE));
   const firstName = (profile?.display_name || user.email?.split("@")[0] || "there").trim().split(/\s+/)[0];
+  const tiktokOauthUrl = `/api/oauth/tiktok?return_to=${encodeURIComponent("/projects")}`;
 
   return (
     <div className="min-h-[calc(100vh-8rem)] bg-gradient-to-b from-primary/[0.035] to-transparent px-4 py-6 sm:px-6 md:px-8 md:py-8">
@@ -145,31 +175,72 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
           </div>
         </section>
 
-        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <MetricCard icon={FolderPlusIcon} label="Projects" value={total} detail="Organized by niche and offer" />
-          <MetricCard icon={Layers3Icon} label="Posts this month" value={monthlyCount} detail={`${monthlyCount}/${limits.carouselsPerMonth} included in your plan`} />
-          <MetricCard icon={CheckCircle2Icon} label="Posts created" value={carouselCount} detail="Your library of carousel ideas" />
+        <WorkspaceOnboarding
+          hasProject={total > 0}
+          hasCarousel={carouselCount > 0}
+          hasTikTokConnected={tiktokConnected}
+          firstProjectId={projects[0]?.id ?? null}
+        />
+
+        <section className="grid gap-3 sm:grid-cols-3">
+          <MetricCard icon={FolderPlusIcon} label="Projects" value={total} detail="By niche and offer" />
           <MetricCard
-            icon={CalendarClockIcon}
-            label="TikTok queued"
-            value={upcomingTikTok}
-            detail={upcomingTikTok === 1 ? "1 post waiting to publish" : "Posts waiting to publish"}
+            icon={Layers3Icon}
+            label="Posts"
+            value={monthlyCount}
+            detail={`${monthlyCount}/${limits.carouselsPerMonth} this month · ${carouselCount} total`}
           />
+          <div className="rounded-xl border border-border/70 bg-card px-3.5 py-3 shadow-sm sm:px-4">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-medium text-muted-foreground">TikTok</p>
+              <span className="grid size-7 place-items-center rounded-md bg-foreground text-background">
+                <TikTokMicroIcon className="size-3.5 opacity-100" />
+              </span>
+            </div>
+            {tiktokConnected && tiktokStats ? (
+              <>
+                <div className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-4">
+                  <TikTokStat label="Queued" value={tiktokStats.queued} tone={tiktokStats.queued > 0 ? "warn" : "default"} />
+                  <TikTokStat label="Posted" value={tiktokStats.posted} tone={tiktokStats.posted > 0 ? "ok" : "default"} />
+                  <TikTokStat label="Failed" value={tiktokStats.failed} tone={tiktokStats.failed > 0 ? "bad" : "default"} />
+                  <TikTokStat label="Not posted" value={tiktokStats.notPosted} />
+                </div>
+                <p className="mt-2 text-[11px] text-muted-foreground">
+                  Queued becomes Posted when TikTok finishes. Not posted = ready carousels never published here.
+                </p>
+              </>
+            ) : (
+              <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs leading-snug text-muted-foreground">
+                  Connect to track queued and posted carousels.
+                </p>
+                <Button type="button" size="sm" className="h-8 shrink-0" asChild>
+                  <a href={tiktokOauthUrl}>
+                    <ExternalLinkIcon className="mr-1.5 size-3.5" />
+                    Connect
+                  </a>
+                </Button>
+              </div>
+            )}
+          </div>
         </section>
 
-        <TikTokScheduledPostsSection
-          posts={tiktokSchedules.map((schedule) => ({
-            id: schedule.id,
-            projectId: schedule.project_id,
-            carouselId: schedule.carousel_id,
-            carouselTitle: schedule.carousel_title,
-            title: schedule.title,
-            scheduledFor: schedule.scheduled_for,
-            status: schedule.status,
-            privacyLevel: schedule.privacy_level,
-            lastError: schedule.last_error,
-          }))}
-        />
+        {tiktokConnected ? (
+          <TikTokScheduledPostsSection
+            variant="workspace"
+            posts={tiktokSchedules.map((schedule) => ({
+              id: schedule.id,
+              projectId: schedule.project_id,
+              carouselId: schedule.carousel_id,
+              carouselTitle: schedule.carousel_title,
+              title: schedule.title,
+              scheduledFor: schedule.scheduled_for,
+              status: schedule.status,
+              privacyLevel: schedule.privacy_level,
+              lastError: schedule.last_error,
+            }))}
+          />
+        ) : null}
 
         <section className="rounded-2xl border border-border/70 bg-card p-4 shadow-sm sm:p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">

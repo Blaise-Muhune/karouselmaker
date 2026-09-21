@@ -109,6 +109,51 @@ export async function countUpcomingTikTokScheduledPosts(userId: string): Promise
   return Math.max(0, parseInt(row?.count ?? "0", 10) || 0);
 }
 
+export type TikTokWorkspaceStats = {
+  /** scheduled + publishing — become “posted” when TikTok finishes. */
+  queued: number;
+  /** Successfully published Direct Posts. */
+  posted: number;
+  /** Failed attempts that still need attention. */
+  failed: number;
+  /** Finished carousels that have never had a successful TikTok publish. */
+  notPosted: number;
+};
+
+/** Compact TikTok pipeline stats for the workspace dashboard. */
+export async function getTikTokWorkspaceStats(userId: string): Promise<TikTokWorkspaceStats> {
+  const row = await queryOne<{
+    queued: string;
+    posted: string;
+    failed: string;
+    not_posted: string;
+  }>(
+    `select
+       (select count(*)::text from tiktok_scheduled_posts
+         where user_id = $1 and status in ('scheduled', 'publishing')) as queued,
+       (select count(*)::text from tiktok_scheduled_posts
+         where user_id = $1 and status = 'published') as posted,
+       (select count(*)::text from tiktok_scheduled_posts
+         where user_id = $1 and status = 'failed') as failed,
+       (select count(*)::text from carousels c
+         where c.user_id = $1
+           and c.status in ('ready', 'generated')
+           and not exists (
+             select 1 from tiktok_scheduled_posts s
+             where s.carousel_id = c.id
+               and s.user_id = c.user_id
+               and s.status = 'published'
+           )) as not_posted`,
+    [userId]
+  );
+  return {
+    queued: Math.max(0, parseInt(row?.queued ?? "0", 10) || 0),
+    posted: Math.max(0, parseInt(row?.posted ?? "0", 10) || 0),
+    failed: Math.max(0, parseInt(row?.failed ?? "0", 10) || 0),
+    notPosted: Math.max(0, parseInt(row?.not_posted ?? "0", 10) || 0),
+  };
+}
+
 export async function getTikTokScheduledPostForMedia(
   scheduleId: string,
   mediaToken: string
@@ -202,4 +247,36 @@ export async function markTikTokScheduledPostFailed(scheduleId: string, error: s
      where id = $1`,
     [scheduleId, error.slice(0, 1000)]
   );
+}
+
+export async function cancelTikTokScheduledPost(userId: string, scheduleId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const row = await queryOne<TikTokScheduledPost>(
+    `update tiktok_scheduled_posts
+     set status = 'cancelled', updated_at = now(), last_error = null
+     where id = $1 and user_id = $2 and status = 'scheduled'
+     returning *`,
+    [scheduleId, userId]
+  );
+  if (!row) return { ok: false, error: "Only queued posts can be cancelled." };
+  return { ok: true };
+}
+
+export async function rescheduleTikTokScheduledPost(
+  userId: string,
+  scheduleId: string,
+  scheduledFor: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const when = new Date(scheduledFor);
+  if (!Number.isFinite(when.getTime()) || when.getTime() < Date.now() + 60_000) {
+    return { ok: false, error: "Choose a time at least one minute from now." };
+  }
+  const row = await queryOne<TikTokScheduledPost>(
+    `update tiktok_scheduled_posts
+     set scheduled_for = $3, updated_at = now(), last_error = null
+     where id = $1 and user_id = $2 and status = 'scheduled'
+     returning *`,
+    [scheduleId, userId, when.toISOString()]
+  );
+  if (!row) return { ok: false, error: "Only queued posts can be rescheduled." };
+  return { ok: true };
 }

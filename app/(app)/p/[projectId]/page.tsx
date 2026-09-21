@@ -93,6 +93,7 @@ export default async function ProjectDashboardPage({
         />
 
         <TikTokScheduledPostsSection
+          variant="project"
           posts={tiktokSchedules.map((schedule) => ({
             id: schedule.id,
             projectId: schedule.project_id,
@@ -104,7 +105,6 @@ export default async function ProjectDashboardPage({
             privacyLevel: schedule.privacy_level,
             lastError: schedule.last_error,
           }))}
-          emptyHint="Open a carousel and use Post to TikTok to schedule."
         />
 
         {carousels.length === 0 && (
