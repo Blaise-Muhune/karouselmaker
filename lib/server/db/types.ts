@@ -202,7 +202,7 @@ export interface PlatformConnection {
   updated_at: string;
 }
 
-/** Admin-only test queue for TikTok Photo Mode posts. */
+/** Queued TikTok Photo Mode Direct Post. */
 export interface TikTokScheduledPost {
   id: string;
   user_id: string;
@@ -212,7 +212,10 @@ export interface TikTokScheduledPost {
   slide_count: number;
   title: string;
   description: string;
-  privacy_level: "SELF_ONLY";
+  privacy_level: "PUBLIC_TO_EVERYONE" | "MUTUAL_FOLLOW_FRIENDS" | "FOLLOWER_OF_CREATOR" | "SELF_ONLY";
+  allow_comment: boolean;
+  brand_organic: boolean;
+  brand_content: boolean;
   scheduled_for: string;
   status: "scheduled" | "publishing" | "published" | "failed" | "cancelled";
   tiktok_publish_id: string | null;

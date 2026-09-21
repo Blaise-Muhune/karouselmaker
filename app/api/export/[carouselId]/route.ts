@@ -58,6 +58,8 @@ type ExportRequestOptions = {
   size?: "1080x1080" | "1080x1350" | "1080x1920";
   /** Store a fixed export for an in-app destination without sending a file to the browser. */
   delivery?: "download" | "prepare" | "schedule";
+  /** When true, strip Made-with / app promo chrome for TikTok Direct Post media. */
+  forTikTok?: boolean;
 };
 
 async function readExportRequestOptions(request: Request): Promise<ExportRequestOptions> {
@@ -66,7 +68,15 @@ async function readExportRequestOptions(request: Request): Promise<ExportRequest
     if (!ct.includes("application/json")) return { imageOverlay: true };
     const body: unknown = await request.json();
     if (!body || typeof body !== "object") return { imageOverlay: true };
-    const value = body as { image_overlay?: unknown; format?: unknown; size?: unknown; delivery?: unknown };
+    const value = body as {
+      image_overlay?: unknown;
+      format?: unknown;
+      size?: unknown;
+      delivery?: unknown;
+      for_tiktok?: unknown;
+    };
+    const delivery =
+      value.delivery === "schedule" || value.delivery === "prepare" ? value.delivery : "download";
     return {
       imageOverlay: typeof value.image_overlay === "boolean" ? value.image_overlay : true,
       format: value.format === "png" || value.format === "jpeg" || value.format === "pdf" ? value.format : undefined,
@@ -74,10 +84,8 @@ async function readExportRequestOptions(request: Request): Promise<ExportRequest
         value.size === "1080x1080" || value.size === "1080x1350" || value.size === "1080x1920"
           ? value.size
           : undefined,
-      delivery:
-        value.delivery === "schedule" || value.delivery === "prepare"
-          ? value.delivery
-          : "download",
+      delivery,
+      forTikTok: value.for_tiktok === true || delivery === "schedule",
     };
   } catch {
     /* empty or non-JSON body */
@@ -268,20 +276,17 @@ export async function POST(
               }
               if (!data && storagePath) {
                 try {
+                  // Prefer another admin download attempt via signed URL only if it's already JPEG-safe in storage.
                   data = await getSignedImageUrl(BUCKET, storagePath, 600);
+                  if (data) {
+                    const normalized = await fetchImageAsDataUrl(data);
+                    data = normalized;
+                  }
                 } catch {
-                  // keep null
+                  data = null;
                 }
               }
               if (data) resolved.push(data);
-              else if (img.image_url && /^https?:\/\//i.test(img.image_url)) resolved.push(img.image_url);
-              else if (storagePath) {
-                try {
-                  resolved.push(await getSignedImageUrl(BUCKET, storagePath, 600));
-                } catch {
-                  // skip this slot
-                }
-              }
             }
             if (resolved.length === 1) backgroundImageUrl = resolved[0] ?? null;
             else if (resolved.length >= 2) backgroundImageUrls = resolved;
@@ -294,7 +299,8 @@ export async function POST(
               backgroundImageUrl = await downloadStorageImageAsDataUrl(BUCKET, trimmedPath);
               if (!backgroundImageUrl) {
                 try {
-                  backgroundImageUrl = await getSignedImageUrl(BUCKET, trimmedPath, 600);
+                  const signed = await getSignedImageUrl(BUCKET, trimmedPath, 600);
+                  backgroundImageUrl = signed ? await fetchImageAsDataUrl(signed) : null;
                 } catch {
                   // keep null
                 }
@@ -306,7 +312,6 @@ export async function POST(
                 const proxyUrl = createProxyImageUrl(slideBg.image_url, appOrigin);
                 if (proxyUrl) backgroundImageUrl = await fetchImageAsDataUrl(proxyUrl);
               }
-              if (!backgroundImageUrl) backgroundImageUrl = slideBg.image_url;
             }
           }
           if (slide.slide_type === "hook" && !backgroundImageUrls) {
@@ -316,7 +321,8 @@ export async function POST(
                 secondaryBackgroundImageUrl = await downloadStorageImageAsDataUrl(BUCKET, secPath);
                 if (!secondaryBackgroundImageUrl) {
                   try {
-                    secondaryBackgroundImageUrl = await getSignedImageUrl(BUCKET, secPath, 600);
+                    const signed = await getSignedImageUrl(BUCKET, secPath, 600);
+                    secondaryBackgroundImageUrl = signed ? await fetchImageAsDataUrl(signed) : null;
                   } catch {
                     // keep null
                   }
@@ -329,7 +335,6 @@ export async function POST(
                 const proxyUrl = createProxyImageUrl(slideBg.secondary_image_url, appOrigin);
                 if (proxyUrl) secondaryBackgroundImageUrl = await fetchImageAsDataUrl(proxyUrl);
               }
-              if (!secondaryBackgroundImageUrl) secondaryBackgroundImageUrl = slideBg.secondary_image_url;
             }
           }
         }
@@ -341,8 +346,12 @@ export async function POST(
         const templateDefaults = getTemplateDefaultOverrides(config.data);
         const merged = mergeWithTemplateDefaults(normalized, templateDefaults);
         const showCounterOverride = merged.showCounterOverride;
-        const showWatermarkOverride = merged.showWatermarkOverride ?? defaultShowWatermark;
-        const showMadeWithOverride = merged.showMadeWithOverride ?? false;
+        const showWatermarkOverride = requestOptions.forTikTok
+          ? false
+          : (merged.showWatermarkOverride ?? defaultShowWatermark);
+        const showMadeWithOverride = requestOptions.forTikTok
+          ? false
+          : (merged.showMadeWithOverride ?? false);
         const fontOverrides = merged.fontOverrides;
         const zoneOverrides = merged.zoneOverrides;
         const chromeOverrides = merged.chromeOverrides;
@@ -509,7 +518,9 @@ export async function POST(
         /Protocol error/i.test(raw);
       const msg = isBrowserClosed
         ? "Export failed: the browser closed unexpectedly. Try again in a moment or download each frame individually below."
-        : raw;
+        : /could not be decoded|EncodingError/i.test(raw)
+          ? "A slide background image could not be decoded. Stock photos sometimes use AVIF/WebP — pick another image or retry schedule."
+          : raw;
       try {
         await updateExport(userId, exportId, { status: "failed" });
       } catch {

@@ -28,7 +28,7 @@ import {
   CarouselGeneratingPage,
   CarouselGenerationFailedPage,
 } from "@/components/carousels/CarouselGeneratingTrigger";
-import { TikTokAdminSchedulePanel } from "@/components/tiktok/TikTokAdminSchedulePanel";
+import { PostToTikTokPanel } from "@/components/tiktok/PostToTikTokPanel";
 import { ArrowLeftIcon, SparklesIcon } from "lucide-react";
 
 function normalizeStoragePathForBucket(path: string | undefined, bucket: string): string | undefined {
@@ -75,8 +75,8 @@ export default async function CarouselEditorPage({
       countCarouselsLifetime(user.id),
       getEffectivePlanLimits(user.id, user.email),
       listFavoriteTemplateIds(user.id),
-      userIsAdmin ? getPlatformConnection(user.id, "tiktok") : Promise.resolve(null),
-      userIsAdmin ? listTikTokScheduledPosts(user.id, carouselId) : Promise.resolve([]),
+      getPlatformConnection(user.id, "tiktok"),
+      listTikTokScheduledPosts(user.id, carouselId),
     ]);
 
   const hasFullAccess = subscription.isPro || lifetimeCarouselCount < FREE_FULL_ACCESS_GENERATIONS;
@@ -314,16 +314,15 @@ export default async function CarouselEditorPage({
           </div>
         </header>
 
-        {userIsAdmin && (
-          <TikTokAdminSchedulePanel
-            carouselId={carouselId}
-            pathname={editorPath}
-            connectedAccount={tiktokConnection?.platform_username ?? (tiktokConnection ? "Connected" : null)}
-            initialTitle={carousel.title}
-            initialDescription={[captionVariants.long ?? captionVariants.medium ?? "", hashtags.map((tag) => tag.startsWith("#") ? tag : `#${tag}`).join(" ")].filter(Boolean).join("\n\n")}
-            schedules={tiktokSchedules.map((schedule) => ({ id: schedule.id, scheduledFor: schedule.scheduled_for, status: schedule.status, lastError: schedule.last_error }))}
-          />
-        )}
+        <PostToTikTokPanel
+          carouselId={carouselId}
+          pathname={editorPath}
+          connectedAccount={tiktokConnection?.platform_username ?? (tiktokConnection ? "Connected" : null)}
+          slideCount={slides.length}
+          initialTitle={carousel.title}
+          initialDescription={[captionVariants.long ?? captionVariants.medium ?? "", hashtags.map((tag) => tag.startsWith("#") ? tag : `#${tag}`).join(" ")].filter(Boolean).join("\n\n")}
+          schedules={tiktokSchedules.map((schedule) => ({ id: schedule.id, scheduledFor: schedule.scheduled_for, status: schedule.status, lastError: schedule.last_error }))}
+        />
 
         <section
           className={cn(

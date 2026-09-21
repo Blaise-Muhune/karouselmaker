@@ -165,21 +165,14 @@ export async function GET(
         }
         if (!data && storagePath) {
           try {
-            data = await getSignedImageUrl(BUCKET, storagePath, 600);
+            const signed = await getSignedImageUrl(BUCKET, storagePath, 600);
+            data = signed ? await fetchImageAsDataUrl(signed) : null;
           } catch {
-            // keep null
+            data = null;
           }
         }
-        // Fallback: use raw URL so export HTML still has a loadable image (Puppeteer can load it)
+        // Do not fall back to raw CDN URLs — stock CDNs often serve AVIF that Chromium cannot decode.
         if (data) resolved.push(data);
-        else if (img.image_url && /^https?:\/\//i.test(img.image_url)) resolved.push(img.image_url);
-        else if (storagePath) {
-          try {
-            resolved.push(await getSignedImageUrl(BUCKET, storagePath, 600));
-          } catch {
-            // skip this slot
-          }
-        }
       }
       if (resolved.length === 1) backgroundImageUrl = resolved[0] ?? null;
       else if (resolved.length >= 2) backgroundImageUrls = resolved;
@@ -192,7 +185,8 @@ export async function GET(
         backgroundImageUrl = await downloadStorageImageAsDataUrl(BUCKET, trimmedPath);
         if (!backgroundImageUrl) {
           try {
-            backgroundImageUrl = await getSignedImageUrl(BUCKET, trimmedPath, 600);
+            const signed = await getSignedImageUrl(BUCKET, trimmedPath, 600);
+            backgroundImageUrl = signed ? await fetchImageAsDataUrl(signed) : null;
           } catch {
             // keep null
           }
@@ -204,7 +198,10 @@ export async function GET(
           const proxyUrl = createProxyImageUrl(slideBg.image_url, appOrigin);
           if (proxyUrl) backgroundImageUrl = await fetchImageAsDataUrl(proxyUrl);
         }
-        if (!backgroundImageUrl) backgroundImageUrl = slideBg.image_url;
+        if (!backgroundImageUrl) {
+          const proxyUrl = createProxyImageUrl(slideBg.image_url, appOrigin);
+          if (proxyUrl) backgroundImageUrl = await fetchImageAsDataUrl(proxyUrl);
+        }
       }
     }
     if (slide.slide_type === "hook" && !backgroundImageUrls) {
@@ -216,7 +213,8 @@ export async function GET(
         secondaryBackgroundImageUrl = await downloadStorageImageAsDataUrl(BUCKET, secPath);
         if (!secondaryBackgroundImageUrl) {
           try {
-            secondaryBackgroundImageUrl = await getSignedImageUrl(BUCKET, secPath, 600);
+            const signed = await getSignedImageUrl(BUCKET, secPath, 600);
+            secondaryBackgroundImageUrl = signed ? await fetchImageAsDataUrl(signed) : null;
           } catch {
             // keep null
           }
@@ -229,7 +227,6 @@ export async function GET(
           const proxyUrl = createProxyImageUrl(slideBg.secondary_image_url, appOrigin);
           if (proxyUrl) secondaryBackgroundImageUrl = await fetchImageAsDataUrl(proxyUrl);
         }
-        if (!secondaryBackgroundImageUrl) secondaryBackgroundImageUrl = slideBg.secondary_image_url;
       }
     }
   }

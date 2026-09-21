@@ -19,15 +19,30 @@ export async function waitForImagesInPage(page: Page, timeoutMs = 15_000): Promi
         images.push(image);
       }
       await Promise.race([
-        Promise.all(images.map(async (image) => {
-          if (!image.currentSrc && !image.getAttribute("src")) return;
-          await image.decode();
-          if (!image.naturalWidth) throw new Error("Image could not be decoded");
-        })),
+        Promise.all(
+          images.map(async (image) => {
+            if (!image.currentSrc && !image.getAttribute("src")) return;
+            try {
+              await image.decode();
+            } catch (err) {
+              const name = err && typeof err === "object" && "name" in err ? String((err as { name: unknown }).name) : "";
+              const message = err instanceof Error ? err.message : String(err);
+              if (name === "EncodingError" || /cannot be decoded/i.test(message)) {
+                throw new Error(
+                  "A slide background image could not be decoded. Stock photos sometimes use AVIF/WebP that export cannot render — pick another image or retry."
+                );
+              }
+              throw err;
+            }
+            if (!image.naturalWidth) throw new Error("Image could not be decoded");
+          })
+        ),
         new Promise<never>((_, reject) => {
           timer = setTimeout(() => reject(new Error("Images timed out. Please retry the export.")), timeout);
         }),
       ]);
-    } finally { clearTimeout(timer); }
+    } finally {
+      clearTimeout(timer);
+    }
   }, timeoutMs);
 }

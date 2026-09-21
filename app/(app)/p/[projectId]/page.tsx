@@ -9,6 +9,7 @@ import {
   getSlideCountsForCarousels,
   getFirstSlideIdsForCarousels,
   getDefaultTemplateForNewCarousel,
+  listTikTokScheduledPostsForProject,
 } from "@/lib/server/db";
 import { getSubscription, getEffectivePlanLimits, hasFullProFeatureAccess } from "@/lib/server/subscription";
 import { ensureProjectTopicLineup } from "@/app/actions/carousels/projectTopicSuggestions";
@@ -18,6 +19,7 @@ import { PaginationNav } from "@/components/ui/pagination-nav";
 import { PencilIcon } from "lucide-react";
 import { CarouselListCard } from "@/components/carousels/CarouselListCard";
 import { GenerateNextPostButton } from "@/components/projects/GenerateNextPostButton";
+import { TikTokScheduledPostsSection } from "@/components/tiktok/TikTokScheduledPostsSection";
 
 const CAROUSELS_PAGE_SIZE = 10;
 
@@ -37,7 +39,7 @@ export default async function ProjectDashboardPage({
 
   const page = Math.max(1, parseInt(pageParam ?? "1", 10) || 1);
   const offset = (page - 1) * CAROUSELS_PAGE_SIZE;
-  const [carousels, total, subscription, fullAccess, limits, monthlyCount, defaultTemplate, lineup] =
+  const [carousels, total, subscription, fullAccess, limits, monthlyCount, defaultTemplate, lineup, tiktokSchedules] =
     await Promise.all([
       listCarousels(user.id, projectId, { limit: CAROUSELS_PAGE_SIZE, offset }),
       countCarousels(user.id, projectId),
@@ -47,6 +49,7 @@ export default async function ProjectDashboardPage({
       countCarouselsThisMonth(user.id),
       getDefaultTemplateForNewCarousel(user.id),
       ensureProjectTopicLineup(projectId, "instagram").catch(() => ({ topics: [] as { topic: string; is_marketing?: boolean }[] })),
+      listTikTokScheduledPostsForProject(user.id, projectId, { limit: 6 }),
     ]);
   const totalPages = Math.max(1, Math.ceil(total / CAROUSELS_PAGE_SIZE));
   const [slideCounts, firstSlideIds] =
@@ -87,6 +90,21 @@ export default async function ProjectDashboardPage({
           carouselCount={monthlyCount}
           carouselLimit={limits.carouselsPerMonth}
           defaultTemplateId={defaultTemplate?.templateId ?? null}
+        />
+
+        <TikTokScheduledPostsSection
+          posts={tiktokSchedules.map((schedule) => ({
+            id: schedule.id,
+            projectId: schedule.project_id,
+            carouselId: schedule.carousel_id,
+            carouselTitle: schedule.carousel_title,
+            title: schedule.title,
+            scheduledFor: schedule.scheduled_for,
+            status: schedule.status,
+            privacyLevel: schedule.privacy_level,
+            lastError: schedule.last_error,
+          }))}
+          emptyHint="Open a carousel and use Post to TikTok to schedule."
         />
 
         {carousels.length === 0 && (

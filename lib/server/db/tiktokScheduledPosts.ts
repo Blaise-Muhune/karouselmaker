@@ -6,13 +6,25 @@ import type { TikTokScheduledPost } from "./types";
 export async function createTikTokScheduledPost(
   payload: Pick<
     TikTokScheduledPost,
-    "user_id" | "carousel_id" | "export_id" | "media_token" | "slide_count" | "title" | "description" | "privacy_level" | "scheduled_for"
+    | "user_id"
+    | "carousel_id"
+    | "export_id"
+    | "media_token"
+    | "slide_count"
+    | "title"
+    | "description"
+    | "privacy_level"
+    | "allow_comment"
+    | "brand_organic"
+    | "brand_content"
+    | "scheduled_for"
   >
 ): Promise<TikTokScheduledPost> {
   const row = await queryOne<TikTokScheduledPost>(
     `insert into tiktok_scheduled_posts (
-       user_id, carousel_id, export_id, media_token, slide_count, title, description, privacy_level, scheduled_for
-     ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning *`,
+       user_id, carousel_id, export_id, media_token, slide_count, title, description,
+       privacy_level, allow_comment, brand_organic, brand_content, scheduled_for
+     ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) returning *`,
     [
       payload.user_id,
       payload.carousel_id,
@@ -22,6 +34,9 @@ export async function createTikTokScheduledPost(
       payload.title,
       payload.description,
       payload.privacy_level,
+      payload.allow_comment,
+      payload.brand_organic,
+      payload.brand_content,
       payload.scheduled_for,
     ]
   );
@@ -37,6 +52,61 @@ export async function listTikTokScheduledPosts(userId: string, carouselId: strin
      limit 8`,
     [userId, carouselId]
   );
+}
+
+export type TikTokScheduledPostSummary = TikTokScheduledPost & {
+  carousel_title: string;
+  project_id: string;
+};
+
+/** Recent TikTok schedules across the user’s workspace (upcoming first). */
+export async function listTikTokScheduledPostsForUser(
+  userId: string,
+  options?: { limit?: number }
+): Promise<TikTokScheduledPostSummary[]> {
+  const limit = Math.max(1, Math.min(options?.limit ?? 8, 20));
+  return queryMany<TikTokScheduledPostSummary>(
+    `select s.*, c.title as carousel_title, c.project_id
+     from tiktok_scheduled_posts s
+     join carousels c on c.id = s.carousel_id and c.user_id = s.user_id
+     where s.user_id = $1
+     order by
+       case when s.status in ('scheduled', 'publishing') then 0 else 1 end,
+       s.scheduled_for desc
+     limit $2`,
+    [userId, limit]
+  );
+}
+
+/** TikTok schedules for carousels in one project. */
+export async function listTikTokScheduledPostsForProject(
+  userId: string,
+  projectId: string,
+  options?: { limit?: number }
+): Promise<TikTokScheduledPostSummary[]> {
+  const limit = Math.max(1, Math.min(options?.limit ?? 8, 20));
+  return queryMany<TikTokScheduledPostSummary>(
+    `select s.*, c.title as carousel_title, c.project_id
+     from tiktok_scheduled_posts s
+     join carousels c on c.id = s.carousel_id and c.user_id = s.user_id
+     where s.user_id = $1 and c.project_id = $2
+     order by
+       case when s.status in ('scheduled', 'publishing') then 0 else 1 end,
+       s.scheduled_for desc
+     limit $3`,
+    [userId, projectId, limit]
+  );
+}
+
+/** Count posts still waiting to publish (or currently publishing). */
+export async function countUpcomingTikTokScheduledPosts(userId: string): Promise<number> {
+  const row = await queryOne<{ count: string }>(
+    `select count(*)::text as count
+     from tiktok_scheduled_posts
+     where user_id = $1 and status in ('scheduled', 'publishing')`,
+    [userId]
+  );
+  return Math.max(0, parseInt(row?.count ?? "0", 10) || 0);
 }
 
 export async function getTikTokScheduledPostForMedia(

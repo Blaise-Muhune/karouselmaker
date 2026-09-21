@@ -1,7 +1,6 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { getUser } from "@/lib/server/auth/getUser";
-import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { upsertPlatformConnection } from "@/lib/server/db";
 import { exchangeCode } from "@/lib/oauth/platforms";
 
@@ -11,7 +10,6 @@ function safeReturnTo(value: string | undefined) {
 
 export async function GET(request: Request) {
   const { user } = await getUser();
-  if (!isAdmin(user.email)) return NextResponse.json({ error: "Admin access required." }, { status: 403 });
   const params = new URL(request.url).searchParams;
   const cookieStore = await cookies();
   const state = params.get("state");
@@ -39,7 +37,7 @@ export async function GET(request: Request) {
     scope: "user.info.basic,video.publish",
     platform_user_id: result.platform_user_id ?? null,
     platform_username: result.platform_username ?? null,
-    meta: { direct_post_test: true },
+    meta: { direct_post: true },
   });
   return finish("connected");
 }

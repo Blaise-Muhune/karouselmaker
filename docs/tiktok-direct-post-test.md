@@ -1,13 +1,13 @@
-# TikTok Photo Mode scheduling, admin test
+# TikTok Photo Mode scheduling
 
-The app now has an **admin-only** TikTok Photo Mode scheduling panel on each carousel. It is intentionally limited to private posts while the TikTok application is being tested and audited.
+Karouselmaker supports **Post to TikTok** (Photo Mode Direct Post) on each carousel editor. The flow follows TikTok’s Content Sharing Guidelines: creator settings are queried before post, privacy has no forced default, comments start off, commercial disclosure starts off, and Music Usage Confirmation is required.
 
 ## One-time TikTok setup
 
 1. In TikTok for Developers, enable **Content Posting API → Direct Post** for this app.
 2. Request and approve the `video.publish` scope. The app requests `user.info.basic,video.publish` during OAuth.
 3. Add this redirect URL to the TikTok app: `https://your-domain.com/api/oauth/tiktok/callback`.
-4. Verify `https://your-domain.com` as the URL prefix TikTok may pull media from.
+4. Verify `https://your-domain.com` as the URL prefix TikTok may pull media from (URL properties).
 5. Configure these production variables:
 
    ```text
@@ -17,26 +17,34 @@ The app now has an **admin-only** TikTok Photo Mode scheduling panel on each car
    CRON_SECRET=...
    ```
 
-`NEXT_PUBLIC_APP_URL` must be the apex HTTPS origin (**no `www`**, not `*.vercel.app`) and must match a domain verified under TikTok URL properties. TikTok does not follow redirects, and Vercel Authentication can block `.vercel.app` media pulls. An optional `TIKTOK_VERIFIED_MEDIA_URL_PREFIX` can override the media origin if needed.
+`NEXT_PUBLIC_APP_URL` must be the apex HTTPS origin (**no `www`**, not `*.vercel.app`) and must match a domain verified under TikTok URL properties. TikTok does not follow redirects. An optional `TIKTOK_VERIFIED_MEDIA_URL_PREFIX` can override the media origin if needed.
 
-Photo Mode only accepts **JPEG or WebP**. The admin schedule export forces JPEG.
+Photo Mode only accepts **JPEG or WebP**. Schedule export forces JPEG and strips Made-with / logo watermark chrome.
 
-## Admin test flow
+## Creator UX (compliance)
 
-1. Open a finished carousel as an admin.
-2. In **TikTok Photo Mode, admin test**, connect the test account through TikTok OAuth.
-3. Enter a title, description, and future time, then select **Schedule private test**. The app saves the current rendered slides as the immutable scheduled snapshot; no download is required.
-4. The scheduled worker checks due jobs every five minutes, creates a private TikTok Photo Mode post, then **polls TikTok status** until the photo pull finishes. Snapshots stay downloadable while TikTok is pulling images, then are retained for seven days for diagnostics.
+1. Connect TikTok from **Post to TikTok**.
+2. The panel loads `creator_info` (avatar, username, allowed privacy levels, comment disabled flag).
+3. User must **explicitly choose** visibility (no pre-selected privacy).
+4. **Comment** starts unchecked (unless the account forbids comments entirely).
+5. **Your brand** / **Branded content** start unchecked; branded content cannot use Only you.
+6. **Music Usage Confirmation** must be checked before Schedule.
+7. Preview shows title, caption, and photo count.
+8. Schedule stores the immutable JPEG export and queues the cron worker.
 
-The API supports up to 35 photos. The queue stores an unguessable media token and only serves those image URLs while a job is scheduled/publishing (and briefly after publish for TikTok retries).
+## Publish path
+
+The scheduled worker (every five minutes) claims due jobs, calls TikTok `content/init` with the stored privacy/comment/brand flags, then polls status until `PUBLISH_COMPLETE` or failure. Media URLs stay live while TikTok pulls images.
+
+## Sandbox / unaudited clients
+
+Until TikTok audits Direct Post for production, TikTok may restrict posts to private accounts and `SELF_ONLY`. The UI still offers whatever privacy options `creator_info` returns; TikTok will reject mismatched options.
 
 ## Limits
 
-- TikTok requires Direct Post apps to query creator settings and honor account privacy options. The implementation uses `SELF_ONLY` for the admin test.
-- Until TikTok audits the client, Direct Post uploads remain restricted to private viewing. The connected TikTok **account** must also be Private; otherwise TikTok returns `unaudited_client_can_only_post_to_private_accounts` (often with the content-sharing-guidelines link).
-- `published` in the admin panel means TikTok reported `PUBLISH_COMPLETE`. The post is **Only you**, so it will not show on a public profile grid. Open the TikTok app while logged into that account to see it.
-- Scheduling happens in Karouselmaker’s cron queue. TikTok does not accept a publish-at time in the Photo Content Posting endpoint.
-- The included Vercel cron configuration runs every five minutes. Vercel requires a Pro or Enterprise plan for a sub-daily cron; on Hobby, use another authenticated scheduler or upgrade before deploying this configuration.
-- Do not add logo, watermark, promotional branding, or promotional overlay text to content sent through this integration unless TikTok’s current sharing rules allow it.
+- 1–35 photos per post.
+- Scheduling is Karouselmaker’s queue; TikTok Photo Mode has no native publish-at time.
+- Vercel Pro/Enterprise is required for `*/5` crons; Hobby needs another authenticated scheduler.
+- Do not add promotional app branding to Direct Post media.
 
-Official references: [Direct Post](https://developers.tiktok.com/docs/en/content-posting-api-reference-direct-post), [Photo posting](https://developers.tiktok.com/docs/en/content-posting-api-reference-photo-post), and [media transfer](https://developers.tiktok.com/docs/en/content-posting-api-media-transfer-guide).
+Official references: [Content Sharing Guidelines](https://developers.tiktok.com/doc/content-sharing-guidelines/), [Direct Post](https://developers.tiktok.com/docs/en/content-posting-api-reference-direct-post), [Photo posting](https://developers.tiktok.com/docs/en/content-posting-api-reference-photo-post).

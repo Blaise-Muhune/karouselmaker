@@ -1,15 +1,36 @@
 const TIKTOK_API = "https://open.tiktokapis.com";
 
+export const TIKTOK_PRIVACY_LEVELS = [
+  "PUBLIC_TO_EVERYONE",
+  "MUTUAL_FOLLOW_FRIENDS",
+  "FOLLOWER_OF_CREATOR",
+  "SELF_ONLY",
+] as const;
+
+export type TikTokPrivacyLevel = (typeof TIKTOK_PRIVACY_LEVELS)[number];
+
 export type TikTokCreatorInfo = {
-  privacyLevels: string[];
+  avatarUrl: string | null;
+  username: string | null;
+  nickname: string | null;
+  privacyLevels: TikTokPrivacyLevel[];
   commentDisabled: boolean;
+  duetDisabled: boolean;
+  stitchDisabled: boolean;
+  maxVideoPostDurationSec: number | null;
 };
 
 type TikTokApiResponse = {
   data?: {
     publish_id?: string;
+    creator_avatar_url?: string;
+    creator_username?: string;
+    creator_nickname?: string;
     privacy_level_options?: string[];
     comment_disabled?: boolean;
+    duet_disabled?: boolean;
+    stitch_disabled?: boolean;
+    max_video_post_duration_sec?: number;
     status?: string;
     fail_reason?: string;
   };
@@ -21,18 +42,31 @@ export type TikTokPublishStatus = {
   failReason?: string;
 };
 
-/** Map opaque TikTok API messages to actionable admin guidance. */
+function isPrivacyLevel(value: string): value is TikTokPrivacyLevel {
+  return (TIKTOK_PRIVACY_LEVELS as readonly string[]).includes(value);
+}
+
+/** Map opaque TikTok API messages to actionable guidance. */
 function errorMessage(response: TikTokApiResponse, fallback: string) {
   const code = response.error?.code?.trim();
   const message = response.error?.message?.trim();
   if (code === "unaudited_client_can_only_post_to_private_accounts") {
-    return "TikTok requires the connected account to be private until Direct Post is audited. Set the TikTok account to Private, keep posts as Only you, then try again.";
+    return "TikTok requires the connected account to be private until Direct Post is audited. Set the TikTok account to Private, choose Only you, then try again.";
   }
   if (code === "url_ownership_unverified") {
     return "TikTok has not verified this app’s media URL. Verify your domain (NEXT_PUBLIC_APP_URL) in TikTok for Developers → URL properties.";
   }
   if (code === "privacy_level_option_mismatch") {
-    return "TikTok rejected the privacy setting for this account. Reconnect TikTok and confirm Only you / SELF_ONLY is still allowed.";
+    return "TikTok rejected the privacy setting. Refresh creator settings and pick a privacy option TikTok still allows for this account.";
+  }
+  if (code === "spam_risk_too_many_posts") {
+    return "This TikTok account has reached its posting limit for now. Try again later.";
+  }
+  if (code === "spam_risk_user_banned_from_posting") {
+    return "This TikTok account is currently banned from posting.";
+  }
+  if (code === "reached_active_user_cap") {
+    return "Karouselmaker has reached TikTok’s daily active publisher cap. Try again tomorrow.";
   }
   if (code && message) return `${code}: ${message}`;
   return message || code || fallback;
@@ -51,27 +85,49 @@ export async function getTikTokCreatorInfo(accessToken: string): Promise<TikTokC
   if (!response.ok || (body.error && body.error.code !== "ok")) {
     throw new Error(errorMessage(body, "TikTok creator settings could not be read."));
   }
+  const privacyLevels = (body.data?.privacy_level_options ?? []).filter(isPrivacyLevel);
   return {
-    privacyLevels: body.data?.privacy_level_options ?? [],
+    avatarUrl: body.data?.creator_avatar_url?.trim() || null,
+    username: body.data?.creator_username?.trim() || null,
+    nickname: body.data?.creator_nickname?.trim() || null,
+    privacyLevels,
     commentDisabled: body.data?.comment_disabled === true,
+    duetDisabled: body.data?.duet_disabled === true,
+    stitchDisabled: body.data?.stitch_disabled === true,
+    maxVideoPostDurationSec:
+      typeof body.data?.max_video_post_duration_sec === "number"
+        ? body.data.max_video_post_duration_sec
+        : null,
   };
 }
 
-/** Directly creates a TikTok Photo Mode post from public URLs on a verified app domain. */
-export async function postPhotosToTikTok(input: {
+export type TikTokPhotoPostOptions = {
   accessToken: string;
   photoUrls: string[];
   title: string;
   description: string;
-  privacyLevel: "SELF_ONLY";
-}): Promise<{ publishId: string }> {
+  privacyLevel: TikTokPrivacyLevel;
+  /** When true, comments are allowed (disable_comment = false). Must start unchecked in UX. */
+  allowComment: boolean;
+  brandOrganic: boolean;
+  brandContent: boolean;
+};
+
+/** Directly creates a TikTok Photo Mode post from public URLs on a verified app domain. */
+export async function postPhotosToTikTok(input: TikTokPhotoPostOptions): Promise<{ publishId: string }> {
   if (input.photoUrls.length === 0 || input.photoUrls.length > 35) {
     throw new Error("TikTok requires between 1 and 35 photos.");
   }
+  if (input.brandContent && input.privacyLevel === "SELF_ONLY") {
+    throw new Error("Branded content cannot use Only you visibility.");
+  }
+
   const creator = await getTikTokCreatorInfo(input.accessToken);
   if (!creator.privacyLevels.includes(input.privacyLevel)) {
-    throw new Error("TikTok no longer allows the selected private visibility for this account.");
+    throw new Error("That privacy option is no longer available for this TikTok account. Refresh and choose again.");
   }
+
+  const disableComment = creator.commentDisabled || !input.allowComment;
 
   const response = await fetch(`${TIKTOK_API}/v2/post/publish/content/init/`, {
     method: "POST",
@@ -84,10 +140,10 @@ export async function postPhotosToTikTok(input: {
         title: input.title.slice(0, 90),
         description: input.description.slice(0, 4000),
         privacy_level: input.privacyLevel,
-        disable_comment: creator.commentDisabled,
+        disable_comment: disableComment,
         auto_add_music: true,
-        brand_content_toggle: false,
-        brand_organic_toggle: false,
+        brand_content_toggle: input.brandContent,
+        brand_organic_toggle: input.brandOrganic,
       },
       source_info: {
         source: "PULL_FROM_URL",
@@ -132,11 +188,11 @@ export async function fetchTikTokPublishStatus(accessToken: string, publishId: s
 function publishFailMessage(failReason: string | undefined) {
   switch (failReason) {
     case "photo_pull_failed":
-      return "TikTok could not download the slide images (photo_pull_failed). Confirm karouselmaker.com is verified under URL properties, keep the account Private, then schedule a new test. Slides are served as JPEG ≤1080p with no query-string redirects.";
+      return "TikTok could not download the slide images (photo_pull_failed). Confirm karouselmaker.com is verified under URL properties, then schedule a new post.";
     case "picture_size_check_failed":
       return "TikTok rejected a slide image size. Export again at the carousel size and retry.";
     case "file_format_check_failed":
-      return "TikTok rejected the image format. Export as PNG or JPEG and retry.";
+      return "TikTok rejected the image format. Export as JPEG and retry.";
     case "spam_risk_text":
       return "TikTok blocked the title or description as spam risk. Edit the text and retry.";
     default:
@@ -196,4 +252,17 @@ export async function refreshTikTokAccessToken(refreshToken: string): Promise<{
     refreshToken: body.refresh_token,
     expiresAt: body.expires_in ? new Date(Date.now() + body.expires_in * 1000).toISOString() : undefined,
   };
+}
+
+export function privacyLevelLabel(level: TikTokPrivacyLevel): string {
+  switch (level) {
+    case "PUBLIC_TO_EVERYONE":
+      return "Everyone";
+    case "MUTUAL_FOLLOW_FRIENDS":
+      return "Friends";
+    case "FOLLOWER_OF_CREATOR":
+      return "Followers";
+    case "SELF_ONLY":
+      return "Only you";
+  }
 }

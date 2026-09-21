@@ -97,7 +97,7 @@ async function accessTokenForSchedule(schedule: TikTokScheduledPost): Promise<st
   return connection.access_token;
 }
 
-/** Executes a previously queued admin test post. Called only by the protected cron route. */
+/** Executes a previously queued TikTok Photo Mode post. Called only by the protected cron route. */
 export async function publishScheduledTikTokPost(schedule: TikTokScheduledPost): Promise<void> {
   try {
     const accessToken = await accessTokenForSchedule(schedule);
@@ -111,7 +111,10 @@ export async function publishScheduledTikTokPost(schedule: TikTokScheduledPost):
         photoUrls,
         title: schedule.title,
         description: schedule.description,
-        privacyLevel: "SELF_ONLY",
+        privacyLevel: schedule.privacy_level,
+        allowComment: schedule.allow_comment === true,
+        brandOrganic: schedule.brand_organic === true,
+        brandContent: schedule.brand_content === true,
       });
       publishId = result.publishId;
       // Keep status as publishing so TikTok can still pull slide images.

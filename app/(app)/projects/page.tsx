@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import {
   ArrowRightIcon,
+  CalendarClockIcon,
   CheckCircle2Icon,
   Clock3Icon,
   FolderPlusIcon,
@@ -13,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { SubscriptionStatusBanner } from "@/components/subscription/SubscriptionStatusBanner";
 import { GoProBar } from "@/components/subscription/GoProBar";
 import { ProjectMenuDropdown } from "@/components/projects/ProjectMenuDropdown";
+import { TikTokScheduledPostsSection } from "@/components/tiktok/TikTokScheduledPostsSection";
 import { PaginationNav } from "@/components/ui/pagination-nav";
 import { getSubscription, getEffectivePlanLimits, hasFullProFeatureAccess } from "@/lib/server/subscription";
 import { getUser } from "@/lib/server/auth/getUser";
@@ -21,6 +23,8 @@ import {
   countCarouselsLifetime,
   countCarouselsThisMonth,
   countProjects,
+  countUpcomingTikTokScheduledPosts,
+  listTikTokScheduledPostsForUser,
   listWorkspaceProjects,
   type WorkspaceProject,
 } from "@/lib/server/db";
@@ -105,7 +109,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   const params = await searchParams;
   const page = Math.max(1, parseInt(params.page ?? "1", 10) || 1);
   const offset = (page - 1) * PROJECTS_PAGE_SIZE;
-  const [projects, total, subscription, fullAccess, limits, carouselCount, monthlyCount, profile] = await Promise.all([
+  const [projects, total, subscription, fullAccess, limits, carouselCount, monthlyCount, profile, upcomingTikTok, tiktokSchedules] = await Promise.all([
     listWorkspaceProjects(user.id, { limit: PROJECTS_PAGE_SIZE, offset }),
     countProjects(user.id),
     getSubscription(user.id, user.email),
@@ -114,6 +118,8 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
     countCarouselsLifetime(user.id),
     countCarouselsThisMonth(user.id),
     getProfile(user.id),
+    countUpcomingTikTokScheduledPosts(user.id),
+    listTikTokScheduledPostsForUser(user.id, { limit: 6 }),
   ]);
   const totalPages = Math.max(1, Math.ceil(total / PROJECTS_PAGE_SIZE));
   const firstName = (profile?.display_name || user.email?.split("@")[0] || "there").trim().split(/\s+/)[0];
@@ -121,7 +127,6 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   return (
     <div className="min-h-[calc(100vh-8rem)] bg-gradient-to-b from-primary/[0.035] to-transparent px-4 py-6 sm:px-6 md:px-8 md:py-8">
       <div className="mx-auto max-w-6xl space-y-6">
-        {params.error === "admin_only" && <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">Connected accounts and publishing tests are available to admins only.</div>}
         <Suspense fallback={null}><SubscriptionStatusBanner /></Suspense>
         {!subscription.isPro && !fullAccess && <GoProBar />}
 
@@ -140,11 +145,31 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
           </div>
         </section>
 
-        <section className="grid gap-3 sm:grid-cols-3">
+        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <MetricCard icon={FolderPlusIcon} label="Projects" value={total} detail="Organized by niche and offer" />
           <MetricCard icon={Layers3Icon} label="Posts this month" value={monthlyCount} detail={`${monthlyCount}/${limits.carouselsPerMonth} included in your plan`} />
           <MetricCard icon={CheckCircle2Icon} label="Posts created" value={carouselCount} detail="Your library of carousel ideas" />
+          <MetricCard
+            icon={CalendarClockIcon}
+            label="TikTok queued"
+            value={upcomingTikTok}
+            detail={upcomingTikTok === 1 ? "1 post waiting to publish" : "Posts waiting to publish"}
+          />
         </section>
+
+        <TikTokScheduledPostsSection
+          posts={tiktokSchedules.map((schedule) => ({
+            id: schedule.id,
+            projectId: schedule.project_id,
+            carouselId: schedule.carousel_id,
+            carouselTitle: schedule.carousel_title,
+            title: schedule.title,
+            scheduledFor: schedule.scheduled_for,
+            status: schedule.status,
+            privacyLevel: schedule.privacy_level,
+            lastError: schedule.last_error,
+          }))}
+        />
 
         <section className="rounded-2xl border border-border/70 bg-card p-4 shadow-sm sm:p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">

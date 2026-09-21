@@ -27,6 +27,9 @@ describe("postPhotosToTikTok", () => {
         title: "Test carousel",
         description: "A private test.",
         privacyLevel: "SELF_ONLY",
+        allowComment: false,
+        brandOrganic: false,
+        brandContent: false,
       })
     ).resolves.toEqual({ publishId: "photo-123" });
 
@@ -36,7 +39,12 @@ describe("postPhotosToTikTok", () => {
     expect(JSON.parse(String(request.body))).toMatchObject({
       media_type: "PHOTO",
       post_mode: "DIRECT_POST",
-      post_info: { privacy_level: "SELF_ONLY", brand_content_toggle: false, brand_organic_toggle: false },
+      post_info: {
+        privacy_level: "SELF_ONLY",
+        disable_comment: true,
+        brand_content_toggle: false,
+        brand_organic_toggle: false,
+      },
       source_info: { source: "PULL_FROM_URL", photo_cover_index: 0 },
     });
   });
