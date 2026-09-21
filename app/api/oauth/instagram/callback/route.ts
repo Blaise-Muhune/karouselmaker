@@ -13,34 +13,81 @@ type IgPageLink = {
   username?: string;
   pageAccessToken: string;
   pageId: string;
+  pageName?: string;
 };
 
-/** Instagram Content Publishing with Facebook Login needs a Page access token. */
-async function resolveInstagramPageLink(userAccessToken: string): Promise<IgPageLink | null> {
+type ResolveResult =
+  | { ok: true; link: IgPageLink }
+  | { ok: false; pageNames: string[]; detail?: string };
+
+/**
+ * Instagram Content Publishing (Facebook Login) needs a Page access token AND
+ * an Instagram Business/Creator account actually linked to that Page in Meta.
+ * Opting into both assets in the OAuth dialog is not enough by itself.
+ */
+async function resolveInstagramPageLink(userAccessToken: string): Promise<ResolveResult> {
   const pagesRes = await fetch(
-    `https://graph.facebook.com/v21.0/me/accounts?fields=id,name,access_token,instagram_business_account{id,username}&limit=25`,
+    `https://graph.facebook.com/v21.0/me/accounts?fields=id,name,access_token,instagram_business_account{id,username}&limit=50`,
     { headers: { Authorization: `Bearer ${userAccessToken}` } }
   );
-  if (!pagesRes.ok) return null;
+  if (!pagesRes.ok) {
+    const body = (await pagesRes.json().catch(() => ({}))) as { error?: { message?: string } };
+    return { ok: false, pageNames: [], detail: body.error?.message };
+  }
+
   const pagesBody = (await pagesRes.json()) as {
     data?: Array<{
       id?: string;
+      name?: string;
       access_token?: string;
       instagram_business_account?: { id?: string; username?: string };
     }>;
   };
-  for (const page of pagesBody.data ?? []) {
-    const ig = page.instagram_business_account;
-    if (ig?.id && page.access_token && page.id) {
+  const pages = pagesBody.data ?? [];
+  if (pages.length === 0) {
+    return {
+      ok: false,
+      pageNames: [],
+      detail: "No Facebook Pages were granted. Opt in to the Page that owns the Instagram account.",
+    };
+  }
+
+  const pageNames: string[] = [];
+  for (const page of pages) {
+    if (page.name) pageNames.push(page.name);
+    if (!page.id || !page.access_token) continue;
+
+    // Prefer the expand from /me/accounts when present.
+    let ig = page.instagram_business_account;
+
+    // Re-query with the Page token — more reliable when OAuth granted Page + IG separately.
+    if (!ig?.id) {
+      const pageRes = await fetch(
+        `https://graph.facebook.com/v21.0/${encodeURIComponent(page.id)}?fields=instagram_business_account{id,username}&access_token=${encodeURIComponent(page.access_token)}`
+      );
+      if (pageRes.ok) {
+        const pageBody = (await pageRes.json()) as {
+          instagram_business_account?: { id?: string; username?: string };
+        };
+        ig = pageBody.instagram_business_account;
+      }
+    }
+
+    if (ig?.id) {
       return {
-        igUserId: ig.id,
-        username: ig.username,
-        pageAccessToken: page.access_token,
-        pageId: page.id,
+        ok: true,
+        link: {
+          igUserId: ig.id,
+          username: ig.username,
+          pageAccessToken: page.access_token,
+          pageId: page.id,
+          pageName: page.name,
+        },
       };
     }
   }
-  return null;
+
+  return { ok: false, pageNames };
 }
 
 export async function GET(request: Request) {
@@ -53,7 +100,7 @@ export async function GET(request: Request) {
   const finish = (status: "connected" | "error", message?: string) => {
     const target = new URL(returnTo, request.url);
     target.searchParams.set("instagram", status);
-    if (message) target.searchParams.set("instagram_message", message.slice(0, 160));
+    if (message) target.searchParams.set("instagram_message", message.slice(0, 220));
     const response = NextResponse.redirect(target);
     response.cookies.delete("instagram_oauth_state");
     response.cookies.delete("instagram_oauth_return_to");
@@ -69,14 +116,20 @@ export async function GET(request: Request) {
   const result = await exchangeCode("instagram", code);
   if (!result) return finish("error", "Instagram connection failed. Check Meta app permissions.");
 
-  const link = await resolveInstagramPageLink(result.access_token);
-  if (!link) {
+  const resolved = await resolveInstagramPageLink(result.access_token);
+  if (!resolved.ok) {
+    if (resolved.detail && resolved.pageNames.length === 0) {
+      return finish("error", resolved.detail);
+    }
+    const pagesLabel =
+      resolved.pageNames.length > 0 ? resolved.pageNames.slice(0, 3).join(", ") : "your selected Page";
     return finish(
       "error",
-      "No Instagram Business account linked to a Facebook Page was found. Convert to Business/Creator and link a Page."
+      `${pagesLabel}: no Instagram linked on the Page. Meta Business Suite / Page settings → Linked accounts → connect the Instagram Business/Creator account, then reconnect.`
     );
   }
 
+  const link = resolved.link;
   await upsertPlatformConnection(user.id, {
     platform: "instagram",
     access_token: link.pageAccessToken,
@@ -88,6 +141,7 @@ export async function GET(request: Request) {
     meta: {
       ig_user_id: link.igUserId,
       page_id: link.pageId,
+      page_name: link.pageName ?? null,
       direct_post: true,
       user_access_token: result.access_token,
     },

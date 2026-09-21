@@ -189,19 +189,36 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
                 Keep your projects, in-progress carousels, and next publishing move in one calm place.
               </p>
             </div>
-            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-              <Button variant="outline" size="sm" className="bg-background/80 sm:size-auto sm:h-9" asChild>
-                <Link href="/projects/new">
-                  <FolderPlusIcon className="mr-1.5 size-3.5 sm:mr-2 sm:size-4" />
-                  New project
+            <div className="flex min-w-0 flex-col gap-2 sm:items-end">
+              <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
+                <Button variant="outline" size="sm" className="bg-background/80 sm:size-auto sm:h-9" asChild>
+                  <Link href="/projects/new">
+                    <FolderPlusIcon className="mr-1.5 size-3.5 sm:mr-2 sm:size-4" />
+                    New project
+                  </Link>
+                </Button>
+                <Button size="sm" className="sm:size-auto sm:h-9" asChild>
+                  <Link href={projects[0] ? `/p/${projects[0].id}/new` : "/projects/new"}>
+                    <SparklesIcon className="mr-1.5 size-3.5 sm:mr-2 sm:size-4" />
+                    Create post
+                  </Link>
+                </Button>
+              </div>
+              {projects[0] ? (
+                <Link
+                  href={`/p/${projects[0].id}`}
+                  className="inline-flex max-w-full items-center gap-1.5 self-start rounded-full border border-border/60 bg-background/60 px-2.5 py-1 text-[11px] text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground sm:self-end"
+                >
+                  <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-primary/90">
+                    In
+                  </span>
+                  <span className="min-w-0 truncate font-medium text-foreground/90">{projects[0].name}</span>
                 </Link>
-              </Button>
-              <Button size="sm" className="sm:size-auto sm:h-9" asChild>
-                <Link href={projects[0] ? `/p/${projects[0].id}/new` : "/projects/new"}>
-                  <SparklesIcon className="mr-1.5 size-3.5 sm:mr-2 sm:size-4" />
-                  Create post
-                </Link>
-              </Button>
+              ) : (
+                <p className="text-[11px] text-muted-foreground sm:text-right">
+                  Create a project first, then draft a post.
+                </p>
+              )}
             </div>
           </div>
         </section>
