@@ -59,6 +59,24 @@ export async function getTikTokScheduledPostForMedia(
   );
 }
 
+/** Path-based media URLs look up by unguessable token only (no query string). */
+export async function getTikTokScheduledPostByMediaToken(
+  mediaToken: string
+): Promise<TikTokScheduledPost | null> {
+  if (!mediaToken || mediaToken.length < 16) return null;
+  return queryOne<TikTokScheduledPost>(
+    `select * from tiktok_scheduled_posts
+     where media_token = $1
+       and (
+         status in ('scheduled', 'publishing')
+         or (status = 'published' and published_at > now() - interval '2 hours')
+         or (status = 'failed' and updated_at > now() - interval '2 hours')
+       )
+     limit 1`,
+    [mediaToken]
+  );
+}
+
 /** Claims due jobs atomically so concurrent cron requests cannot post twice. */
 export async function claimDueTikTokScheduledPosts(limit = 5): Promise<TikTokScheduledPost[]> {
   return queryMany<TikTokScheduledPost>(

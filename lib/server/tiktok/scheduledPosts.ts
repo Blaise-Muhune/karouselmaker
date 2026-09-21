@@ -39,10 +39,9 @@ export function getTikTokVerifiedMediaOrigin(): string | null {
 function mediaUrls(schedule: TikTokScheduledPost): string[] {
   const origin = getTikTokVerifiedMediaOrigin();
   if (!origin) throw new Error("TikTok verified media URL is not configured.");
+  // Path-based token (no ?query) — TikTok pull clients are more reliable with clean image URLs.
   return Array.from({ length: schedule.slide_count }, (_, index) => {
-    const url = new URL(`/api/tiktok/scheduled-media/${schedule.id}/${index}`, origin);
-    url.searchParams.set("token", schedule.media_token);
-    return url.toString();
+    return `${origin}/api/tiktok/m/${encodeURIComponent(schedule.media_token)}/${index}`;
   });
 }
 
@@ -62,7 +61,7 @@ async function assertMediaUrlsReachable(urls: string[]): Promise<void> {
     }
     if (!response.ok) {
       throw new Error(
-        `TikTok media URL returned ${response.status}. Confirm the export finished and the verified domain can serve /api/tiktok/scheduled-media.`
+        `TikTok media URL returned ${response.status}. Confirm the export finished and the verified domain can serve /api/tiktok/m/.`
       );
     }
     const contentType = (response.headers.get("content-type") ?? "").split(";")[0]?.trim().toLowerCase() ?? "";

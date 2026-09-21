@@ -132,7 +132,7 @@ export async function fetchTikTokPublishStatus(accessToken: string, publishId: s
 function publishFailMessage(failReason: string | undefined) {
   switch (failReason) {
     case "photo_pull_failed":
-      return "TikTok could not download the slide images (photo_pull_failed). In TikTok for Developers → your app → URL properties, verify https://karouselmaker.com (exact apex, no www). URLs must stay public HTTPS with no redirects. Then schedule a new test (do not reuse a failed job).";
+      return "TikTok could not download the slide images (photo_pull_failed). Confirm karouselmaker.com is verified under URL properties, keep the account Private, then schedule a new test. Slides are served as JPEG ≤1080p with no query-string redirects.";
     case "picture_size_check_failed":
       return "TikTok rejected a slide image size. Export again at the carousel size and retry.";
     case "file_format_check_failed":
