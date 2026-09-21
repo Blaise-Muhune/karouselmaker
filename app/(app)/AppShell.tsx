@@ -12,6 +12,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -26,9 +28,18 @@ import { cn } from "@/lib/utils";
 import type { Project } from "@/lib/server/db/types";
 import { LogoutButtonWithOverlay } from "@/components/auth/LogoutButtonWithOverlay";
 import { WeeklyCreatorNotePreference } from "@/components/email/WeeklyCreatorNotePreference";
-import { ChevronDownIcon, CreditCardIcon, Gem, Loader2Icon, MenuIcon, PlusCircleIcon, ShieldIcon, UserIcon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  CreditCardIcon,
+  FolderIcon,
+  Gem,
+  Loader2Icon,
+  MenuIcon,
+  PlusCircleIcon,
+  ShieldIcon,
+  UserIcon,
+} from "lucide-react";
 import { ADMIN_EMAILS } from "@/lib/server/auth/isAdmin";
-
 
 function ManageSubscriptionButton() {
   const [loading, setLoading] = useState(false);
@@ -93,11 +104,12 @@ function NavLink({
     <Link
       href={href}
       onClick={onClick}
+      aria-current={isActive ? "page" : undefined}
       className={cn(
-        "rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors",
+        "inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium transition-colors",
         isActive
-          ? "text-primary"
-          : "text-muted-foreground hover:text-foreground",
+          ? "bg-primary/10 text-primary"
+          : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
         className
       )}
     >
@@ -106,104 +118,136 @@ function NavLink({
   );
 }
 
-function NavContent({
-  currentProject,
-  projects,
-  setSheetOpen,
-  isAdmin,
+function DestinationLinks({
   pathname,
+  isAdmin,
+  onNavigate,
+  className,
 }: {
-  currentProject?: Project;
-  projects: Project[];
-  setSheetOpen?: (open: boolean) => void;
-  isAdmin?: boolean;
   pathname: string;
+  isAdmin?: boolean;
+  onNavigate?: () => void;
+  className?: string;
 }) {
   return (
-    <>
+    <div className={cn("flex items-center gap-0.5", className)}>
       <NavLink
         href="/projects"
         isActive={pathname === "/projects" || pathname.startsWith("/projects/")}
-        onClick={() => setSheetOpen?.(false)}
-        className="w-full justify-start md:w-auto md:inline-flex"
+        onClick={onNavigate}
       >
         Projects
       </NavLink>
-      {isAdmin && (
-        <NavLink
-          href="/admin"
-          isActive={pathname.startsWith("/admin")}
-          onClick={() => setSheetOpen?.(false)}
-          className="w-full justify-start md:w-auto md:inline-flex"
-        >
-          <ShieldIcon className="mr-2 size-4" />
-          Admin
-        </NavLink>
-      )}
-      <NavLink
-        href="/assets"
-        isActive={pathname.startsWith("/assets")}
-        onClick={() => setSheetOpen?.(false)}
-        className="w-full justify-start md:w-auto md:inline-flex"
-      >
+      <NavLink href="/assets" isActive={pathname.startsWith("/assets")} onClick={onNavigate}>
         Assets
       </NavLink>
-          <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="outline"
-            size="sm"
-            className={cn(
-              "w-full min-w-0 justify-between md:w-auto md:min-w-[160px] font-normal",
-              currentProject && "border-primary/30 text-primary"
-            )}
-          >
-            <span className="truncate">
-              {currentProject?.name ?? "Select project"}
-            </span>
-            <ChevronDownIcon className="size-4 shrink-0 opacity-50" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-[240px]">
-          {projects.length === 0 ? (
-            <DropdownMenuItem asChild>
-              <Link href="/projects/new" onClick={() => setSheetOpen?.(false)}>Create your first project</Link>
-            </DropdownMenuItem>
-          ) : (
-            <>
-              {projects.map((p) => (
-                <DropdownMenuItem
-                  key={p.id}
-                  asChild
-                  className={p.id === currentProject?.id ? "bg-primary/10 text-primary" : undefined}
-                >
-                  <Link href={`/p/${p.id}`} onClick={() => setSheetOpen?.(false)}>{p.name}</Link>
-                </DropdownMenuItem>
-              ))}
-              <DropdownMenuItem asChild>
-                <Link href="/projects/new" onClick={() => setSheetOpen?.(false)}>
-                  <PlusCircleIcon className="mr-2 size-4" />
-                  New project
+      {isAdmin ? (
+        <NavLink href="/admin" isActive={pathname.startsWith("/admin")} onClick={onNavigate}>
+          <ShieldIcon className="size-3.5 opacity-80" aria-hidden />
+          Admin
+        </NavLink>
+      ) : null}
+    </div>
+  );
+}
+
+function ProjectSwitcher({
+  currentProject,
+  projects,
+  onNavigate,
+  className,
+}: {
+  currentProject?: Project;
+  projects: Project[];
+  onNavigate?: () => void;
+  className?: string;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          className={cn(
+            "h-9 max-w-[11rem] min-w-0 justify-between gap-1.5 font-normal lg:max-w-[14rem]",
+            currentProject && "border-primary/35 bg-primary/[0.04] text-foreground",
+            className
+          )}
+          aria-label={currentProject ? `Current project: ${currentProject.name}` : "Select project"}
+        >
+          <FolderIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+          <span className="min-w-0 truncate">{currentProject?.name ?? "Select project"}</span>
+          <ChevronDownIcon className="size-3.5 shrink-0 opacity-50" aria-hidden />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-[240px]">
+        <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">Projects</DropdownMenuLabel>
+        {projects.length === 0 ? (
+          <DropdownMenuItem asChild>
+            <Link href="/projects/new" onClick={onNavigate}>
+              Create your first project
+            </Link>
+          </DropdownMenuItem>
+        ) : (
+          <>
+            {projects.map((p) => (
+              <DropdownMenuItem
+                key={p.id}
+                asChild
+                className={p.id === currentProject?.id ? "bg-primary/10 text-primary" : undefined}
+              >
+                <Link href={`/p/${p.id}`} onClick={onNavigate}>
+                  {p.name}
                 </Link>
               </DropdownMenuItem>
-            </>
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
-      {projects.length > 0 ? (
-        <Button variant="default" size="sm" className="w-full justify-start md:w-auto" asChild>
-          <Link href={`/p/${currentProject?.id ?? projects[0]!.id}/new`} onClick={() => setSheetOpen?.(false)}>
-            <PlusCircleIcon className="mr-2 size-4" />
-            New post
-          </Link>
-        </Button>
-      ) : (
-        <Button variant="outline" size="sm" className="w-full justify-start md:w-auto" disabled>
-          <PlusCircleIcon className="mr-2 size-4" />
-          New post
-        </Button>
-      )}
-    </>
+            ))}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem asChild>
+              <Link href="/projects/new" onClick={onNavigate}>
+                <PlusCircleIcon className="mr-2 size-4" />
+                New project
+              </Link>
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function NewPostButton({
+  currentProject,
+  projects,
+  onNavigate,
+  className,
+  iconOnly = false,
+}: {
+  currentProject?: Project;
+  projects: Project[];
+  onNavigate?: () => void;
+  className?: string;
+  iconOnly?: boolean;
+}) {
+  if (projects.length === 0) {
+    return (
+      <Button variant="outline" size="sm" className={cn("h-9", className)} disabled>
+        <PlusCircleIcon className={cn("size-4", !iconOnly && "mr-1.5")} />
+        {iconOnly ? <span className="sr-only">New post</span> : "New post"}
+      </Button>
+    );
+  }
+
+  return (
+    <Button variant="default" size="sm" className={cn("h-9", className)} asChild>
+      <Link
+        href={`/p/${currentProject?.id ?? projects[0]!.id}/new`}
+        onClick={onNavigate}
+        aria-label="New post"
+      >
+        <PlusCircleIcon className={cn("size-4", !iconOnly && "mr-1.5")} />
+        {iconOnly ? <span className="sr-only">New post</span> : "New post"}
+      </Link>
+    </Button>
   );
 }
 
@@ -229,67 +273,129 @@ export function AppShell({
     : undefined;
 
   const [sheetOpen, setSheetOpen] = useState(false);
+  const closeSheet = () => setSheetOpen(false);
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="border-b border-border/60 bg-background/95 sticky top-0 z-10 backdrop-blur safe-area-t">
-        <div className="flex h-14 items-center gap-2 px-4 sm:px-5 md:px-6 md:gap-4 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:pl-[max(1.25rem,env(safe-area-inset-left))] sm:pr-[max(1.25rem,env(safe-area-inset-right))] md:pl-[max(1.5rem,env(safe-area-inset-left))] md:pr-[max(1.5rem,env(safe-area-inset-right))]">
-          <div className="flex min-w-0 shrink-0 items-center gap-2">
-            {/* Mobile: hamburger menu */}
+      <header className="sticky top-0 z-10 border-b border-border/60 bg-background/95 backdrop-blur safe-area-t">
+        <div
+          className={cn(
+            "mx-auto flex h-14 max-w-[90rem] items-center gap-2",
+            "pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))]",
+            "sm:gap-3 sm:pl-[max(1.25rem,env(safe-area-inset-left))] sm:pr-[max(1.25rem,env(safe-area-inset-right))]",
+            "md:pl-[max(1.5rem,env(safe-area-inset-left))] md:pr-[max(1.5rem,env(safe-area-inset-right))]"
+          )}
+        >
+          {/* Left: brand + primary destinations */}
+          <div className="flex min-w-0 flex-1 items-center gap-1 sm:gap-2">
             <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
               <SheetTrigger asChild>
-                <Button variant="ghost" size="icon-sm" className="md:hidden shrink-0" aria-label="Open menu">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-10 shrink-0 md:hidden"
+                  aria-label="Open menu"
+                >
                   <MenuIcon className="size-5" />
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="w-[280px] sm:w-[300px]">
+              <SheetContent side="left" className="w-[min(100%,20rem)]">
                 <SheetHeader>
                   <SheetTitle>
-                    <Link href="/projects" className="flex items-center gap-2 font-semibold tracking-tight" onClick={() => setSheetOpen(false)}>
+                    <Link
+                      href="/projects"
+                      className="flex items-center gap-2 font-semibold tracking-tight"
+                      onClick={closeSheet}
+                    >
                       <img src="/logo.png" alt="" className="h-7 w-7 rounded-md object-contain" />
                       Karouselmaker
                     </Link>
                   </SheetTitle>
                 </SheetHeader>
-                <nav className="mt-6 flex flex-col gap-1">
-                  <NavContent currentProject={currentProject} projects={projects} setSheetOpen={setSheetOpen} isAdmin={isAdmin} pathname={pathname} />
-                  {!isPro && (
-                    <div className="mt-4">
-                      <GoProButton className="w-full sm:hidden" />
+                <nav className="mt-6 flex flex-col gap-5" aria-label="Mobile">
+                  <div className="space-y-1">
+                    <p className="px-2.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                      Navigate
+                    </p>
+                    <DestinationLinks
+                      pathname={pathname}
+                      isAdmin={isAdmin}
+                      onNavigate={closeSheet}
+                      className="flex-col items-stretch gap-1"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <p className="px-2.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                      Workspace
+                    </p>
+                    <ProjectSwitcher
+                      currentProject={currentProject}
+                      projects={projects}
+                      onNavigate={closeSheet}
+                      className="w-full max-w-none"
+                    />
+                    <NewPostButton
+                      currentProject={currentProject}
+                      projects={projects}
+                      onNavigate={closeSheet}
+                      className="w-full justify-center"
+                    />
+                  </div>
+                  {!isPro ? (
+                    <div className="pt-1">
+                      <GoProButton className="w-full" />
                     </div>
-                  )}
+                  ) : null}
                 </nav>
               </SheetContent>
             </Sheet>
-            <Link href="/projects" className="flex items-center gap-2 truncate font-semibold tracking-tight transition-opacity hover:opacity-80">
+
+            <Link
+              href="/projects"
+              className="flex min-w-0 items-center gap-2 rounded-lg py-1 pr-1 font-semibold tracking-tight transition-opacity hover:opacity-80"
+            >
               <img src="/logo.png" alt="" className="h-7 w-7 shrink-0 rounded-md object-contain" />
-              <span>Karouselmaker</span>
+              <span className="hidden truncate sm:inline">Karouselmaker</span>
             </Link>
+
+            <nav className="ml-1 hidden items-center md:flex" aria-label="Primary">
+              <DestinationLinks pathname={pathname} isAdmin={isAdmin} />
+            </nav>
           </div>
-          {/* Desktop nav */}
-          <nav className="hidden flex-1 items-center justify-center gap-1 md:flex">
-            <NavContent currentProject={currentProject} projects={projects} isAdmin={isAdmin} pathname={pathname} />
-          </nav>
-          <div className="flex shrink-0 items-center gap-1">
-            {!isPro && (
-              <GoProButton className="hidden sm:inline-flex" />
-            )}
+
+          {/* Right: context + create + account */}
+          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+            <div className="hidden items-center gap-2 md:flex">
+              <ProjectSwitcher currentProject={currentProject} projects={projects} />
+              <NewPostButton currentProject={currentProject} projects={projects} />
+            </div>
+
+            {/* Keep primary create action visible on phones */}
+            <NewPostButton
+              currentProject={currentProject}
+              projects={projects}
+              className="md:hidden"
+              iconOnly
+            />
+
+            {!isPro ? <GoProButton className="hidden lg:inline-flex" /> : null}
             <ThemeToggle />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon-sm" aria-label="User menu">
+                <Button variant="ghost" size="icon" className="size-10" aria-label="Account menu">
                   <UserIcon className="size-4" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem className="text-muted-foreground cursor-default" disabled>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel className="truncate font-normal text-muted-foreground">
                   {userEmail}
-                </DropdownMenuItem>
-                {isPro && (
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {isPro ? (
                   <DropdownMenuItem asChild>
                     <ManageSubscriptionButton />
                   </DropdownMenuItem>
-                )}
+                ) : null}
                 <WeeklyCreatorNotePreference />
                 <DropdownMenuItem asChild>
                   <form action={signOut}>
@@ -309,14 +415,20 @@ export function AppShell({
               href="https://karouselmaker.com"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-muted-foreground text-sm hover:text-foreground transition-colors"
+              className="text-sm text-muted-foreground transition-colors hover:text-foreground"
             >
               Made with KarouselMaker.com
             </a>
             <div className="flex flex-wrap items-center justify-center gap-4 text-sm text-muted-foreground">
-              <Link href="/terms" className="hover:text-foreground">Terms</Link>
-              <Link href="/privacy" className="hover:text-foreground">Privacy</Link>
-              <Link href="/copyright" className="hover:text-foreground">Copyright</Link>
+              <Link href="/terms" className="hover:text-foreground">
+                Terms
+              </Link>
+              <Link href="/privacy" className="hover:text-foreground">
+                Privacy
+              </Link>
+              <Link href="/copyright" className="hover:text-foreground">
+                Copyright
+              </Link>
               <ContactUsModal userEmail={userEmail} userName={userName} />
             </div>
           </div>

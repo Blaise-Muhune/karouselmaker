@@ -62,13 +62,15 @@ function postState(project: WorkspaceProject) {
 
 function MetricCard({ icon: Icon, label, value, detail }: { icon: typeof Layers3Icon; label: string; value: string | number; detail: string }) {
   return (
-    <div className="rounded-xl border border-border/70 bg-card px-3.5 py-3 shadow-sm sm:px-4">
+    <div className="rounded-xl border border-border/70 bg-card px-3 py-2.5 shadow-sm sm:px-4 sm:py-3">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-xs font-medium text-muted-foreground">{label}</p>
-        <span className="grid size-7 place-items-center rounded-md bg-primary/10 text-primary"><Icon className="size-3.5" /></span>
+        <p className="text-[11px] font-medium text-muted-foreground sm:text-xs">{label}</p>
+        <span className="grid size-6 place-items-center rounded-md bg-primary/10 text-primary sm:size-7">
+          <Icon className="size-3.5" />
+        </span>
       </div>
-      <p className="mt-2 text-xl font-semibold tracking-tight sm:text-2xl">{value}</p>
-      <p className="mt-0.5 text-[11px] text-muted-foreground">{detail}</p>
+      <p className="mt-1 text-lg font-semibold tracking-tight sm:mt-2 sm:text-2xl">{value}</p>
+      <p className="mt-0.5 truncate text-[10px] text-muted-foreground sm:text-[11px]">{detail}</p>
     </div>
   );
 }
@@ -78,7 +80,7 @@ function TikTokStat({ label, value, tone }: { label: string; value: number; tone
     <div className="min-w-0">
       <p
         className={cn(
-          "text-lg font-semibold tracking-tight tabular-nums",
+          "text-base font-semibold tracking-tight tabular-nums sm:text-lg",
           tone === "ok" && "text-emerald-600 dark:text-emerald-400",
           tone === "warn" && "text-amber-700 dark:text-amber-400",
           tone === "bad" && "text-destructive",
@@ -87,7 +89,7 @@ function TikTokStat({ label, value, tone }: { label: string; value: number; tone
       >
         {value}
       </p>
-      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="text-[9px] font-medium uppercase tracking-wide text-muted-foreground sm:text-[10px]">{label}</p>
     </div>
   );
 }
@@ -98,29 +100,44 @@ function ProjectCard({ project, index }: { project: WorkspaceProject; index: num
   return (
     <article className="group relative overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5">
       <Link href={`/p/${project.id}`} aria-label={`Open ${project.name}`} className="absolute inset-0 z-0" />
-      <div className={`pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-br ${accent}`} />
-      <div className="pointer-events-none relative z-10 p-5">
+      <div className={`pointer-events-none absolute inset-x-0 top-0 h-20 bg-gradient-to-br sm:h-28 ${accent}`} />
+      <div className="pointer-events-none relative z-10 p-3.5 sm:p-5">
         <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <span className="grid size-10 shrink-0 place-items-center rounded-xl border border-background/60 bg-background/80 text-sm font-semibold shadow-sm backdrop-blur">{initials(project.name)}</span>
+          <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
+            <span className="grid size-9 shrink-0 place-items-center rounded-xl border border-background/60 bg-background/80 text-sm font-semibold shadow-sm backdrop-blur sm:size-10">
+              {initials(project.name)}
+            </span>
             <span className="min-w-0">
               <span className="block truncate font-semibold tracking-tight">{project.name}</span>
-              <span className="mt-0.5 block truncate text-xs text-muted-foreground">{project.niche || "General content"}</span>
+              <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                {project.niche || "General content"}
+              </span>
             </span>
           </div>
-          <span className="pointer-events-auto"><ProjectMenuDropdown projectId={project.id} projectName={project.name} /></span>
+          <span className="pointer-events-auto">
+            <ProjectMenuDropdown projectId={project.id} projectName={project.name} />
+          </span>
         </div>
 
-        <div className="mt-7 rounded-xl border border-border/60 bg-background/55 p-3.5 backdrop-blur-sm">
+        <div className="mt-4 rounded-xl border border-border/60 bg-background/55 p-3 backdrop-blur-sm sm:mt-7 sm:p-3.5">
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs font-medium text-primary">{postState(project)}</p>
-            <p className="text-xs text-muted-foreground">{project.carousel_count} {project.carousel_count === 1 ? "post" : "posts"}</p>
+            <p className="text-xs text-muted-foreground">
+              {project.carousel_count} {project.carousel_count === 1 ? "post" : "posts"}
+            </p>
           </div>
-          <p className="mt-1.5 truncate text-sm font-medium">{project.latest_carousel_title || "Start with a useful topic for your audience"}</p>
-          <p className="mt-1 text-xs text-muted-foreground">{formatRelativeDate(project.latest_carousel_updated_at)}</p>
+          <p className="mt-1 truncate text-sm font-medium">
+            {project.latest_carousel_title || "Start with a useful topic for your audience"}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {formatRelativeDate(project.latest_carousel_updated_at)}
+          </p>
         </div>
 
-        <span className="mt-3 inline-flex h-8 items-center gap-1.5 px-2 text-sm font-medium text-foreground">View project <ArrowRightIcon className="size-3.5 transition-transform group-hover:translate-x-0.5" /></span>
+        <span className="mt-2.5 inline-flex h-8 items-center gap-1.5 px-1 text-sm font-medium text-foreground sm:mt-3 sm:px-2">
+          View project{" "}
+          <ArrowRightIcon className="size-3.5 transition-transform group-hover:translate-x-0.5" />
+        </span>
       </div>
     </article>
   );
@@ -155,34 +172,95 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   const tiktokOauthUrl = `/api/oauth/tiktok?return_to=${encodeURIComponent("/projects")}`;
 
   return (
-    <div className="min-h-[calc(100vh-8rem)] bg-gradient-to-b from-primary/[0.035] to-transparent px-4 py-6 sm:px-6 md:px-8 md:py-8">
-      <div className="mx-auto max-w-6xl space-y-6">
+    <div className="min-h-[calc(100vh-8rem)] bg-gradient-to-b from-primary/[0.035] to-transparent px-3 py-4 sm:px-6 sm:py-6 md:px-8 md:py-8">
+      <div className="mx-auto flex max-w-6xl flex-col gap-4 sm:gap-6">
         <Suspense fallback={null}><SubscriptionStatusBanner /></Suspense>
         {!subscription.isPro && !fullAccess && <GoProBar />}
 
-        <section className="relative overflow-hidden rounded-3xl border border-primary/20 bg-card px-5 py-6 shadow-sm sm:px-7 sm:py-8">
+        <section className="relative order-1 overflow-hidden rounded-2xl border border-primary/20 bg-card px-4 py-4 shadow-sm sm:rounded-3xl sm:px-7 sm:py-8">
           <div className="pointer-events-none absolute -right-20 -top-28 size-72 rounded-full bg-primary/10 blur-3xl" />
-          <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-2xl">
-              <p className="text-sm font-medium text-primary">Creator workspace</p>
-              <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">Make the next post easy, {firstName}.</h1>
-              <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground sm:text-base">Keep your projects, in-progress carousels, and next publishing move in one calm place.</p>
+          <div className="relative flex flex-col gap-3 sm:gap-6 lg:flex-row lg:items-end lg:justify-between">
+            <div className="min-w-0 max-w-2xl">
+              <p className="text-xs font-medium text-primary sm:text-sm">Creator workspace</p>
+              <h1 className="mt-1 text-xl font-semibold tracking-tight sm:mt-2 sm:text-4xl">
+                Make the next post easy, {firstName}.
+              </h1>
+              <p className="mt-1.5 hidden max-w-xl text-sm leading-relaxed text-muted-foreground sm:mt-3 sm:block sm:text-base">
+                Keep your projects, in-progress carousels, and next publishing move in one calm place.
+              </p>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" className="bg-background/80" asChild><Link href="/projects/new"><FolderPlusIcon className="mr-2 size-4" /> New project</Link></Button>
-              <Button asChild><Link href={projects[0] ? `/p/${projects[0].id}/new` : "/projects/new"}><SparklesIcon className="mr-2 size-4" /> Create post</Link></Button>
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+              <Button variant="outline" size="sm" className="bg-background/80 sm:size-auto sm:h-9" asChild>
+                <Link href="/projects/new">
+                  <FolderPlusIcon className="mr-1.5 size-3.5 sm:mr-2 sm:size-4" />
+                  New project
+                </Link>
+              </Button>
+              <Button size="sm" className="sm:size-auto sm:h-9" asChild>
+                <Link href={projects[0] ? `/p/${projects[0].id}/new` : "/projects/new"}>
+                  <SparklesIcon className="mr-1.5 size-3.5 sm:mr-2 sm:size-4" />
+                  Create post
+                </Link>
+              </Button>
             </div>
           </div>
         </section>
 
-        <WorkspaceOnboarding
-          hasProject={total > 0}
-          hasCarousel={carouselCount > 0}
-          hasTikTokConnected={tiktokConnected}
-          firstProjectId={projects[0]?.id ?? null}
-        />
+        <div className="order-2">
+          <WorkspaceOnboarding
+            hasProject={total > 0}
+            hasCarousel={carouselCount > 0}
+            hasTikTokConnected={tiktokConnected}
+            firstProjectId={projects[0]?.id ?? null}
+          />
+        </div>
 
-        <section className="grid gap-3 sm:grid-cols-3">
+        <section
+          id="your-projects"
+          className="order-3 scroll-mt-20 rounded-2xl border border-border/70 bg-card p-3.5 shadow-sm sm:order-5 sm:p-5"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3">
+            <div>
+              <h2 className="font-semibold tracking-tight">Your projects</h2>
+              <p className="mt-0.5 hidden text-sm text-muted-foreground sm:mt-1 sm:block">
+                Pick up where you left off or start a fresh angle.
+              </p>
+            </div>
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/projects/new">
+                <PlusCircleIcon className="mr-2 size-4" /> Add project
+              </Link>
+            </Button>
+          </div>
+
+          {projects.length === 0 ? (
+            <div className="mt-4 rounded-2xl border border-dashed border-primary/30 bg-primary/[0.035] px-5 py-10 text-center sm:mt-5 sm:py-12">
+              <span className="mx-auto grid size-11 place-items-center rounded-xl bg-primary/10 text-primary">
+                <SparklesIcon className="size-5" />
+              </span>
+              <h3 className="mt-4 font-semibold">Start your content workspace</h3>
+              <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
+                Set your niche and offer once. Then turn useful ideas into social-ready carousels whenever you need them.
+              </p>
+              <Button className="mt-5" asChild>
+                <Link href="/projects/new">
+                  <PlusCircleIcon className="mr-2 size-4" /> Create first project
+                </Link>
+              </Button>
+            </div>
+          ) : (
+            <div className="mt-3.5 grid gap-3 sm:mt-5 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {projects.map((project, index) => (
+                <ProjectCard key={project.id} project={project} index={index} />
+              ))}
+            </div>
+          )}
+          {totalPages > 1 && (
+            <PaginationNav currentPage={page} totalPages={totalPages} basePath="/projects" className="mt-6" />
+          )}
+        </section>
+
+        <section className="order-4 grid grid-cols-2 gap-2 sm:order-3 sm:grid-cols-3 sm:gap-3">
           <MetricCard icon={FolderPlusIcon} label="Projects" value={total} detail="By niche and offer" />
           <MetricCard
             icon={Layers3Icon}
@@ -190,31 +268,31 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
             value={monthlyCount}
             detail={`${monthlyCount}/${limits.carouselsPerMonth} this month · ${carouselCount} total`}
           />
-          <div className="rounded-xl border border-border/70 bg-card px-3.5 py-3 shadow-sm sm:px-4">
+          <div className="col-span-2 rounded-xl border border-border/70 bg-card px-3 py-2.5 shadow-sm sm:col-span-1 sm:px-4 sm:py-3">
             <div className="flex items-center justify-between gap-2">
-              <p className="text-xs font-medium text-muted-foreground">TikTok</p>
-              <span className="grid size-7 place-items-center rounded-md bg-foreground text-background">
+              <p className="text-[11px] font-medium text-muted-foreground sm:text-xs">TikTok</p>
+              <span className="grid size-6 place-items-center rounded-md bg-foreground text-background sm:size-7">
                 <TikTokMicroIcon className="size-3.5 opacity-100" />
               </span>
             </div>
             {tiktokConnected && tiktokStats ? (
               <>
-                <div className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-4">
+                <div className="mt-2 grid grid-cols-4 gap-x-2 gap-y-1 sm:mt-2.5 sm:gap-x-3">
                   <TikTokStat label="Queued" value={tiktokStats.queued} tone={tiktokStats.queued > 0 ? "warn" : "default"} />
                   <TikTokStat label="Posted" value={tiktokStats.posted} tone={tiktokStats.posted > 0 ? "ok" : "default"} />
                   <TikTokStat label="Failed" value={tiktokStats.failed} tone={tiktokStats.failed > 0 ? "bad" : "default"} />
                   <TikTokStat label="Not posted" value={tiktokStats.notPosted} />
                 </div>
-                <p className="mt-2 text-[11px] text-muted-foreground">
+                <p className="mt-1.5 hidden text-[11px] text-muted-foreground sm:mt-2 sm:block">
                   Queued becomes Posted when TikTok finishes. Not posted = ready carousels never published here.
                 </p>
               </>
             ) : (
-              <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2">
-                <p className="text-xs leading-snug text-muted-foreground">
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2 sm:mt-2.5">
+                <p className="text-[11px] leading-snug text-muted-foreground sm:text-xs">
                   Connect to track queued and posted carousels.
                 </p>
-                <Button type="button" size="sm" className="h-8 shrink-0" asChild>
+                <Button type="button" size="sm" className="h-7 shrink-0 sm:h-8" asChild>
                   <a href={tiktokOauthUrl}>
                     <ExternalLinkIcon className="mr-1.5 size-3.5" />
                     Connect
@@ -226,43 +304,40 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
         </section>
 
         {tiktokConnected ? (
-          <TikTokScheduledPostsSection
-            variant="workspace"
-            posts={tiktokSchedules.map((schedule) => ({
-              id: schedule.id,
-              projectId: schedule.project_id,
-              carouselId: schedule.carousel_id,
-              carouselTitle: schedule.carousel_title,
-              title: schedule.title,
-              scheduledFor: schedule.scheduled_for,
-              status: schedule.status,
-              privacyLevel: schedule.privacy_level,
-              lastError: schedule.last_error,
-            }))}
-          />
+          <div className="order-5 sm:order-4">
+            <TikTokScheduledPostsSection
+              variant="workspace"
+              posts={tiktokSchedules.map((schedule) => ({
+                id: schedule.id,
+                projectId: schedule.project_id,
+                carouselId: schedule.carousel_id,
+                carouselTitle: schedule.carousel_title,
+                title: schedule.title,
+                scheduledFor: schedule.scheduled_for,
+                status: schedule.status,
+                privacyLevel: schedule.privacy_level,
+                lastError: schedule.last_error,
+              }))}
+            />
+          </div>
         ) : null}
 
-        <section className="rounded-2xl border border-border/70 bg-card p-4 shadow-sm sm:p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div><h2 className="font-semibold tracking-tight">Your projects</h2><p className="mt-1 text-sm text-muted-foreground">Pick up where you left off or start a fresh angle.</p></div>
-            <Button variant="outline" size="sm" asChild><Link href="/projects/new"><PlusCircleIcon className="mr-2 size-4" /> Add project</Link></Button>
-          </div>
-
-          {projects.length === 0 ? (
-            <div className="mt-5 rounded-2xl border border-dashed border-primary/30 bg-primary/[0.035] px-5 py-12 text-center">
-              <span className="mx-auto grid size-11 place-items-center rounded-xl bg-primary/10 text-primary"><SparklesIcon className="size-5" /></span>
-              <h3 className="mt-4 font-semibold">Start your content workspace</h3>
-              <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">Set your niche and offer once. Then turn useful ideas into social-ready carousels whenever you need them.</p>
-              <Button className="mt-5" asChild><Link href="/projects/new"><PlusCircleIcon className="mr-2 size-4" /> Create first project</Link></Button>
-            </div>
-          ) : <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">{projects.map((project, index) => <ProjectCard key={project.id} project={project} index={index} />)}</div>}
-          {totalPages > 1 && <PaginationNav currentPage={page} totalPages={totalPages} basePath="/projects" className="mt-6" />}
-        </section>
-
         {projects.length > 0 && carouselCount === 0 && (
-          <section className="flex flex-col gap-4 rounded-2xl border border-dashed border-border bg-muted/20 p-5 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex gap-3"><Clock3Icon className="mt-0.5 size-5 shrink-0 text-primary" /><div><p className="font-medium">Your first post is one useful idea away.</p><p className="mt-1 text-sm text-muted-foreground">Choose a project and generate a practical carousel for its audience.</p></div></div>
-            <Button className="shrink-0" asChild><Link href={`/p/${projects[0]!.id}/new`}>Create first post <ArrowRightIcon className="ml-2 size-4" /></Link></Button>
+          <section className="order-6 flex flex-col gap-4 rounded-2xl border border-dashed border-border bg-muted/20 p-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex gap-3">
+              <Clock3Icon className="mt-0.5 size-5 shrink-0 text-primary" />
+              <div>
+                <p className="font-medium">Your first post is one useful idea away.</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Choose a project and generate a practical carousel for its audience.
+                </p>
+              </div>
+            </div>
+            <Button className="shrink-0" asChild>
+              <Link href={`/p/${projects[0]!.id}/new`}>
+                Create first post <ArrowRightIcon className="ml-2 size-4" />
+              </Link>
+            </Button>
           </section>
         )}
       </div>
