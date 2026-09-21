@@ -5,16 +5,25 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ExternalLinkIcon, Loader2Icon, SendIcon, UnplugIcon } from "lucide-react";
 import { disconnectInstagramAction } from "@/app/actions/instagram/disconnectInstagram";
 import { postCarouselToInstagramAction } from "@/app/actions/instagram/postCarousel";
+import { selectInstagramAccountAction } from "@/app/actions/instagram/selectAccount";
 import { InstagramMicroIcon } from "@/components/carousels/BackgroundSourcePlatformHints";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
+export type InstagramAccountChoice = {
+  igUserId: string;
+  username: string | null;
+  pageName: string | null;
+};
+
 export function PostToInstagramPanel({
   carouselId,
   pathname,
   connectedAccount,
+  accounts,
+  selectedIgUserId,
   slideCount,
   initialCaption,
   configured,
@@ -22,6 +31,8 @@ export function PostToInstagramPanel({
   carouselId: string;
   pathname: string;
   connectedAccount: string | null;
+  accounts: InstagramAccountChoice[];
+  selectedIgUserId: string | null;
   slideCount: number;
   initialCaption: string;
   /** False when FACEBOOK_APP_ID is missing — show setup hint instead of connect. */
@@ -33,26 +44,43 @@ export function PostToInstagramPanel({
   const [expanded, setExpanded] = useState(false);
   const [pending, setPending] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [selecting, setSelecting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [activeIgUserId, setActiveIgUserId] = useState(selectedIgUserId);
 
-  const connectedLabel = useMemo(() => connectedAccount || "Not connected", [connectedAccount]);
+  const activeAccount = useMemo(
+    () => accounts.find((a) => a.igUserId === activeIgUserId) ?? accounts[0] ?? null,
+    [accounts, activeIgUserId]
+  );
+  const connectedLabel = useMemo(() => {
+    if (activeAccount?.username) return activeAccount.username;
+    return connectedAccount || "Not connected";
+  }, [activeAccount, connectedAccount]);
   const oauthUrl = `/api/oauth/instagram?return_to=${encodeURIComponent(pathname)}`;
-  const canPost = Boolean(connectedAccount) && slideCount >= 1 && slideCount <= 10 && !pending;
+  const canPost = Boolean(connectedAccount && activeAccount) && slideCount >= 1 && slideCount <= 10 && !pending;
 
   useEffect(() => {
     setCaption(initialCaption.slice(0, 2200));
   }, [initialCaption, carouselId]);
 
   useEffect(() => {
+    setActiveIgUserId(selectedIgUserId);
+  }, [selectedIgUserId]);
+
+  useEffect(() => {
     const status = searchParams.get("instagram");
     if (!status) return;
     setExpanded(true);
     if (status === "connected") {
-      setMessage("Instagram connected.");
+      setMessage(
+        accounts.length > 1
+          ? `Instagram connected (${accounts.length} accounts). Choose which one to post to.`
+          : "Instagram connected."
+      );
     } else if (status === "error") {
       setMessage(searchParams.get("instagram_message") || "Instagram connection failed.");
     }
-  }, [searchParams]);
+  }, [searchParams, accounts.length]);
 
   async function disconnect() {
     setDisconnecting(true);
@@ -71,12 +99,34 @@ export function PostToInstagramPanel({
     }
   }
 
+  async function selectAccount(igUserId: string) {
+    if (igUserId === activeIgUserId) return;
+    setSelecting(true);
+    setMessage(null);
+    try {
+      const result = await selectInstagramAccountAction({ igUserId, pathname });
+      if (!result.ok) {
+        setMessage(result.error);
+        return;
+      }
+      setActiveIgUserId(igUserId);
+      setMessage(result.username ? `Posting as @${result.username.replace(/^@/, "")}.` : "Account selected.");
+      router.refresh();
+    } finally {
+      setSelecting(false);
+    }
+  }
+
   async function postNow() {
     setPending(true);
     setMessage(null);
     try {
       if (slideCount < 1 || slideCount > 10) {
         setMessage("Instagram posts need between 1 and 10 slides.");
+        return;
+      }
+      if (!activeAccount) {
+        setMessage("Choose an Instagram account.");
         return;
       }
       setMessage("Preparing slides and posting…");
@@ -104,12 +154,17 @@ export function PostToInstagramPanel({
         exportId: exported.exportId,
         caption,
         pathname,
+        igUserId: activeAccount.igUserId,
       });
       if (!result.ok) {
         setMessage(result.error);
         return;
       }
-      setMessage("Posted to Instagram.");
+      setMessage(
+        activeAccount.username
+          ? `Posted to @${activeAccount.username.replace(/^@/, "")}.`
+          : "Posted to Instagram."
+      );
       router.refresh();
     } finally {
       setPending(false);
@@ -136,7 +191,7 @@ export function PostToInstagramPanel({
           <p className="text-sm font-semibold tracking-tight">Post to Instagram</p>
           <p className="truncate text-xs text-muted-foreground">
             {connectedAccount
-              ? `@${connectedLabel.replace(/^@/, "")} · ${slideCount} slide${slideCount === 1 ? "" : "s"}`
+              ? `@${connectedLabel.replace(/^@/, "")}${accounts.length > 1 ? ` · ${accounts.length} accounts` : ""} · ${slideCount} slide${slideCount === 1 ? "" : "s"}`
               : configured
                 ? "Business / Creator account linked to a Facebook Page"
                 : "Meta app credentials not configured"}
@@ -156,8 +211,9 @@ export function PostToInstagramPanel({
           ) : !connectedAccount ? (
             <div className="space-y-3">
               <p className="text-xs leading-relaxed text-muted-foreground">
-                Connect an Instagram Business or Creator account that is linked to a Facebook Page.
-                Personal accounts are not supported by Meta&apos;s publishing API.
+                Opt in to every Page + Instagram pair you use. Each Instagram must be linked to its
+                Facebook Page in Meta Business Suite (Connected assets). Then pick the account here
+                when you post.
               </p>
               <Button type="button" className="rounded-xl" onClick={() => window.location.assign(oauthUrl)}>
                 <ExternalLinkIcon className="mr-2 size-4" />
@@ -166,6 +222,40 @@ export function PostToInstagramPanel({
             </div>
           ) : (
             <>
+              {accounts.length > 1 ? (
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Post as</Label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {accounts.map((account) => {
+                      const selected = account.igUserId === activeAccount?.igUserId;
+                      const label = account.username
+                        ? `@${account.username.replace(/^@/, "")}`
+                        : account.pageName || "Instagram";
+                      return (
+                        <button
+                          key={account.igUserId}
+                          type="button"
+                          disabled={selecting || pending}
+                          onClick={() => void selectAccount(account.igUserId)}
+                          className={cn(
+                            "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+                            selected
+                              ? "border-foreground bg-foreground text-background"
+                              : "border-border bg-background text-muted-foreground hover:text-foreground"
+                          )}
+                          title={account.pageName ? `Page: ${account.pageName}` : undefined}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {activeAccount?.pageName ? (
+                    <p className="text-[11px] text-muted-foreground">Page: {activeAccount.pageName}</p>
+                  ) : null}
+                </div>
+              ) : null}
+
               <div className="space-y-1.5">
                 <Label htmlFor="ig-caption" className="text-xs">
                   Caption
@@ -206,7 +296,7 @@ export function PostToInstagramPanel({
                   onClick={() => window.location.assign(oauthUrl)}
                 >
                   <ExternalLinkIcon className="mr-1.5 size-3.5" />
-                  Switch
+                  Refresh accounts
                 </Button>
                 <Button
                   type="button"

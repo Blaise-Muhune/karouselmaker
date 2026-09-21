@@ -30,6 +30,7 @@ import {
 } from "@/components/carousels/CarouselGeneratingTrigger";
 import { PostToInstagramPanel } from "@/components/instagram/PostToInstagramPanel";
 import { PostToTikTokPanel } from "@/components/tiktok/PostToTikTokPanel";
+import { getInstagramLinkedAccounts, getSelectedInstagramAccount } from "@/lib/instagram/accounts";
 import { ArrowLeftIcon, SparklesIcon } from "lucide-react";
 
 function normalizeStoragePathForBucket(path: string | undefined, bucket: string): string | undefined {
@@ -88,6 +89,15 @@ export default async function CarouselEditorPage({
 
   if (!carousel) notFound();
   if (!project) notFound();
+
+  const instagramAccounts = instagramConnection
+    ? getInstagramLinkedAccounts(instagramConnection).map((a) => ({
+        igUserId: a.igUserId,
+        username: a.username,
+        pageName: a.pageName,
+      }))
+    : [];
+  const selectedInstagram = instagramConnection ? getSelectedInstagramAccount(instagramConnection) : null;
 
   // Show loading immediately when generating; skip heavy work so refresh gets fresh status.
   if (carousel.status === "generating") {
@@ -329,7 +339,13 @@ export default async function CarouselEditorPage({
           <PostToInstagramPanel
             carouselId={carouselId}
             pathname={editorPath}
-            connectedAccount={instagramConnection?.platform_username ?? (instagramConnection ? "Connected" : null)}
+            connectedAccount={
+              selectedInstagram?.username ??
+              instagramConnection?.platform_username ??
+              (instagramConnection ? "Connected" : null)
+            }
+            accounts={instagramAccounts}
+            selectedIgUserId={selectedInstagram?.igUserId ?? null}
             slideCount={slides.length}
             initialCaption={[captionVariants.long ?? captionVariants.medium ?? "", hashtags.map((tag) => tag.startsWith("#") ? tag : `#${tag}`).join(" ")].filter(Boolean).join("\n\n")}
             configured={Boolean(process.env.FACEBOOK_APP_ID && process.env.FACEBOOK_APP_SECRET)}

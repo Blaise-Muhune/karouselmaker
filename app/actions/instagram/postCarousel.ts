@@ -10,6 +10,7 @@ import {
   listSlides,
 } from "@/lib/server/db";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
+import { getInstagramLinkedAccounts, getSelectedInstagramAccount } from "@/lib/instagram/accounts";
 import { postCarouselToInstagram } from "@/lib/instagram/postCarousel";
 
 const BUCKET = "carousel-assets";
@@ -20,6 +21,8 @@ const postSchema = z.object({
   exportId: z.string().uuid(),
   caption: z.string().trim().max(2200),
   pathname: z.string().startsWith("/").max(500),
+  /** Optional override; defaults to the connection’s selected account. */
+  igUserId: z.string().min(1).max(64).optional(),
 });
 
 export async function postCarouselToInstagramAction(input: z.input<typeof postSchema>) {
@@ -41,19 +44,22 @@ export async function postCarouselToInstagramAction(input: z.input<typeof postSc
     return { ok: false as const, error: "Connect your Instagram Business account before posting." };
   }
 
-  const igUserId =
-    connection.platform_user_id ||
-    (connection.meta &&
-    typeof connection.meta === "object" &&
-    !Array.isArray(connection.meta) &&
-    typeof (connection.meta as { ig_user_id?: unknown }).ig_user_id === "string"
-      ? (connection.meta as { ig_user_id: string }).ig_user_id
-      : null);
-  if (!igUserId) {
+  const selected = getSelectedInstagramAccount(connection);
+  if (!selected) {
     return {
       ok: false as const,
-      error: "Instagram account is missing an IG user id. Disconnect and reconnect.",
+      error: "Instagram account is missing. Disconnect and reconnect.",
     };
+  }
+
+  // Prefer explicit pick from the panel when provided.
+  let account = selected;
+  if (parsed.data.igUserId && parsed.data.igUserId !== selected.igUserId) {
+    const match = getInstagramLinkedAccounts(connection).find((a) => a.igUserId === parsed.data.igUserId);
+    if (!match) {
+      return { ok: false as const, error: "Choose a connected Instagram account." };
+    }
+    account = match;
   }
 
   const exported = await getExport(user.id, parsed.data.exportId);
@@ -84,8 +90,8 @@ export async function postCarouselToInstagramAction(input: z.input<typeof postSc
 
   try {
     const result = await postCarouselToInstagram({
-      accessToken: connection.access_token,
-      igUserId,
+      accessToken: account.pageAccessToken,
+      igUserId: account.igUserId,
       imageUrls,
       caption: parsed.data.caption,
     });
