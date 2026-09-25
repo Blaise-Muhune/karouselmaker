@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { ChevronDownIcon } from "lucide-react";
 import { TikTokMicroIcon } from "@/components/carousels/BackgroundSourcePlatformHints";
 import {
   cancelTikTokScheduleAction,
@@ -128,6 +129,7 @@ export function TikTokScheduledPostsSection({
   const [rescheduleId, setRescheduleId] = useState<string | null>(null);
   const [rescheduleValue, setRescheduleValue] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
   const [, startTransition] = useTransition();
 
   useEffect(() => {
@@ -167,6 +169,7 @@ export function TikTokScheduledPostsSection({
   if (rows.length === 0) return null;
 
   const queued = posts.filter((p) => p.status === "scheduled" || p.status === "publishing").length;
+  const failed = rows.filter((p) => p.status === "failed").length;
 
   async function cancel(id: string) {
     setPendingId(id);
@@ -215,19 +218,37 @@ export function TikTokScheduledPostsSection({
         variant === "project" ? "px-3 py-2.5" : "px-3.5 py-3 sm:px-4"
       )}
     >
-      <div className="mb-2 flex items-center gap-2">
+      <button
+        type="button"
+        className="flex w-full items-center gap-2 text-left"
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+      >
         <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-foreground text-background">
           <TikTokMicroIcon className="size-3 opacity-100" />
         </span>
         <p className="text-xs font-semibold tracking-tight text-foreground">TikTok</p>
+        <span className="text-[11px] text-muted-foreground">
+          {rows.length} post{rows.length === 1 ? "" : "s"}
+        </span>
         {queued > 0 ? (
           <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
             {queued} queued
           </span>
         ) : null}
-      </div>
+        {failed > 0 ? (
+          <span className="rounded-full bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
+            {failed} failed
+          </span>
+        ) : null}
+        <ChevronDownIcon
+          className={cn("ml-auto size-4 shrink-0 text-muted-foreground transition-transform", expanded && "rotate-180")}
+          aria-hidden
+        />
+      </button>
 
-      <ul className="divide-y divide-border/50">
+      {expanded ? (
+      <ul className="mt-2 divide-y divide-border/50">
         {rows.map((post) => {
           const title = displayTitle(post);
           const showCarousel = variant === "workspace" && titlesDiffer(post);
@@ -318,6 +339,7 @@ export function TikTokScheduledPostsSection({
           );
         })}
       </ul>
+      ) : null}
       {message ? <p className="mt-2 text-[11px] text-destructive">{message}</p> : null}
     </section>
   );
