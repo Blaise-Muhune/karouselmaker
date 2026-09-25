@@ -1,4 +1,4 @@
-"use server";
+﻿"use server";
 
 import { getProfile } from "@/lib/server/db/profiles";
 import { countCarouselsLifetime } from "@/lib/server/db/carousels";
@@ -10,6 +10,17 @@ export type Subscription = {
   /** True when on Creator or Growth. */
   isPro: boolean;
 };
+
+/** Hardcoded testers plus INSTAGRAM_ACCESS_EMAILS (app reviewers) get paid access and tester limits. */
+function isTesterEmail(email: string | null | undefined): boolean {
+  const normalized = email?.trim().toLowerCase();
+  if (!normalized) return false;
+  const reviewers = (process.env.INSTAGRAM_ACCESS_EMAILS ?? "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+  return TESTER_EMAILS.some((e) => e.toLowerCase() === normalized) || reviewers.includes(normalized);
+}
 
 function planFromProfileRow(raw: string | undefined | null): Subscription["plan"] {
   if (raw === "creator" || raw === "starter") return "creator";
@@ -25,7 +36,7 @@ export async function getSubscription(
   userId: string,
   email?: string | null
 ): Promise<Subscription> {
-  if (TESTER_EMAILS.includes(email ?? "")) return { plan: "growth", isPro: true };
+  if (isTesterEmail(email)) return { plan: "growth", isPro: true };
   const profile = await getProfile(userId);
   const plan = planFromProfileRow(profile?.plan);
   return { plan, isPro: plan !== "free" };
@@ -39,7 +50,7 @@ export async function getPlanLimits(
   userId: string,
   email?: string | null
 ): Promise<PlanLimits> {
-  if (TESTER_EMAILS.includes(email ?? "")) return PLAN_LIMITS.tester;
+  if (isTesterEmail(email)) return PLAN_LIMITS.tester;
   const { plan } = await getSubscription(userId, email);
   if (plan === "free") return PLAN_LIMITS.free;
   return PLAN_LIMITS[plan];
@@ -53,7 +64,7 @@ export async function hasFullProFeatureAccess(
   userId: string,
   email?: string | null
 ): Promise<boolean> {
-  if (TESTER_EMAILS.includes(email ?? "")) return true;
+  if (isTesterEmail(email)) return true;
   const { isPro } = await getSubscription(userId, email);
   if (isPro) return true;
   const lifetimeCount = await countCarouselsLifetime(userId);
@@ -68,7 +79,7 @@ export async function getEffectivePlanLimits(
   userId: string,
   email?: string | null
 ): Promise<PlanLimits> {
-  if (TESTER_EMAILS.includes(email ?? "")) return PLAN_LIMITS.tester;
+  if (isTesterEmail(email)) return PLAN_LIMITS.tester;
   const subscription = await getSubscription(userId, email);
   if (subscription.isPro) {
     return PLAN_LIMITS[subscription.plan];
