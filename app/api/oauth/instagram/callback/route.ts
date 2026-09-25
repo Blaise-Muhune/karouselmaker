@@ -1,11 +1,12 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { getUser } from "@/lib/server/auth/getUser";
-import { isAdmin } from "@/lib/server/auth/isAdmin";
+import { canUseInstagram } from "@/lib/server/auth/canUseInstagram";
 import { getPlatformConnection, upsertPlatformConnection } from "@/lib/server/db";
 import { getRedirectUri } from "@/lib/oauth/platforms";
 import { exchangeInstagramLoginCode, INSTAGRAM_LOGIN_SCOPES } from "@/lib/instagram/instagramLogin";
 import { getInstagramLinkedAccounts, type InstagramLinkedAccount } from "@/lib/instagram/accounts";
+import { rememberAccountForReturnPath } from "@/lib/server/projectSocialAccounts";
 
 function safeReturnTo(value: string | undefined) {
   return value && value.startsWith("/") && !value.startsWith("//") ? value : "/";
@@ -27,7 +28,7 @@ export async function GET(request: Request) {
     response.cookies.delete("instagram_oauth_return_to");
     return response;
   };
-  if (!isAdmin(user.email)) return finish("error", "Instagram posting is not available yet.");
+  if (!canUseInstagram(user.email)) return finish("error", "Instagram posting is not available yet.");
   if (!state || !expectedState || state !== expectedState) {
     return finish("error", "OAuth state could not be verified.");
   }
@@ -73,5 +74,6 @@ export async function GET(request: Request) {
       direct_post: true,
     },
   });
+  await rememberAccountForReturnPath(user.id, returnTo, "instagram", connected.igUserId);
   return finish("connected");
 }

@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getUser } from "@/lib/server/auth/getUser";
-import { isAdmin } from "@/lib/server/auth/isAdmin";
+import { canUseInstagram } from "@/lib/server/auth/canUseInstagram";
 import { getRedirectUri } from "@/lib/oauth/platforms";
 import { buildInstagramAuthUrl, getInstagramLoginCredentials } from "@/lib/instagram/instagramLogin";
 
@@ -11,7 +11,7 @@ function safeReturnTo(value: string | null) {
 
 export async function GET(request: Request) {
   const { user } = await getUser();
-  if (!isAdmin(user.email)) {
+  if (!canUseInstagram(user.email)) {
     return NextResponse.json({ error: "Instagram posting is not available yet." }, { status: 403 });
   }
   const state = randomBytes(24).toString("base64url");

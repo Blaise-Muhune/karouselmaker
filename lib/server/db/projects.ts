@@ -1,5 +1,6 @@
 "use server";
 
+import { ensureSocialAccountColumns } from "./ensureSocialAccountColumns";
 import { query, queryMany, queryOne } from "./pg";
 import type { Project, ProjectInsert, ProjectUpdate } from "./types";
 
@@ -168,6 +169,10 @@ export async function updateProject(
     add("topic_suggestions_cache", payload.topic_suggestions_cache, true);
   if (payload.ai_style_reference_asset_ids !== undefined)
     add("ai_style_reference_asset_ids", payload.ai_style_reference_asset_ids);
+  if (payload.social_accounts !== undefined) {
+    await ensureSocialAccountColumns();
+    add("social_accounts", payload.social_accounts ?? {}, true);
+  }
 
   const row = await queryOne<Project>(
     `update projects set ${sets.join(", ")} where id = $1 and user_id = $2 returning *`,

@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ExternalLinkIcon, Loader2Icon, SendIcon, UnplugIcon } from "lucide-react";
 import { disconnectInstagramAction } from "@/app/actions/instagram/disconnectInstagram";
 import { postCarouselToInstagramAction } from "@/app/actions/instagram/postCarousel";
-import { selectInstagramAccountAction } from "@/app/actions/instagram/selectAccount";
+import { setProjectSocialAccountAction } from "@/app/actions/projects/setProjectSocialAccount";
 import { InstagramMicroIcon } from "@/components/carousels/BackgroundSourcePlatformHints";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -20,6 +20,7 @@ export type InstagramAccountChoice = {
 
 export function PostToInstagramPanel({
   carouselId,
+  projectId,
   pathname,
   connectedAccount,
   accounts,
@@ -29,6 +30,7 @@ export function PostToInstagramPanel({
   configured,
 }: {
   carouselId: string;
+  projectId: string;
   pathname: string;
   connectedAccount: string | null;
   accounts: InstagramAccountChoice[];
@@ -87,13 +89,16 @@ export function PostToInstagramPanel({
     setDisconnecting(true);
     setMessage(null);
     try {
-      const result = await disconnectInstagramAction({ pathname });
+      const removing = activeAccount;
+      const result = await disconnectInstagramAction({ pathname, igUserId: removing?.igUserId ?? null });
       if (!result.ok) {
         setMessage(result.error);
         return;
       }
-      setMessage("Instagram disconnected.");
-      setExpanded(false);
+      setMessage(
+        removing?.username ? `@${removing.username.replace(/^@/, "")} disconnected.` : "Instagram disconnected."
+      );
+      if (accounts.length <= 1) setExpanded(false);
       router.refresh();
     } finally {
       setDisconnecting(false);
@@ -105,13 +110,23 @@ export function PostToInstagramPanel({
     setSelecting(true);
     setMessage(null);
     try {
-      const result = await selectInstagramAccountAction({ igUserId, pathname });
+      const result = await setProjectSocialAccountAction({
+        projectId,
+        platform: "instagram",
+        accountId: igUserId,
+        pathname,
+      });
       if (!result.ok) {
         setMessage(result.error);
         return;
       }
       setActiveIgUserId(igUserId);
-      setMessage(result.username ? `Posting as @${result.username.replace(/^@/, "")}.` : "Account selected.");
+      const username = accounts.find((a) => a.igUserId === igUserId)?.username;
+      setMessage(
+        username
+          ? `This project now posts as @${username.replace(/^@/, "")}.`
+          : "Saved as this project's Instagram account."
+      );
       router.refresh();
     } finally {
       setSelecting(false);
@@ -233,7 +248,7 @@ export function PostToInstagramPanel({
             <>
               {accounts.length > 1 ? (
                 <div className="space-y-1.5">
-                  <Label className="text-xs">Post as</Label>
+                  <Label className="text-xs">Post as (saved for this project)</Label>
                   <div className="flex flex-wrap gap-1.5">
                     {accounts.map((account) => {
                       const selected = account.igUserId === activeAccount?.igUserId;

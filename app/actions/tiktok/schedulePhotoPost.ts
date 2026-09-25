@@ -16,6 +16,7 @@ import {
   getTikTokVerifiedMediaOrigin,
   publishScheduledTikTokPost,
 } from "@/lib/server/tiktok/scheduledPosts";
+import { resolveTikTokAccount } from "@/lib/tiktok/accounts";
 import { TIKTOK_PRIVACY_LEVELS, type TikTokPrivacyLevel } from "@/lib/tiktok/postPhotos";
 
 const scheduleSchema = z.object({
@@ -32,6 +33,8 @@ const scheduleSchema = z.object({
   brandContent: z.boolean(),
   musicUsageConfirmed: z.literal(true),
   pathname: z.string().startsWith("/").max(500),
+  /** TikTok account to post as; defaults to the connection's default account. */
+  openId: z.string().max(128).nullish(),
 });
 
 async function getScheduledPostById(userId: string, id: string): Promise<TikTokScheduledPost | null> {
@@ -84,6 +87,11 @@ export async function scheduleTikTokPhotoPostAction(input: z.input<typeof schedu
   }
   const connection = await getPlatformConnection(user.id, "tiktok");
   if (!connection) return { ok: false as const, error: "Connect your TikTok account before posting." };
+  const account = resolveTikTokAccount(connection, parsed.data.openId);
+  if (!account) return { ok: false as const, error: "Connect your TikTok account before posting." };
+  if (parsed.data.openId && account.openId !== parsed.data.openId) {
+    return { ok: false as const, error: "That TikTok account is no longer connected. Choose another account." };
+  }
   const exported = await getExport(user.id, parsed.data.exportId);
   if (!exported || exported.carousel_id !== parsed.data.carouselId || exported.status !== "ready") {
     return { ok: false as const, error: "Choose a ready JPEG export for this carousel." };
@@ -104,6 +112,7 @@ export async function scheduleTikTokPhotoPostAction(input: z.input<typeof schedu
     allow_comment: parsed.data.allowComment,
     brand_organic: parsed.data.brandOrganic,
     brand_content: parsed.data.brandContent,
+    tiktok_open_id: account.openId || null,
     scheduled_for: scheduledFor.toISOString(),
   });
 

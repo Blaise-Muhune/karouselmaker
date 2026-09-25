@@ -1,8 +1,9 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { getUser } from "@/lib/server/auth/getUser";
-import { upsertPlatformConnection } from "@/lib/server/db";
 import { exchangeCode } from "@/lib/oauth/platforms";
+import { addTikTokAccount } from "@/lib/server/tiktok/accounts";
+import { rememberAccountForReturnPath } from "@/lib/server/projectSocialAccounts";
 
 function safeReturnTo(value: string | undefined) {
   return value && value.startsWith("/") && !value.startsWith("//") ? value : "/";
@@ -29,15 +30,14 @@ export async function GET(request: Request) {
   if (!code) return finish("error", params.get("error_description") ?? "TikTok did not return an authorization code.");
   const result = await exchangeCode("tiktok", code);
   if (!result) return finish("error", "TikTok connection failed. Check the app’s Direct Post scope.");
-  await upsertPlatformConnection(user.id, {
-    platform: "tiktok",
-    access_token: result.access_token,
-    refresh_token: result.refresh_token ?? null,
-    expires_at: result.expires_at ?? null,
-    scope: "user.info.basic,video.publish",
-    platform_user_id: result.platform_user_id ?? null,
-    platform_username: result.platform_username ?? null,
-    meta: { direct_post: true },
+  if (!result.platform_user_id) return finish("error", "TikTok did not return the account id. Try connecting again.");
+  await addTikTokAccount(user.id, {
+    openId: result.platform_user_id,
+    username: result.platform_username ?? null,
+    accessToken: result.access_token,
+    refreshToken: result.refresh_token ?? null,
+    expiresAt: result.expires_at ?? null,
   });
+  await rememberAccountForReturnPath(user.id, returnTo, "tiktok", result.platform_user_id);
   return finish("connected");
 }

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getUser } from "@/lib/server/auth/getUser";
-import { isAdmin } from "@/lib/server/auth/isAdmin";
+import { canUseInstagram } from "@/lib/server/auth/canUseInstagram";
 import {
   getExport,
   getExportStoragePaths,
@@ -65,7 +65,7 @@ async function saveRefreshedAccount(
 
 export async function postCarouselToInstagramAction(input: z.input<typeof postSchema>) {
   const { user } = await getUser();
-  if (!isAdmin(user.email)) {
+  if (!canUseInstagram(user.email)) {
     return { ok: false as const, error: "Instagram posting is not available yet." };
   }
   if (!getInstagramLoginCredentials()) {

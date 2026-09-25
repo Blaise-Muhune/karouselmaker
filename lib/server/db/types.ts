@@ -60,9 +60,17 @@ export interface Project {
   topic_suggestions_cache?: Json;
   /** Library asset IDs (max 10) used to steer AI-generated slide image style for this project. */
   ai_style_reference_asset_ids?: string[];
+  /** Which connected account this project posts to, per platform. */
+  social_accounts?: ProjectSocialAccounts | null;
   created_at: string;
   updated_at: string;
 }
+
+/** TikTok open_id / Instagram user id chosen for a project. Missing = use the connection's default. */
+export type ProjectSocialAccounts = {
+  tiktok?: string;
+  instagram?: string;
+};
 
 export interface Template {
   id: string;
@@ -216,6 +224,8 @@ export interface TikTokScheduledPost {
   allow_comment: boolean;
   brand_organic: boolean;
   brand_content: boolean;
+  /** TikTok account to post as; null on schedules created before multi-account support. */
+  tiktok_open_id: string | null;
   scheduled_for: string;
   status: "scheduled" | "publishing" | "published" | "failed" | "cancelled";
   tiktok_publish_id: string | null;

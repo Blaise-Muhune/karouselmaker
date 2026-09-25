@@ -90,6 +90,18 @@ export function getSelectedInstagramAccount(connection: PlatformConnection): Ins
   return accounts.find((a) => a.igUserId === selectedId) ?? accounts[0] ?? null;
 }
 
+/** Account for a project: the project's saved choice if still connected, else the connection default. */
+export function resolveInstagramAccount(
+  connection: PlatformConnection,
+  preferredIgUserId: string | null | undefined
+): InstagramLinkedAccount | null {
+  if (preferredIgUserId) {
+    const match = getInstagramLinkedAccounts(connection).find((a) => a.igUserId === preferredIgUserId);
+    if (match) return match;
+  }
+  return getSelectedInstagramAccount(connection);
+}
+
 export type InstagramAccountOption = {
   igUserId: string;
   username: string | null;

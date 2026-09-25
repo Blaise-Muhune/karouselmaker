@@ -1,17 +1,12 @@
 import { getExportStoragePaths } from "@/lib/server/db/exports";
 import {
   attachTikTokPublishId,
-  getPlatformConnection,
   markTikTokScheduledPostFailed,
   markTikTokScheduledPostPublished,
-  upsertPlatformConnection,
 } from "@/lib/server/db";
 import type { TikTokScheduledPost } from "@/lib/server/db/types";
-import {
-  postPhotosToTikTok,
-  refreshTikTokAccessToken,
-  waitForTikTokPublishComplete,
-} from "@/lib/tiktok/postPhotos";
+import { getTikTokAccessToken } from "@/lib/server/tiktok/accounts";
+import { postPhotosToTikTok, waitForTikTokPublishComplete } from "@/lib/tiktok/postPhotos";
 
 /**
  * Public HTTPS origin TikTok pulls slide images from.
@@ -76,25 +71,13 @@ async function assertMediaUrlsReachable(urls: string[]): Promise<void> {
 }
 
 async function accessTokenForSchedule(schedule: TikTokScheduledPost): Promise<string> {
-  const connection = await getPlatformConnection(schedule.user_id, "tiktok");
-  if (!connection) throw new Error("The TikTok account is no longer connected.");
-  const expiresAt = connection.expires_at ? new Date(connection.expires_at).getTime() : Number.POSITIVE_INFINITY;
-  if (Number.isFinite(expiresAt) && expiresAt < Date.now() + 5 * 60_000) {
-    if (!connection.refresh_token) throw new Error("TikTok connection expired. Reconnect the account and schedule again.");
-    const refreshed = await refreshTikTokAccessToken(connection.refresh_token);
-    await upsertPlatformConnection(schedule.user_id, {
-      platform: "tiktok",
-      access_token: refreshed.accessToken,
-      refresh_token: refreshed.refreshToken ?? connection.refresh_token,
-      expires_at: refreshed.expiresAt ?? connection.expires_at,
-      scope: connection.scope,
-      platform_user_id: connection.platform_user_id,
-      platform_username: connection.platform_username,
-      meta: connection.meta,
-    });
-    return refreshed.accessToken;
+  const token = await getTikTokAccessToken(schedule.user_id, schedule.tiktok_open_id);
+  if (!token) throw new Error("The TikTok account is no longer connected.");
+  // Never post to a different account than the one the user scheduled for.
+  if (schedule.tiktok_open_id && token.account.openId !== schedule.tiktok_open_id) {
+    throw new Error("The TikTok account this post was scheduled for is no longer connected. Reconnect it and reschedule.");
   }
-  return connection.access_token;
+  return token.accessToken;
 }
 
 /** Executes a previously queued TikTok Photo Mode post. Called only by the protected cron route. */

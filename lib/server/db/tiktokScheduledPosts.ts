@@ -1,5 +1,6 @@
 "use server";
 
+import { ensureSocialAccountColumns } from "./ensureSocialAccountColumns";
 import { query, queryMany, queryOne } from "./pg";
 import type { TikTokScheduledPost } from "./types";
 
@@ -17,14 +18,16 @@ export async function createTikTokScheduledPost(
     | "allow_comment"
     | "brand_organic"
     | "brand_content"
+    | "tiktok_open_id"
     | "scheduled_for"
   >
 ): Promise<TikTokScheduledPost> {
+  await ensureSocialAccountColumns();
   const row = await queryOne<TikTokScheduledPost>(
     `insert into tiktok_scheduled_posts (
        user_id, carousel_id, export_id, media_token, slide_count, title, description,
-       privacy_level, allow_comment, brand_organic, brand_content, scheduled_for
-     ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) returning *`,
+       privacy_level, allow_comment, brand_organic, brand_content, scheduled_for, tiktok_open_id
+     ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) returning *`,
     [
       payload.user_id,
       payload.carousel_id,
@@ -38,6 +41,7 @@ export async function createTikTokScheduledPost(
       payload.brand_organic,
       payload.brand_content,
       payload.scheduled_for,
+      payload.tiktok_open_id,
     ]
   );
   if (!row) throw new Error("Unable to create TikTok schedule");

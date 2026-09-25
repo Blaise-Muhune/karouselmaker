@@ -21,6 +21,8 @@ import {
   rescheduleTikTokScheduleAction,
 } from "@/app/actions/tiktok/manageSchedule";
 import { scheduleTikTokPhotoPostAction } from "@/app/actions/tiktok/schedulePhotoPost";
+import { setProjectSocialAccountAction } from "@/app/actions/projects/setProjectSocialAccount";
+import type { TikTokAccountChoice } from "@/lib/tiktok/accounts";
 import { TikTokMicroIcon } from "@/components/carousels/BackgroundSourcePlatformHints";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -133,8 +135,11 @@ function OptionToggle({
 
 export function PostToTikTokPanel({
   carouselId,
+  projectId,
   pathname,
   connectedAccount,
+  accounts,
+  selectedOpenId,
   slideCount,
   slideIds,
   exportSize,
@@ -143,8 +148,11 @@ export function PostToTikTokPanel({
   schedules,
 }: {
   carouselId: string;
+  projectId: string;
   pathname: string;
   connectedAccount: string | null;
+  accounts: TikTokAccountChoice[];
+  selectedOpenId: string | null;
   slideCount: number;
   slideIds: string[];
   exportSize: ExportSize;
@@ -173,8 +181,22 @@ export function PostToTikTokPanel({
   const [scheduleBusyId, setScheduleBusyId] = useState<string | null>(null);
   const [rescheduleId, setRescheduleId] = useState<string | null>(null);
   const [rescheduleValue, setRescheduleValue] = useState("");
-  const connectedLabel = useMemo(() => connectedAccount || "Not connected", [connectedAccount]);
+  const [activeOpenId, setActiveOpenId] = useState(selectedOpenId);
+  const [selectingAccount, setSelectingAccount] = useState(false);
+  const activeAccount = useMemo(
+    () => accounts.find((a) => a.openId === activeOpenId) ?? accounts[0] ?? null,
+    [accounts, activeOpenId]
+  );
+  const connectedLabel = useMemo(
+    () => activeAccount?.username || connectedAccount || "Not connected",
+    [activeAccount, connectedAccount]
+  );
   const oauthUrl = `/api/oauth/tiktok?return_to=${encodeURIComponent(pathname)}`;
+  const addAccountUrl = `${oauthUrl}&switch=1`;
+
+  useEffect(() => {
+    setActiveOpenId(selectedOpenId);
+  }, [selectedOpenId]);
 
   useEffect(() => {
     setLiveSchedules(schedules);
@@ -217,11 +239,11 @@ export function PostToTikTokPanel({
     setMusicConfirmed(false);
   }, [carouselId]);
 
-  async function loadCreatorInfo() {
+  async function loadCreatorInfo(openId: string | null = activeAccount?.openId ?? null) {
     setCreatorLoading(true);
     setCreatorError(null);
     try {
-      const result = await getTikTokCreatorInfoAction();
+      const result = await getTikTokCreatorInfoAction({ openId });
       if (!result.ok) {
         setCreator(null);
         setCreatorError(result.error);
@@ -244,18 +266,44 @@ export function PostToTikTokPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional open-trigger
   }, [connectedAccount, expanded]);
 
+  async function selectAccount(openId: string) {
+    if (openId === activeAccount?.openId) return;
+    setSelectingAccount(true);
+    setMessage(null);
+    try {
+      const result = await setProjectSocialAccountAction({ projectId, platform: "tiktok", accountId: openId, pathname });
+      if (!result.ok) {
+        setMessage(result.error);
+        return;
+      }
+      setActiveOpenId(openId);
+      // Privacy options and comment settings differ per account; the creator must choose again.
+      setPrivacyLevel("");
+      setAllowComment(false);
+      setCreator(null);
+      const username = accounts.find((a) => a.openId === openId)?.username;
+      setMessage(username ? `This project now posts as ${username}.` : "Saved as this project's TikTok account.");
+      void loadCreatorInfo(openId);
+      router.refresh();
+    } finally {
+      setSelectingAccount(false);
+    }
+  }
+
   async function disconnect() {
     setDisconnecting(true);
     setMessage(null);
     try {
-      const result = await disconnectTikTokAction({ pathname });
+      const removing = activeAccount;
+      const result = await disconnectTikTokAction({ pathname, openId: removing?.openId || null });
       if (!result.ok) {
         setMessage(result.error);
         return;
       }
       setCreator(null);
-      setMessage("TikTok disconnected.");
-      setExpanded(false);
+      setPrivacyLevel("");
+      setMessage(removing?.username ? `${removing.username} disconnected.` : "TikTok disconnected.");
+      if (accounts.length <= 1) setExpanded(false);
       router.refresh();
     } finally {
       setDisconnecting(false);
@@ -323,6 +371,7 @@ export function PostToTikTokPanel({
         brandContent,
         musicUsageConfirmed: true,
         pathname,
+        openId: activeAccount?.openId ?? null,
       });
       if (!result.ok) {
         setMessage(result.error);
@@ -440,6 +489,33 @@ export function PostToTikTokPanel({
               {creatorLoading ? <Loader2Icon className="size-3.5 animate-spin" /> : <RefreshCwIcon className="size-3.5" />}
             </Button>
           </div>
+
+          {accounts.length > 1 ? (
+            <div className="space-y-1.5">
+              <p className="text-[11px] font-medium text-muted-foreground">Post as (saved for this project)</p>
+              <div className="flex flex-wrap gap-1.5">
+                {accounts.map((account) => {
+                  const selected = account.openId === activeAccount?.openId;
+                  return (
+                    <button
+                      key={account.openId}
+                      type="button"
+                      disabled={selectingAccount || pending || disconnecting}
+                      onClick={() => void selectAccount(account.openId)}
+                      className={cn(
+                        "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+                        selected
+                          ? "border-foreground bg-foreground text-background"
+                          : "border-border bg-background text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      {account.username || "TikTok account"}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
 
           {creatorError ? (
             <p className="text-xs text-destructive" role="alert">
@@ -655,10 +731,11 @@ export function PostToTikTokPanel({
               size="sm"
               variant="ghost"
               disabled={disconnecting || pending}
-              onClick={() => window.location.assign(oauthUrl)}
+              onClick={() => window.location.assign(addAccountUrl)}
+              title="Connect another TikTok account"
             >
               <ExternalLinkIcon className="mr-1.5 size-3.5" />
-              Switch
+              Add account
             </Button>
             <div className="ml-auto flex flex-wrap items-center gap-2">
               <Button

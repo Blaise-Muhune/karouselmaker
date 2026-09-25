@@ -30,7 +30,9 @@ import {
 } from "@/components/carousels/CarouselGeneratingTrigger";
 import { PostToInstagramPanel } from "@/components/instagram/PostToInstagramPanel";
 import { PostToTikTokPanel } from "@/components/tiktok/PostToTikTokPanel";
-import { getInstagramLinkedAccounts, getSelectedInstagramAccount } from "@/lib/instagram/accounts";
+import { getInstagramLinkedAccounts, resolveInstagramAccount } from "@/lib/instagram/accounts";
+import { canUseInstagram } from "@/lib/server/auth/canUseInstagram";
+import { resolveTikTokAccount, toTikTokAccountChoices } from "@/lib/tiktok/accounts";
 import { ArrowLeftIcon, SparklesIcon } from "lucide-react";
 
 function normalizeStoragePathForBucket(path: string | undefined, bucket: string): string | undefined {
@@ -97,7 +99,12 @@ export default async function CarouselEditorPage({
         pageName: a.pageName,
       }))
     : [];
-  const selectedInstagram = instagramConnection ? getSelectedInstagramAccount(instagramConnection) : null;
+  const projectSocialAccounts = project.social_accounts ?? {};
+  const selectedInstagram = instagramConnection
+    ? resolveInstagramAccount(instagramConnection, projectSocialAccounts.instagram)
+    : null;
+  const tiktokAccounts = tiktokConnection ? toTikTokAccountChoices(tiktokConnection) : [];
+  const selectedTikTok = tiktokConnection ? resolveTikTokAccount(tiktokConnection, projectSocialAccounts.tiktok) : null;
 
   // Show loading immediately when generating; skip heavy work so refresh gets fresh status.
   if (carousel.status === "generating") {
@@ -330,7 +337,12 @@ export default async function CarouselEditorPage({
           <PostToTikTokPanel
             carouselId={carouselId}
             pathname={editorPath}
-            connectedAccount={tiktokConnection?.platform_username ?? (tiktokConnection ? "Connected" : null)}
+            projectId={projectId}
+            connectedAccount={
+              selectedTikTok?.username ?? tiktokConnection?.platform_username ?? (tiktokConnection ? "Connected" : null)
+            }
+            accounts={tiktokAccounts}
+            selectedOpenId={selectedTikTok?.openId ?? null}
             slideCount={slides.length}
             slideIds={slides.map((slide) => slide.id)}
             exportSize={getExportSize(carousel)}
@@ -338,10 +350,10 @@ export default async function CarouselEditorPage({
             initialDescription={[captionVariants.long ?? captionVariants.medium ?? "", hashtags.map((tag) => tag.startsWith("#") ? tag : `#${tag}`).join(" ")].filter(Boolean).join("\n\n")}
             schedules={tiktokSchedules.map((schedule) => ({ id: schedule.id, scheduledFor: schedule.scheduled_for, status: schedule.status, lastError: schedule.last_error }))}
           />
-          {/* Instagram posting is admin-only until the Meta app review is approved. */}
-          {userIsAdmin && (
+          {canUseInstagram(user.email) && (
             <PostToInstagramPanel
               carouselId={carouselId}
+              projectId={projectId}
               pathname={editorPath}
               connectedAccount={
                 selectedInstagram?.username ??
