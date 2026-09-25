@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getUser } from "@/lib/server/auth/getUser";
+import { isAdmin } from "@/lib/server/auth/isAdmin";
 import { getPlatformConnection, upsertPlatformConnection } from "@/lib/server/db";
 import { getInstagramLinkedAccounts, getSelectedInstagramAccount } from "@/lib/instagram/accounts";
 
@@ -13,6 +14,7 @@ const selectSchema = z.object({
 
 export async function selectInstagramAccountAction(input: z.input<typeof selectSchema>) {
   const { user } = await getUser();
+  if (!isAdmin(user.email)) return { ok: false as const, error: "Instagram posting is not available yet." };
   const parsed = selectSchema.safeParse(input);
   if (!parsed.success) return { ok: false as const, error: "Choose an Instagram account." };
 
@@ -57,6 +59,7 @@ export async function selectInstagramAccountAction(input: z.input<typeof selectS
 
 export async function getInstagramAccountsForPanelAction() {
   const { user } = await getUser();
+  if (!isAdmin(user.email)) return { ok: true as const, accounts: [], selectedIgUserId: null as string | null };
   const connection = await getPlatformConnection(user.id, "instagram");
   if (!connection) return { ok: true as const, accounts: [], selectedIgUserId: null as string | null };
   const accounts = getInstagramLinkedAccounts(connection);

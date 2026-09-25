@@ -336,20 +336,23 @@ export default async function CarouselEditorPage({
             initialDescription={[captionVariants.long ?? captionVariants.medium ?? "", hashtags.map((tag) => tag.startsWith("#") ? tag : `#${tag}`).join(" ")].filter(Boolean).join("\n\n")}
             schedules={tiktokSchedules.map((schedule) => ({ id: schedule.id, scheduledFor: schedule.scheduled_for, status: schedule.status, lastError: schedule.last_error }))}
           />
-          <PostToInstagramPanel
-            carouselId={carouselId}
-            pathname={editorPath}
-            connectedAccount={
-              selectedInstagram?.username ??
-              instagramConnection?.platform_username ??
-              (instagramConnection ? "Connected" : null)
-            }
-            accounts={instagramAccounts}
-            selectedIgUserId={selectedInstagram?.igUserId ?? null}
-            slideCount={slides.length}
-            initialCaption={[captionVariants.long ?? captionVariants.medium ?? "", hashtags.map((tag) => tag.startsWith("#") ? tag : `#${tag}`).join(" ")].filter(Boolean).join("\n\n")}
-            configured={Boolean(process.env.FACEBOOK_APP_ID && process.env.FACEBOOK_APP_SECRET)}
-          />
+          {/* Instagram posting is admin-only until the Meta app review is approved. */}
+          {userIsAdmin && (
+            <PostToInstagramPanel
+              carouselId={carouselId}
+              pathname={editorPath}
+              connectedAccount={
+                selectedInstagram?.username ??
+                instagramConnection?.platform_username ??
+                (instagramConnection ? "Connected" : null)
+              }
+              accounts={instagramAccounts}
+              selectedIgUserId={selectedInstagram?.igUserId ?? null}
+              slideCount={slides.length}
+              initialCaption={[captionVariants.long ?? captionVariants.medium ?? "", hashtags.map((tag) => tag.startsWith("#") ? tag : `#${tag}`).join(" ")].filter(Boolean).join("\n\n")}
+              configured={Boolean(process.env.FACEBOOK_APP_ID && process.env.FACEBOOK_APP_SECRET)}
+            />
+          )}
         </div>
 
         <section

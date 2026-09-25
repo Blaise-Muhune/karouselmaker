@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getUser } from "@/lib/server/auth/getUser";
+import { isAdmin } from "@/lib/server/auth/isAdmin";
 import {
   getExport,
   getExportStoragePaths,
@@ -27,6 +28,9 @@ const postSchema = z.object({
 
 export async function postCarouselToInstagramAction(input: z.input<typeof postSchema>) {
   const { user } = await getUser();
+  if (!isAdmin(user.email)) {
+    return { ok: false as const, error: "Instagram posting is not available yet." };
+  }
   if (!process.env.FACEBOOK_APP_ID || !process.env.FACEBOOK_APP_SECRET) {
     return {
       ok: false as const,
