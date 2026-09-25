@@ -332,6 +332,8 @@ export default async function CarouselEditorPage({
             pathname={editorPath}
             connectedAccount={tiktokConnection?.platform_username ?? (tiktokConnection ? "Connected" : null)}
             slideCount={slides.length}
+            slideIds={slides.map((slide) => slide.id)}
+            exportSize={getExportSize(carousel)}
             initialTitle={carousel.title}
             initialDescription={[captionVariants.long ?? captionVariants.medium ?? "", hashtags.map((tag) => tag.startsWith("#") ? tag : `#${tag}`).join(" ")].filter(Boolean).join("\n\n")}
             schedules={tiktokSchedules.map((schedule) => ({ id: schedule.id, scheduledFor: schedule.scheduled_for, status: schedule.status, lastError: schedule.last_error }))}

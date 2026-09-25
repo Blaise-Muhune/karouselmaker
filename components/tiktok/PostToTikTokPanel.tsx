@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  BookmarkIcon,
   CalendarClockIcon,
   CheckIcon,
   ExternalLinkIcon,
@@ -34,8 +33,11 @@ import {
 } from "@/lib/tiktok/postPhotos";
 import { cn } from "@/lib/utils";
 
-const PREFS_KEY = "karouselmaker.tiktokPostPrefs.v1";
-const draftKey = (carouselId: string) => `karouselmaker.tiktokPostDraft.${carouselId}.v1`;
+const MUSIC_USAGE_URL = "https://www.tiktok.com/legal/page/global/music-usage-confirmation/en";
+const BRANDED_CONTENT_POLICY_URL = "https://www.tiktok.com/legal/page/global/bc-policy/en";
+const THUMB_WIDTH = 64;
+
+type ExportSize = "1080x1080" | "1080x1350" | "1080x1920";
 
 type ScheduledPost = {
   id: string;
@@ -44,62 +46,29 @@ type ScheduledPost = {
   lastError: string | null;
 };
 
-type SavedPostPrefs = {
-  privacyLevel: TikTokPrivacyLevel | "";
-  allowComment: boolean;
-  brandOrganic: boolean;
-  brandContent: boolean;
-};
-
 function initialDateTime() {
   const date = new Date(Date.now() + 10 * 60_000);
   date.setSeconds(0, 0);
   return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
 }
 
-function parsePrefs(raw: string | null): SavedPostPrefs | null {
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as Partial<SavedPostPrefs>;
-    return {
-      privacyLevel:
-        parsed.privacyLevel === "PUBLIC_TO_EVERYONE" ||
-        parsed.privacyLevel === "MUTUAL_FOLLOW_FRIENDS" ||
-        parsed.privacyLevel === "FOLLOWER_OF_CREATOR" ||
-        parsed.privacyLevel === "SELF_ONLY"
-          ? parsed.privacyLevel
-          : "",
-      allowComment: parsed.allowComment === true,
-      brandOrganic: parsed.brandOrganic === true,
-      brandContent: parsed.brandContent === true,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function readSavedPrefs(): SavedPostPrefs | null {
-  try {
-    return parsePrefs(localStorage.getItem(PREFS_KEY));
-  } catch {
-    return null;
-  }
-}
-
-function writeSavedPrefs(prefs: SavedPostPrefs) {
-  localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
-}
-
-function readCarouselDraft(carouselId: string): SavedPostPrefs | null {
-  try {
-    return parsePrefs(localStorage.getItem(draftKey(carouselId)));
-  } catch {
-    return null;
-  }
-}
-
-function writeCarouselDraft(carouselId: string, prefs: SavedPostPrefs) {
-  localStorage.setItem(draftKey(carouselId), JSON.stringify(prefs));
+function SlideThumb({ slideId, index, exportSize }: { slideId: string; index: number; exportSize: ExportSize }) {
+  const [width, height] = exportSize.split("x").map(Number) as [number, number];
+  const scale = THUMB_WIDTH / width;
+  return (
+    <div
+      className="relative shrink-0 overflow-hidden rounded-lg border border-border/60 bg-muted/30"
+      style={{ width: THUMB_WIDTH, height: Math.round(height * scale) }}
+    >
+      <iframe
+        src={`/api/render/slide/${slideId}`}
+        title={`Photo ${index + 1}`}
+        loading="lazy"
+        className="pointer-events-none block border-0"
+        style={{ width, height, transform: `scale(${scale})`, transformOrigin: "0 0" }}
+      />
+    </div>
+  );
 }
 
 function OptionToggle({
@@ -167,6 +136,8 @@ export function PostToTikTokPanel({
   pathname,
   connectedAccount,
   slideCount,
+  slideIds,
+  exportSize,
   initialTitle,
   initialDescription,
   schedules,
@@ -175,6 +146,8 @@ export function PostToTikTokPanel({
   pathname: string;
   connectedAccount: string | null;
   slideCount: number;
+  slideIds: string[];
+  exportSize: ExportSize;
   initialTitle: string;
   initialDescription: string;
   schedules: ScheduledPost[];
@@ -195,14 +168,11 @@ export function PostToTikTokPanel({
   const [pending, setPending] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [prefsApplied, setPrefsApplied] = useState(false);
-  const [hasSavedPrefs, setHasSavedPrefs] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [liveSchedules, setLiveSchedules] = useState(schedules);
   const [scheduleBusyId, setScheduleBusyId] = useState<string | null>(null);
   const [rescheduleId, setRescheduleId] = useState<string | null>(null);
   const [rescheduleValue, setRescheduleValue] = useState("");
-  const hydratedCarouselId = useRef<string | null>(null);
   const connectedLabel = useMemo(() => connectedAccount || "Not connected", [connectedAccount]);
   const oauthUrl = `/api/oauth/tiktok?return_to=${encodeURIComponent(pathname)}`;
 
@@ -236,47 +206,16 @@ export function PostToTikTokPanel({
 
   const brandedContentBlocked = brandContent && privacyLevel === "SELF_ONLY";
   const commercialIncomplete = commercialDisclosure && !brandOrganic && !brandContent;
-  const musicConfirmCopy =
-    brandContent
-      ? "By posting, you agree to TikTok’s Branded Content Policy and Music Usage Confirmation."
-      : "By posting, you agree to TikTok’s Music Usage Confirmation.";
-
-  // Restore this carousel's TikTok settings on open/refresh (not schedule time or music confirm).
+  // TikTok Direct Post rules: visibility, interactions, and disclosure start unselected for every post.
   useEffect(() => {
-    hydratedCarouselId.current = null;
-    const draft = readCarouselDraft(carouselId);
-    const global = readSavedPrefs();
-    setHasSavedPrefs(Boolean(global));
-    const prefs = draft ?? global;
-    if (prefs) {
-      setPrivacyLevel(prefs.privacyLevel);
-      setAllowComment(prefs.allowComment);
-      setBrandOrganic(prefs.brandOrganic);
-      setBrandContent(prefs.brandContent);
-      setCommercialDisclosure(prefs.brandOrganic || prefs.brandContent);
-    } else {
-      setPrivacyLevel("");
-      setAllowComment(false);
-      setBrandOrganic(false);
-      setBrandContent(false);
-      setCommercialDisclosure(false);
-    }
+    setPrivacyLevel("");
+    setAllowComment(false);
+    setBrandOrganic(false);
+    setBrandContent(false);
+    setCommercialDisclosure(false);
     setScheduledFor(initialDateTime());
     setMusicConfirmed(false);
-    hydratedCarouselId.current = carouselId;
-    setPrefsApplied(true);
   }, [carouselId]);
-
-  // Persist selections for this carousel only after hydrate for that id.
-  useEffect(() => {
-    if (!prefsApplied || hydratedCarouselId.current !== carouselId) return;
-    writeCarouselDraft(carouselId, {
-      privacyLevel,
-      allowComment,
-      brandOrganic,
-      brandContent,
-    });
-  }, [carouselId, privacyLevel, allowComment, brandOrganic, brandContent, prefsApplied]);
 
   async function loadCreatorInfo() {
     setCreatorLoading(true);
@@ -293,7 +232,6 @@ export function PostToTikTokPanel({
         current && !result.creator.privacyLevels.includes(current) ? "" : current
       );
       if (result.creator.commentDisabled) setAllowComment(false);
-      setHasSavedPrefs(Boolean(readSavedPrefs()));
     } finally {
       setCreatorLoading(false);
     }
@@ -305,23 +243,6 @@ export function PostToTikTokPanel({
     // Load once when the panel opens for a connected account.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional open-trigger
   }, [connectedAccount, expanded]);
-
-  function saveOptionsForNext() {
-    const ok = window.confirm(
-      "Save visibility, comments, and commercial disclosure as your default for other carousels? Music confirmation will still be asked each time."
-    );
-    if (!ok) return;
-    const prefs = {
-      privacyLevel,
-      allowComment,
-      brandOrganic,
-      brandContent,
-    };
-    writeSavedPrefs(prefs);
-    writeCarouselDraft(carouselId, prefs);
-    setHasSavedPrefs(true);
-    setMessage("Saved for next post.");
-  }
 
   async function disconnect() {
     setDisconnecting(true);
@@ -416,6 +337,11 @@ export function PostToTikTokPanel({
       } else {
         setMessage("Scheduled. TikTok will receive the post near the selected time; visibility can take a few minutes after publish.");
       }
+      setPrivacyLevel("");
+      setAllowComment(false);
+      setBrandOrganic(false);
+      setBrandContent(false);
+      setCommercialDisclosure(false);
       setMusicConfirmed(false);
       router.refresh();
     } finally {
@@ -528,6 +454,13 @@ export function PostToTikTokPanel({
                 {slideCount} photo{slideCount === 1 ? "" : "s"} · JPEG
               </p>
             </div>
+            {slideIds.length > 0 ? (
+              <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1">
+                {slideIds.map((slideId, index) => (
+                  <SlideThumb key={slideId} slideId={slideId} index={index} exportSize={exportSize} />
+                ))}
+              </div>
+            ) : null}
             <p className="mt-2 text-sm font-semibold leading-snug text-foreground">{title || "Untitled carousel"}</p>
             <p className="mt-1.5 line-clamp-3 whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">
               {description || "No caption yet."}
@@ -562,17 +495,7 @@ export function PostToTikTokPanel({
           </div>
 
           <div className="space-y-3 rounded-2xl border border-border/60 bg-background/50 p-3.5 sm:p-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-xs font-semibold tracking-tight text-foreground">Post settings</p>
-              <button
-                type="button"
-                onClick={saveOptionsForNext}
-                className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
-              >
-                <BookmarkIcon className="size-3" />
-                {hasSavedPrefs ? "Update saved" : "Save for next"}
-              </button>
-            </div>
+            <p className="text-xs font-semibold tracking-tight text-foreground">Post settings</p>
 
             <div className="space-y-2">
               <p className="text-[11px] font-medium text-muted-foreground">Who can view</p>
@@ -611,11 +534,7 @@ export function PostToTikTokPanel({
               ) : null}
               {!privacyLevel ? (
                 <p className="text-[11px] text-muted-foreground">Pick visibility for this post.</p>
-              ) : (
-                <p className="text-[11px] text-muted-foreground">
-                  Kept for this carousel when you refresh. Schedule time is not saved.
-                </p>
-              )}
+              ) : null}
             </div>
 
             <div className="space-y-1.5">
@@ -708,8 +627,23 @@ export function PostToTikTokPanel({
             onChange={setMusicConfirmed}
             icon={Music2Icon}
             label="Confirm before posting"
-            description={musicConfirmCopy}
+            description="Required for every post. See the terms below."
           />
+          <p className="text-[11px] leading-snug text-muted-foreground">
+            By posting, you agree to TikTok&apos;s{" "}
+            {brandContent ? (
+              <>
+                <a href={BRANDED_CONTENT_POLICY_URL} target="_blank" rel="noreferrer" className="underline underline-offset-2">
+                  Branded Content Policy
+                </a>{" "}
+                and{" "}
+              </>
+            ) : null}
+            <a href={MUSIC_USAGE_URL} target="_blank" rel="noreferrer" className="underline underline-offset-2">
+              Music Usage Confirmation
+            </a>
+            .
+          </p>
 
           <div className="flex flex-wrap items-center gap-2 border-t border-border/50 pt-4">
             <Button type="button" size="sm" variant="ghost" disabled={disconnecting || pending} onClick={() => void disconnect()}>
