@@ -35,7 +35,7 @@ export function PostToInstagramPanel({
   selectedIgUserId: string | null;
   slideCount: number;
   initialCaption: string;
-  /** False when FACEBOOK_APP_ID is missing — show setup hint instead of connect. */
+  /** False when INSTAGRAM_APP_ID is missing — show setup hint instead of connect. */
   configured: boolean;
 }) {
   const router = useRouter();
@@ -193,7 +193,7 @@ export function PostToInstagramPanel({
             {connectedAccount
               ? `@${connectedLabel.replace(/^@/, "")}${accounts.length > 1 ? ` · ${accounts.length} accounts` : ""} · ${slideCount} slide${slideCount === 1 ? "" : "s"}`
               : configured
-                ? "Business / Creator account linked to a Facebook Page"
+                ? "Sign in with Instagram (Business or Creator account)"
                 : "Meta app credentials not configured"}
           </p>
         </div>
@@ -204,16 +204,17 @@ export function PostToInstagramPanel({
         <div className="space-y-3 border-t border-border/50 px-4 pb-4 pt-3 sm:px-5">
           {!configured ? (
             <p className="text-xs text-muted-foreground">
-              Set <code className="text-[11px]">FACEBOOK_APP_ID</code> and{" "}
-              <code className="text-[11px]">FACEBOOK_APP_SECRET</code>, then add the OAuth redirect
-              URI in the Meta app.
+              Set <code className="text-[11px]">INSTAGRAM_APP_ID</code> and{" "}
+              <code className="text-[11px]">INSTAGRAM_APP_SECRET</code>, then add the OAuth redirect
+              URI under Instagram → API setup with Instagram login in the Meta app.
             </p>
           ) : !connectedAccount ? (
             <div className="space-y-3">
               <p className="text-xs leading-relaxed text-muted-foreground">
-                Opt in to every Page + Instagram pair you use. Each Instagram must be linked to its
-                Facebook Page in Meta Business Suite (Connected assets). Then pick the account here
-                when you post.
+                You sign in on Instagram&apos;s own page. We never see your password, and we can only
+                publish posts you send from here. No Facebook Page needed. Your account must be a
+                Business or Creator account (free to switch in Instagram settings). You can remove
+                access anytime in Instagram → Settings → Apps and websites.
               </p>
               <Button type="button" className="rounded-xl" onClick={() => window.location.assign(oauthUrl)}>
                 <ExternalLinkIcon className="mr-2 size-4" />
@@ -296,7 +297,7 @@ export function PostToInstagramPanel({
                   onClick={() => window.location.assign(oauthUrl)}
                 >
                   <ExternalLinkIcon className="mr-1.5 size-3.5" />
-                  Refresh accounts
+                  Add account
                 </Button>
                 <Button
                   type="button"

@@ -17,7 +17,7 @@ export async function GET(request: Request) {
   const url = getAuthUrl("instagram", state);
   if (!url) {
     return NextResponse.json(
-      { error: "Instagram is not configured. Set FACEBOOK_APP_ID and FACEBOOK_APP_SECRET." },
+      { error: "Instagram is not configured. Set INSTAGRAM_APP_ID and INSTAGRAM_APP_SECRET." },
       { status: 503 }
     );
   }

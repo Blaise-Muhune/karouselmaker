@@ -32,9 +32,9 @@ export async function selectInstagramAccountAction(input: z.input<typeof selectS
 
   await upsertPlatformConnection(user.id, {
     platform: "instagram",
-    access_token: next.pageAccessToken,
+    access_token: next.accessToken,
     refresh_token: connection.refresh_token,
-    expires_at: connection.expires_at,
+    expires_at: next.expiresAt,
     scope: connection.scope,
     platform_user_id: next.igUserId,
     platform_username: next.username,

@@ -9,11 +9,11 @@ async function graphJson<T>(url: string, init?: RequestInit): Promise<T> {
   return body;
 }
 
-async function waitForContainerReady(containerId: string, accessToken: string): Promise<void> {
+async function waitForContainerReady(graphBase: string, containerId: string, accessToken: string): Promise<void> {
   const deadline = Date.now() + 90_000;
   while (Date.now() < deadline) {
     const status = await graphJson<{ status_code?: string }>(
-      `https://graph.facebook.com/v21.0/${encodeURIComponent(containerId)}?fields=status_code&access_token=${encodeURIComponent(accessToken)}`
+      `${graphBase}/${encodeURIComponent(containerId)}?fields=status_code&access_token=${encodeURIComponent(accessToken)}`
     );
     if (status.status_code === "FINISHED") return;
     if (status.status_code === "ERROR") {
@@ -29,6 +29,8 @@ async function waitForContainerReady(containerId: string, accessToken: string): 
  * from publicly reachable image URLs.
  */
 export async function postCarouselToInstagram(input: {
+  /** e.g. https://graph.instagram.com/v21.0 (see getInstagramGraphBase). */
+  graphBase: string;
   accessToken: string;
   igUserId: string;
   imageUrls: string[];
@@ -44,7 +46,7 @@ export async function postCarouselToInstagram(input: {
   if (input.imageUrls.length === 1) {
     const imageUrl = input.imageUrls[0]!;
     const created = await graphJson<{ id: string }>(
-      `https://graph.facebook.com/v21.0/${encodeURIComponent(input.igUserId)}/media`,
+      `${input.graphBase}/${encodeURIComponent(input.igUserId)}/media`,
       {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -56,12 +58,12 @@ export async function postCarouselToInstagram(input: {
       }
     );
     creationId = created.id;
-    await waitForContainerReady(creationId, input.accessToken);
+    await waitForContainerReady(input.graphBase, creationId, input.accessToken);
   } else {
     const childIds: string[] = [];
     for (const imageUrl of input.imageUrls) {
       const created = await graphJson<{ id: string }>(
-        `https://graph.facebook.com/v21.0/${encodeURIComponent(input.igUserId)}/media`,
+        `${input.graphBase}/${encodeURIComponent(input.igUserId)}/media`,
         {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -76,11 +78,11 @@ export async function postCarouselToInstagram(input: {
     }
 
     for (const childId of childIds) {
-      await waitForContainerReady(childId, input.accessToken);
+      await waitForContainerReady(input.graphBase, childId, input.accessToken);
     }
 
     const carousel = await graphJson<{ id: string }>(
-      `https://graph.facebook.com/v21.0/${encodeURIComponent(input.igUserId)}/media`,
+      `${input.graphBase}/${encodeURIComponent(input.igUserId)}/media`,
       {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -93,11 +95,11 @@ export async function postCarouselToInstagram(input: {
       }
     );
     creationId = carousel.id;
-    await waitForContainerReady(creationId, input.accessToken);
+    await waitForContainerReady(input.graphBase, creationId, input.accessToken);
   }
 
   const published = await graphJson<{ id: string }>(
-    `https://graph.facebook.com/v21.0/${encodeURIComponent(input.igUserId)}/media_publish`,
+    `${input.graphBase}/${encodeURIComponent(input.igUserId)}/media_publish`,
     {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },

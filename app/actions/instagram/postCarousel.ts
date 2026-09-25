@@ -9,9 +9,21 @@ import {
   getExportStoragePaths,
   getPlatformConnection,
   listSlides,
+  upsertPlatformConnection,
 } from "@/lib/server/db";
+import type { PlatformConnection } from "@/lib/server/db/types";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
-import { getInstagramLinkedAccounts, getSelectedInstagramAccount } from "@/lib/instagram/accounts";
+import {
+  getInstagramGraphBase,
+  getInstagramLinkedAccounts,
+  getSelectedInstagramAccount,
+  type InstagramLinkedAccount,
+} from "@/lib/instagram/accounts";
+import {
+  getInstagramLoginCredentials,
+  instagramTokenNeedsRefresh,
+  refreshInstagramLoginToken,
+} from "@/lib/instagram/instagramLogin";
 import { postCarouselToInstagram } from "@/lib/instagram/postCarousel";
 
 const BUCKET = "carousel-assets";
@@ -26,15 +38,40 @@ const postSchema = z.object({
   igUserId: z.string().min(1).max(64).optional(),
 });
 
+async function saveRefreshedAccount(
+  userId: string,
+  connection: PlatformConnection,
+  account: InstagramLinkedAccount
+): Promise<void> {
+  const accounts = getInstagramLinkedAccounts(connection).map((a) =>
+    a.igUserId === account.igUserId ? account : a
+  );
+  const prevMeta =
+    connection.meta && typeof connection.meta === "object" && !Array.isArray(connection.meta)
+      ? (connection.meta as Record<string, unknown>)
+      : {};
+  const isPrimary = connection.platform_user_id === account.igUserId;
+  await upsertPlatformConnection(userId, {
+    platform: "instagram",
+    access_token: isPrimary ? account.accessToken : connection.access_token,
+    refresh_token: connection.refresh_token,
+    expires_at: isPrimary ? account.expiresAt : connection.expires_at,
+    scope: connection.scope,
+    platform_user_id: connection.platform_user_id,
+    platform_username: connection.platform_username,
+    meta: { ...prevMeta, accounts },
+  });
+}
+
 export async function postCarouselToInstagramAction(input: z.input<typeof postSchema>) {
   const { user } = await getUser();
   if (!isAdmin(user.email)) {
     return { ok: false as const, error: "Instagram posting is not available yet." };
   }
-  if (!process.env.FACEBOOK_APP_ID || !process.env.FACEBOOK_APP_SECRET) {
+  if (!getInstagramLoginCredentials()) {
     return {
       ok: false as const,
-      error: "Instagram is not configured. Set FACEBOOK_APP_ID and FACEBOOK_APP_SECRET.",
+      error: "Instagram is not configured. Set INSTAGRAM_APP_ID and INSTAGRAM_APP_SECRET.",
     };
   }
 
@@ -92,9 +129,18 @@ export async function postCarouselToInstagramAction(input: z.input<typeof postSc
     }
   }
 
+  if (account.loginType === "instagram" && instagramTokenNeedsRefresh(account.expiresAt)) {
+    const refreshed = await refreshInstagramLoginToken(account.accessToken);
+    if (refreshed) {
+      account = { ...account, ...refreshed };
+      await saveRefreshedAccount(user.id, connection, account);
+    }
+  }
+
   try {
     const result = await postCarouselToInstagram({
-      accessToken: account.pageAccessToken,
+      graphBase: getInstagramGraphBase(account.loginType),
+      accessToken: account.accessToken,
       igUserId: account.igUserId,
       imageUrls,
       caption: parsed.data.caption,

@@ -1,13 +1,31 @@
 import type { Json, PlatformConnection } from "@/lib/server/db/types";
 
-/** One Instagram Business/Creator account linked to a Facebook Page (from OAuth). */
+/**
+ * "instagram": Instagram API with Instagram Login (graph.instagram.com, no Facebook Page).
+ * "facebook": legacy Facebook Login + Page-linked IG account (graph.facebook.com).
+ */
+export type InstagramLoginType = "instagram" | "facebook";
+
+/** One Instagram Business/Creator account the user connected. */
 export type InstagramLinkedAccount = {
   igUserId: string;
   username: string | null;
-  pageId: string;
+  loginType: InstagramLoginType;
+  accessToken: string;
+  /** ISO timestamp; Instagram Login tokens are long-lived (60 days) and refreshed before posting. */
+  expiresAt: string | null;
+  pageId: string | null;
   pageName: string | null;
-  pageAccessToken: string;
 };
+
+const GRAPH_BASES: Record<InstagramLoginType, string> = {
+  instagram: "https://graph.instagram.com/v21.0",
+  facebook: "https://graph.facebook.com/v21.0",
+};
+
+export function getInstagramGraphBase(loginType: InstagramLoginType): string {
+  return GRAPH_BASES[loginType];
+}
 
 function asObject(meta: Json): Record<string, Json | undefined> | null {
   if (!meta || typeof meta !== "object" || Array.isArray(meta)) return null;
@@ -17,15 +35,21 @@ function asObject(meta: Json): Record<string, Json | undefined> | null {
 function parseAccount(value: unknown): InstagramLinkedAccount | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const row = value as Record<string, unknown>;
-  if (typeof row.igUserId !== "string" || typeof row.pageId !== "string" || typeof row.pageAccessToken !== "string") {
-    return null;
-  }
+  const accessToken =
+    typeof row.accessToken === "string"
+      ? row.accessToken
+      : typeof row.pageAccessToken === "string"
+        ? row.pageAccessToken
+        : null;
+  if (typeof row.igUserId !== "string" || !accessToken) return null;
   return {
     igUserId: row.igUserId,
     username: typeof row.username === "string" ? row.username : null,
-    pageId: row.pageId,
+    loginType: row.loginType === "instagram" ? "instagram" : "facebook",
+    accessToken,
+    expiresAt: typeof row.expiresAt === "string" ? row.expiresAt : null,
+    pageId: typeof row.pageId === "string" && row.pageId ? row.pageId : null,
     pageName: typeof row.pageName === "string" ? row.pageName : null,
-    pageAccessToken: row.pageAccessToken,
   };
 }
 
@@ -47,9 +71,11 @@ export function getInstagramLinkedAccounts(connection: PlatformConnection): Inst
     {
       igUserId,
       username: connection.platform_username,
-      pageId: typeof meta?.page_id === "string" ? meta.page_id : "",
+      loginType: "facebook",
+      accessToken: connection.access_token,
+      expiresAt: connection.expires_at,
+      pageId: typeof meta?.page_id === "string" && meta.page_id ? meta.page_id : null,
       pageName: typeof meta?.page_name === "string" ? meta.page_name : null,
-      pageAccessToken: connection.access_token,
     },
   ];
 }

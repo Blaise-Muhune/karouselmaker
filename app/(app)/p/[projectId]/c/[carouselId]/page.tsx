@@ -350,7 +350,7 @@ export default async function CarouselEditorPage({
               selectedIgUserId={selectedInstagram?.igUserId ?? null}
               slideCount={slides.length}
               initialCaption={[captionVariants.long ?? captionVariants.medium ?? "", hashtags.map((tag) => tag.startsWith("#") ? tag : `#${tag}`).join(" ")].filter(Boolean).join("\n\n")}
-              configured={Boolean(process.env.FACEBOOK_APP_ID && process.env.FACEBOOK_APP_SECRET)}
+              configured={Boolean(process.env.INSTAGRAM_APP_ID && process.env.INSTAGRAM_APP_SECRET)}
             />
           )}
         </div>

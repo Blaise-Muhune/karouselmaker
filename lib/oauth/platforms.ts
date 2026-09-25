@@ -1,4 +1,9 @@
 import type { PlatformName } from "@/lib/server/db/types";
+import {
+  buildInstagramAuthUrl,
+  exchangeInstagramLoginCode,
+  getInstagramLoginCredentials,
+} from "@/lib/instagram/instagramLogin";
 
 const BASE = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? "http://localhost:3000";
 
@@ -26,13 +31,9 @@ export function getAuthUrl(platform: PlatformName, state: string): string | null
       return `https://www.tiktok.com/v2/auth/authorize/?client_key=${clientKey}&scope=${scope}&response_type=code&redirect_uri=${redirectUri}&state=${encodeURIComponent(state)}`;
     }
     case "instagram": {
-      // Same Meta app; request Instagram + Page scopes so we can list IG Business accounts linked to Pages
-      const clientId = process.env.FACEBOOK_APP_ID;
-      if (!clientId) return null;
-      const scope = encodeURIComponent(
-        "pages_show_list,pages_read_engagement,instagram_basic,instagram_content_publish"
-      );
-      return `https://www.facebook.com/v21.0/dialog/oauth?client_id=${clientId}&redirect_uri=${redirectUri}&state=${encodeURIComponent(state)}&scope=${scope}&response_type=code`;
+      const creds = getInstagramLoginCredentials();
+      if (!creds) return null;
+      return buildInstagramAuthUrl(creds.appId, getRedirectUri("instagram"), state);
     }
     case "linkedin": {
       const clientId = process.env.LINKEDIN_CLIENT_ID;
@@ -188,20 +189,14 @@ export async function exchangeCode(
       };
     }
     case "instagram": {
-      // Same Meta app as Facebook; must use Instagram redirect_uri (must match auth request)
-      const instagramRedirectUri = getRedirectUri("instagram");
-      const clientId = process.env.FACEBOOK_APP_ID;
-      const clientSecret = process.env.FACEBOOK_APP_SECRET;
-      if (!clientId || !clientSecret) return null;
-      const url = `https://graph.facebook.com/v21.0/oauth/access_token?client_id=${clientId}&redirect_uri=${encodeURIComponent(instagramRedirectUri)}&client_secret=${clientSecret}&code=${encodeURIComponent(code)}`;
-      const res = await fetch(url);
-      if (!res.ok) return null;
-      const data = (await res.json()) as { access_token?: string; expires_in?: number };
-      if (!data.access_token) return null;
-      const expiresAt = data.expires_in
-        ? new Date(Date.now() + data.expires_in * 1000).toISOString()
-        : undefined;
-      return { access_token: data.access_token, expires_at: expiresAt };
+      const exchanged = await exchangeInstagramLoginCode({ code, redirectUri });
+      if (!exchanged.ok) return null;
+      return {
+        access_token: exchanged.result.accessToken,
+        expires_at: exchanged.result.expiresAt ?? undefined,
+        platform_user_id: exchanged.result.igUserId,
+        platform_username: exchanged.result.username ?? undefined,
+      };
     }
     default:
       return null;
@@ -212,7 +207,7 @@ const PLATFORM_NAMES: PlatformName[] = ["facebook", "tiktok", "instagram", "link
 
 export function getSupportedPlatforms(): PlatformName[] {
   return PLATFORM_NAMES.filter((p) => {
-    if (p === "instagram") return !!process.env.FACEBOOK_APP_ID;
+    if (p === "instagram") return !!getInstagramLoginCredentials();
     if (p === "facebook") return !!process.env.FACEBOOK_APP_ID;
     if (p === "tiktok") return !!process.env.TIKTOK_CLIENT_KEY;
     if (p === "linkedin") return !!process.env.LINKEDIN_CLIENT_ID;
