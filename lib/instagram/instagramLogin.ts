@@ -26,7 +26,12 @@ export function getInstagramLoginCredentials(): { appId: string; appSecret: stri
   return appId && appSecret ? { appId, appSecret } : null;
 }
 
-export function buildInstagramAuthUrl(appId: string, redirectUri: string, state: string): string {
+export function buildInstagramAuthUrl(
+  appId: string,
+  redirectUri: string,
+  state: string,
+  options?: { forceReauth?: boolean }
+): string {
   const params = new URLSearchParams({
     client_id: appId,
     redirect_uri: redirectUri,
@@ -34,6 +39,8 @@ export function buildInstagramAuthUrl(appId: string, redirectUri: string, state:
     scope: INSTAGRAM_LOGIN_SCOPES,
     state,
   });
+  // Without this, Instagram silently reuses the browser's logged-in account.
+  if (options?.forceReauth) params.set("force_reauth", "true");
   return `https://www.instagram.com/oauth/authorize?${params.toString()}`;
 }
 

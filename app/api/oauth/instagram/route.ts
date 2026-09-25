@@ -2,7 +2,8 @@ import { randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getUser } from "@/lib/server/auth/getUser";
 import { isAdmin } from "@/lib/server/auth/isAdmin";
-import { getAuthUrl } from "@/lib/oauth/platforms";
+import { getRedirectUri } from "@/lib/oauth/platforms";
+import { buildInstagramAuthUrl, getInstagramLoginCredentials } from "@/lib/instagram/instagramLogin";
 
 function safeReturnTo(value: string | null) {
   return value && value.startsWith("/") && !value.startsWith("//") ? value : "/";
@@ -14,7 +15,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Instagram posting is not available yet." }, { status: 403 });
   }
   const state = randomBytes(24).toString("base64url");
-  const url = getAuthUrl("instagram", state);
+  const creds = getInstagramLoginCredentials();
+  const forceReauth = new URL(request.url).searchParams.get("switch") === "1";
+  const url = creds
+    ? buildInstagramAuthUrl(creds.appId, getRedirectUri("instagram"), state, { forceReauth })
+    : null;
   if (!url) {
     return NextResponse.json(
       { error: "Instagram is not configured. Set INSTAGRAM_APP_ID and INSTAGRAM_APP_SECRET." },

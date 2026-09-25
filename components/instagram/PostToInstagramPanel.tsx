@@ -57,6 +57,7 @@ export function PostToInstagramPanel({
     return connectedAccount || "Not connected";
   }, [activeAccount, connectedAccount]);
   const oauthUrl = `/api/oauth/instagram?return_to=${encodeURIComponent(pathname)}`;
+  const addAccountUrl = `${oauthUrl}&switch=1`;
   const canPost = Boolean(connectedAccount && activeAccount) && slideCount >= 1 && slideCount <= 10 && !pending;
 
   useEffect(() => {
@@ -220,6 +221,13 @@ export function PostToInstagramPanel({
                 <ExternalLinkIcon className="mr-2 size-4" />
                 Connect Instagram
               </Button>
+              <button
+                type="button"
+                className="block text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                onClick={() => window.location.assign(addAccountUrl)}
+              >
+                Use a different Instagram account
+              </button>
             </div>
           ) : (
             <>
@@ -294,7 +302,8 @@ export function PostToInstagramPanel({
                   size="sm"
                   variant="ghost"
                   disabled={disconnecting || pending}
-                  onClick={() => window.location.assign(oauthUrl)}
+                  onClick={() => window.location.assign(addAccountUrl)}
+                  title="Sign in to Instagram with a different account"
                 >
                   <ExternalLinkIcon className="mr-1.5 size-3.5" />
                   Add account
