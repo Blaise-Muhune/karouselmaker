@@ -11,6 +11,7 @@ import {
 } from "@/lib/server/db/carousels";
 import { listStoredExportsByCarousel } from "@/lib/server/db/exports";
 import { removeStoredExportFiles } from "@/lib/server/storage/exportRetention";
+import { removeUnusedGeneratedImages } from "@/lib/server/storage/generatedImages";
 import { clearCarouselGenerationLock } from "@/lib/server/carousels/generationStatus";
 import { startCarouselGeneration } from "./generateCarousel";
 
@@ -141,6 +142,7 @@ export async function deleteCarousel(
   }
   const result = await dbDeleteCarousel(user.id, carouselId);
   if (!result.ok) return result;
+  await removeUnusedGeneratedImages(user.id, [carouselId]).catch(() => {});
   revalidatePath(`/p/${projectId}`);
   redirect(`/p/${projectId}`);
 }

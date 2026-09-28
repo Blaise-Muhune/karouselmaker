@@ -102,6 +102,30 @@ export async function removeObjects(bucket: string, paths: string[]): Promise<vo
   if (error) throw new Error(error.message);
 }
 
+/** Delete every file under a folder, including nested sub-folders. */
+export async function removeFolder(bucket: string, folder: string): Promise<void> {
+  const prefix = normalizePath(folder).replace(/\/+$/, "");
+  if (!prefix) throw new Error("Refusing to remove the storage root");
+  if (getStorageProvider() === "azure") {
+    const keys: string[] = [];
+    for await (const blob of getAzureContainer(bucket).listBlobsFlat({ prefix: `${prefix}/` })) keys.push(blob.name);
+    await removeObjects(bucket, keys);
+    return;
+  }
+  const keys: string[] = [];
+  const walk = async (dir: string): Promise<void> => {
+    const { data, error } = await createAdminClient().storage.from(bucket).list(dir, { limit: 1000 });
+    if (error) throw new Error(error.message);
+    for (const entry of data ?? []) {
+      if (!entry.name) continue;
+      if (entry.id === null) await walk(`${dir}/${entry.name}`);
+      else keys.push(`${dir}/${entry.name}`);
+    }
+  };
+  await walk(prefix);
+  await removeObjects(bucket, keys);
+}
+
 export async function createSignedObjectUrl(
   bucket: string,
   path: string,
