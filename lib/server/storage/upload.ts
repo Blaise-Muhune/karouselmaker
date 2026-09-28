@@ -1,11 +1,9 @@
-import { createClient } from "@/lib/supabase/server";
-
-const BUCKET = "carousel-assets";
+import { STORAGE_BUCKET, uploadObject } from "@/lib/server/storage/objectStorage";
 
 /**
  * Upload a file to user's asset path: user/{userId}/assets/{assetId}/{fileName}
  * Caller must have created the asset row (or will create after) with the same storage_path.
- * Uses session client so RLS allows insert to user/{auth.uid()}/...
+ * `userId` must come from the authenticated session; the path is what scopes the file to its owner.
  */
 export async function uploadUserAsset(
   userId: string,
@@ -14,13 +12,8 @@ export async function uploadUserAsset(
   fileName: string,
   contentType: string
 ): Promise<{ path: string }> {
-  const supabase = await createClient();
   const path = `user/${userId}/assets/${assetId}/${encodeURIComponent(fileName)}`;
   const buffer = await (file as Blob).arrayBuffer();
-  const { error } = await supabase.storage
-    .from(BUCKET)
-    .upload(path, buffer, { contentType, upsert: true });
-
-  if (error) throw new Error(error.message);
+  await uploadObject(STORAGE_BUCKET, path, buffer, contentType);
   return { path };
 }

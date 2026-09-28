@@ -4,9 +4,10 @@ import { createClient } from "@/lib/supabase/server";
 import { getCarousel } from "@/lib/server/db";
 import { getExport, getExportStoragePaths } from "@/lib/server/db/exports";
 import { downloadStorageImageBuffer } from "@/lib/server/export/fetchImageAsDataUrl";
+import { listObjects, STORAGE_BUCKET } from "@/lib/server/storage/objectStorage";
 import { slugifyForFilename } from "@/lib/utils";
 
-const BUCKET = "carousel-assets";
+const BUCKET = STORAGE_BUCKET;
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -42,14 +43,14 @@ export async function GET(
   }
 
   const paths = getExportStoragePaths(user.id, carouselId, exportId);
-  const { data: files, error: listError } = await supabase.storage
-    .from(BUCKET)
-    .list(paths.slidesDir, { limit: 100 });
-  if (listError) {
+  let files: { name: string }[];
+  try {
+    files = await listObjects(BUCKET, paths.slidesDir, 100);
+  } catch {
     return NextResponse.json({ error: "Could not prepare the export download." }, { status: 500 });
   }
 
-  const slideFiles = (files ?? [])
+  const slideFiles = files
     .filter((file) => /^\d+\.png$/i.test(file.name))
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
   if (slideFiles.length === 0) {

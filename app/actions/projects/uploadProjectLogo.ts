@@ -2,9 +2,8 @@
 
 import { getUser } from "@/lib/server/auth/getUser";
 import { getProject, updateProject } from "@/lib/server/db";
-import { uploadUserAsset } from "@/lib/server/storage/upload";
+import { STORAGE_BUCKET, uploadObject } from "@/lib/server/storage/objectStorage";
 
-const BUCKET = "carousel-assets";
 const MAX_SIZE_BYTES = 2 * 1024 * 1024; // 2MB for logo
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/svg+xml"];
 
@@ -46,13 +45,7 @@ export async function uploadProjectLogo(
 
   try {
     const buffer = await file.arrayBuffer();
-    const { createClient } = await import("@/lib/supabase/server");
-    const supabase = await createClient();
-    const { error } = await supabase.storage
-      .from(BUCKET)
-      .upload(storagePath, buffer, { contentType: file.type, upsert: true });
-
-    if (error) throw new Error(error.message);
+    await uploadObject(STORAGE_BUCKET, storagePath, buffer, file.type);
 
     const brandKit = (project.brand_kit as Record<string, unknown>) ?? {};
     const updated = { ...brandKit, logo_storage_path: storagePath };

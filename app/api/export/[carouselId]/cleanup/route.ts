@@ -6,8 +6,9 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getExport, hasActiveTikTokScheduleForExport, updateExport } from "@/lib/server/db/exports";
+import { listObjects, removeObjects, STORAGE_BUCKET } from "@/lib/server/storage/objectStorage";
 
-const BUCKET = "carousel-assets";
+const BUCKET = STORAGE_BUCKET;
 
 export const dynamic = "force-dynamic";
 
@@ -48,19 +49,16 @@ export async function POST(
   const prefix = `user/${userId}/exports/${carouselId}/${exportId}`;
 
   try {
-    const { data: topDirs } = await supabase.storage.from(BUCKET).list(prefix);
+    const topDirs = await listObjects(BUCKET, prefix);
     const toRemove: string[] = [];
-    for (const d of topDirs ?? []) {
-      if (!d.name) continue;
+    for (const d of topDirs) {
       const subPath = `${prefix}/${d.name}`;
-      const { data: files } = await supabase.storage.from(BUCKET).list(subPath);
-      for (const f of files ?? []) {
-        if (f.name) toRemove.push(`${subPath}/${f.name}`);
+      const files = await listObjects(BUCKET, subPath);
+      for (const f of files) {
+        toRemove.push(`${subPath}/${f.name}`);
       }
     }
-    if (toRemove.length > 0) {
-      await supabase.storage.from(BUCKET).remove(toRemove);
-    }
+    await removeObjects(BUCKET, toRemove);
     await updateExport(userId, exportId, { status: exportRow.status, storage_path: null });
     return new Response(null, { status: 204 });
   } catch (e) {

@@ -56,7 +56,7 @@ import { buildBodyRewriteVariants } from "@/lib/renderer/bodyRewriteVariants";
 import { cn, slugifyForFilename } from "@/lib/utils";
 import { triggerBlobDownload } from "@/lib/client/blobDownload";
 import { imageSourceDisplayName } from "@/lib/utils/imageSourceDisplay";
-import { isSupabaseSignedUrl } from "@/lib/server/storage/signedUrlUtils";
+import { isStorageSignedUrl } from "@/lib/server/storage/signedUrlUtils";
 import { getTemplatePreviewBackgroundOverride } from "@/lib/renderer/getTemplatePreviewBackground";
 import { getTemplatePreviewImageUrls } from "@/lib/renderer/templatePreviewImages";
 import { formatHandleAttribution } from "@/lib/renderer/attributionText";
@@ -164,7 +164,7 @@ function isEditorLibraryGhostRow(
     !!(bg.asset_id || bg.storage_path) &&
     !row.asset_id &&
     !row.url.trim() &&
-    !isSupabaseSignedUrl(row.url)
+    !isStorageSignedUrl(row.url)
   );
 }
 
@@ -2954,7 +2954,7 @@ export function SlideEditForm({
     const validUrls = imageUrls.filter((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim()));
     const persistedSlots = imageUrls.filter(slotHasPersistableImage);
     const imageDisplayPayload = buildImageDisplayPayload();
-    const urlToPersist = (u: string | undefined) => (u && !isSupabaseSignedUrl(u) ? u : undefined);
+    const urlToPersist = (u: string | undefined) => (u && !isStorageSignedUrl(u) ? u : undefined);
     const imagesPayload = buildImagesPayloadWithPrimary(imageUrls, background, urlToPersist);
     const imageSlotsForSaveCount = imagesPayload.length;
     const useImagesArray =
@@ -3384,7 +3384,7 @@ export function SlideEditForm({
     const overlayPayload = background.overlay ?? { gradient: true, darken: 0.5, color: "#000000", textColor: "#ffffff" };
     const validUrls = imageUrls.filter((i) => i.url.trim() && /^https?:\/\//i.test(i.url.trim()));
     const persistedSlots = imageUrls.filter(slotHasPersistableImage);
-    const urlToPersist = (u: string | undefined) => (u && !isSupabaseSignedUrl(u) ? u : undefined);
+    const urlToPersist = (u: string | undefined) => (u && !isStorageSignedUrl(u) ? u : undefined);
     const imagesPayload = buildImagesPayloadWithPrimary(imageUrls, background, urlToPersist);
     const imageSlotsForSaveCount = imagesPayload.length;
     const useImagesArray =
@@ -9274,10 +9274,10 @@ export function SlideEditForm({
                     const currentIndex = item._index ?? (slotPool.length > 0 ? slotPool.findIndex((u) => u === item.url) : -1);
                     const oneBased = currentIndex >= 0 ? currentIndex + 1 : 0;
                     const isPrimaryLibrarySlot = i === 0 && imageUrls.length === 1 && !!(background.asset_id || background.storage_path);
-                    const isPrivateUrl = isSupabaseSignedUrl(item.url) || isPrimaryLibrarySlot;
+                    const isPrivateUrl = isStorageSignedUrl(item.url) || isPrimaryLibrarySlot;
                     const privateLabel = isPrimaryLibrarySlot
                       ? "Library image"
-                      : isSupabaseSignedUrl(item.url)
+                      : isStorageSignedUrl(item.url)
                         ? "AI-generated image"
                         : "Your image";
                     return (

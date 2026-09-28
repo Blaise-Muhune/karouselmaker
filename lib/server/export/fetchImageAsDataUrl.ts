@@ -1,8 +1,8 @@
-import { createAdminClient } from "@/lib/supabase/admin";
+import { downloadObject, STORAGE_BUCKET } from "@/lib/server/storage/objectStorage";
 
 const FETCH_TIMEOUT_MS = 15_000;
 const MAX_SIZE_BYTES = 8 * 1024 * 1024; // 8MB for export
-const BUCKET = "carousel-assets";
+const BUCKET = STORAGE_BUCKET;
 
 /**
  * Re-encode any photo bytes to JPEG for Chromium export.
@@ -37,7 +37,7 @@ function fallbackDataUrl(buf: Buffer, mimeHint?: string): string | null {
  * Download image from our storage (admin client) and return a data URL.
  * Bypasses signed URLs and fetch — most reliable for export when we have storage_path.
  */
-/** Raw image bytes from storage (admin). Same size cap as data-URL path. */
+/** Raw image bytes from storage. Same size cap as data-URL path. */
 export async function downloadStorageImageBuffer(
   bucket: string,
   path: string,
@@ -46,12 +46,10 @@ export async function downloadStorageImageBuffer(
   const normalizedPath = path?.replace(/^\/+/, "").trim();
   if (!normalizedPath) return null;
   try {
-    const supabase = createAdminClient();
-    const { data, error } = await supabase.storage.from(bucket).download(normalizedPath);
-    if (error || !data) return null;
-    const buf = await data.arrayBuffer();
-    if (buf.byteLength > maxBytes || buf.byteLength === 0) return null;
-    return Buffer.from(buf);
+    const data = await downloadObject(bucket, normalizedPath);
+    if (!data) return null;
+    if (data.buffer.byteLength > maxBytes || data.buffer.byteLength === 0) return null;
+    return data.buffer;
   } catch {
     return null;
   }
@@ -64,16 +62,15 @@ export async function downloadStorageImageAsDataUrl(
   const normalizedPath = path?.replace(/^\/+/, "").trim();
   if (!normalizedPath) return null;
   try {
-    const supabase = createAdminClient();
-    const { data, error } = await supabase.storage.from(bucket).download(normalizedPath);
-    if (error || !data) return null;
-    const buf = Buffer.from(await data.arrayBuffer());
+    const data = await downloadObject(bucket, normalizedPath);
+    if (!data) return null;
+    const buf = data.buffer;
     if (buf.byteLength > MAX_SIZE_BYTES || buf.byteLength === 0) return null;
     // Prefer JPEG so export Chromium never hits AVIF/HEIC EncodingError.
     const jpeg = await bytesToJpegDataUrl(buf);
     if (jpeg) return jpeg;
     const mime =
-      (data.type && data.type.startsWith("image/") ? data.type : null) ??
+      (data.contentType && data.contentType.startsWith("image/") ? data.contentType : null) ??
       (/\.png(\?|$)/i.test(normalizedPath)
         ? "image/png"
         : /\.webp(\?|$)/i.test(normalizedPath)

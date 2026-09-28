@@ -18,6 +18,7 @@ import { templateConfigSchema } from "@/lib/server/renderer/templateSchema";
 import { renderSlideHtml } from "@/lib/server/renderer/renderSlideHtml";
 import { resolveBrandKitLogo } from "@/lib/server/brandKit";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
+import { uploadObject } from "@/lib/server/storage/objectStorage";
 import { createProxyImageUrl } from "@/lib/server/proxyImageUrl";
 import {
   normalizeSlideMetaForRender,
@@ -432,10 +433,7 @@ export async function POST(
     // Three uploads at a time, preserving numbered filenames and waiting for each batch.
     for (let offset = 0; offset < slideBuffers.length; offset += 3) {
       const results = await Promise.allSettled(slideBuffers.slice(offset, offset + 3).map(async (buf, index) => {
-        const { error } = await supabase.storage.from(BUCKET).upload(paths.slidePath(offset + index), buf, {
-          contentType: rasterContentType, upsert: true,
-        });
-        if (error) throw new Error(error.message);
+        await uploadObject(BUCKET, paths.slidePath(offset + index), buf, rasterContentType);
       }));
       const failed = results.find((result) => result.status === "rejected");
       if (failed?.status === "rejected") throw new Error("Failed to store slide image. Please retry.");

@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getCarousel, listSlides } from "@/lib/server/db";
 import { getExportStoragePaths } from "@/lib/server/db/exports";
+import { listObjects, STORAGE_BUCKET } from "@/lib/server/storage/objectStorage";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
 
-const BUCKET = "carousel-assets";
+const BUCKET = STORAGE_BUCKET;
 const SIGNED_URL_EXPIRES = 600;
 
 /**
@@ -45,12 +46,10 @@ export async function GET(
   );
 
   const videoSlidesFolder = paths.videoSlidesPrefix.replace(/\/$/, "");
-  const { data: videoSlideFiles } = await supabase.storage
-    .from(BUCKET)
-    .list(videoSlidesFolder, { limit: 500 });
+  const videoSlideFiles = await listObjects(BUCKET, videoSlidesFolder, 500).catch(() => []);
 
   const bySlide = new Map<number, number[]>();
-  for (const entry of videoSlideFiles ?? []) {
+  for (const entry of videoSlideFiles) {
     const name = entry.name ?? "";
     const m = name.match(/^(\d+)-(\d+)\.png$/);
     if (m) {

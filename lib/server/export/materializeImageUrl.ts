@@ -1,18 +1,18 @@
-import { createAdminClient } from "@/lib/supabase/admin";
+import { STORAGE_BUCKET, uploadObject } from "@/lib/server/storage/objectStorage";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
 
-const BUCKET = "carousel-assets";
+const BUCKET = STORAGE_BUCKET;
 const FETCH_TIMEOUT_MS = 25000;
 const MAX_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
 
 /**
- * True if the URL is from an external host (not our Supabase storage).
- * Our signed URLs look like https://xxx.supabase.co/storage/...
+ * True if the URL is from an external host (not our own file storage).
+ * Our signed URLs are on *.supabase.co (legacy) or *.blob.core.windows.net (Azure).
  */
 export function isExternalImageUrl(url: string): boolean {
   try {
     const host = new URL(url).hostname.toLowerCase();
-    return !host.includes("supabase.co");
+    return !host.includes("supabase.co") && !host.endsWith(".blob.core.windows.net");
   } catch {
     return true;
   }
@@ -20,7 +20,7 @@ export function isExternalImageUrl(url: string): boolean {
 
 /**
  * Fetch image from URL server-side (no CORS) and upload to our storage.
- * Uses admin client so RLS cannot block the upload.
+ * Uploads server-side, so RLS cannot block it.
  * Returns signed URL for the uploaded file, or null on failure.
  */
 export async function materializeImageUrl(
@@ -71,15 +71,11 @@ export async function materializeImageUrl(
           : "jpg";
   const path = storagePath.replace(/\.(jpg|jpeg|png|gif|webp)$/i, `.${ext}`);
 
-  const supabase = createAdminClient();
-  const { error } = await supabase.storage
-    .from(BUCKET)
-    .upload(path, buf, {
-      contentType: res.headers.get("content-type") ?? `image/${ext}`,
-      upsert: true,
-    });
-
-  if (error) return null;
+  try {
+    await uploadObject(BUCKET, path, buf, res.headers.get("content-type") ?? `image/${ext}`);
+  } catch {
+    return null;
+  }
 
   try {
     return await getSignedImageUrl(BUCKET, path, expiresInSeconds);

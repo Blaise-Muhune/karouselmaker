@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getUser } from "@/lib/server/auth/getUser";
 import { deleteAsset as dbDeleteAsset, getAsset } from "@/lib/server/db";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { removeObjects, STORAGE_BUCKET } from "@/lib/server/storage/objectStorage";
 
 export type DeleteAssetResult = { ok: true } | { ok: false; error: string };
 
@@ -18,8 +18,7 @@ export async function deleteAssetAction(
     const asset = await getAsset(user.id, assetId);
     if (!asset) return { ok: false, error: "Asset not found" };
     await dbDeleteAsset(user.id, assetId);
-    const supabase = createAdminClient();
-    await supabase.storage.from("carousel-assets").remove([asset.storage_path]);
+    await removeObjects(STORAGE_BUCKET, [asset.storage_path]);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Delete failed";
     return { ok: false, error: msg };
@@ -46,7 +45,6 @@ export async function deleteAssetsAction(
   const ids = [...new Set(assetIds.map((id) => id?.trim()).filter(Boolean))].slice(0, MAX_DELETE_BATCH);
   if (ids.length === 0) return { ok: false, error: "No assets selected" };
 
-  const supabase = createAdminClient();
   let deleted = 0;
   let firstError: string | null = null;
 
@@ -58,7 +56,7 @@ export async function deleteAssetsAction(
         continue;
       }
       await dbDeleteAsset(user.id, id);
-      await supabase.storage.from("carousel-assets").remove([asset.storage_path]);
+      await removeObjects(STORAGE_BUCKET, [asset.storage_path]);
       deleted += 1;
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Delete failed";

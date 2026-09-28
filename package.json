@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@azure/storage-blob": "^12.34.0",
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",
     "@hookform/resolvers": "^5.2.2",
