@@ -28,6 +28,7 @@ export type CarouselListCardProps = {
   /** Last activity time (regenerate, edits that touch the row, etc.) — used for “Today / Yesterday” and matches list sort. */
   updatedAt: string;
   firstSlideId: string | null;
+  postStatus?: "posted" | "scheduled" | null;
 };
 
 /**
@@ -57,6 +58,7 @@ export function CarouselListCard({
   slideCount,
   updatedAt,
   firstSlideId,
+  postStatus,
 }: CarouselListCardProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [previewFailed, setPreviewFailed] = useState(false);
@@ -131,7 +133,20 @@ export function CarouselListCard({
         </div>
 
         <div className="min-w-0 flex-1 flex items-center justify-between gap-3">
-          <span className="font-medium truncate">{title}</span>
+          <div className="min-w-0 space-y-1">
+            <span className="block font-medium truncate">{title}</span>
+            {postStatus ? (
+              <span
+                className={
+                  postStatus === "posted"
+                    ? "inline-flex items-center rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary"
+                    : "inline-flex items-center rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-600 dark:text-amber-400"
+                }
+              >
+                {postStatus === "posted" ? "Posted" : "Scheduled"}
+              </span>
+            ) : null}
+          </div>
           <span className="text-muted-foreground flex shrink-0 items-center gap-2 text-xs">
             {slideCount != null && (
               <span>{slideCount} frame{slideCount !== 1 ? "s" : ""}</span>

@@ -26,6 +26,7 @@ export function PostToInstagramPanel({
   accounts,
   selectedIgUserId,
   slideCount,
+  alreadyPosted = false,
   initialCaption,
   configured,
 }: {
@@ -36,6 +37,8 @@ export function PostToInstagramPanel({
   accounts: InstagramAccountChoice[];
   selectedIgUserId: string | null;
   slideCount: number;
+  /** True once this carousel has been posted to Instagram from the app. */
+  alreadyPosted?: boolean;
   initialCaption: string;
   /** False when INSTAGRAM_APP_ID is missing — show setup hint instead of connect. */
   configured: boolean;
@@ -49,6 +52,11 @@ export function PostToInstagramPanel({
   const [selecting, setSelecting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [activeIgUserId, setActiveIgUserId] = useState(selectedIgUserId);
+  const [posted, setPosted] = useState(alreadyPosted);
+
+  useEffect(() => {
+    setPosted(alreadyPosted);
+  }, [alreadyPosted, carouselId]);
 
   const activeAccount = useMemo(
     () => accounts.find((a) => a.igUserId === activeIgUserId) ?? accounts[0] ?? null,
@@ -181,71 +189,74 @@ export function PostToInstagramPanel({
           ? `Posted to @${activeAccount.username.replace(/^@/, "")}.`
           : "Posted to Instagram."
       );
+      setPosted(true);
       router.refresh();
     } finally {
       setPending(false);
     }
   }
 
+  const chipLabel = !configured
+    ? "Not set up"
+    : connectedAccount
+      ? connectedLabel.replace(/^@/, "")
+      : "Not connected";
+
   return (
     <section
       className={cn(
-        "overflow-hidden rounded-2xl border border-border/60 bg-card/50",
-        expanded && "border-border"
+        "overflow-hidden rounded-2xl border border-border/70 bg-card/70 shadow-sm",
+        "ring-1 ring-black/5 dark:ring-white/5"
       )}
     >
-      <button
-        type="button"
-        className="flex w-full items-center gap-3 px-4 py-3 text-left sm:px-5"
-        onClick={() => setExpanded((v) => !v)}
-        aria-expanded={expanded}
-      >
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-fuchsia-500/20 via-rose-500/15 to-amber-500/20 text-foreground">
-          <InstagramMicroIcon className="size-4" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold tracking-tight">Post to Instagram</p>
-          <p className="truncate text-xs text-muted-foreground">
-            {connectedAccount
-              ? `@${connectedLabel.replace(/^@/, "")}${accounts.length > 1 ? ` · ${accounts.length} accounts` : ""} · ${slideCount} slide${slideCount === 1 ? "" : "s"}`
-              : configured
-                ? "Sign in with Instagram (Business or Creator account)"
-                : "Meta app credentials not configured"}
-          </p>
-        </div>
-        <span className="text-xs text-muted-foreground">{expanded ? "Hide" : "Open"}</span>
-      </button>
-
-      {expanded ? (
-        <div className="space-y-3 border-t border-border/50 px-4 pb-4 pt-3 sm:px-5">
-          {!configured ? (
-            <p className="text-xs text-muted-foreground">
-              Set <code className="text-[11px]">INSTAGRAM_APP_ID</code> and{" "}
-              <code className="text-[11px]">INSTAGRAM_APP_SECRET</code>, then add the OAuth redirect
-              URI under Instagram → API setup with Instagram login in the Meta app.
+      <div className="flex flex-wrap items-center gap-3 border-b border-border/60 px-4 py-3 sm:px-5">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-foreground text-background">
+            <InstagramMicroIcon className="size-4" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold tracking-tight text-foreground">Post to Instagram</p>
+            <p className="truncate text-xs text-muted-foreground">
+              {!configured
+                ? "Instagram posting is not set up yet"
+                : connectedAccount
+                  ? "Carousel · Direct Post"
+                  : "Connect a Business or Creator account"}
             </p>
-          ) : !connectedAccount ? (
-            <div className="space-y-3">
-              <p className="text-xs leading-relaxed text-muted-foreground">
-                You sign in on Instagram&apos;s own page. We never see your password, and we can only
-                publish posts you send from here. No Facebook Page needed. Your account must be a
-                Business or Creator account (free to switch in Instagram settings). You can remove
-                access anytime in Instagram → Settings → Apps and websites.
-              </p>
-              <Button type="button" className="rounded-xl" onClick={() => window.location.assign(oauthUrl)}>
-                <ExternalLinkIcon className="mr-2 size-4" />
-                Connect Instagram
-              </Button>
-              <button
-                type="button"
-                className="block text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-                onClick={() => window.location.assign(addAccountUrl)}
-              >
-                Use a different Instagram account
-              </button>
-            </div>
-          ) : (
-            <>
+          </div>
+        </div>
+        <span
+          className={cn(
+            "inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium",
+            connectedAccount
+              ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+              : "bg-muted text-muted-foreground"
+          )}
+        >
+          <span className={cn("size-1.5 rounded-full", connectedAccount ? "bg-emerald-500" : "bg-muted-foreground/50")} />
+          {chipLabel}
+        </span>
+        {!configured ? null : !connectedAccount ? (
+          <Button type="button" size="sm" className="shrink-0" onClick={() => window.location.assign(oauthUrl)}>
+            <ExternalLinkIcon className="mr-1.5 size-3.5" />
+            Connect
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            size="sm"
+            variant={expanded ? "secondary" : "default"}
+            className="shrink-0"
+            onClick={() => setExpanded((v) => !v)}
+          >
+            {expanded ? "Hide" : posted ? "Repost" : "Post"}
+          </Button>
+        )}
+      </div>
+
+      {connectedAccount && expanded ? (
+        <div className="space-y-3 px-4 py-4 sm:px-5">
+          <>
               {accounts.length > 1 ? (
                 <div className="space-y-1.5">
                   <Label className="text-xs">Post as (saved for this project)</Label>
@@ -334,11 +345,10 @@ export function PostToInstagramPanel({
                   ) : (
                     <SendIcon className="mr-2 size-4" />
                   )}
-                  {pending ? "Posting…" : "Post now"}
+                  {pending ? "Posting…" : posted ? "Repost now" : "Post now"}
                 </Button>
               </div>
-            </>
-          )}
+          </>
 
           {message ? (
             <p className="text-xs text-muted-foreground" role="status">

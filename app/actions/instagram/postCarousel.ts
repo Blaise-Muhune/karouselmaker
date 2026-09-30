@@ -11,6 +11,7 @@ import {
   listSlides,
   upsertPlatformConnection,
 } from "@/lib/server/db";
+import { markCarouselPostedToInstagram } from "@/lib/server/db/carouselPostStatus";
 import type { PlatformConnection } from "@/lib/server/db/types";
 import { getSignedImageUrl } from "@/lib/server/storage/signedImageUrl";
 import {
@@ -145,6 +146,7 @@ export async function postCarouselToInstagramAction(input: z.input<typeof postSc
       imageUrls,
       caption: parsed.data.caption,
     });
+    await markCarouselPostedToInstagram(user.id, parsed.data.carouselId).catch(() => {});
     revalidatePath(parsed.data.pathname);
     return { ok: true as const, mediaId: result.mediaId };
   } catch (error) {

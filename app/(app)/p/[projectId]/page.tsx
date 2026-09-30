@@ -12,6 +12,7 @@ import {
   listTikTokScheduledPostsForProject,
 } from "@/lib/server/db";
 import { getSubscription, getEffectivePlanLimits, hasFullProFeatureAccess } from "@/lib/server/subscription";
+import { getPostStatusForCarousels, type CarouselPostStatus } from "@/lib/server/db/carouselPostStatus";
 import { ensureProjectTopicLineup } from "@/app/actions/carousels/projectTopicSuggestions";
 import { Button } from "@/components/ui/button";
 import { GoProBar } from "@/components/subscription/GoProBar";
@@ -52,13 +53,16 @@ export default async function ProjectDashboardPage({
       listTikTokScheduledPostsForProject(user.id, projectId, { limit: 6 }),
     ]);
   const totalPages = Math.max(1, Math.ceil(total / CAROUSELS_PAGE_SIZE));
-  const [slideCounts, firstSlideIds] =
+  const [slideCounts, firstSlideIds, postStatuses] =
     carousels.length > 0
       ? await Promise.all([
           getSlideCountsForCarousels(user.id, carousels.map((c) => c.id)),
           getFirstSlideIdsForCarousels(user.id, carousels.map((c) => c.id)),
+          getPostStatusForCarousels(user.id, carousels.map((c) => c.id)).catch(
+            () => ({}) as Record<string, CarouselPostStatus>
+          ),
         ])
-      : [{}, {}];
+      : [{}, {}, {} as Record<string, CarouselPostStatus>];
 
   const topics =
     "topics" in lineup && Array.isArray(lineup.topics) ? lineup.topics : [];
@@ -128,6 +132,7 @@ export default async function ProjectDashboardPage({
                   slideCount={slideCounts[c.id] ?? 0}
                   updatedAt={c.updated_at}
                   firstSlideId={firstSlideIds[c.id] ?? null}
+                  postStatus={postStatuses[c.id] ?? null}
                 />
               ))}
             </ul>

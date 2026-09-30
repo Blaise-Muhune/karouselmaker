@@ -119,6 +119,8 @@ export interface Carousel {
   include_first_slide?: boolean;
   /** When true, "Apply to all" includes the last slide. Default true. */
   include_last_slide?: boolean;
+  /** Last successful post to Instagram from the app. */
+  instagram_posted_at?: string | null;
   /** Options from the generate form (use_ai_backgrounds, use_stock_photos, use_ai_generate, use_web_search, carousel_for). Pre-fill regenerate form. */
   generation_options?: {
     use_ai_backgrounds?: boolean;

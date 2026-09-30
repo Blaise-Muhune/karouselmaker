@@ -33,7 +33,8 @@ import { PostToTikTokPanel } from "@/components/tiktok/PostToTikTokPanel";
 import { getInstagramLinkedAccounts, resolveInstagramAccount } from "@/lib/instagram/accounts";
 import { canUseInstagram } from "@/lib/server/auth/canUseInstagram";
 import { resolveTikTokAccount, toTikTokAccountChoices } from "@/lib/tiktok/accounts";
-import { ArrowLeftIcon, SparklesIcon } from "lucide-react";
+import { ArrowLeftIcon, ArrowRightIcon, SparklesIcon } from "lucide-react";
+import { getNextCarouselInProject } from "@/lib/server/db/carouselPostStatus";
 
 function normalizeStoragePathForBucket(path: string | undefined, bucket: string): string | undefined {
   const trimmed = path?.trim().replace(/^\/+/, "");
@@ -66,7 +67,7 @@ export default async function CarouselEditorPage({
   const resolvedSearchParams = await searchParams;
   const showGenerationPartial = resolvedSearchParams?.generation === "partial";
 
-  const [carousel, project, slides, templatesRaw, recentExports, subscription, exportCount, lifetimeCarouselCount, limits, favoriteIds, tiktokConnection, instagramConnection, tiktokSchedules] =
+  const [carousel, project, slides, templatesRaw, recentExports, subscription, exportCount, lifetimeCarouselCount, limits, favoriteIds, tiktokConnection, instagramConnection, tiktokSchedules, nextCarousel] =
     await Promise.all([
       getCarousel(user.id, carouselId),
       getProject(user.id, projectId),
@@ -82,6 +83,7 @@ export default async function CarouselEditorPage({
       getPlatformConnection(user.id, "tiktok"),
       getPlatformConnection(user.id, "instagram"),
       listTikTokScheduledPosts(user.id, carouselId),
+      getNextCarouselInProject(user.id, projectId, carouselId).catch(() => null),
     ]);
 
   const hasFullAccess = subscription.isPro || lifetimeCarouselCount < FREE_FULL_ACCESS_GENERATIONS;
@@ -363,6 +365,7 @@ export default async function CarouselEditorPage({
               accounts={instagramAccounts}
               selectedIgUserId={selectedInstagram?.igUserId ?? null}
               slideCount={slides.length}
+              alreadyPosted={Boolean(carousel.instagram_posted_at)}
               initialCaption={[captionVariants.long ?? captionVariants.medium ?? "", hashtags.map((tag) => tag.startsWith("#") ? tag : `#${tag}`).join(" ")].filter(Boolean).join("\n\n")}
               configured={Boolean(process.env.INSTAGRAM_APP_ID && process.env.INSTAGRAM_APP_SECRET)}
             />
@@ -418,13 +421,30 @@ export default async function CarouselEditorPage({
 
         {!isGenerating && (
           <div className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-card/40 px-3 py-2.5 sm:px-4">
-            <p className="text-sm text-muted-foreground">Next post</p>
-            <Button asChild size="sm" className="shrink-0 gap-1.5">
-              <Link href={`/p/${projectId}/new?fromCarousel=${encodeURIComponent(carouselId)}`}>
-                <SparklesIcon className="size-3.5" aria-hidden />
-                Generate
-              </Link>
-            </Button>
+            {nextCarousel ? (
+              <>
+                <div className="min-w-0">
+                  <p className="text-xs text-muted-foreground">Next post · Generated</p>
+                  <p className="truncate text-sm font-medium">{nextCarousel.title}</p>
+                </div>
+                <Button asChild size="sm" variant="outline" className="shrink-0 gap-1.5">
+                  <Link href={`/p/${projectId}/c/${nextCarousel.id}`}>
+                    View next
+                    <ArrowRightIcon className="size-3.5" aria-hidden />
+                  </Link>
+                </Button>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-muted-foreground">Next post</p>
+                <Button asChild size="sm" className="shrink-0 gap-1.5">
+                  <Link href={`/p/${projectId}/new?fromCarousel=${encodeURIComponent(carouselId)}`}>
+                    <SparklesIcon className="size-3.5" aria-hidden />
+                    Generate
+                  </Link>
+                </Button>
+              </>
+            )}
           </div>
         )}
 

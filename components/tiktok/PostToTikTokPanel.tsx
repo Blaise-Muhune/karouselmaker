@@ -408,6 +408,8 @@ export function PostToTikTokPanel({
     !creatorLoading &&
     Boolean(creator?.privacyLevels.length);
 
+  const alreadyPosted = liveSchedules.some((s) => s.status === "published");
+
   const displayName = creator?.nickname || creator?.username || connectedAccount || "TikTok account";
   const handle = creator?.username
     ? `@${creator.username.replace(/^@/, "")}`
@@ -458,7 +460,7 @@ export function PostToTikTokPanel({
             className="shrink-0"
             onClick={() => setExpanded((v) => !v)}
           >
-            {expanded ? "Hide" : "Post"}
+            {expanded ? "Hide" : alreadyPosted ? "Repost" : "Post"}
           </Button>
         )}
       </div>
