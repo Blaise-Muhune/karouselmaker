@@ -51,7 +51,7 @@ function errorMessage(response: TikTokApiResponse, fallback: string) {
   const code = response.error?.code?.trim();
   const message = response.error?.message?.trim();
   if (code === "unaudited_client_can_only_post_to_private_accounts") {
-    return "TikTok requires the connected account to be private until Direct Post is audited. Set the TikTok account to Private, choose Only you, then try again.";
+    return "TikTok requires the connected account to be private until Direct Post is audited. Set the TikTok account to Private, choose Only me, then try again.";
   }
   if (code === "url_ownership_unverified") {
     return "TikTok has not verified this app’s media URL. Verify your domain (NEXT_PUBLIC_APP_URL) in TikTok for Developers → URL properties.";
@@ -119,7 +119,7 @@ export async function postPhotosToTikTok(input: TikTokPhotoPostOptions): Promise
     throw new Error("TikTok requires between 1 and 35 photos.");
   }
   if (input.brandContent && input.privacyLevel === "SELF_ONLY") {
-    throw new Error("Branded content cannot use Only you visibility.");
+    throw new Error("Branded content cannot use Only me visibility.");
   }
 
   const creator = await getTikTokCreatorInfo(input.accessToken);
@@ -263,6 +263,6 @@ export function privacyLevelLabel(level: TikTokPrivacyLevel): string {
     case "FOLLOWER_OF_CREATOR":
       return "Followers";
     case "SELF_ONLY":
-      return "Only you";
+      return "Only me";
   }
 }

@@ -83,7 +83,7 @@ export async function scheduleTikTokPhotoPostAction(input: z.input<typeof schedu
 
   const privacyLevel = parsed.data.privacyLevel as TikTokPrivacyLevel;
   if (parsed.data.brandContent && privacyLevel === "SELF_ONLY") {
-    return { ok: false as const, error: "Branded content cannot use Only you visibility." };
+    return { ok: false as const, error: "Branded content cannot use Only me visibility." };
   }
   const connection = await getPlatformConnection(user.id, "tiktok");
   if (!connection) return { ok: false as const, error: "Connect your TikTok account before posting." };

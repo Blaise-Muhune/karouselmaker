@@ -169,7 +169,7 @@ export function PostToTikTokPanel({
   const [brandOrganic, setBrandOrganic] = useState(false);
   const [brandContent, setBrandContent] = useState(false);
   const [commercialDisclosure, setCommercialDisclosure] = useState(false);
-  const [musicConfirmed, setMusicConfirmed] = useState(false);
+  const [postMode, setPostMode] = useState<"now" | "schedule">("now");
   const [creator, setCreator] = useState<TikTokCreatorInfo | null>(null);
   const [creatorLoading, setCreatorLoading] = useState(false);
   const [creatorError, setCreatorError] = useState<string | null>(null);
@@ -236,7 +236,7 @@ export function PostToTikTokPanel({
     setBrandContent(false);
     setCommercialDisclosure(false);
     setScheduledFor(initialDateTime());
-    setMusicConfirmed(false);
+    setPostMode("now");
   }, [carouselId]);
 
   async function loadCreatorInfo(openId: string | null = activeAccount?.openId ?? null) {
@@ -318,12 +318,8 @@ export function PostToTikTokPanel({
         setMessage("Choose who can view this post.");
         return;
       }
-      if (!musicConfirmed) {
-        setMessage("Confirm the Music Usage Confirmation before posting.");
-        return;
-      }
       if (brandedContentBlocked) {
-        setMessage("Branded content cannot use Only you visibility.");
+        setMessage("Branded content cannot use Only me visibility.");
         return;
       }
       if (commercialIncomplete) {
@@ -391,7 +387,6 @@ export function PostToTikTokPanel({
       setBrandOrganic(false);
       setBrandContent(false);
       setCommercialDisclosure(false);
-      setMusicConfirmed(false);
       router.refresh();
     } finally {
       setPending(false);
@@ -400,7 +395,6 @@ export function PostToTikTokPanel({
 
   const canSubmit =
     Boolean(privacyLevel) &&
-    musicConfirmed &&
     !brandedContentBlocked &&
     !commercialIncomplete &&
     !pending &&
@@ -409,6 +403,8 @@ export function PostToTikTokPanel({
     Boolean(creator?.privacyLevels.length);
 
   const alreadyPosted = liveSchedules.some((s) => s.status === "published");
+  const profileHandle = (creator?.username || activeAccount?.username || "").replace(/^@/, "").trim();
+  const profileUrl = profileHandle ? `https://www.tiktok.com/@${encodeURIComponent(profileHandle)}` : null;
 
   const displayName = creator?.nickname || creator?.username || connectedAccount || "TikTok account";
   const handle = creator?.username
@@ -575,58 +571,73 @@ export function PostToTikTokPanel({
           <div className="space-y-3 rounded-2xl border border-border/60 bg-background/50 p-3.5 sm:p-4">
             <p className="text-xs font-semibold tracking-tight text-foreground">Post settings</p>
 
-            <div className="space-y-2">
-              <p className="text-[11px] font-medium text-muted-foreground">Who can view</p>
-              <div
-                role="radiogroup"
-                aria-label="Who can view this post"
-                className="grid grid-cols-2 gap-1.5 sm:grid-cols-4"
+            <div className="space-y-1.5">
+              <Label htmlFor="tiktok-privacy" className="text-[11px] font-medium text-muted-foreground">
+                Who can view this post
+              </Label>
+              <select
+                id="tiktok-privacy"
+                value={privacyLevel}
+                onChange={(event) => setPrivacyLevel(event.target.value as TikTokPrivacyLevel | "")}
+                disabled={!creator?.privacyLevels.length}
+                className="h-10 w-full max-w-xs rounded-xl border border-input bg-background px-3 text-sm text-foreground disabled:cursor-not-allowed disabled:opacity-50"
               >
+                <option value="" disabled>
+                  Select privacy status
+                </option>
                 {(creator?.privacyLevels ?? []).map((level) => {
-                  const selected = privacyLevel === level;
                   const disabled = brandContent && level === "SELF_ONLY";
                   return (
-                    <button
+                    <option
                       key={level}
-                      type="button"
-                      role="radio"
-                      aria-checked={selected}
+                      value={level}
                       disabled={disabled}
                       title={disabled ? "Branded content visibility cannot be set to private." : undefined}
-                      onClick={() => setPrivacyLevel(level)}
-                      className={cn(
-                        "rounded-xl border px-3 py-2.5 text-center text-xs font-semibold transition",
-                        selected
-                          ? "border-foreground bg-foreground text-background shadow-sm"
-                          : "border-border bg-card text-foreground hover:border-foreground/40 hover:bg-muted/50",
-                        disabled && "cursor-not-allowed opacity-40 hover:border-border hover:bg-card"
-                      )}
                     >
                       {privacyLevelLabel(level)}
-                    </button>
+                      {disabled ? " (not available for branded content)" : ""}
+                    </option>
                   );
                 })}
-              </div>
+              </select>
               {!creator?.privacyLevels.length && !creatorLoading ? (
                 <p className="text-[11px] text-muted-foreground">Refresh creator settings to load visibility options.</p>
               ) : null}
-              {!privacyLevel ? (
-                <p className="text-[11px] text-muted-foreground">Pick visibility for this post.</p>
+              {brandContent ? (
+                <p className="text-[11px] text-muted-foreground">Branded content visibility cannot be set to private.</p>
               ) : null}
             </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="tiktok-post-time" className="text-[11px] font-medium text-muted-foreground">
-                When
-              </Label>
-              <Input
-                id="tiktok-post-time"
-                type="datetime-local"
-                value={scheduledFor}
-                min={initialDateTime()}
-                onChange={(event) => setScheduledFor(event.target.value)}
-                className="h-10 max-w-xs rounded-xl"
-              />
+            <div className="space-y-2">
+              <p className="text-[11px] font-medium text-muted-foreground">When to post</p>
+              <div role="radiogroup" aria-label="When to post" className="inline-flex rounded-xl border border-border bg-muted/40 p-0.5">
+                {(["now", "schedule"] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    role="radio"
+                    aria-checked={postMode === mode}
+                    onClick={() => setPostMode(mode)}
+                    className={cn(
+                      "rounded-lg px-3 py-1.5 text-xs font-medium transition",
+                      postMode === mode ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    {mode === "now" ? "Post now" : "Schedule"}
+                  </button>
+                ))}
+              </div>
+              {postMode === "schedule" ? (
+                <Input
+                  id="tiktok-post-time"
+                  type="datetime-local"
+                  aria-label="Scheduled time"
+                  value={scheduledFor}
+                  min={initialDateTime()}
+                  onChange={(event) => setScheduledFor(event.target.value)}
+                  className="h-10 max-w-xs rounded-xl"
+                />
+              ) : null}
             </div>
 
             <div className="space-y-2 pt-1">
@@ -660,8 +671,8 @@ export function PostToTikTokPanel({
                     setBrandContent(false);
                   }
                 }}
-                label="This post promotes a brand, product, or service"
-                description="Off by default. Turn on to disclose Your brand and/or Branded content."
+                label="Disclose post content"
+                description="Turn on if this post promotes yourself, a brand, product, or service."
               />
               {commercialDisclosure ? (
                 <div className="grid gap-2 sm:grid-cols-2">
@@ -670,14 +681,19 @@ export function PostToTikTokPanel({
                     checked={brandOrganic}
                     onChange={setBrandOrganic}
                     label="Your brand"
-                    description="Your photo will be labeled as ‘Promotional content’."
+                    description="You are promoting yourself or your own business. Your photo will be labeled as ‘Promotional content’."
                   />
                   <OptionToggle
                     id="tiktok-brand-content"
                     checked={brandContent}
                     onChange={setBrandContent}
+                    disabled={privacyLevel === "SELF_ONLY"}
                     label="Branded content"
-                    description="Your photo will be labeled as ‘Paid partnership’. Not for Only you."
+                    description={
+                      privacyLevel === "SELF_ONLY"
+                        ? "Branded content visibility cannot be set to private. Choose another visibility to use this."
+                        : "You are promoting another brand or a third party. Your photo will be labeled as ‘Paid partnership’."
+                    }
                   />
                 </div>
               ) : null}
@@ -686,28 +702,22 @@ export function PostToTikTokPanel({
                   You need to indicate if your content promotes yourself, a third party, or both.
                 </p>
               ) : null}
-              {brandOrganic && brandContent ? (
-                <p className="text-[11px] leading-snug text-muted-foreground">
-                  Your photo will be labeled as ‘Paid partnership’.
+              {commercialDisclosure && (brandOrganic || brandContent) ? (
+                <p className="text-xs font-medium leading-snug text-foreground" role="status">
+                  Your photo will be labeled as ‘{brandContent ? "Paid partnership" : "Promotional content"}’.
                 </p>
               ) : null}
               {brandedContentBlocked ? (
                 <p className="text-xs text-destructive" role="alert">
-                  Branded content visibility cannot be set to Only you.
+                  Branded content visibility cannot be set to private.
                 </p>
               ) : null}
             </div>
           </div>
 
-          <OptionToggle
-            id="tiktok-music-confirm"
-            checked={musicConfirmed}
-            onChange={setMusicConfirmed}
-            icon={Music2Icon}
-            label="Confirm before posting"
-            description="Required for every post. See the terms below."
-          />
-          <p className="text-[11px] leading-snug text-muted-foreground">
+          <p className="flex items-start gap-2 rounded-xl border border-border/60 bg-muted/20 px-3 py-2.5 text-xs leading-snug text-foreground">
+            <Music2Icon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+            <span>
             By posting, you agree to TikTok&apos;s{" "}
             {brandContent ? (
               <>
@@ -721,6 +731,7 @@ export function PostToTikTokPanel({
               Music Usage Confirmation
             </a>
             .
+            </span>
           </p>
 
           <div className="flex flex-wrap items-center gap-2 border-t border-border/50 pt-4">
@@ -739,23 +750,25 @@ export function PostToTikTokPanel({
               <ExternalLinkIcon className="mr-1.5 size-3.5" />
               Add account
             </Button>
-            <div className="ml-auto flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                className="rounded-xl"
-                disabled={!canSubmit}
-                onClick={() => void submit("schedule")}
-              >
-                <CalendarClockIcon className="mr-2 size-4" />
-                {pending ? "Working…" : "Schedule"}
+            <span
+              className="ml-auto"
+              title={
+                commercialIncomplete
+                  ? "You need to indicate if your content promotes yourself, a third party, or both."
+                  : !privacyLevel
+                    ? "Select who can view this post."
+                    : undefined
+              }
+            >
+              <Button type="button" className="rounded-xl" disabled={!canSubmit} onClick={() => void submit(postMode)}>
+                {postMode === "now" ? <SendIcon className="mr-2 size-4" /> : <CalendarClockIcon className="mr-2 size-4" />}
+                {pending ? (postMode === "now" ? "Posting…" : "Scheduling…") : postMode === "now" ? "Post to TikTok" : "Schedule post"}
               </Button>
-              <Button type="button" className="rounded-xl" disabled={!canSubmit} onClick={() => void submit("now")}>
-                <SendIcon className="mr-2 size-4" />
-                {pending ? "Posting…" : "Post now"}
-              </Button>
-            </div>
+            </span>
           </div>
+          <p className="text-[11px] leading-snug text-muted-foreground">
+            After you post, it may take a few minutes for TikTok to process it and show it on your profile.
+          </p>
 
           {message ? (
             <p className="text-xs text-muted-foreground" role="status">
@@ -779,13 +792,28 @@ export function PostToTikTokPanel({
                       }
                     >
                       {scheduleItem.status === "scheduled"
-                        ? "Queued"
+                        ? "Scheduled"
                         : scheduleItem.status === "publishing"
-                          ? "Sending"
+                          ? "Processing on TikTok"
                           : scheduleItem.status === "published"
-                            ? "Live"
-                            : scheduleItem.status}
+                            ? "Posted"
+                            : scheduleItem.status === "failed"
+                              ? "Failed"
+                              : scheduleItem.status === "cancelled"
+                                ? "Cancelled"
+                                : scheduleItem.status}
                     </span>
+                    {scheduleItem.status === "published" && profileUrl ? (
+                      <a
+                        href={profileUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="ml-auto inline-flex items-center gap-1 font-medium text-foreground underline-offset-2 hover:underline"
+                      >
+                        View on TikTok
+                        <ExternalLinkIcon className="size-3" aria-hidden />
+                      </a>
+                    ) : null}
                     {scheduleItem.status === "scheduled" ? (
                       <span className="ml-auto flex gap-2">
                         <button
