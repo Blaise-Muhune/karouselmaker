@@ -90,7 +90,6 @@ export function NewCarouselForm({
   carouselCount,
   carouselLimit,
   regenerateCarouselId,
-  initialSettingsCarriedFromCarousel,
   initialImageSettingsRemembered,
   initialSelectedTemplateId,
   initialSelectedTemplateIds,
@@ -115,8 +114,7 @@ export function NewCarouselForm({
   carouselCount: number;
   carouselLimit: number;
   regenerateCarouselId?: string;
-  initialSettingsCarriedFromCarousel?: boolean;
-  /** The user's last generated image source/selection is prefilled for this new post. */
+  /** The user's last image choice and template or bundle are prefilled for this new post. */
   initialImageSettingsRemembered?: boolean;
   initialSelectedTemplateId?: string;
   initialSelectedTemplateIds?: string[];
@@ -311,8 +309,8 @@ export function NewCarouselForm({
     setError(null);
     if (libraryImportBusy) {
       setError("Wait for images to finish importing before generating.");
-      return;
-    }
+        return;
+      }
     const trimmed = topic.trim();
     if (!trimmed) {
       setError("Pick or enter a topic for this post.");
@@ -422,11 +420,10 @@ export function NewCarouselForm({
           </div>
         )}
 
-        {initialSettingsCarriedFromCarousel && (
-          <p className="text-muted-foreground text-xs">Image and template settings carried from your last post.</p>
-        )}
         {initialImageSettingsRemembered && (
-          <p className="text-muted-foreground text-xs">Your last image choice is ready to use for this post.</p>
+          <p className="text-muted-foreground text-xs">
+            Your last image choice and template are ready for this post.
+          </p>
         )}
 
         {error && (
@@ -473,16 +470,16 @@ export function NewCarouselForm({
                   >
                     <LightbulbIcon className="size-4" />
                   </Button>
-                </div>
+              </div>
                 {topic.trim() ? (
-                  <label
-                    className={cn(
+                      <label
+                        className={cn(
                       "flex items-center gap-2 text-xs",
                       includeMarketing ? "text-muted-foreground" : "text-foreground cursor-pointer"
                     )}
                   >
-                    <input
-                      type="checkbox"
+                  <input
+                    type="checkbox"
                       className="size-3.5 rounded border-input accent-primary"
                       checked={includeMarketing}
                       disabled={includeMarketing}
@@ -491,13 +488,13 @@ export function NewCarouselForm({
                     {includeMarketing
                       ? "Mentions your product (locked for this topic)"
                       : "Mention product on this post"}
-                  </label>
+                </label>
                 ) : null}
                 <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
                     className="h-8 px-2 text-xs"
                     onClick={() => {
                       setUserEditedTopic(true);
@@ -506,19 +503,19 @@ export function NewCarouselForm({
                     }}
                   >
                     Write your own
-                  </Button>
+                          </Button>
                   {topicSuggestList[0] && topic !== topicSuggestList[0].topic ? (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
                       className="h-8 px-2 text-xs"
                       onClick={() => handleSelectQueuedTopic(topicSuggestList[0]!)}
-                    >
+                        >
                       Use next idea
-                    </Button>
+                        </Button>
                   ) : null}
-                </div>
+                    </div>
                 {topicSuggestError ? <p className="text-destructive text-xs">{topicSuggestError}</p> : null}
               </>
             )}
@@ -544,7 +541,7 @@ export function NewCarouselForm({
                   key={opt.id}
                   type="button"
                   onClick={() => selectImageSource(opt.id)}
-                  className={cn(
+                          className={cn(
                     "rounded-lg border px-3 py-2.5 text-left text-sm transition-colors",
                     imageSource === opt.id
                       ? "border-primary bg-primary/5 ring-1 ring-primary"
@@ -558,18 +555,18 @@ export function NewCarouselForm({
                   <span className="text-muted-foreground mt-0.5 block text-xs">{opt.desc}</span>
                 </button>
               ))}
-            </div>
+                      </div>
             {imageSource === "library" && (
               <div className="space-y-2 pt-1">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
                   disabled={libraryImportBusy}
-                  onClick={() => setBackgroundPickerOpen(true)}
-                >
+                      onClick={() => setBackgroundPickerOpen(true)}
+                    >
                   Library ({backgroundAssetIds.length})
-                </Button>
+                    </Button>
                 <LibraryImageImportBar
                   attachProjectId={projectId}
                   onBusyChange={setLibraryImportBusy}
@@ -584,24 +581,24 @@ export function NewCarouselForm({
           </CardContent>
         </Card>
 
-        <Card className="gap-4 rounded-2xl border-border/70 bg-card/95 py-4 shadow-sm">
-          <CardHeader className="pb-0 px-5">
+          <Card className="gap-4 rounded-2xl border-border/70 bg-card/95 py-4 shadow-sm">
+            <CardHeader className="pb-0 px-5">
             <CardTitle className="text-sm font-semibold">Template</CardTitle>
-          </CardHeader>
-          <CardContent className="px-5 pt-0">
-            <Button
-              type="button"
-              variant="outline"
+            </CardHeader>
+            <CardContent className="px-5 pt-0">
+              <Button
+                type="button"
+                variant="outline"
               className="w-full justify-start gap-2"
               onClick={() => setTemplateModalOpen(true)}
-            >
-              <LayoutTemplateIcon className="size-4" />
+              >
+                <LayoutTemplateIcon className="size-4" />
               {templateButtonLabel}
-            </Button>
-          </CardContent>
-        </Card>
+              </Button>
+            </CardContent>
+          </Card>
 
-        <div className="space-y-3">
+            <div className="space-y-3">
           <Button
             type="button"
             variant="ghost"
@@ -614,56 +611,56 @@ export function NewCarouselForm({
           </Button>
           {showMore && (
             <div className="space-y-4 rounded-lg border border-border/60 bg-muted/20 p-3">
-              <div className="space-y-2">
+                  <div className="space-y-2">
                 <Label>
                   Number of slides ({CAROUSEL_SLIDES_MIN}–{CAROUSEL_SLIDES_MAX}, blank = AI decides)
                 </Label>
                 <div className="flex h-10 w-full max-w-xs items-center rounded-lg border border-input bg-background">
-                  <button
-                    type="button"
+                      <button
+                        type="button"
                     className="flex h-full w-10 items-center justify-center border-r"
-                    onClick={() => {
-                      if (numberOfSlides === "") return;
-                      const n = parseInt(numberOfSlides, 10);
+                        onClick={() => {
+                          if (numberOfSlides === "") return;
+                          const n = parseInt(numberOfSlides, 10);
                       if (n <= CAROUSEL_SLIDES_MIN) setNumberOfSlides("");
-                      else setNumberOfSlides(String(n - 1));
-                    }}
-                  >
+                          else setNumberOfSlides(String(n - 1));
+                        }}
+                      >
                     <ChevronDownIcon className="size-4" />
-                  </button>
+                      </button>
                   <span className="flex-1 text-center text-sm">{numberOfSlides || "AI"}</span>
-                  <button
-                    type="button"
+                      <button
+                        type="button"
                     className="flex h-full w-10 items-center justify-center border-l"
-                    onClick={() => {
+                        onClick={() => {
                       if (numberOfSlides === "") setNumberOfSlides(String(CAROUSEL_SLIDES_MIN));
                       else {
-                        const n = parseInt(numberOfSlides, 10);
+                          const n = parseInt(numberOfSlides, 10);
                         if (n < CAROUSEL_SLIDES_MAX) setNumberOfSlides(String(n + 1));
                       }
-                    }}
-                  >
+                        }}
+                      >
                     <ChevronUpIcon className="size-4" />
-                  </button>
-                </div>
-              </div>
+                      </button>
+                    </div>
+                  </div>
               <div className="space-y-2">
                 <Label>Notes (optional)</Label>
-                <Textarea
-                  value={notes}
+                    <Textarea
+                      value={notes}
                   onChange={(e) => setNotes(e.target.value.slice(0, CAROUSEL_NOTES_MAX_CHARS))}
                   className="min-h-20"
                   placeholder="e.g. Keep it beginner-friendly"
                 />
-              </div>
-            </div>
+                  </div>
+                </div>
           )}
         </div>
 
-        <Button
-          type="submit"
+          <Button
+            type="submit"
           className="w-full"
-          size="lg"
+            size="lg"
           disabled={isPending || topicQueueLoading || libraryImportBusy}
           loading={isPending}
         >
@@ -711,7 +708,7 @@ export function NewCarouselForm({
               <Button type="button" variant="outline" size="sm" disabled={topicSuggestRefreshing} onClick={() => void handleRefreshTopicSuggestions()}>
                 <RefreshCwIcon className={cn("mr-2 size-3.5", topicSuggestRefreshing && "animate-spin")} />
                 Refresh ideas
-              </Button>
+          </Button>
             </div>
           )}
         </DialogContent>
@@ -738,7 +735,7 @@ export function NewCarouselForm({
               >
                 Template bundle
               </button>
-            </div>
+        </div>
             {templatePickerMode === "single" ? (
               <TemplateSelectCards
                 templates={instagramTemplates}

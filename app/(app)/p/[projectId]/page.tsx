@@ -9,8 +9,10 @@ import {
   getSlideCountsForCarousels,
   getFirstSlideIdsForCarousels,
   getDefaultTemplateForNewCarousel,
+  getLatestCarouselWithImageSettings,
   listTikTokScheduledPostsForProject,
 } from "@/lib/server/db";
+import { rememberedGenerationPrefsFromOptions } from "@/lib/carousels/rememberedGenerationPrefs";
 import { getSubscription, getEffectivePlanLimits, hasFullProFeatureAccess } from "@/lib/server/subscription";
 import { getPostStatusForCarousels, type CarouselPostStatus } from "@/lib/server/db/carouselPostStatus";
 import { ensureProjectTopicLineup } from "@/app/actions/carousels/projectTopicSuggestions";
@@ -40,7 +42,7 @@ export default async function ProjectDashboardPage({
 
   const page = Math.max(1, parseInt(pageParam ?? "1", 10) || 1);
   const offset = (page - 1) * CAROUSELS_PAGE_SIZE;
-  const [carousels, total, subscription, fullAccess, limits, monthlyCount, defaultTemplate, lineup, tiktokSchedules] =
+  const [carousels, total, subscription, fullAccess, limits, monthlyCount, defaultTemplate, lineup, tiktokSchedules, latestPrefsCarousel] =
     await Promise.all([
       listCarousels(user.id, projectId, { limit: CAROUSELS_PAGE_SIZE, offset }),
       countCarousels(user.id, projectId),
@@ -51,7 +53,9 @@ export default async function ProjectDashboardPage({
       getDefaultTemplateForNewCarousel(user.id),
       ensureProjectTopicLineup(projectId, "instagram").catch(() => ({ topics: [] as { topic: string; is_marketing?: boolean }[] })),
       listTikTokScheduledPostsForProject(user.id, projectId, { limit: 6 }),
+      getLatestCarouselWithImageSettings(user.id),
     ]);
+  const rememberedPrefs = rememberedGenerationPrefsFromOptions(latestPrefsCarousel?.generation_options);
   const totalPages = Math.max(1, Math.ceil(total / CAROUSELS_PAGE_SIZE));
   const [slideCounts, firstSlideIds, postStatuses] =
     carousels.length > 0
@@ -94,6 +98,7 @@ export default async function ProjectDashboardPage({
           carouselCount={monthlyCount}
           carouselLimit={limits.carouselsPerMonth}
           defaultTemplateId={defaultTemplate?.templateId ?? null}
+          rememberedPrefs={rememberedPrefs}
         />
 
         <TikTokScheduledPostsSection

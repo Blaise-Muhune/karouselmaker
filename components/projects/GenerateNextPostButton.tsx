@@ -8,6 +8,7 @@ import { consumeProjectTopicSuggestion, ensureProjectTopicLineup } from "@/app/a
 import { Button } from "@/components/ui/button";
 import { UpgradePlansDialog } from "@/components/subscription/UpgradePlansDialog";
 import { PlusCircleIcon, SparklesIcon } from "lucide-react";
+import type { RememberedGenerationPrefs } from "@/lib/carousels/rememberedGenerationPrefs";
 
 /**
  * One-click generate from project hub using the next queued topic + silent defaults.
@@ -21,6 +22,7 @@ export function GenerateNextPostButton({
   carouselCount,
   carouselLimit,
   defaultTemplateId,
+  rememberedPrefs,
 }: {
   projectId: string;
   nextTopic: string | null;
@@ -30,6 +32,8 @@ export function GenerateNextPostButton({
   carouselCount: number;
   carouselLimit: number;
   defaultTemplateId: string | null;
+  /** Last image choice and template or bundle. Falls back to stock + the default template. */
+  rememberedPrefs: RememberedGenerationPrefs | null;
 }) {
   const router = useRouter();
   const [isPending, setIsPending] = useState(false);
@@ -52,11 +56,26 @@ export function GenerateNextPostButton({
       formData.set("input_value", topic);
       formData.set("carousel_for", "instagram");
       formData.set("generation_speed", "fast");
-      formData.set("use_ai_backgrounds", "true");
-      formData.set("use_stock_photos", "true");
       formData.set("images_related_to_topic", "true");
       formData.set("include_marketing", includeMarketing ? "true" : "false");
-      if (defaultTemplateId) formData.set("template_id", defaultTemplateId);
+
+      const useLibrary =
+        rememberedPrefs?.imageSource === "library" && rememberedPrefs.backgroundAssetIds.length > 0;
+      if (useLibrary) {
+        formData.set("background_asset_ids", JSON.stringify(rememberedPrefs.backgroundAssetIds));
+      } else {
+        formData.set("use_ai_backgrounds", "true");
+        formData.set("use_stock_photos", "true");
+      }
+
+      const templateIds = rememberedPrefs?.templateIds ?? [];
+      if (templateIds.length > 1) {
+        formData.set("template_ids", JSON.stringify(templateIds));
+      } else if (templateIds.length === 1) {
+        formData.set("template_id", templateIds[0]!);
+      } else if (defaultTemplateId) {
+        formData.set("template_id", defaultTemplateId);
+      }
 
       const result = await startCarouselGeneration(formData);
       if ("error" in result && !("carouselId" in result)) {

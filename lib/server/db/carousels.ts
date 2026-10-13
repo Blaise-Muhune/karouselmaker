@@ -115,9 +115,8 @@ export async function listCarousels(
 }
 
 /**
- * The newest carousel with saved image settings. New-post forms use this to
- * keep a creator's last image choice (stock or selected library images) across
- * projects and devices.
+ * The newest carousel that saved an image choice and/or a template (or template
+ * bundle). New posts reuse that selection from every page.
  */
 export async function getLatestCarouselWithImageSettings(userId: string): Promise<Carousel | null> {
   return queryOne<Carousel>(
@@ -127,6 +126,9 @@ export async function getLatestCarouselWithImageSettings(userId: string): Promis
        and (
          generation_options ? 'use_stock_photos'
          or generation_options ? 'background_asset_ids'
+         or generation_options ? 'use_ai_backgrounds'
+         or generation_options ? 'template_id'
+         or generation_options ? 'template_ids'
        )
      order by updated_at desc, created_at desc
      limit 1`,

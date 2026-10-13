@@ -25,6 +25,7 @@ import type { TemplateBundleOption } from "@/components/carousels/TemplateBundle
 import { ArrowLeftIcon } from "lucide-react";
 import { readDigilaineGenCookie } from "@/lib/handoff/cookies";
 import { parseDigilaineGenCookie } from "@/lib/handoff/digilaineHandoff";
+import { rememberedGenerationPrefsFromOptions } from "@/lib/carousels/rememberedGenerationPrefs";
 
 export const maxDuration = 800;
 
@@ -36,7 +37,6 @@ export default async function NewCarouselPage({
   searchParams: Promise<{
     regenerate?: string | string[];
     topic?: string | string[];
-    fromCarousel?: string | string[];
   }>;
 }>) {
   const { user } = await getUser();
@@ -54,9 +54,6 @@ export default async function NewCarouselPage({
   const topicRaw = sp.topic;
   const topicPrefill =
     typeof topicRaw === "string" ? topicRaw.trim() : Array.isArray(topicRaw) ? topicRaw[0]?.trim() ?? "" : "";
-  const fromRaw = sp.fromCarousel;
-  const fromCarouselId =
-    typeof fromRaw === "string" ? fromRaw.trim() : Array.isArray(fromRaw) ? fromRaw[0]?.trim() ?? "" : "";
 
   const [project, subscription, limits, carouselCount, lifetimeCarouselCount, regenerateCarousel, templatesRaw, bundlesRaw, defaultTemplate, favoriteIds, latestImageSettingsCarousel] =
     await Promise.all([
@@ -110,35 +107,17 @@ export default async function NewCarouselPage({
       ? templateOptions.find((o) => o.id === defaultTemplateId)?.parsedConfig ?? null
       : templateOptions[0]?.parsedConfig ?? null;
 
-  let carrySettingsCarousel: Awaited<ReturnType<typeof getCarousel>> = null;
-  if (!regenerateCarouselId && fromCarouselId) {
-    const c = await getCarousel(user.id, fromCarouselId);
-    if (c && c.project_id === projectId) carrySettingsCarousel = c;
-  }
-
-  const settingsSourceCarousel = regenerateCarousel ?? carrySettingsCarousel;
-  /** A new post inherits only the user's last image choice; templates and notes remain project-specific. */
-  const imageSettingsSourceCarousel = settingsSourceCarousel ?? latestImageSettingsCarousel;
+  /** Regenerating keeps that post's own settings. A new post always reuses the last image choice and template or bundle. */
+  const prefsCarousel = regenerateCarousel ?? latestImageSettingsCarousel;
+  const rememberedPrefs = rememberedGenerationPrefsFromOptions(
+    prefsCarousel?.generation_options,
+    availableTemplateIds
+  );
   type GenOpts = {
-    use_stock_photos?: boolean;
     notes?: string;
-    template_id?: string;
-    template_ids?: unknown;
-    background_asset_ids?: unknown;
     number_of_slides?: unknown;
-    use_ai_backgrounds?: boolean;
   };
-  const genOpts = (settingsSourceCarousel?.generation_options ?? undefined) as GenOpts | undefined;
-  const imageGenOpts = (imageSettingsSourceCarousel?.generation_options ?? undefined) as GenOpts | undefined;
-  const initialUseStockPhotosFromOpts =
-    imageGenOpts == null ? undefined : imageGenOpts.use_stock_photos;
-  const templateIdFromOpts = typeof genOpts?.template_id === "string" ? genOpts.template_id.trim() : "";
-  const templateIdsFromOpts = Array.isArray(genOpts?.template_ids)
-    ? (genOpts.template_ids as unknown[]).filter((id): id is string => typeof id === "string" && availableTemplateIds.has(id)).slice(0, 3)
-    : undefined;
-  const backgroundIdsFromOpts = Array.isArray(imageGenOpts?.background_asset_ids)
-    ? (imageGenOpts!.background_asset_ids as unknown[]).filter((id): id is string => typeof id === "string" && id.length > 0)
-    : undefined;
+  const genOpts = (regenerateCarousel?.generation_options ?? undefined) as GenOpts | undefined;
   const rawNumSlides = genOpts?.number_of_slides;
   const parsedNumSlides =
     typeof rawNumSlides === "number"
@@ -193,32 +172,33 @@ export default async function NewCarouselPage({
           </span>
         </div>
         <NewCarouselForm
-          key={`${regenerateCarousel?.id ?? "new"}:${topicPrefill}:${fromCarouselId}:${handoffPrefill?.topic ?? ""}`}
+          key={`${regenerateCarousel?.id ?? "new"}:${topicPrefill}:${handoffPrefill?.topic ?? ""}`}
           projectId={projectId}
           isPro={subscription.isPro}
           hasFullAccess={hasFullAccess}
           carouselCount={carouselCount}
           carouselLimit={carouselLimit}
           regenerateCarouselId={regenerateCarousel?.id}
-          initialSettingsCarriedFromCarousel={!!carrySettingsCarousel && !regenerateCarousel}
-          initialSelectedTemplateId={templateIdFromOpts || undefined}
-          initialSelectedTemplateIds={templateIdsFromOpts}
-          initialBackgroundAssetIds={backgroundIdsFromOpts}
+          initialSelectedTemplateId={rememberedPrefs?.templateIds[0]}
+          initialSelectedTemplateIds={
+            rememberedPrefs && rememberedPrefs.templateIds.length > 0 ? rememberedPrefs.templateIds : undefined
+          }
+          initialBackgroundAssetIds={
+            rememberedPrefs?.imageSource === "library" ? rememberedPrefs.backgroundAssetIds : undefined
+          }
           initialNumberOfSlides={initialNumberOfSlides}
           initialInputValue={
             regenerateCarousel?.input_value ?? (topicPrefill || handoffPrefill?.topic || undefined)
           }
-          initialUseAiBackgrounds={imageSettingsSourceCarousel?.generation_options?.use_ai_backgrounds}
-          initialUseStockPhotos={initialUseStockPhotosFromOpts}
-          initialImageSettingsRemembered={!settingsSourceCarousel && !!latestImageSettingsCarousel}
+          initialUseAiBackgrounds={rememberedPrefs?.imageSource === "stock" ? true : rememberedPrefs ? false : undefined}
+          initialUseStockPhotos={rememberedPrefs?.imageSource === "stock"}
+          initialImageSettingsRemembered={!regenerateCarousel && !!rememberedPrefs}
           initialNotes={
             regenerateCarousel
               ? genOpts?.notes
-              : carrySettingsCarousel
-                ? ""
-                : handoffPrefill?.angle
-                  ? `Keep this angle. Do not copy it as on-screen slide text: ${handoffPrefill.angle}`
-                  : undefined
+              : handoffPrefill?.angle
+                ? `Keep this angle. Do not copy it as on-screen slide text: ${handoffPrefill.angle}`
+                : undefined
           }
           initialIncludeMarketing={handoffPrefill?.is_marketing}
           consumeDigilaineHandoff={!!handoffPrefill}
